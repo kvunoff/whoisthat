@@ -1,0 +1,193 @@
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TcpMessage {
+    pub msg: String,
+    pub data: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Message<T: Serialize> {
+    pub msg: String,
+    pub data: T,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Profile {
+    pub id: i32,
+    pub group_id: i32,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub protocol: String,
+    #[serde(default)]
+    pub uri: String,
+    #[serde(default)]
+    pub address: String,
+    #[serde(default)]
+    pub host: String,
+    #[serde(rename = "test-result", default)]
+    pub test_result: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProfileID {
+    pub id: i32,
+    pub group_id: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Group {
+    pub id: i32,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub subscription_url: String,
+    #[serde(default)]
+    pub last_id: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupWithProfiles {
+    pub group: Group,
+    pub profiles: Vec<Profile>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProxyStatus {
+    #[serde(default)]
+    pub connection: String,
+    #[serde(default)]
+    pub profile: Option<Profile>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApplicationState {
+    pub groups: Vec<GroupWithProfiles>,
+    #[serde(rename = "connection-status")]
+    pub connection_status: ProxyStatus,
+    #[serde(rename = "tun-status", default)]
+    pub tun_status: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Warning {
+    #[serde(default)]
+    pub key: String,
+    #[serde(default)]
+    pub content: String,
+}
+
+// --- Request types ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GetApplicationStateData {}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConnectData {
+    pub profile: ProfileID,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DisconnectData {}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AddProfilesData {
+    pub uris: String,
+    pub group_id: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeleteProfilesData {
+    pub profiles: Vec<ProfileID>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AddGroupData {
+    pub name: String,
+    pub subscription_url: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeleteGroupData {
+    pub id: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateSubscriptionData {
+    pub group_id: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TestProfileData {
+    pub profile: ProfileID,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EnableTunData {}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DisableTunData {}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IsRootData {}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateProfileData {
+    #[serde(rename = "Profile")]
+    pub profile: ProfileID,
+    #[serde(rename = "Name")]
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DieData {}
+
+// --- Notification/response types ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProfilesAdded {
+    pub profiles: Vec<Profile>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProfilesDeleted {
+    #[serde(rename = "deleted-profiles")]
+    pub deleted_profiles: Vec<ProfileID>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProfileUpdated {
+    pub profile: Profile,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupAdded {
+    pub id: i32,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub subscription_url: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupDeleted {
+    pub id: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SubscriptionUpdated {
+    pub group_id: i32,
+    pub profiles: Vec<Profile>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TunStatus {
+    pub is_enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IsRootAnswer {
+    #[serde(rename = "IsRoot")]
+    pub is_root: bool,
+}

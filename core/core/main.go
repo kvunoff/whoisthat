@@ -1,0 +1,60 @@
+package main
+
+import (
+	"whoisthat-core/db"
+	"whoisthat-core/lib"
+	"whoisthat-core/lib/AppConfig"
+	"whoisthat-core/lib/TCPServer"
+	proxy "whoisthat-core/lib/proxy/mainproxy"
+	tunmode "whoisthat-core/lib/proxy/tun"
+	"whoisthat-core/structs"
+	"fmt"
+	lumberjack "gopkg.in/natefinch/lumberjack.v2"
+	"log"
+	"os"
+	"os/signal"
+	"syscall"
+)
+
+func main() {
+	log.Println("logs: ./core-debug.log")
+	log.Println("for unix you can run: tail -f ./core-debug.log")
+	log.SetOutput(&lumberjack.Logger{
+		Filename:   "core-debug.log",
+		MaxSize:    20,
+		MaxBackups: 1,
+		MaxAge:     0,
+		Compress:   false,
+	})
+
+	log.SetPrefix("debug: ")
+	log.SetFlags(log.LstdFlags | log.Lmsgprefix)
+	stop_sig := make(chan bool, 1)
+	appconfig.LoadConfig()
+	database := db.DB{}
+	database.Initialize()
+	proxy_manager := proxy.ProxyManager{}
+	proxy_manager.Init()
+	tun_manager := tunmode.TunModeManager{}
+	tun_manager.Init()
+
+	server := TCPServer.NewServer(&database, &proxy_manager, &tun_manager, stop_sig)
+	server.Start()
+	go func() {
+		sigs := make(chan os.Signal, 1)
+		signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+		reason := ""
+		select {
+		case sig := <-sigs:
+			reason = fmt.Sprintf("Received signal %v , cleaning up...", sig)
+		case <-stop_sig:
+			reason = "Received stop request , cleaning up..."
+		}
+		log.Println(reason)
+		proxy_manager.Stop()
+		tun_manager.Stop()
+		server.BroadCast(lib.CreateJsonNotification("warn", structs.Warning{Key: "died", Content: reason}))
+		os.Exit(0)
+	}()
+	select {}
+}
