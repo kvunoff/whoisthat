@@ -154,3 +154,10 @@ type EnableTunData struct{}
 type TunStatus struct {
 	IsEnabled bool `json:"is_enabled"`
 }
+
+type TrafficStats struct {
+	ProxyUp   int64 `json:"proxy_up"`
+	ProxyDown int64 `json:"proxy_down"`
+	DirectUp  int64 `json:"direct_up"`
+	DirectDown int64 `json:"direct_down"`
+}

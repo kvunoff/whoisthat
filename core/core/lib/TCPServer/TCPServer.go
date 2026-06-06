@@ -51,6 +51,7 @@ func (s *Server) Start() {
 	go s.handleTunModeStatusChange()
 	go s.handleStatusChange()
 	go s.handleTestResults()
+	go s.handleStatsChange()
 
 	go func() {
 		for {

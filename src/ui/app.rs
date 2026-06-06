@@ -51,6 +51,7 @@ pub struct App {
 
     pub settings_state: SettingsState,
     pub logs_state: LogsState,
+    pub traffic_stats: TrafficStats,
 }
 
 impl App {
@@ -78,6 +79,7 @@ impl App {
                     .to_str()
                     .unwrap_or("core.log"),
             ),
+            traffic_stats: TrafficStats::default(),
         }
     }
 
@@ -190,7 +192,7 @@ impl App {
         f.render_widget(Block::default().style(s_bg()), area);
 
         let v = Layout::vertical([
-            Constraint::Length(3), // top bar (tabs in bottom border)
+            Constraint::Length(4), // top bar (tabs in bottom border + stats)
             Constraint::Min(0),    // main area
             Constraint::Length(3), // bottom bar
         ])
@@ -244,14 +246,30 @@ impl App {
         let inner = block.inner(area);
         f.render_widget(block, area);
 
-        let line = Line::from(vec![
+        let rows = Layout::vertical([
+            Constraint::Length(1),
+            Constraint::Length(1),
+        ])
+        .split(inner);
+
+        let status_line = Line::from(vec![
             Span::styled(" WhoisThat ", s_accent_bold().add_modifier(Modifier::BOLD)),
             Span::styled("│ ", s_faint()),
             Span::styled(format!(" {} {} ", icon, status_text), icon_style),
             Span::styled(&name, s_dim()),
         ]);
+        f.render_widget(Paragraph::new(status_line), rows[0]);
 
-        f.render_widget(Paragraph::new(line), inner);
+        let ts = &self.traffic_stats;
+        let stats_line = Line::from(vec![
+            Span::styled(" P:", s_faint()),
+            Span::styled(format!("↑{}", format_bytes(ts.proxy_up)), s_success()),
+            Span::styled(format!(" ↓{}", format_bytes(ts.proxy_down)), s_success()),
+            Span::styled("  D:", s_faint()),
+            Span::styled(format!("↑{}", format_bytes(ts.direct_up)), s_dim()),
+            Span::styled(format!(" ↓{}", format_bytes(ts.direct_down)), s_dim()),
+        ]);
+        f.render_widget(Paragraph::new(stats_line), rows[1]);
     }
 
     fn tab_spans(&self) -> Vec<Span<'_>> {
@@ -544,7 +562,7 @@ impl App {
         let inner = block.inner(area);
         f.render_widget(block, area);
 
-        let left = Span::styled(" WhoisThat v0.1.5 · xray-core", s_faint());
+        let left = Span::styled(" WhoisThat v0.1.6 · xray-core", s_faint());
         let left_w = left.width();
 
         let tun = if self.tun_enabled {
@@ -770,6 +788,22 @@ fn kv_row_span(key: &str, val: Span<'static>) -> Line<'static> {
         Span::styled(format!("  {:<10}", key), s_faint()),
         val,
     ])
+}
+
+fn format_bytes(bytes: i64) -> String {
+    if bytes <= 0 {
+        return "0".into();
+    }
+    let b = bytes as f64;
+    if b < 1024.0 {
+        format!("{}", bytes)
+    } else if b < 1024.0 * 1024.0 {
+        format!("{:.1}K", b / 1024.0)
+    } else if b < 1024.0 * 1024.0 * 1024.0 {
+        format!("{:.1}M", b / (1024.0 * 1024.0))
+    } else {
+        format!("{:.2}G", b / (1024.0 * 1024.0 * 1024.0))
+    }
 }
 
 fn centered_rect(px: u16, py: u16, r: Rect) -> Rect {

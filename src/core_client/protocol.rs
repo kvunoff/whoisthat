@@ -193,3 +193,15 @@ pub struct IsRootAnswer {
     #[serde(rename = "IsRoot")]
     pub is_root: bool,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct TrafficStats {
+    #[serde(default)]
+    pub proxy_up: i64,
+    #[serde(default)]
+    pub proxy_down: i64,
+    #[serde(default)]
+    pub direct_up: i64,
+    #[serde(default)]
+    pub direct_down: i64,
+}

@@ -24,6 +24,7 @@ pub enum CoreEvent {
         content: String,
     },
     Error(String),
+    TrafficStats(TrafficStats),
     Disconnected,
 }
 
@@ -150,6 +151,13 @@ fn dispatch(msg: TcpMessage) -> CoreEvent {
             Err(e) => {
                 error!("Invalid error: {}", e);
                 CoreEvent::Error("Invalid error".into())
+            }
+        },
+        "traffic-stats" => match serde_json::from_value::<TrafficStats>(msg.data) {
+            Ok(data) => CoreEvent::TrafficStats(data),
+            Err(e) => {
+                error!("Invalid traffic-stats: {}", e);
+                CoreEvent::Error("Invalid traffic-stats".into())
             }
         },
         other => {

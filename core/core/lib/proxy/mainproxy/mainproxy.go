@@ -21,9 +21,12 @@ type ProxyManager struct {
 	mu                sync.Mutex
 	xray_core         xray.XrayCore
 	StatusChanged     chan structs.ProxyStatus
+	StatsChanged      chan structs.TrafficStats
 	testChannel       chan structs.Profile
 	TestResultChannel chan TestResult
 	portPool          *portpool.PortPool
+	apiPort           int
+	statsCancel       chan struct{}
 }
 
 func (p *ProxyManager) Init() {
@@ -31,6 +34,7 @@ func (p *ProxyManager) Init() {
 		Connection: "disconnected",
 	}
 	p.StatusChanged = make(chan structs.ProxyStatus)
+	p.StatsChanged = make(chan structs.TrafficStats)
 	test_channel := make(chan structs.Profile)
 	go p.listenForTests(test_channel)
 	p.testChannel = test_channel
@@ -40,6 +44,7 @@ func (p *ProxyManager) Init() {
 	}
 	test_port_range := appconfig.GetConfig().TestPortRange
 	p.portPool = portpool.CreatePortPool(test_port_range.Start, test_port_range.End)
+	p.apiPort = appconfig.GetConfig().SocksPort
 }
 
 func (p *ProxyManager) Connect(profile structs.Profile) error {
@@ -67,9 +72,19 @@ func (p *ProxyManager) Connect(profile structs.Profile) error {
 		return err
 	}
 
+	// Inject stats/policy/api into xray config
+	xray_config, _ = injectStatsConfig(xray_config, p.apiPort)
+
 	if err := p.xray_core.Start(xray_config); err != nil {
 		return err
 	}
+
+	// Start stats collector
+	if p.statsCancel != nil {
+		close(p.statsCancel)
+	}
+	p.statsCancel = make(chan struct{})
+	go p.collectStats(p.apiPort, p.statsCancel, p.StatsChanged)
 
 	p.status = structs.ProxyStatus{
 		Connection:  "connected",
@@ -100,11 +115,20 @@ func (p *ProxyManager) Connect(profile structs.Profile) error {
 func (p *ProxyManager) Stop() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.statsCancel != nil {
+		close(p.statsCancel)
+		p.statsCancel = nil
+	}
 	p.xray_core.Stop()
 	p.status = structs.ProxyStatus{
 		Connection: "disconnected",
 	}
 	p.StatusChanged <- p.status
+	// Send zero stats on disconnect
+	select {
+	case p.StatsChanged <- structs.TrafficStats{}:
+	default:
+	}
 }
 
 func (p *ProxyManager) GetStatus() structs.ProxyStatus {

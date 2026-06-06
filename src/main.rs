@@ -334,6 +334,10 @@ async fn handle_core_event(
             app.msg(format!("Error: {}", e));
         }
 
+        CoreEvent::TrafficStats(ts) => {
+            app.traffic_stats = ts;
+        }
+
         CoreEvent::Disconnected => {
             app.msg("Error: Core disconnected. Press q to quit.");
         }

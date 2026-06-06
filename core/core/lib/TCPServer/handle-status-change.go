@@ -21,3 +21,10 @@ func (s *Server) handleTunModeStatusChange() {
 		s.BroadCast(lib.CreateJsonNotification("tun-status-changed", structs.TunStatus{IsEnabled: status}))
 	}
 }
+
+func (s *Server) handleStatsChange() {
+	log.Println("listening to traffic stats")
+	for stats := range s.proxy_manager.StatsChanged {
+		s.BroadCast(lib.CreateJsonNotification("traffic-stats", stats))
+	}
+}
