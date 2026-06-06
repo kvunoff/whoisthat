@@ -113,7 +113,10 @@ var (
 func querySsStats(port int) (*statsResponse, error) {
 	// Use ss -tie to get per-socket byte counters for the SOCKS port.
 	// This avoids the broken xray gRPC API in xray-bin 26.x.
-	filter := fmt.Sprintf("sport = :%d or dport = :%d", port, port)
+	// dport only: matches client→SOCKS connections, not SOCKS→client.
+	// Using sport+dport would count the same traffic twice (bytes_sent
+	// from client side = upload, bytes_sent from SOCKS side = download).
+	filter := fmt.Sprintf("dport = :%d", port)
 	cmd := exec.Command("ss", "-tie", filter)
 	output, err := cmd.Output()
 	if err != nil {
