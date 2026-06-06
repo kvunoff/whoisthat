@@ -138,17 +138,33 @@ async fn main() -> io::Result<()> {
     init_logger();
 
     let mut cfg = config::load_config();
+    let current_version = env!("CARGO_PKG_VERSION").to_string();
 
-    // Kill any existing core to ensure binary version matches
+    // Check if core is running and version matches
+    // Reattach if same version, kill+respawn if different, spawn if not running
+    let mut core_alive = false;
     if let Ok(mut conn) = CoreConnection::connect(&cfg.core_host, cfg.core_tcp_port).await {
-        log::info!("Killing existing core to launch fresh instance");
-        let _ = conn.send("die", &DieData {}).await;
-        drop(conn);
-        tokio::time::sleep(Duration::from_millis(500)).await;
+        if cfg.core_version != current_version {
+            log::info!(
+                "Core version mismatch (cfg='{}' current='{current_version}'), restarting",
+                cfg.core_version
+            );
+            let _ = conn.send("die", &DieData {}).await;
+            drop(conn);
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        } else {
+            log::info!("Reattaching to existing core v{current_version}");
+            core_alive = true;
+        }
     }
 
-    spawn_core()?;
-    tokio::time::sleep(Duration::from_millis(1200)).await;
+    if !core_alive {
+        log::info!("Spawning fresh core v{current_version}");
+        spawn_core()?;
+        tokio::time::sleep(Duration::from_millis(1200)).await;
+        cfg.core_version = current_version;
+        config::save_config(&cfg);
+    }
     let conn = CoreConnection::connect(&cfg.core_host, cfg.core_tcp_port)
         .await
         .map_err(|e| {
@@ -236,13 +252,24 @@ async fn main() -> io::Result<()> {
     )
     .await;
 
-    disable_raw_mode()?;
-    execute!(
+    if let Err(e) = disable_raw_mode() {
+        log::error!("disable_raw_mode: {e}");
+    }
+    if let Err(e) = execute!(
         term.backend_mut(),
         LeaveAlternateScreen,
         DisableMouseCapture
-    )?;
-    term.show_cursor()?;
+    ) {
+        log::error!("LeaveAlternateScreen: {e}");
+    }
+    if let Err(e) = term.show_cursor() {
+        log::error!("show_cursor: {e}");
+    }
+    drop(term);
+
+    let mut stdout = io::stdout();
+    let _ = writeln!(stdout, "--- Press Enter ---");
+    let _ = stdout.flush();
 
     config::save_config(&cfg);
 
@@ -299,10 +326,11 @@ async fn handle_core_event(
 ) -> bool {
     match ev {
         CoreEvent::ApplicationState(s) => {
+            let was_connected = s.connection_status.connection == "connected";
             app.apply_state(s);
             if *first_state {
                 *first_state = false;
-                if *do_autoconnect {
+                if *do_autoconnect && !was_connected {
                     *do_autoconnect = false;
                     let gid = cfg.last_group_id;
                     let pid = cfg.last_profile_id;
@@ -430,6 +458,15 @@ async fn handle_input(
                     && app.popup.is_none()
                     && !matches!(key.modifiers, crossterm::event::KeyModifiers::CONTROL)
                 {
+                    return true;
+                }
+
+                if (key.code == KeyCode::Char('Q')
+                    || (key.code == KeyCode::Char('c')
+                        && key.modifiers == crossterm::event::KeyModifiers::CONTROL))
+                    && app.popup.is_none()
+                {
+                    let _ = client.die().await;
                     return true;
                 }
 

@@ -270,24 +270,28 @@ impl App {
 
     fn tab_spans(&self) -> Vec<Span<'_>> {
         let entries = [
-            ('a', "dd", ActiveTab::Profiles),
-            ('l', "ogs", ActiveTab::Logs),
-            ('s', "ettings", ActiveTab::Settings),
+            ('a', " add", ActiveTab::Profiles),
+            ('l', " logs", ActiveTab::Logs),
+            ('s', " settings", ActiveTab::Settings),
             ('v', " tun", ActiveTab::Profiles),
-            ('h', "elp", ActiveTab::Profiles),
-            ('q', "uit", ActiveTab::Profiles),
+            ('h', " help", ActiveTab::Profiles),
+            ('q', " detach", ActiveTab::Profiles),
+            ('Q', " quit", ActiveTab::Profiles),
         ];
 
-        entries
-            .iter()
-            .flat_map(|(key, label, _tab)| {
-                vec![
-                    Span::styled(format!("[{}]", key), s_accent()),
-                    Span::styled(label.to_string(), s_dim()),
-                    Span::raw("  "),
-                ]
-            })
-            .collect()
+        let mut result = vec![Span::raw(" ")];
+        
+        for (i, (key, label, _tab)) in entries.iter().enumerate() {
+            result.push(Span::styled(format!("[{}]", key), s_accent()));
+            result.push(Span::styled(label.to_string(), s_dim()));
+            if i < entries.len() - 1 {
+                result.push(Span::raw("・"));
+            }
+        }
+        
+        result.push(Span::raw(" "));
+        
+        result
     }
 
     fn render_main(&self, f: &mut Frame, area: Rect) {
@@ -558,7 +562,7 @@ impl App {
         let inner = block.inner(area);
         f.render_widget(block, area);
 
-        let left = Span::styled(" WhoisThat v0.1.9 · xray-core", s_faint());
+        let left = Span::styled(" WhoisThat v0.1.10 · xray-core", s_faint());
         let left_w = left.width();
 
         let tun = if self.tun_enabled {
@@ -728,7 +732,8 @@ impl App {
             ("s", "Settings tab"),
             ("1", "Profiles tab"),
             ("h / ?", "This help"),
-            ("q", "Quit"),
+            ("q", "Detach TUI (VPN stays on)"),
+            ("Q / Ctrl+C", "Quit + stop VPN"),
         ];
 
         let lines: Vec<Line> = help

@@ -13,6 +13,8 @@ pub struct AppConfig {
     pub last_group_id: i32,
     #[serde(default)]
     pub last_profile_id: i32,
+    #[serde(default)]
+    pub core_version: String,
 }
 
 fn default_core_tcp_port() -> u16 {
@@ -30,6 +32,7 @@ impl Default for AppConfig {
             autoconnect: false,
             last_group_id: 0,
             last_profile_id: 0,
+            core_version: String::new(),
         }
     }
 }
