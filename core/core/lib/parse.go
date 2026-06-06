@@ -9,18 +9,18 @@ import (
 
 func ParseUri(uri string, socksport int, httpport int) ([]byte, error) {
 	var parsed_config []byte
-	v2parserbin, err := utils.GetV2parserBin()
+	parserbin, err := utils.GetParserBin()
 	if err != nil {
 		return parsed_config, fmt.Errorf("failed to parse: %w", err)
 	}
-	var v2parser_parse_cmd *exec.Cmd
+	var parser_parse_cmd *exec.Cmd
 	if httpport != -1 {
-		v2parser_parse_cmd = exec.Command(v2parserbin, uri, "--socksport", strconv.Itoa(socksport), "--httpport", strconv.Itoa(httpport))
+		parser_parse_cmd = exec.Command(parserbin, uri, "--socksport", strconv.Itoa(socksport), "--httpport", strconv.Itoa(httpport))
 	} else {
-		v2parser_parse_cmd = exec.Command(v2parserbin, uri, "--socksport", strconv.Itoa(socksport))
+		parser_parse_cmd = exec.Command(parserbin, uri, "--socksport", strconv.Itoa(socksport))
 	}
 
-	parsed_config, err = v2parser_parse_cmd.Output()
+	parsed_config, err = parser_parse_cmd.Output()
 	if err != nil {
 		return parsed_config, fmt.Errorf("parsing uri fialed: %w", err)
 	}

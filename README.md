@@ -57,7 +57,7 @@ A modern terminal-based VPN client. Rust TUI frontend. Go engine backed by Xray-
 
 1. **WhoisThat Core** is a long-running Go daemon. It manages VPN profiles (stored as JSON files under `~/.local/share/whoisthat/db/`), launches Xray-core as a subprocess, and controls the TUN device via `iproute2` + `tun2socks`.
 
-2. **Xray-core** handles all protocol-level work: VLESS handshake, Reality authentication, xHTTP/gRPC transport, SOCKS5 local proxy. Its JSON config is generated on-the-fly from profile URIs by calling the external `v2parser` binary.
+2. **Xray-core** handles all protocol-level work: VLESS handshake, Reality authentication, xHTTP/gRPC transport, SOCKS5 local proxy. Its JSON config is generated on-the-fly from profile URIs by the bundled `whoisthat-parser`.
 
 3. **TUN mode** creates a virtual network interface (`whoisthattun`), sets up `iptables` rules (DNS hijack, MASQUERADE), and routes all system traffic through the Xray SOCKS5 proxy via `tun2socks`.
 
@@ -137,7 +137,7 @@ Both client→core commands and core→client notifications use the same framing
 - **Rust** 1.80+
 - **Go** 1.24+
 - **Xray-core** — binary available in `PATH`
-- **v2parser** — VLESS URI → Xray JSON converter (from [v2-uri-parser](https://github.com/Keivan-sf/v2-uri-parser))
+- **whoisthat-parser** — VLESS URI → Xray JSON converter (bundled in `parser/`)
 - **tun2socks** — TUN→SOCKS bridge (required for TUN mode only)
 
 ### Build
@@ -251,6 +251,9 @@ whoisthat/
 │       ├── settings.rs ← Settings screen
 │       ├── logs.rs     ← Log viewer (file tail)
 │       └── widgets.rs  ← Shared widget helpers
+├── parser/            ← VLESS URI → Xray JSON parser (Rust)
+│   ├── Cargo.toml
+│   └── src/
 ├── core/               ← WhoisThat Core (Go VPN engine)
 │   └── core/
 │       ├── main.go     ← Daemon entry point

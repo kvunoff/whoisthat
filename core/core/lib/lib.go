@@ -50,12 +50,12 @@ func GetDBAddProfileDatasFromStr(str string, group_id int) []structs.DBAddProfil
 
 func getDBAddProfileDataFromURI(uri string, group_id int) (structs.DBAddProfileData, error) {
 	var profile_data structs.DBAddProfileData
-	v2parserbin, err := utils.GetV2parserBin()
+	parserbin, err := utils.GetParserBin()
 	if err != nil {
 		return profile_data, fmt.Errorf("failed to parse uri: %w", err)
 	}
-	v2parser_metadata_cmd := exec.Command(v2parserbin, uri, "--get-metadata")
-	metadata_output, err := v2parser_metadata_cmd.Output()
+	parser_metadata_cmd := exec.Command(parserbin, uri, "--get-metadata")
+	metadata_output, err := parser_metadata_cmd.Output()
 	if err != nil {
 		return profile_data, fmt.Errorf("getting metadata failed: %w", err)
 	}

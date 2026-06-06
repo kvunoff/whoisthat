@@ -8,8 +8,8 @@ import (
 	"strconv"
 )
 
-func GetV2parserBin() (string, error) {
-	return GetBinPath("v2parser")
+func GetParserBin() (string, error) {
+	return GetBinPath("whoisthat-parser")
 }
 
 func GetTun2socksBin() (string, error) {
