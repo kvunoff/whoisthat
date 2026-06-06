@@ -52,12 +52,12 @@ func getDBAddProfileDataFromURI(uri string, group_id int) (structs.DBAddProfileD
 	var profile_data structs.DBAddProfileData
 	parserbin, err := utils.GetParserBin()
 	if err != nil {
-		return profile_data, fmt.Errorf("failed to parse uri: %w", err)
+		return profile_data, fmt.Errorf("failed to find parser bin: %w", err)
 	}
 	parser_metadata_cmd := exec.Command(parserbin, uri, "--get-metadata")
 	metadata_output, err := parser_metadata_cmd.Output()
 	if err != nil {
-		return profile_data, fmt.Errorf("getting metadata failed: %w", err)
+		return profile_data, fmt.Errorf("getting metadata failed: %w (output: %s)", err, string(metadata_output))
 	}
 
 	var profile_metadata profileMetaData

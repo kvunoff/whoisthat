@@ -4,6 +4,7 @@ import (
 	"whoisthat-core/lib"
 	proxy "whoisthat-core/lib/proxy/mainproxy"
 	"whoisthat-core/structs"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -27,11 +28,17 @@ func (cmd *Cmd) UpdateSubscription(data structs.UpdateSubscriptionData, proxy_ma
 
 	subscription_content, err := get(group.SubscriptionUrl)
 	if err != nil {
+		log.Printf("update-subscription: failed to GET %s: %v", group.SubscriptionUrl, err)
 		cmd.warn("update-subscription-failed", "Failed to get subscription content")
 		return
 	}
 
 	db_profiles := lib.GetDBAddProfileDatasFromStr(subscription_content, data.GroupId)
+	if len(db_profiles) == 0 {
+		log.Printf("update-subscription: parsed 0 profiles from content (len=%d)", len(subscription_content))
+		cmd.warn("update-subscription-failed", "No profiles found in subscription")
+		return
+	}
 	status := proxy_manager.GetStatus()
 	keep_profile_id := 0
 	if status.Connection == "connected" && status.Profile.GroupId == data.GroupId {
@@ -54,6 +61,10 @@ func get(url string) (string, error) {
 		return "", err
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return "", fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
 
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
