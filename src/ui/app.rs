@@ -41,6 +41,7 @@ pub struct App {
     pub tun_enabled: bool,
     pub last_msg: Option<String>,
     pub autoconnect: bool,
+    pub public_ip: String,
 
     pub tab: ActiveTab,
     pub focus: Focus,
@@ -66,6 +67,7 @@ impl App {
             tun_enabled: false,
             last_msg: None,
             autoconnect,
+            public_ip: String::new(),
             tab: ActiveTab::Profiles,
             focus: Focus::LeftPanel,
             selected_group_idx: 0,
@@ -220,18 +222,11 @@ impl App {
             "Disconnected"
         };
 
-        let name = self
-            .connection_status
-            .profile
-            .as_ref()
-            .map(|p| {
-                if p.name.is_empty() {
-                    p.address.clone()
-                } else {
-                    p.name.clone()
-                }
-            })
-            .unwrap_or_default();
+        let ip_display = if self.public_ip.is_empty() {
+            "..."
+        } else {
+            &self.public_ip
+        };
 
         let tab_line = Line::from(self.tab_spans());
 
@@ -256,7 +251,8 @@ impl App {
             Span::styled(" WhoisThat ", s_accent_bold().add_modifier(Modifier::BOLD)),
             Span::styled("│ ", s_faint()),
             Span::styled(format!(" {} {} ", icon, status_text), icon_style),
-            Span::styled(&name, s_dim()),
+            Span::styled("│ ", s_faint()),
+            Span::styled(ip_display, s_dim()),
         ]);
         f.render_widget(Paragraph::new(status_line), rows[0]);
 
@@ -562,7 +558,7 @@ impl App {
         let inner = block.inner(area);
         f.render_widget(block, area);
 
-        let left = Span::styled(" WhoisThat v0.1.8 · xray-core", s_faint());
+        let left = Span::styled(" WhoisThat v0.1.9 · xray-core", s_faint());
         let left_w = left.width();
 
         let tun = if self.tun_enabled {

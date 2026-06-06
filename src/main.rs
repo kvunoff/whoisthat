@@ -3,7 +3,8 @@ mod core_client;
 mod ui;
 
 use std::fs::{File, OpenOptions};
-use std::io::{self, Write};
+use std::io::{self, Read, Write};
+use std::net::{TcpStream, ToSocketAddrs};
 use std::os::unix::process::CommandExt;
 use std::process::Command;
 use std::sync::Mutex;
@@ -81,6 +82,7 @@ fn init_logger() {
 enum AppEvent {
     Input(Event),
     Tick,
+    PublicIp(String),
 }
 
 fn spawn_core() -> io::Result<()> {
@@ -110,6 +112,21 @@ fn find_core_binary() -> String {
         }
     }
     "whoisthat-core".to_string()
+}
+
+fn fetch_public_ip() -> Option<String> {
+    let addr = "api.ipify.org:80"
+        .to_socket_addrs()
+        .ok()?
+        .find(|a| a.is_ipv4())?;
+    let mut stream = TcpStream::connect_timeout(&addr, Duration::from_secs(5)).ok()?;
+    stream.set_read_timeout(Some(Duration::from_secs(5))).ok()?;
+    stream.write_all(b"GET / HTTP/1.0\r\nHost: api.ipify.org\r\nConnection: close\r\n\r\n").ok()?;
+    let mut buf = String::new();
+    stream.read_to_string(&mut buf).ok()?;
+    let body = buf.split("\r\n\r\n").nth(1)?;
+    let ip = body.trim();
+    if ip.is_empty() { None } else { Some(ip.to_string()) }
 }
 
 // ---------------------------------------------------------------------------
@@ -181,6 +198,29 @@ async fn main() -> io::Result<()> {
         })
     };
 
+    // Periodic public IP fetch (every 30 s)
+    {
+        let ip_tx = input_tx.clone();
+        tokio::spawn(async move {
+            loop {
+                if let Some(ip) = tokio::task::spawn_blocking(fetch_public_ip).await.unwrap_or(None) {
+                    let _ = ip_tx.send(AppEvent::PublicIp(ip));
+                }
+                tokio::time::sleep(Duration::from_secs(30)).await;
+            }
+        })
+    };
+
+    // Initial IP fetch (non-blocking, result arrives later)
+    {
+        let ip_tx = input_tx.clone();
+        tokio::spawn(async move {
+            if let Some(ip) = tokio::task::spawn_blocking(fetch_public_ip).await.unwrap_or(None) {
+                let _ = ip_tx.send(AppEvent::PublicIp(ip));
+            }
+        });
+    }
+
     // Autoconnect after first app state arrives
     let do_autoconnect = cfg.autoconnect && cfg.last_profile_id != 0;
 
@@ -192,6 +232,7 @@ async fn main() -> io::Result<()> {
         &mut input_rx,
         do_autoconnect,
         &mut cfg,
+        input_tx.clone(),
     )
     .await;
 
@@ -220,6 +261,7 @@ async fn run_loop<B: Backend>(
     input_rx: &mut mpsc::UnboundedReceiver<AppEvent>,
     mut do_autoconnect: bool,
     cfg: &mut config::AppConfig,
+    ip_tx: mpsc::UnboundedSender<AppEvent>,
 ) -> io::Result<()> {
     let mut first_state = true;
     loop {
@@ -227,7 +269,7 @@ async fn run_loop<B: Backend>(
 
         tokio::select! {
             Some(ev) = core_rx.recv() => {
-                if handle_core_event(app, client, ev, &mut first_state, &mut do_autoconnect, cfg).await {
+                if handle_core_event(app, client, ev, &mut first_state, &mut do_autoconnect, cfg, &ip_tx).await {
                     break;
                 }
             }
@@ -253,6 +295,7 @@ async fn handle_core_event(
     first_state: &mut bool,
     do_autoconnect: &mut bool,
     cfg: &mut config::AppConfig,
+    ip_tx: &mpsc::UnboundedSender<AppEvent>,
 ) -> bool {
     match ev {
         CoreEvent::ApplicationState(s) => {
@@ -278,6 +321,13 @@ async fn handle_core_event(
             app.connection_status = s;
             if was != app.is_connected() {
                 app.clear_msg();
+                let tx = ip_tx.clone();
+                tokio::spawn(async move {
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                    if let Some(ip) = tokio::task::spawn_blocking(fetch_public_ip).await.unwrap_or(None) {
+                        let _ = tx.send(AppEvent::PublicIp(ip));
+                    }
+                });
             }
             // Save last connected profile
             if app.is_connected() {
@@ -314,6 +364,13 @@ async fn handle_core_event(
                 "Warning: TUN mode active"
             } else {
                 "Ok"
+            });
+            let tx = ip_tx.clone();
+            tokio::spawn(async move {
+                tokio::time::sleep(Duration::from_secs(1)).await;
+                if let Some(ip) = tokio::task::spawn_blocking(fetch_public_ip).await.unwrap_or(None) {
+                    let _ = tx.send(AppEvent::PublicIp(ip));
+                }
             });
         }
 
@@ -359,6 +416,9 @@ async fn handle_input(
     match ev {
         AppEvent::Tick => {
             app.logs_state.poll();
+        }
+        AppEvent::PublicIp(ip) => {
+            app.public_ip = ip;
         }
         AppEvent::Input(input) => match input {
             Event::Key(key) => {
