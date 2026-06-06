@@ -24,7 +24,7 @@ A modern terminal-based VPN client. Rust TUI frontend. Go engine backed by Xray-
 
 ```
 ┌──────────────────────────────┐
-│  WhoisThat (Rust TUI)       │  ratatui + crossterm
+│  WhoisThat (Rust TUI)        │  ratatui + crossterm
 │  ⋅ Profiles ⋅ Logs ⋅ Settings│
 └──────────┬───────────────────┘
            │  TCP / JSON
@@ -32,8 +32,8 @@ A modern terminal-based VPN client. Rust TUI frontend. Go engine backed by Xray-
            │  localhost:4897
            ▼
 ┌──────────────────────────────┐
-│  WhoisThat Core (Go daemon) │
-│  ⋅ Profile DB (JSON files)  │
+│  WhoisThat Core (Go daemon)  │
+│  ⋅ Profile DB (JSON files)   │
 │  ⋅ Proxy manager             │
 │  ⋅ TUN manager               │
 │  ⋅ TCP server (commands)     │
@@ -42,7 +42,7 @@ A modern terminal-based VPN client. Rust TUI frontend. Go engine backed by Xray-
            ▼
 ┌──────────────────────────────┐
 │  Xray-core                   │
-│  ⋅ VLESS / Reality / gRPC   │
+│  ⋅ VLESS / Reality / gRPC    │
 │  ⋅ xHTTP inbound             │
 │  ⋅ SOCKS5 / HTTP outbound    │
 └──────────┬───────────────────┘
@@ -70,10 +70,10 @@ A modern terminal-based VPN client. Rust TUI frontend. Go engine backed by Xray-
 ### Wire format
 
 ```
-┌──────────────┬──────────────────────────┐
+┌──────────────┬───────────────────────────┐
 │ 4 bytes (BE) │ JSON payload              │
-│ uint32 len  │ {"msg":"...","data":{...}} │
-└──────────────┴──────────────────────────┘
+│ uint32 len   │ {"msg":"...","data":{...}}│
+└──────────────┴───────────────────────────┘
 ```
 
 Both client→core commands and core→client notifications use the same framing. The core broadcasts notifications to all connected clients.
