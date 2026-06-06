@@ -58,6 +58,7 @@ impl App {
             connection_status: ProxyStatus {
                 connection: "disconnected".into(),
                 profile: None,
+                connected_at: 0,
             },
             tun_enabled: false,
             last_msg: None,
@@ -499,7 +500,7 @@ impl App {
         let inner = block.inner(area);
         f.render_widget(block, area);
 
-        let left = Span::styled(" WhoisThat v0.1.0 · xray-core ", s_faint());
+        let left = Span::styled(" WhoisThat v0.1.1 · xray-core", s_faint());
         let left_w = left.width();
 
         let tun = if self.tun_enabled {
@@ -509,12 +510,27 @@ impl App {
         };
         let tun_w = tun.width();
 
+        let uptime = if self.connection_status.connected_at > 0 {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs() as i64;
+            let elapsed = (now - self.connection_status.connected_at).max(0) as u64;
+            let h = elapsed / 3600;
+            let m = (elapsed % 3600) / 60;
+            let s = elapsed % 60;
+            Span::styled(format!(" [{:02}:{:02}:{:02}]", h, m, s), s_success())
+        } else {
+            Span::styled("", s_dim())
+        };
+        let uptime_w = uptime.width();
+
         let inner_w = inner.width as usize;
         let gap = 3;
 
         let msg = self.last_msg.as_deref().unwrap_or("");
         let max_right = inner_w
-            .saturating_sub(left_w + tun_w + gap + gap);
+            .saturating_sub(left_w + tun_w + uptime_w + gap + gap);
         let right = if msg.is_empty() {
             Span::raw("")
         } else if msg.len() <= max_right {
@@ -529,7 +545,7 @@ impl App {
         };
 
         // Layout: [left] [tun] ... [right]
-        let spans = vec![left, tun, Span::raw(" ".repeat(gap)), right];
+        let spans = vec![left, tun, uptime, Span::raw(" ".repeat(gap)), right];
         f.render_widget(Paragraph::new(Line::from(spans)), inner);
     }
 

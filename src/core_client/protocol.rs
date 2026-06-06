@@ -59,6 +59,8 @@ pub struct ProxyStatus {
     pub connection: String,
     #[serde(default)]
     pub profile: Option<Profile>,
+    #[serde(default)]
+    pub connected_at: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

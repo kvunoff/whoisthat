@@ -8,6 +8,7 @@ import (
 	"whoisthat-core/structs"
 	"log"
 	"sync"
+	"time"
 )
 
 // connect -> can also switch
@@ -71,8 +72,9 @@ func (p *ProxyManager) Connect(profile structs.Profile) error {
 	}
 
 	p.status = structs.ProxyStatus{
-		Connection: "connected",
-		Profile:    profile,
+		Connection:  "connected",
+		Profile:     profile,
+		ConnectedAt: time.Now().Unix(),
 	}
 	p.StatusChanged <- p.status
 	log.Println("changing connection status to", p.status.Connection)

@@ -9,7 +9,7 @@ import (
 func (s *Server) handleStatusChange() {
 	log.Println("listening to connection state change")
 	for status := range s.proxy_manager.StatusChanged {
-		log.Println("Connection status changed:", status.Connection)
+		log.Println("Connection status changed:", status.Connection, "connected_at:", status.ConnectedAt)
 		s.BroadCast(lib.CreateJsonNotification("status-changed", status))
 	}
 }
