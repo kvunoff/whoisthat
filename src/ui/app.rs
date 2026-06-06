@@ -500,7 +500,7 @@ impl App {
         let inner = block.inner(area);
         f.render_widget(block, area);
 
-        let left = Span::styled(" WhoisThat v0.1.1 · xray-core", s_faint());
+        let left = Span::styled(" WhoisThat v0.1.2 · xray-core", s_faint());
         let left_w = left.width();
 
         let tun = if self.tun_enabled {
