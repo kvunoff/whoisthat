@@ -13,14 +13,23 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 )
 
 func main() {
-	log.Println("logs: ./core-debug.log")
-	log.Println("for unix you can run: tail -f ./core-debug.log")
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		configDir = filepath.Join(os.Getenv("HOME"), ".config")
+	}
+	logDir := filepath.Join(configDir, "whoisthat")
+	os.MkdirAll(logDir, 0755)
+	logPath := filepath.Join(logDir, "core.log")
+
+	log.Println("logs:", logPath)
+	log.Println("tail -f", logPath)
 	log.SetOutput(&lumberjack.Logger{
-		Filename:   "core-debug.log",
+		Filename:   logPath,
 		MaxSize:    20,
 		MaxBackups: 1,
 		MaxAge:     0,

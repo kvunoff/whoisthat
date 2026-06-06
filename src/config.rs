@@ -34,14 +34,17 @@ impl Default for AppConfig {
     }
 }
 
-pub fn config_path() -> PathBuf {
-    let dir = directories::ProjectDirs::from("", "", "whoisthat")
+pub fn config_dir() -> PathBuf {
+    directories::ProjectDirs::from("", "", "whoisthat")
         .map(|d| d.config_dir().to_path_buf())
         .unwrap_or_else(|| {
             let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
             PathBuf::from(home).join(".config").join("whoisthat")
-        });
-    dir.join("config.toml")
+        })
+}
+
+pub fn config_path() -> PathBuf {
+    config_dir().join("config.toml")
 }
 
 pub fn load_config() -> AppConfig {

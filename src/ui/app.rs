@@ -6,6 +6,7 @@ use ratatui::{
     Frame,
 };
 
+use crate::config;
 use crate::core_client::protocol::*;
 
 use super::logs::{render_logs, LogsState};
@@ -70,7 +71,12 @@ impl App {
             scroll: 0,
             popup: None,
             settings_state: SettingsState::new(),
-            logs_state: LogsState::new("whoisthat-core.log"),
+            logs_state: LogsState::new(
+                config::config_dir()
+                    .join("core.log")
+                    .to_str()
+                    .unwrap_or("core.log"),
+            ),
         }
     }
 
