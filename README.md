@@ -132,7 +132,13 @@ Both client→core commands and core→client notifications use the same framing
 
 ## Installation
 
-### Prerequisites
+### Arch Linux (AUR)
+
+```bash
+yay -S whoisthat
+```
+
+### Prerequisites (manual build)
 
 - **Rust** 1.80+
 - **Go** 1.24+
@@ -268,6 +274,13 @@ whoisthat/
 │       └── utils/      ← Binary detection, DNS resolution
 └── .gitignore
 ```
+
+---
+
+## Credits
+
+Built on ideas by [Keivan-sf](https://github.com/Keivan-sf).
+Powered by [Xray-core](https://github.com/XTLS/Xray-core), [tun2socks](https://github.com/xjasonlyu/tun2socks).
 
 ---
 
