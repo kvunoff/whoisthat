@@ -12,6 +12,7 @@ use crate::core_client::protocol::*;
 use super::logs::{render_logs, LogsState};
 use super::settings::{render_settings, SettingsState};
 use super::theme::*;
+use super::uri;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ActiveTab {
@@ -441,12 +442,11 @@ impl App {
             return;
         };
 
+        let uri_params = uri::parse_vless_uri(&p.uri);
+        let group_name = self.current_group().map(|g| &g.group.name).unwrap_or(&p.name);
+
         let name = if p.name.is_empty() {
-            if p.address.is_empty() {
-                "Unknown".to_string()
-            } else {
-                p.address.clone()
-            }
+            if p.address.is_empty() { "Unknown".to_string() } else { p.address.clone() }
         } else {
             p.name.clone()
         };
@@ -456,42 +456,80 @@ impl App {
             .map(|(gid, pid)| gid == p.group_id && pid == p.id)
             .unwrap_or(false);
 
-        let status_line = if conn_mark {
-            Line::from(vec![Span::styled(" ● Connected", s_success())])
+        let protocol = if p.protocol.is_empty() {
+            if uri_params.protocol.is_empty() { "—".into() }
+            else { uri_params.protocol.to_uppercase() }
         } else {
-            Line::from(vec![Span::styled(" ○ Disconnected", s_dim())])
+            p.protocol.to_uppercase()
         };
 
-        let rows: Vec<Line> = vec![
-            Line::from(vec![Span::styled("Name", s_faint())]),
-            Line::from(vec![Span::styled(&name, s_text())]),
-            Line::from(vec![]),
-            Line::from(vec![Span::styled("Protocol", s_faint())]),
-            Line::from(vec![Span::styled(p.protocol.to_uppercase(), s_accent())]),
-            Line::from(vec![]),
-            Line::from(vec![Span::styled("Address", s_faint())]),
-            Line::from(vec![Span::styled(
-                if p.address.is_empty() { "—" } else { &p.address },
-                s_text(),
-            )]),
-            Line::from(vec![]),
-            Line::from(vec![Span::styled("Host / SNI", s_faint())]),
-            Line::from(vec![Span::styled(
-                if p.host.is_empty() { "—" } else { &p.host },
-                s_text(),
-            )]),
-            Line::from(vec![]),
-            Line::from(vec![Span::styled("Status", s_faint())]),
-            status_line,
-            Line::from(vec![]),
-            Line::from(vec![Span::styled("Latency", s_faint())]),
-            Line::from(vec![match p.test_result {
-                -2 => Span::styled("Testing...", s_dim()),
-                -1 => Span::styled("Failed", s_error()),
-                x if x > 0 => Span::styled(format!("{} ms", x), s_success()),
-                _ => Span::styled("Untested", s_faint()),
-            }]),
-        ];
+        let port = if !uri_params.port.is_empty() { &uri_params.port }
+            else if !p.uri.is_empty() { "—" } else { "—" };
+
+        let sni = if !uri_params.sni.is_empty() { &uri_params.sni }
+            else if !p.host.is_empty() { &p.host } else { "—" };
+
+        let transport = if !uri_params.transport.is_empty() { &uri_params.transport } else { "tcp" };
+        let security = if !uri_params.security.is_empty() { &uri_params.security } else { "none" };
+        let flow = if !uri_params.flow.is_empty() { &uri_params.flow } else { "—" };
+
+        let mut rows: Vec<Line> = Vec::new();
+
+        // ---- Profile ----
+        rows.push(section_header("Profile"));
+        rows.push(kv_row("Name", &name));
+        rows.push(kv_row("Protocol", &protocol));
+        rows.push(kv_row("Group", group_name));
+        rows.push(Line::from(""));
+
+        // ---- Connection ----
+        rows.push(section_header("Connection"));
+        rows.push(kv_row("Address", if p.address.is_empty() { "—" } else { &p.address }));
+        rows.push(kv_row("Port", port));
+        rows.push(kv_row("SNI", sni));
+        rows.push(kv_row("Transport", transport));
+        rows.push(kv_row("Security", security));
+        rows.push(kv_row("Flow", flow));
+        rows.push(Line::from(""));
+
+        // ---- Status ----
+        rows.push(section_header("Status"));
+        let state = if conn_mark {
+            Span::styled("● Connected", s_success())
+        } else {
+            Span::styled("○ Disconnected", s_dim())
+        };
+        rows.push(kv_row_span("State", state));
+
+        let uptime = if conn_mark {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs() as i64;
+            let elapsed = (now - self.connection_status.connected_at).max(0) as u64;
+            let h = elapsed / 3600;
+            let m = (elapsed % 3600) / 60;
+            let s = elapsed % 60;
+            Span::styled(format!("{:02}:{:02}:{:02}", h, m, s), s_success())
+        } else {
+            Span::styled("—", s_dim())
+        };
+        rows.push(kv_row_span("Uptime", uptime));
+
+        let latency = match p.test_result {
+            -2 => Span::styled("Testing...", s_dim()),
+            -1 => Span::styled("Failed", s_error()),
+            x if x > 0 => Span::styled(format!("{} ms", x), s_success()),
+            _ => Span::styled("Untested", s_faint()),
+        };
+        rows.push(kv_row_span("Latency", latency));
+
+        let tun = if self.tun_enabled {
+            Span::styled("● Active", s_success())
+        } else {
+            Span::styled("○ Inactive", s_disconnected())
+        };
+        rows.push(kv_row_span("TUN", tun));
 
         f.render_widget(Paragraph::new(rows).style(s_bg()), inner);
     }
@@ -711,6 +749,27 @@ impl App {
             hint,
         );
     }
+}
+
+fn section_header(label: &str) -> Line<'static> {
+    Line::from(vec![Span::styled(
+        format!(" {} ", label),
+        s_accent_bold().add_modifier(Modifier::BOLD),
+    )])
+}
+
+fn kv_row(key: &str, val: &str) -> Line<'static> {
+    Line::from(vec![
+        Span::styled(format!("  {:<10}", key), s_faint()),
+        Span::styled(val.to_string(), s_text()),
+    ])
+}
+
+fn kv_row_span(key: &str, val: Span<'static>) -> Line<'static> {
+    Line::from(vec![
+        Span::styled(format!("  {:<10}", key), s_faint()),
+        val,
+    ])
 }
 
 fn centered_rect(px: u16, py: u16, r: Rect) -> Rect {
