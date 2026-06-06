@@ -112,18 +112,6 @@ fn find_core_binary() -> String {
     "whoisthat-core".to_string()
 }
 
-fn is_running_as_root() -> bool {
-    std::fs::read_to_string("/proc/self/status")
-        .map(|s| {
-            s.lines()
-                .find(|l| l.starts_with("Uid:"))
-                .and_then(|l| l.split_whitespace().nth(1))
-                .map(|uid| uid == "0")
-                .unwrap_or(false)
-        })
-        .unwrap_or(false)
-}
-
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
@@ -134,45 +122,24 @@ async fn main() -> io::Result<()> {
 
     let mut cfg = config::load_config();
 
-    let conn = if is_running_as_root() {
-        // Kill any existing (possibly non-root) core, then spawn fresh
-        if let Ok(mut conn) = CoreConnection::connect(&cfg.core_host, cfg.core_tcp_port).await {
-            log::info!("Running as root, killing existing non-root core");
-            let _ = conn.send("die", &DieData {}).await;
-            drop(conn);
-            tokio::time::sleep(Duration::from_millis(500)).await;
-        }
-        spawn_core()?;
-        tokio::time::sleep(Duration::from_millis(1200)).await;
-        CoreConnection::connect(&cfg.core_host, cfg.core_tcp_port)
-            .await
-            .map_err(|e| {
-                io::Error::new(
-                    io::ErrorKind::ConnectionRefused,
-                    format!("Failed to connect to root core: {}", e),
-                )
-            })?
-    } else {
-        match CoreConnection::connect(&cfg.core_host, cfg.core_tcp_port).await {
-            Ok(c) => {
-                log::info!("Connected to core");
-                c
-            }
-            Err(e) => {
-                log::info!("Core not found ({}), spawning...", e);
-                spawn_core()?;
-                tokio::time::sleep(Duration::from_millis(1200)).await;
-                CoreConnection::connect(&cfg.core_host, cfg.core_tcp_port)
-                    .await
-                    .map_err(|e| {
-                        io::Error::new(
-                            io::ErrorKind::ConnectionRefused,
-                            format!("Failed to connect after spawn: {}", e),
-                        )
-                    })?
-            }
-        }
-    };
+    // Kill any existing core to ensure binary version matches
+    if let Ok(mut conn) = CoreConnection::connect(&cfg.core_host, cfg.core_tcp_port).await {
+        log::info!("Killing existing core to launch fresh instance");
+        let _ = conn.send("die", &DieData {}).await;
+        drop(conn);
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+
+    spawn_core()?;
+    tokio::time::sleep(Duration::from_millis(1200)).await;
+    let conn = CoreConnection::connect(&cfg.core_host, cfg.core_tcp_port)
+        .await
+        .map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::ConnectionRefused,
+                format!("Failed to connect to core: {}", e),
+            )
+        })?;
 
     let client = CoreClient::new(conn);
 
