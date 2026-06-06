@@ -25,7 +25,6 @@ type ProxyManager struct {
 	testChannel       chan structs.Profile
 	TestResultChannel chan TestResult
 	portPool          *portpool.PortPool
-	apiPort           int
 	statsCancel       chan struct{}
 }
 
@@ -71,35 +70,19 @@ func (p *ProxyManager) Connect(profile structs.Profile) error {
 		return err
 	}
 
-	// Allocate dedicated API port for stats gRPC (avoids SOCKS/gRPC conflict)
-	if p.apiPort > 0 {
-		p.portPool.ReleasePort(p.apiPort)
-	}
-	apiPort, err := p.portPool.GetPort()
-	if err != nil {
-		log.Println("WARNING: failed to allocate API port, traffic stats disabled:", err)
-		p.apiPort = 0
-	} else {
-		p.apiPort = apiPort
-	}
-
-	// Inject stats/policy/api into xray config
-	if p.apiPort > 0 {
-		xray_config, _ = injectStatsConfig(xray_config, p.apiPort)
-	}
+	// Inject stats tracking config (policy + stats counters)
+	xray_config, _ = injectStatsConfig(xray_config)
 
 	if err := p.xray_core.Start(xray_config); err != nil {
 		return err
 	}
 
-	// Start stats collector
+	// Start stats collector (uses ss -tie on SOCKS port, no xray gRPC API)
 	if p.statsCancel != nil {
 		close(p.statsCancel)
 	}
 	p.statsCancel = make(chan struct{})
-	if p.apiPort > 0 {
-		go p.collectStats(p.apiPort, p.statsCancel, p.StatsChanged)
-	}
+	go p.collectStats(app_config.SocksPort, p.statsCancel, p.StatsChanged)
 
 	p.status = structs.ProxyStatus{
 		Connection:  "connected",
@@ -139,11 +122,6 @@ func (p *ProxyManager) Stop() {
 		Connection: "disconnected",
 	}
 	p.StatusChanged <- p.status
-	// Release API port
-	if p.apiPort > 0 {
-		p.portPool.ReleasePort(p.apiPort)
-		p.apiPort = 0
-	}
 	// Send zero stats on disconnect
 	select {
 	case p.StatsChanged <- structs.TrafficStats{}:
