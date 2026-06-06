@@ -32,6 +32,7 @@ pub enum Focus {
 pub enum Popup {
     Import { input: String, cursor: usize },
     ConfirmDelete { gid: i32, pid: i32, name: String },
+    EditSubscription { input: String, group_id: i32, cursor: usize },
     Help,
 }
 
@@ -177,6 +178,39 @@ impl App {
         }
     }
 
+    pub fn apply_subscription_updated(&mut self, profiles: Vec<Profile>) {
+        if let Some(gid) = profiles.first().map(|p| p.group_id) {
+            if let Some(g) = self.groups.iter_mut().find(|g| g.group.id == gid) {
+                g.profiles = profiles;
+            }
+            let len = self.profile_count();
+            if self.cursor >= len && len > 0 {
+                self.cursor = len - 1;
+            }
+        }
+    }
+
+    pub fn apply_group_added(&mut self, g: Group) {
+        self.groups.push(GroupWithProfiles {
+            group: g,
+            profiles: Vec::new(),
+        });
+    }
+
+    pub fn apply_group_deleted(&mut self, id: i32) {
+        self.groups.retain(|g| g.group.id != id);
+        if self.selected_group_idx >= self.groups.len() && !self.groups.is_empty() {
+            self.selected_group_idx = self.groups.len() - 1;
+        }
+        self.cursor = 0;
+    }
+
+    pub fn apply_group_updated(&mut self, g: &Group) {
+        if let Some(existing) = self.groups.iter_mut().find(|gw| gw.group.id == g.id) {
+            existing.group = g.clone();
+        }
+    }
+
     pub fn apply_profile_updated(&mut self, p: &Profile) {
         if let Some(g) = self.groups.iter_mut().find(|g| g.group.id == p.group_id) {
             if let Some(e) = g.profiles.iter_mut().find(|x| x.id == p.id) {
@@ -271,6 +305,7 @@ impl App {
     fn tab_spans(&self) -> Vec<Span<'_>> {
         let entries = [
             ('a', " add", ActiveTab::Profiles),
+            ('u', " sub", ActiveTab::Profiles),
             ('l', " logs", ActiveTab::Logs),
             ('s', " settings", ActiveTab::Settings),
             ('v', " tun", ActiveTab::Profiles),
@@ -498,6 +533,14 @@ impl App {
         rows.push(kv_row("Name", &name));
         rows.push(kv_row("Protocol", &protocol));
         rows.push(kv_row("Group", group_name));
+
+        // Subscription URL for the group
+        if let Some(g) = self.current_group() {
+            if !g.group.subscription_url.is_empty() {
+                rows.push(kv_row("Sub", &g.group.subscription_url));
+            }
+        }
+
         rows.push(Line::from(""));
 
         // ---- Connection ----
@@ -562,7 +605,7 @@ impl App {
         let inner = block.inner(area);
         f.render_widget(block, area);
 
-        let left = Span::styled(" WhoisThat v0.1.10 · xray-core", s_faint());
+        let left = Span::styled(" WhoisThat v0.1.11 · xray-core", s_faint());
         let left_w = left.width();
 
         let tun = if self.tun_enabled {
@@ -617,6 +660,7 @@ impl App {
         match popup {
             Popup::Import { input, .. } => self.render_import_popup(f, input, area),
             Popup::ConfirmDelete { name, .. } => self.render_confirm_popup(f, name, area),
+            Popup::EditSubscription { input, .. } => self.render_edit_sub_popup(f, input, area),
             Popup::Help => self.render_help_popup(f, area),
         }
     }
@@ -661,6 +705,52 @@ impl App {
 
         f.render_widget(
             Paragraph::new(" Enter import | Esc cancel | Ctrl+V paste from clipboard ")
+                .style(s_dim())
+                .alignment(Alignment::Center),
+            rows[3],
+        );
+    }
+
+    fn render_edit_sub_popup(&self, f: &mut Frame, input: &str, area: Rect) {
+        let pa = centered_rect(70, 32, area);
+        f.render_widget(Clear, pa);
+
+        let block = Block::default()
+            .title(" Edit Subscription URL ")
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(Style::default().fg(ACCENT))
+            .style(s_surface());
+
+        let inner = block.inner(pa);
+        f.render_widget(block, pa);
+
+        let rows = Layout::vertical([
+            Constraint::Length(1),
+            Constraint::Length(3),
+            Constraint::Length(1),
+            Constraint::Length(2),
+        ])
+        .split(inner);
+
+        f.render_widget(Paragraph::new("Subscription URL:").style(s_dim()), rows[0]);
+
+        let url = if input.is_empty() { "https://..." } else { input };
+        f.render_widget(
+            Paragraph::new(url)
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .border_style(Style::default().fg(ACCENT)),
+                )
+                .style(s_text()),
+            rows[1],
+        );
+
+        f.render_widget(Paragraph::new("").style(s_dim()), rows[2]);
+
+        f.render_widget(
+            Paragraph::new(" Enter save | Esc cancel | Ctrl+V paste ")
                 .style(s_dim())
                 .alignment(Alignment::Center),
             rows[3],
@@ -726,6 +816,8 @@ impl App {
             ("t", "Test profile latency"),
             ("a", "Import VLESS profile"),
             ("x", "Delete selected profile"),
+            ("u", "Update subscription"),
+            ("U", "Edit subscription URL"),
             ("v", "Toggle TUN mode"),
             ("Tab", "Switch focus (list ↔ details)"),
             ("l", "Logs tab"),

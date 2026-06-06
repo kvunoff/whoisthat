@@ -149,4 +149,35 @@ impl CoreClient {
             .send("die", &DieData {})
             .await
     }
+
+    pub async fn update_subscription(&self, group_id: i32) -> std::io::Result<()> {
+        self.conn
+            .lock()
+            .await
+            .send(
+                "update-subscription",
+                &UpdateSubscriptionData { group_id },
+            )
+            .await
+    }
+
+    pub async fn update_group(
+        &self,
+        id: i32,
+        name: &str,
+        subscription_url: &str,
+    ) -> std::io::Result<()> {
+        self.conn
+            .lock()
+            .await
+            .send(
+                "update-group",
+                &UpdateGroupData {
+                    id,
+                    name: name.to_string(),
+                    subscription_url: subscription_url.to_string(),
+                },
+            )
+            .await
+    }
 }

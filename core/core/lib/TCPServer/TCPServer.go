@@ -247,6 +247,14 @@ func (s *Server) handleConnection(conn net.Conn, clientID string) {
 			}
 			command_handler.UpdateProfile(data)
 
+		case "update-group":
+			var data structs.UpdateGroupData
+			if err := json.Unmarshal(raw_tcp_message.Data, &data); err != nil {
+				log.Printf("Invalid body for update-group%v", err)
+				return
+			}
+			command_handler.UpdateGroup(data)
+
 		default:
 			log.Println("Message not supported")
 		}

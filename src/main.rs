@@ -426,7 +426,23 @@ async fn handle_core_event(
         CoreEvent::Disconnected => {
             app.msg("Error: Core disconnected. Press q to quit.");
         }
-        _ => {}
+        CoreEvent::SubscriptionUpdated { group_id: _, profiles } => {
+            app.apply_subscription_updated(profiles);
+            app.msg("Subscription updated");
+        }
+
+        CoreEvent::GroupAdded(g) => {
+            app.apply_group_added(g);
+        }
+
+        CoreEvent::GroupDeleted(id) => {
+            app.apply_group_deleted(id);
+        }
+
+        CoreEvent::GroupUpdated(g) => {
+            app.apply_group_updated(&g);
+            app.msg("Group updated");
+        }
     }
     false
 }
@@ -618,6 +634,71 @@ async fn handle_popup_input(
                 return false;
             }
         },
+        Some(Popup::EditSubscription { mut input, group_id, mut cursor }) => match key.code {
+            KeyCode::Esc => {
+                app.popup = None;
+                app.focus = Focus::LeftPanel;
+            }
+            KeyCode::Enter => {
+                let url = input.trim().to_string();
+                let _ = client.update_group(group_id, "", &url).await;
+                app.msg("Updating subscription URL...");
+                app.focus = Focus::LeftPanel;
+            }
+            KeyCode::Char('q') => {
+                app.popup = Some(Popup::EditSubscription { input, group_id, cursor });
+                return false;
+            }
+            KeyCode::Char(c) => {
+                if c == 'v'
+                    && matches!(key.modifiers, crossterm::event::KeyModifiers::CONTROL)
+                {
+                    if let Some(clip) = read_clipboard() {
+                        input = clip;
+                        cursor = input.len();
+                    }
+                } else {
+                    if cursor <= input.len() {
+                        input.insert(cursor, c);
+                    } else {
+                        input.push(c);
+                    }
+                    cursor += 1;
+                }
+                app.popup = Some(Popup::EditSubscription { input, group_id, cursor });
+            }
+            KeyCode::Backspace => {
+                if cursor > 0 && !input.is_empty() {
+                    input.remove(cursor - 1);
+                    cursor -= 1;
+                }
+                app.popup = Some(Popup::EditSubscription { input, group_id, cursor });
+            }
+            KeyCode::Delete => {
+                if cursor < input.len() {
+                    input.remove(cursor);
+                }
+                app.popup = Some(Popup::EditSubscription { input, group_id, cursor });
+            }
+            KeyCode::Left => {
+                cursor = if cursor > 0 { cursor - 1 } else { 0 };
+                app.popup = Some(Popup::EditSubscription { input, group_id, cursor });
+            }
+            KeyCode::Right => {
+                if cursor < input.len() { cursor += 1; }
+                app.popup = Some(Popup::EditSubscription { input, group_id, cursor });
+            }
+            KeyCode::Home => {
+                app.popup = Some(Popup::EditSubscription { input, group_id, cursor: 0 });
+            }
+            KeyCode::End => {
+                cursor = input.len();
+                app.popup = Some(Popup::EditSubscription { input, group_id, cursor });
+            }
+            _ => {
+                app.popup = Some(Popup::EditSubscription { input, group_id, cursor });
+            }
+        },
         None => {}
     }
     false
@@ -738,6 +819,24 @@ async fn handle_normal_input(
             KeyCode::Char('d') => {
                 let _ = client.disconnect().await;
                 app.msg("Disconnecting...");
+            }
+            KeyCode::Char('u') => {
+                if let Some(g) = app.current_group() {
+                    if !g.group.subscription_url.is_empty() {
+                        let _ = client.update_subscription(g.group.id).await;
+                        app.msg("Updating subscription...");
+                    }
+                }
+            }
+            KeyCode::Char('U') => {
+                if let Some(g) = app.current_group() {
+                    app.popup = Some(Popup::EditSubscription {
+                        input: g.group.subscription_url.clone(),
+                        group_id: g.group.id,
+                        cursor: g.group.subscription_url.len(),
+                    });
+                    app.focus = Focus::Popup;
+                }
             }
             KeyCode::Char('t') => {
                 if let Some(p) = app.selected_profile() {

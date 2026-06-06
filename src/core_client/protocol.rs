@@ -143,6 +143,15 @@ pub struct UpdateProfileData {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateGroupData {
+    pub id: i32,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub subscription_url: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DieData {}
 
 // --- Notification/response types ---

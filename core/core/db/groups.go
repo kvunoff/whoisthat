@@ -222,6 +222,24 @@ func (db *DB) AddGroup(name string, subscription_url string) (structs.GroupAdded
 	return group_added, nil
 }
 
+func (db *DB) UpdateGroupConfig(group_id int, name string, subscription_url string) (structs.Group, error) {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	group, err := db.loadGroupConfig(group_id)
+	if err != nil {
+		return group, fmt.Errorf("failed to load group %d: %w", group_id, err)
+	}
+	if name != "" {
+		group.Name = name
+	}
+	if subscription_url != "" {
+		group.SubscriptionUrl = subscription_url
+	}
+	err = db.updateGroup(group)
+	return group, err
+}
+
 func (db *DB) LoadGroupConfig(id int) (structs.Group, error) {
 	db.mu.Lock()
 	defer db.mu.Unlock()

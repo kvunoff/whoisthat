@@ -59,6 +59,16 @@ func (cmd *Cmd) UpdateProfile(data structs.UpdateProfileData) {
 	cmd.send("profile-updated", profile_updated)
 }
 
+func (cmd *Cmd) UpdateGroup(data structs.UpdateGroupData) {
+	group, err := cmd.DB.UpdateGroupConfig(data.Id, data.Name, data.SubscriptionUrl)
+	if err != nil {
+		log.Printf("there was an error updating the group %d: %s", data.Id, err.Error())
+		cmd.warn("update-group-failed", "there was an error updating the group")
+		return
+	}
+	cmd.send("group-updated", group)
+}
+
 func (cmd *Cmd) DeleteProfiles(data structs.DeleteProfilesData) {
 	var deleted structs.ProfilesDeleted
 	for _, profile := range data.Profiles {

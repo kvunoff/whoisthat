@@ -98,6 +98,12 @@ type UpdateProfileData struct {
 	Name    string
 }
 
+type UpdateGroupData struct {
+	Id              int    `json:"id"`
+	Name            string `json:"name,omitzero"`
+	SubscriptionUrl string `json:"subscription_url,omitzero"`
+}
+
 // general types
 type DBConfig struct {
 	LastGroupId int `json:"last_group_id"`

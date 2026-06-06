@@ -13,6 +13,7 @@ pub enum CoreEvent {
     ProfileUpdated(Profile),
     GroupAdded(Group),
     GroupDeleted(i32),
+    GroupUpdated(Group),
     SubscriptionUpdated {
         group_id: i32,
         profiles: Vec<Profile>,
@@ -108,6 +109,13 @@ fn dispatch(msg: TcpMessage) -> CoreEvent {
             Err(e) => {
                 error!("Invalid group-deleted: {}", e);
                 CoreEvent::Error("Invalid group-deleted".into())
+            }
+        },
+        "group-updated" => match serde_json::from_value::<Group>(msg.data) {
+            Ok(data) => CoreEvent::GroupUpdated(data),
+            Err(e) => {
+                error!("Invalid group-updated: {}", e);
+                CoreEvent::Error("Invalid group-updated".into())
             }
         },
         "subscription-updated" => {
