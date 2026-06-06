@@ -29,7 +29,7 @@ func (cmd *Cmd) UpdateSubscription(data structs.UpdateSubscriptionData, proxy_ma
 	subscription_content, err := get(group.SubscriptionUrl)
 	if err != nil {
 		log.Printf("update-subscription: failed to GET %s: %v", group.SubscriptionUrl, err)
-		cmd.warn("update-subscription-failed", "Failed to get subscription content")
+		cmd.warn("update-subscription-failed", fmt.Sprintf("Failed to get subscription: %v", err))
 		return
 	}
 

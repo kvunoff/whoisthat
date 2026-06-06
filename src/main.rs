@@ -529,7 +529,7 @@ async fn handle_popup_input(
                     app.focus = Focus::LeftPanel;
                 }
             }
-            KeyCode::Char(c) if c != 'q' => {
+            KeyCode::Char(c) => {
                 if c == 'v'
                     && matches!(key.modifiers, crossterm::event::KeyModifiers::CONTROL)
                 {
@@ -644,10 +644,6 @@ async fn handle_popup_input(
                 let _ = client.update_group(group_id, "", &url).await;
                 app.msg("Updating subscription URL...");
                 app.focus = Focus::LeftPanel;
-            }
-            KeyCode::Char('q') => {
-                app.popup = Some(Popup::EditSubscription { input, group_id, cursor });
-                return false;
             }
             KeyCode::Char(c) => {
                 if c == 'v'
