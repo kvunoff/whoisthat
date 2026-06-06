@@ -36,7 +36,7 @@ pub struct ProfileID {
     pub group_id: i32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Group {
     pub id: i32,
     #[serde(default)]
@@ -45,6 +45,16 @@ pub struct Group {
     pub subscription_url: String,
     #[serde(default)]
     pub last_id: i32,
+    #[serde(default)]
+    pub sub_last_updated: i64,
+    #[serde(default)]
+    pub sub_expires: i64,
+    #[serde(default)]
+    pub sub_upload: i64,
+    #[serde(default)]
+    pub sub_download: i64,
+    #[serde(default)]
+    pub sub_total: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

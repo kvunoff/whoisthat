@@ -8,7 +8,10 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strconv"
+	"strings"
 	"sync"
+	"time"
 )
 
 var subscription_mutex = sync.Mutex{}
@@ -26,12 +29,17 @@ func (cmd *Cmd) UpdateSubscription(data structs.UpdateSubscriptionData, proxy_ma
 		return
 	}
 
-	subscription_content, err := get(group.SubscriptionUrl)
+	subscription_content, resp, err := get(group.SubscriptionUrl)
 	if err != nil {
 		log.Printf("update-subscription: failed to GET %s: %v", group.SubscriptionUrl, err)
 		cmd.warn("update-subscription-failed", fmt.Sprintf("Failed to get subscription: %v", err))
 		return
 	}
+
+	// Parse subscription-userinfo header (traffic / expiry)
+	parseSubUserInfo(resp, &group)
+	group.SubLastUpdated = time.Now().Unix()
+	cmd.DB.UpdateGroupConfig(group.Id, group.Name, group.SubscriptionUrl)
 
 	db_profiles := lib.GetDBAddProfileDatasFromStr(subscription_content, data.GroupId)
 	if len(db_profiles) == 0 {
@@ -55,21 +63,53 @@ func (cmd *Cmd) UpdateSubscription(data structs.UpdateSubscriptionData, proxy_ma
 
 }
 
-func get(url string) (string, error) {
+func get(url string) (string, *http.Response, error) {
 	resp, err := http.Get(url)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return "", fmt.Errorf("HTTP %d", resp.StatusCode)
+		resp.Body.Close()
+		return "", nil, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
 
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 
-	return string(bodyBytes), nil
+	return string(bodyBytes), resp, nil
+}
+
+func parseSubUserInfo(resp *http.Response, group *structs.Group) {
+	if resp == nil {
+		return
+	}
+	hdr := resp.Header.Get("subscription-userinfo")
+	if hdr == "" {
+		return
+	}
+	for _, part := range strings.Split(hdr, ";") {
+		part = strings.TrimSpace(part)
+		kv := strings.SplitN(part, "=", 2)
+		if len(kv) != 2 {
+			continue
+		}
+		val, err := strconv.ParseInt(strings.TrimSpace(kv[1]), 10, 64)
+		if err != nil {
+			continue
+		}
+		switch strings.TrimSpace(kv[0]) {
+		case "upload":
+			group.SubUpload = val
+		case "download":
+			group.SubDownload = val
+		case "total":
+			group.SubTotal = val
+		case "expire":
+			group.SubExpires = val
+		}
+	}
 }

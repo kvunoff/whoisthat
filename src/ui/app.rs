@@ -28,12 +28,18 @@ pub enum Focus {
     Popup,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Popup {
     Import { input: String, cursor: usize },
     ConfirmDelete { gid: i32, pid: i32, name: String },
     EditSubscription { input: String, group_id: i32, cursor: usize },
     Help,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum TreeNode {
+    Group(usize),
+    Profile(usize, usize),
 }
 
 pub struct App {
@@ -46,7 +52,6 @@ pub struct App {
 
     pub tab: ActiveTab,
     pub focus: Focus,
-    pub selected_group_idx: usize,
     pub cursor: usize,
     pub scroll: usize,
     pub popup: Option<Popup>,
@@ -71,7 +76,6 @@ impl App {
             public_ip: String::new(),
             tab: ActiveTab::Profiles,
             focus: Focus::LeftPanel,
-            selected_group_idx: 0,
             cursor: 0,
             scroll: 0,
             popup: None,
@@ -86,22 +90,64 @@ impl App {
         }
     }
 
-    pub fn current_group(&self) -> Option<&GroupWithProfiles> {
-        self.groups.get(self.selected_group_idx)
+    // --- tree helpers ---
+
+    fn tree_len(&self) -> usize {
+        let mut n = 0;
+        for g in &self.groups {
+            n += 1; // group header
+            n += g.profiles.len();
+        }
+        n
     }
 
-    pub fn profiles(&self) -> &[Profile] {
-        self.current_group()
-            .map(|g| g.profiles.as_slice())
-            .unwrap_or(&[])
+    fn tree_node_at(&self, cursor: usize) -> Option<TreeNode> {
+        let mut pos = 0;
+        for (gi, g) in self.groups.iter().enumerate() {
+            if pos == cursor {
+                return Some(TreeNode::Group(gi));
+            }
+            pos += 1;
+            let plen = g.profiles.len();
+            if cursor < pos + plen {
+                return Some(TreeNode::Profile(gi, cursor - pos));
+            }
+            pos += plen;
+        }
+        None
+    }
+
+    fn clamp_cursor(&mut self) {
+        let len = self.tree_len();
+        if len == 0 {
+            self.cursor = 0;
+        } else if self.cursor >= len {
+            self.cursor = len - 1;
+        }
+    }
+
+    // --- helpers (used by main.rs and rendering) ---
+
+    pub fn current_group(&self) -> Option<&GroupWithProfiles> {
+        match self.tree_node_at(self.cursor)? {
+            TreeNode::Group(gi) => self.groups.get(gi),
+            TreeNode::Profile(gi, _) => self.groups.get(gi),
+        }
+    }
+
+    pub fn current_group_id(&self) -> i32 {
+        self.current_group().map(|g| g.group.id).unwrap_or(0)
     }
 
     pub fn selected_profile(&self) -> Option<&Profile> {
-        self.profiles().get(self.cursor)
+        match self.tree_node_at(self.cursor)? {
+            TreeNode::Profile(gi, pi) => self.groups.get(gi)?.profiles.get(pi),
+            TreeNode::Group(_) => None,
+        }
     }
 
-    pub fn profile_count(&self) -> usize {
-        self.profiles().len()
+    pub fn on_group(&self) -> bool {
+        matches!(self.tree_node_at(self.cursor), Some(TreeNode::Group(_)))
     }
 
     pub fn is_connected(&self) -> bool {
@@ -115,8 +161,16 @@ impl App {
             .map(|p| (p.group_id, p.id))
     }
 
+    pub fn connected_group_name(&self) -> Option<&str> {
+        let (gid, _) = self.connected_id()?;
+        self.groups
+            .iter()
+            .find(|g| g.group.id == gid)
+            .map(|g| g.group.name.as_str())
+    }
+
     pub fn cursor_down(&mut self) {
-        let len = self.profile_count();
+        let len = self.tree_len();
         if len == 0 || self.cursor + 1 >= len {
             return;
         }
@@ -134,7 +188,7 @@ impl App {
     }
 
     pub fn cursor_bottom(&mut self) {
-        let len = self.profile_count();
+        let len = self.tree_len();
         if len > 0 {
             self.cursor = len - 1;
         }
@@ -148,14 +202,13 @@ impl App {
         self.last_msg = Some(text.into());
     }
 
+    // --- state mutations ---
+
     pub fn apply_state(&mut self, state: ApplicationState) {
         self.groups = state.groups;
         self.connection_status = state.connection_status;
         self.tun_enabled = state.tun_status;
-        let len = self.profile_count();
-        if self.cursor >= len && len > 0 {
-            self.cursor = len - 1;
-        }
+        self.clamp_cursor();
     }
 
     pub fn apply_profiles_added(&mut self, profiles: Vec<Profile>) {
@@ -172,10 +225,7 @@ impl App {
                 g.profiles.retain(|p| p.id != d.id);
             }
         }
-        let len = self.profile_count();
-        if self.cursor >= len && len > 0 {
-            self.cursor = len - 1;
-        }
+        self.clamp_cursor();
     }
 
     pub fn apply_subscription_updated(&mut self, profiles: Vec<Profile>) {
@@ -183,9 +233,14 @@ impl App {
             if let Some(g) = self.groups.iter_mut().find(|g| g.group.id == gid) {
                 g.profiles = profiles;
             }
-            let len = self.profile_count();
-            if self.cursor >= len && len > 0 {
-                self.cursor = len - 1;
+            self.clamp_cursor();
+        }
+    }
+
+    pub fn apply_profile_updated(&mut self, p: &Profile) {
+        if let Some(g) = self.groups.iter_mut().find(|g| g.group.id == p.group_id) {
+            if let Some(existing) = g.profiles.iter_mut().find(|pr| pr.id == p.id) {
+                *existing = p.clone();
             }
         }
     }
@@ -199,23 +254,12 @@ impl App {
 
     pub fn apply_group_deleted(&mut self, id: i32) {
         self.groups.retain(|g| g.group.id != id);
-        if self.selected_group_idx >= self.groups.len() && !self.groups.is_empty() {
-            self.selected_group_idx = self.groups.len() - 1;
-        }
-        self.cursor = 0;
+        self.clamp_cursor();
     }
 
     pub fn apply_group_updated(&mut self, g: &Group) {
         if let Some(existing) = self.groups.iter_mut().find(|gw| gw.group.id == g.id) {
             existing.group = g.clone();
-        }
-    }
-
-    pub fn apply_profile_updated(&mut self, p: &Profile) {
-        if let Some(g) = self.groups.iter_mut().find(|g| g.group.id == p.group_id) {
-            if let Some(e) = g.profiles.iter_mut().find(|x| x.id == p.id) {
-                *e = p.clone();
-            }
         }
     }
 }
@@ -228,9 +272,9 @@ impl App {
         f.render_widget(Block::default().style(s_bg()), area);
 
         let v = Layout::vertical([
-            Constraint::Length(4), // top bar (tabs in bottom border + stats)
-            Constraint::Min(0),    // main area
-            Constraint::Length(3), // bottom bar
+            Constraint::Length(4),
+            Constraint::Min(0),
+            Constraint::Length(3),
         ])
         .split(area);
 
@@ -323,9 +367,6 @@ impl App {
                 result.push(Span::raw("・"));
             }
         }
-        
-        result.push(Span::raw(" "));
-        
         result
     }
 
@@ -356,17 +397,16 @@ impl App {
         ])
         .split(area);
 
-        self.render_profile_list(f, h[0]);
+        self.render_tree(f, h[0]);
         self.render_details(f, h[1]);
     }
 
-    fn render_profile_list(&self, f: &mut Frame, area: Rect) {
+    fn render_tree(&self, f: &mut Frame, area: Rect) {
         let left_focus = self.focus == Focus::LeftPanel;
         let border_color = if left_focus { BORDER_ACTIVE } else { BORDER };
-        let title = format!(" Profiles ({}) ", self.profile_count());
 
         let block = Block::default()
-            .title(title)
+            .title(" Profiles ")
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
             .border_style(Style::default().fg(border_color))
@@ -375,96 +415,85 @@ impl App {
         let inner = block.inner(area);
         f.render_widget(block, area);
 
-        if self.profiles().is_empty() {
-            let msg = Paragraph::new("No profiles.\nPress [a] to import VLESS URI.")
+        if self.groups.is_empty() {
+            let msg = Paragraph::new("No groups.\nPress [a] to import profiles.")
                 .style(s_dim())
                 .alignment(Alignment::Center);
-            let mid = Layout::vertical([
-                Constraint::Percentage(45),
-                Constraint::Min(2),
-                Constraint::Percentage(55),
-            ])
-            .split(inner)[1];
-            f.render_widget(msg, mid);
+            f.render_widget(msg, inner);
             return;
         }
 
-        let vis = inner.height as usize;
-        let total = self.profile_count();
-        let max_scroll = total.saturating_sub(vis);
-        let scroll = self.scroll.min(max_scroll);
+        let (gid, pid) = self.connected_id().unwrap_or((-1, -1));
+        let mut items: Vec<ListItem> = Vec::new();
+        let mut cursor_pos_in_list = 0;
+        let mut pos = 0;
 
-        let items: Vec<ListItem> = self
-            .profiles()
-            .iter()
-            .enumerate()
-            .skip(scroll)
-            .take(vis)
-            .map(|(i, p)| {
-                let is_cursor = i == self.cursor;
-                self.render_list_item(p, is_cursor, left_focus)
-            })
-            .collect();
-
-        f.render_widget(List::new(items), inner);
-    }
-
-    fn render_list_item(&self, p: &Profile, cursor: bool, panel_focused: bool) -> ListItem<'_> {
-        let is_active = self
-            .connected_id()
-            .map(|(gid, pid)| gid == p.group_id && pid == p.id)
-            .unwrap_or(false);
-
-        let prefix = if cursor && panel_focused {
-            Span::styled("  ", s_accent().bg(SURFACE_HL))
-        } else if cursor {
-            Span::styled("  ", s_accent().bg(SURFACE_HL))
-        } else if is_active {
-            Span::styled("● ", s_success())
-        } else {
-            Span::styled("  ", s_faint())
-        };
-
-        let name = if p.name.is_empty() {
-            if p.address.is_empty() {
-                "Unknown".to_string()
-            } else {
-                p.address.clone()
+        for (gi, g) in self.groups.iter().enumerate() {
+            if pos == self.cursor {
+                cursor_pos_in_list = items.len();
             }
-        } else {
-            p.name.clone()
-        };
+            pos += 1;
 
-        let name_style = if cursor && panel_focused {
-            s_accent()
-        } else if cursor {
-            s_accent()
-        } else if is_active {
-            s_success()
-        } else {
-            s_text()
-        };
+            let has_sub = !g.group.subscription_url.is_empty();
+            let marker = if has_sub { " ↻" } else { "" };
+            let conn_mark = if g.profiles.iter().any(|p| p.group_id == gid && p.id == pid) {
+                " ●"
+            } else {
+                ""
+            };
+            let group_style = if pos - 1 == self.cursor && left_focus {
+                s_accent_bold()
+            } else {
+                s_accent()
+            };
+            items.push(ListItem::new(Line::from(vec![
+                Span::styled(format!("▸{}{}", marker, conn_mark), group_style),
+                Span::styled(format!(" {} ({})", g.group.name, g.profiles.len()), s_text()),
+            ])));
 
-        let proto = Span::styled(format!(" {}", p.protocol.to_uppercase()), s_faint());
+            for (pi, p) in g.profiles.iter().enumerate() {
+                if pos == self.cursor {
+                    cursor_pos_in_list = items.len();
+                }
+                pos += 1;
 
-        let (test_txt, test_style) = match p.test_result {
-            -2 => ("TESTING".to_string(), s_dim()),
-            -1 => ("FAILED".to_string(), s_error()),
-            x if x > 0 => (format!("{}ms", x), s_success()),
-            _ => ("·".to_string(), s_faint()),
-        };
-        let test = Span::styled(format!(" {}", test_txt), test_style);
+                let conn_mark = if p.group_id == gid && p.id == pid {
+                    Span::styled("● ", s_success())
+                } else {
+                    Span::styled("  ", s_dim())
+                };
+                let name = if p.name.is_empty() {
+                    if p.address.is_empty() { "Unknown" } else { &p.address }
+                } else {
+                    &p.name
+                };
+                let proto = if p.protocol.is_empty() { "—" } else { &p.protocol };
+                let test = match p.test_result {
+                    -2 => Span::styled(" ...", s_dim()),
+                    -1 => Span::styled(" err", s_error()),
+                    0 => Span::styled("", s_dim()),
+                    ms => Span::styled(format!(" {}ms", ms), s_success()),
+                };
+                let style = if pos - 1 == self.cursor && left_focus {
+                    s_text()
+                } else {
+                    s_dim()
+                };
+                items.push(ListItem::new(Line::from(vec![
+                    Span::styled("  ", s_dim()),
+                    conn_mark,
+                    Span::styled(name, style),
+                    Span::styled(format!(" [{}]", proto.to_uppercase()), s_faint()),
+                    test,
+                ])));
+            }
+        }
 
-        let row_style = if cursor && panel_focused {
-            Style::default().bg(SURFACE_HL)
-        } else if cursor {
-            Style::default().bg(SURFACE_HL)
-        } else {
-            s_bg()
-        };
+        let list = List::new(items)
+            .highlight_style(Style::default())
+            .scroll_padding(5);
 
-        ListItem::new(Line::from(vec![prefix, Span::styled(name, name_style), proto, test]))
-            .style(row_style)
+        f.render_widget(list, inner);
     }
 
     fn render_details(&self, f: &mut Frame, area: Rect) {
@@ -472,7 +501,6 @@ impl App {
         let border_color = if right_focus { BORDER_ACTIVE } else { BORDER };
 
         let block = Block::default()
-            .title(" Details ")
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
             .border_style(Style::default().fg(border_color))
@@ -481,22 +509,108 @@ impl App {
         let inner = block.inner(area);
         f.render_widget(block, area);
 
-        let Some(p) = self.selected_profile() else {
-            let msg = Paragraph::new("No profile selected.\nUse j/k to navigate, [a] to import.")
-                .style(s_dim())
-                .alignment(Alignment::Center);
-            let mid = Layout::vertical([
-                Constraint::Percentage(45),
-                Constraint::Min(3),
-                Constraint::Percentage(55),
-            ])
-            .split(inner)[1];
-            f.render_widget(msg, mid);
-            return;
-        };
+        let node = self.tree_node_at(self.cursor);
+
+        match node {
+            Some(TreeNode::Group(gi)) => {
+                let g = &self.groups[gi];
+                let title = format!(" {} ", g.group.name);
+                f.render_widget(
+                    Paragraph::new(title).style(s_accent_bold()),
+                    Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).split(inner)[0],
+                );
+                self.render_group_details(f, g, inner);
+            }
+            Some(TreeNode::Profile(_, _)) => {
+                let Some(p) = self.selected_profile() else {
+                    f.render_widget(
+                        Paragraph::new("No profile selected.").style(s_dim()),
+                        inner,
+                    );
+                    return;
+                };
+                self.render_profile_details(f, p, inner);
+            }
+            None => {
+                f.render_widget(
+                    Paragraph::new("No profile selected.\nUse j/k to navigate, [a] to import.")
+                        .style(s_dim())
+                        .alignment(Alignment::Center),
+                    inner,
+                );
+            }
+        }
+    }
+
+    fn render_group_details(&self, f: &mut Frame, g: &GroupWithProfiles, area: Rect) {
+        let block = Block::default()
+            .style(s_bg());
+        let inner = block.inner(area);
+        f.render_widget(block, area);
+
+        let mut rows: Vec<Line> = Vec::new();
+
+        let conn = self.connected_group_name();
+        let connected = conn == Some(g.group.name.as_str());
+
+        rows.push(section_header("Group"));
+        rows.push(kv_row("Name", &g.group.name));
+        let plen = g.profiles.len().to_string();
+        rows.push(kv_row("Profiles", &plen));
+
+        if !g.group.subscription_url.is_empty() {
+            rows.push(Line::from(""));
+            rows.push(section_header("Subscription"));
+            rows.push(kv_row("URL", &g.group.subscription_url));
+
+            if g.group.sub_last_updated > 0 {
+                let ago = format_relative(g.group.sub_last_updated);
+                rows.push(kv_row("Updated", &ago));
+            }
+            if g.group.sub_expires > 0 {
+                let expiry = format_expiry(g.group.sub_expires);
+                rows.push(kv_row("Expires", &expiry));
+            }
+            if g.group.sub_upload > 0 || g.group.sub_download > 0 {
+                let used = format_bytes(g.group.sub_upload + g.group.sub_download);
+                let limit = if g.group.sub_total > 0 {
+                    format_bytes(g.group.sub_total)
+                } else {
+                    "∞".to_string()
+                };
+                let traffic = format!("{} / {}", used, limit);
+                rows.push(kv_row("Traffic", &traffic));
+            }
+        }
+
+        if connected {
+            rows.push(Line::from(""));
+            rows.push(Line::from(Span::styled("● Connected to this group", s_success())));
+        }
+
+        let rows_v: Vec<ratatui::widgets::Paragraph> = rows
+            .into_iter()
+            .map(|l| Paragraph::new(l))
+            .collect();
+
+        let mut y = 1;
+        for p in &rows_v {
+            if y < inner.height {
+                let r = Rect::new(inner.x + 1, inner.y + y, inner.width.saturating_sub(2), 1);
+                f.render_widget(p.clone(), r);
+                y += 1;
+            }
+        }
+    }
+
+    fn render_profile_details(&self, f: &mut Frame, p: &Profile, area: Rect) {
+        let block = Block::default()
+            .style(s_bg());
+        let inner = block.inner(area);
+        f.render_widget(block, area);
 
         let uri_params = uri::parse_vless_uri(&p.uri);
-        let group_name = self.current_group().map(|g| &g.group.name).unwrap_or(&p.name);
+        let group_name = self.current_group().map(|g| g.group.name.as_str()).unwrap_or("?");
 
         let name = if p.name.is_empty() {
             if p.address.is_empty() { "Unknown".to_string() } else { p.address.clone() }
@@ -528,7 +642,6 @@ impl App {
 
         let mut rows: Vec<Line> = Vec::new();
 
-        // ---- Profile ----
         rows.push(section_header("Profile"));
         rows.push(kv_row("Name", &name));
         rows.push(kv_row("Protocol", &protocol));
@@ -543,7 +656,6 @@ impl App {
 
         rows.push(Line::from(""));
 
-        // ---- Connection ----
         rows.push(section_header("Connection"));
         rows.push(kv_row("Address", if p.address.is_empty() { "—" } else { &p.address }));
         rows.push(kv_row("Port", port));
@@ -553,7 +665,6 @@ impl App {
         rows.push(kv_row("Flow", flow));
         rows.push(Line::from(""));
 
-        // ---- Status ----
         rows.push(section_header("Status"));
         let state = if conn_mark {
             Span::styled("● Connected", s_success())
@@ -562,96 +673,35 @@ impl App {
         };
         rows.push(kv_row_span("State", state));
 
-        let uptime = if conn_mark {
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs() as i64;
-            let elapsed = (now - self.connection_status.connected_at).max(0) as u64;
-            let h = elapsed / 3600;
-            let m = (elapsed % 3600) / 60;
-            let s = elapsed % 60;
-            Span::styled(format!("{:02}:{:02}:{:02}", h, m, s), s_success())
-        } else {
-            Span::styled("—", s_dim())
-        };
-        rows.push(kv_row_span("Uptime", uptime));
+        if conn_mark {
+            let ts = self.connection_status.connected_at;
+            if ts > 0 {
+                let dt = chrono::DateTime::from_timestamp(ts, 0)
+                    .map(|d| d.format("%H:%M:%S").to_string())
+                    .unwrap_or_default();
+                rows.push(kv_row("Since", &dt));
+            }
+        }
+        if p.test_result > 0 {
+            rows.push(kv_row("Latency", &format!("{} ms", p.test_result)));
+        } else if p.test_result == -2 {
+            rows.push(kv_row("Latency", "testing..."));
+        }
+        rows.push(kv_row("TUN", if self.tun_enabled { "on" } else { "off" }));
 
-        let latency = match p.test_result {
-            -2 => Span::styled("Testing...", s_dim()),
-            -1 => Span::styled("Failed", s_error()),
-            x if x > 0 => Span::styled(format!("{} ms", x), s_success()),
-            _ => Span::styled("Untested", s_faint()),
-        };
-        rows.push(kv_row_span("Latency", latency));
+        let rows_v: Vec<ratatui::widgets::Paragraph> = rows
+            .into_iter()
+            .map(|l| Paragraph::new(l))
+            .collect();
 
-        let tun = if self.tun_enabled {
-            Span::styled("● Active", s_success())
-        } else {
-            Span::styled("○ Inactive", s_disconnected())
-        };
-        rows.push(kv_row_span("TUN", tun));
-
-        f.render_widget(Paragraph::new(rows).style(s_bg()), inner);
-    }
-
-    fn render_bottom_bar(&self, f: &mut Frame, area: Rect) {
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .border_type(BorderType::Rounded)
-            .border_style(Style::default().fg(BORDER))
-            .style(s_bg());
-
-        let inner = block.inner(area);
-        f.render_widget(block, area);
-
-        let left = Span::styled(" WhoisThat v0.1.11 · xray-core", s_faint());
-        let left_w = left.width();
-
-        let tun = if self.tun_enabled {
-            Span::styled(" [TUN]", s_success())
-        } else {
-            Span::styled("", s_dim())
-        };
-        let tun_w = tun.width();
-
-        let uptime = if self.connection_status.connected_at > 0 {
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs() as i64;
-            let elapsed = (now - self.connection_status.connected_at).max(0) as u64;
-            let h = elapsed / 3600;
-            let m = (elapsed % 3600) / 60;
-            let s = elapsed % 60;
-            Span::styled(format!(" [{:02}:{:02}:{:02}]", h, m, s), s_success())
-        } else {
-            Span::styled("", s_dim())
-        };
-        let uptime_w = uptime.width();
-
-        let inner_w = inner.width as usize;
-        let gap = 3;
-
-        let msg = self.last_msg.as_deref().unwrap_or("");
-        let max_right = inner_w
-            .saturating_sub(left_w + tun_w + uptime_w + gap + gap);
-        let right = if msg.is_empty() {
-            Span::raw("")
-        } else if msg.len() <= max_right {
-            Span::styled(msg, s_dim())
-        } else if max_right > 2 {
-            Span::styled(
-                format!("{}…", &msg[..max_right.saturating_sub(2)]),
-                s_dim(),
-            )
-        } else {
-            Span::raw("")
-        };
-
-        // Layout: [left] [tun] ... [right]
-        let spans = vec![left, tun, uptime, Span::raw(" ".repeat(gap)), right];
-        f.render_widget(Paragraph::new(Line::from(spans)), inner);
+        let mut y = 0;
+        for p in &rows_v {
+            if y < inner.height {
+                let r = Rect::new(inner.x + 1, inner.y + y, inner.width.saturating_sub(2), 1);
+                f.render_widget(p.clone(), r);
+                y += 1;
+            }
+        }
     }
 
     // ===================== POPUPS =====================
@@ -785,8 +835,8 @@ impl App {
         );
 
         f.render_widget(
-            Paragraph::new(" Enter yes | Esc no ")
-                .style(s_dim())
+            Paragraph::new(" Enter confirm | Esc cancel ")
+                .style(s_accent())
                 .alignment(Alignment::Center),
             chunks[1],
         );
@@ -797,7 +847,7 @@ impl App {
         f.render_widget(Clear, pa);
 
         let block = Block::default()
-            .title(" Help ")
+            .title(" Keyboard Shortcuts ")
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
             .border_style(Style::default().fg(ACCENT))
@@ -841,76 +891,165 @@ impl App {
         let mid = Layout::vertical([
             Constraint::Min(help.len() as u16 + 2),
             Constraint::Length(1),
-            Constraint::Length(1),
         ])
         .split(inner)[0];
 
-        f.render_widget(Paragraph::new(lines), mid);
-
-        let hint = Layout::vertical([
-            Constraint::Min(help.len() as u16 + 3),
-            Constraint::Length(1),
-        ])
-        .split(inner)[1];
-
         f.render_widget(
-            Paragraph::new(" Press any key to close ")
-                .style(s_faint())
-                .alignment(Alignment::Center),
-            hint,
+            Paragraph::new(lines)
+                .style(s_text())
+                .block(Block::default().style(s_surface())),
+            mid,
         );
+    }
+
+    // ===================== BOTTOM BAR =====================
+
+    fn render_bottom_bar(&self, f: &mut Frame, area: Rect) {
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(Style::default().fg(BORDER))
+            .style(s_bg());
+
+        let inner = block.inner(area);
+        f.render_widget(block, area);
+
+        let left = Span::styled(" WhoisThat v0.1.11 · xray-core", s_faint());
+        let left_w = left.width();
+
+        let tun = if self.tun_enabled {
+            Span::styled(" [TUN]", s_success())
+        } else {
+            Span::styled("", s_dim())
+        };
+        let tun_w = tun.width();
+
+        let uptime = if self.connection_status.connected_at > 0 {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs() as i64;
+            let elapsed = (now - self.connection_status.connected_at).max(0) as u64;
+            let h = elapsed / 3600;
+            let m = (elapsed % 3600) / 60;
+            let s = elapsed % 60;
+            Span::styled(format!(" [{:02}:{:02}:{:02}]", h, m, s), s_success())
+        } else {
+            Span::styled("", s_dim())
+        };
+        let uptime_w = uptime.width();
+
+        let inner_w = inner.width as usize;
+        let gap = 3;
+
+        let msg = self.last_msg.as_deref().unwrap_or("");
+        let max_right = inner_w
+            .saturating_sub(left_w + tun_w + uptime_w + gap + gap);
+        let right = if msg.is_empty() {
+            Span::raw("")
+        } else if msg.len() <= max_right {
+            Span::styled(msg, s_dim())
+        } else if max_right > 2 {
+            Span::styled(
+                format!("{}…", &msg[..max_right.saturating_sub(2)]),
+                s_dim(),
+            )
+        } else {
+            Span::raw("")
+        };
+
+        let spans = vec![left, tun, uptime, Span::raw(" ".repeat(gap)), right];
+        f.render_widget(Paragraph::new(Line::from(spans)), inner);
     }
 }
 
-fn section_header(label: &str) -> Line<'static> {
-    Line::from(vec![Span::styled(
-        format!(" {} ", label),
-        s_accent_bold().add_modifier(Modifier::BOLD),
-    )])
+// ===================== HELPERS =====================
+
+fn section_header(title: &str) -> Line<'_> {
+    Line::from(Span::styled(format!("─── {} ───", title), s_accent()))
 }
 
-fn kv_row(key: &str, val: &str) -> Line<'static> {
+fn kv_row(key: &str, val: impl Into<String>) -> Line<'static> {
     Line::from(vec![
-        Span::styled(format!("  {:<10}", key), s_faint()),
-        Span::styled(val.to_string(), s_text()),
+        Span::styled(format!("{:>10}  ", key), s_faint()),
+        Span::styled(val.into(), s_text()),
     ])
 }
 
-fn kv_row_span(key: &str, val: Span<'static>) -> Line<'static> {
+fn kv_row_span<'a>(key: &str, val: Span<'a>) -> Line<'a> {
     Line::from(vec![
-        Span::styled(format!("  {:<10}", key), s_faint()),
+        Span::styled(format!("{:>10}  ", key), s_faint()),
         val,
     ])
 }
 
 fn format_bytes(bytes: i64) -> String {
-    if bytes <= 0 {
-        return "0".into();
+    if bytes == 0 {
+        return "0".to_string();
     }
     let b = bytes as f64;
     if b < 1024.0 {
-        format!("{}", bytes)
+        format!("{} B", bytes)
     } else if b < 1024.0 * 1024.0 {
-        format!("{:.1}K", b / 1024.0)
+        format!("{:.1} KB", b / 1024.0)
     } else if b < 1024.0 * 1024.0 * 1024.0 {
-        format!("{:.1}M", b / (1024.0 * 1024.0))
+        format!("{:.1} MB", b / (1024.0 * 1024.0))
+    } else if b < 1024.0 * 1024.0 * 1024.0 * 1024.0 {
+        format!("{:.1} GB", b / (1024.0 * 1024.0 * 1024.0))
     } else {
-        format!("{:.2}G", b / (1024.0 * 1024.0 * 1024.0))
+        format!("{:.1} TB", b / (1024.0 * 1024.0 * 1024.0 * 1024.0))
     }
 }
 
-fn centered_rect(px: u16, py: u16, r: Rect) -> Rect {
-    let pv = Layout::vertical([
-        Constraint::Percentage((100 - py) / 2),
-        Constraint::Percentage(py),
-        Constraint::Percentage((100 - py) / 2),
+fn format_relative(unix_ts: i64) -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+    let diff = now - unix_ts;
+    if diff < 0 {
+        return "just now".to_string();
+    }
+    if diff < 60 {
+        return format!("{}s ago", diff);
+    }
+    if diff < 3600 {
+        return format!("{}m ago", diff / 60);
+    }
+    if diff < 86400 {
+        return format!("{}h ago", diff / 3600);
+    }
+    format!("{}d ago", diff / 86400)
+}
+
+fn format_expiry(unix_ts: i64) -> String {
+    let dt = chrono::DateTime::from_timestamp(unix_ts, 0);
+    let Some(dt) = dt else { return "—".to_string() };
+    let now = chrono::Utc::now();
+    let days = (dt - now).num_days();
+    if days < 0 {
+        format!("{} (expired)", dt.format("%Y-%m-%d"))
+    } else if days == 0 {
+        format!("{} (today)", dt.format("%Y-%m-%d"))
+    } else if days == 1 {
+        format!("{} (tomorrow)", dt.format("%Y-%m-%d"))
+    } else {
+        format!("{} ({}d left)", dt.format("%Y-%m-%d"), days)
+    }
+}
+
+fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
+    let popup_layout = Layout::vertical([
+        Constraint::Percentage((100 - percent_y) / 2),
+        Constraint::Percentage(percent_y),
+        Constraint::Percentage((100 - percent_y) / 2),
     ])
     .split(r);
 
     Layout::horizontal([
-        Constraint::Percentage((100 - px) / 2),
-        Constraint::Percentage(px),
-        Constraint::Percentage((100 - px) / 2),
+        Constraint::Percentage((100 - percent_x) / 2),
+        Constraint::Percentage(percent_x),
+        Constraint::Percentage((100 - percent_x) / 2),
     ])
-    .split(pv[1])[1]
+    .split(popup_layout[1])[1]
 }

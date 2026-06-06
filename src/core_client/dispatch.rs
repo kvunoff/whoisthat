@@ -98,6 +98,7 @@ fn dispatch(msg: TcpMessage) -> CoreEvent {
                 name: data.name,
                 subscription_url: data.subscription_url,
                 last_id: 0,
+                ..Default::default()
             }),
             Err(e) => {
                 error!("Invalid group-added: {}", e);

@@ -119,6 +119,11 @@ type Group struct {
 	SubscriptionUrl string `json:"subscription_url"`
 	Name            string `json:"name"`
 	LastId          int    `json:"last_id"`
+	SubLastUpdated  int64  `json:"sub_last_updated,omitzero"`
+	SubExpires      int64  `json:"sub_expires,omitzero"`
+	SubUpload       int64  `json:"sub_upload,omitzero"`
+	SubDownload     int64  `json:"sub_download,omitzero"`
+	SubTotal        int64  `json:"sub_total,omitzero"`
 }
 
 type Profile struct {
