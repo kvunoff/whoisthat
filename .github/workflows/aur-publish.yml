@@ -14,58 +14,18 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0   # needed for tags
+          fetch-depth: 0
 
       # --- 2. Parse version from the tag ------------------------------------
       - name: Parse version from tag
         id: version
         run: |
           RAW="${{ github.ref_name }}"
-          # Strip leading 'v'
           VERSION="${RAW#v}"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "Tag: ${RAW}  ->  Version: ${VERSION}"
 
-      # --- 3. Clone AUR repo, compute pkgrel --------------------------------
-      #       If the AUR pkgver matches ours → we are force-pushing a fix,
-      #       so increment pkgrel.  If the version changed → reset to 1.
-      - name: Compute pkgrel from AUR state
-        id: pkgrel
-        env:
-          AUR_SSH_KEY: ${{ secrets.AUR_SSH_KEY }}
-        run: |
-          # Setup SSH so we can clone the AUR repo
-          mkdir -p ~/.ssh
-          echo "$AUR_SSH_KEY" > ~/.ssh/aur_key
-          chmod 600 ~/.ssh/aur_key
-          ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts 2>/dev/null
-          cat > ~/.ssh/config <<'SSHCONF'
-          Host aur.archlinux.org
-            IdentityFile ~/.ssh/aur_key
-            User aur
-          SSHCONF
-
-          TMP=$(mktemp -d)
-          git clone ssh://aur@aur.archlinux.org/whoisthat.git "$TMP" 2>&1
-
-          AUR_VER=$(grep '^pkgver=' "$TMP/PKGBUILD" | cut -d= -f2)
-          AUR_REL=$(grep '^pkgrel=' "$TMP/PKGBUILD" | cut -d= -f2)
-          NEW_VER="${{ steps.version.outputs.version }}"
-
-          if [ "${AUR_VER}" = "${NEW_VER}" ]; then
-            # Same version, force-push fix — bump pkgrel
-            PKGREL=$(( AUR_REL + 1 ))
-            echo "AUR pkgver=${AUR_VER} matches our new version → bump pkgrel ${AUR_REL} -> ${PKGREL}"
-          else
-            # Version changed — reset pkgrel
-            PKGREL=1
-            echo "New version ${NEW_VER} (was ${AUR_VER}) → pkgrel=1"
-          fi
-
-          echo "pkgrel=${PKGREL}" >> "$GITHUB_OUTPUT"
-          rm -rf "$TMP"
-
-      # --- 4. SSH key for the remaining steps -------------------------------
+      # --- 3. Setup SSH (used by both AUR clone steps below) ---------------
       - name: Setup SSH
         uses: shimataro/ssh-key-action@v2
         with:
@@ -76,10 +36,34 @@ jobs:
               IdentityFile ~/.ssh/id_rsa
               User aur
 
-      - name: Add aur.archlinux.org to known_hosts
+      - name: Add known_hosts
         run: ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts
 
-      # --- 5. Update PKGBUILD version and pkgrel ----------------------------
+      # --- 4. Clone AUR repo, compute pkgrel --------------------------------
+      #       If AUR pkgver matches ours → force-push fix, pkgrel++.
+      #       If version changed → new release, pkgrel=1.
+      - name: Compute pkgrel from AUR state
+        id: pkgrel
+        run: |
+          TMP=$(mktemp -d)
+          git clone ssh://aur@aur.archlinux.org/whoisthat.git "$TMP"
+
+          AUR_VER=$(grep '^pkgver=' "$TMP/PKGBUILD" | cut -d= -f2)
+          AUR_REL=$(grep '^pkgrel=' "$TMP/PKGBUILD" | cut -d= -f2)
+          NEW_VER="${{ steps.version.outputs.version }}"
+
+          if [ "${AUR_VER}" = "${NEW_VER}" ]; then
+            PKGREL=$(( AUR_REL + 1 ))
+            echo "AUR pkgver=${AUR_VER} matches → bump pkgrel ${AUR_REL} -> ${PKGREL}"
+          else
+            PKGREL=1
+            echo "New version ${NEW_VER} (was ${AUR_VER}) → pkgrel=1"
+          fi
+
+          echo "pkgrel=${PKGREL}" >> "$GITHUB_OUTPUT"
+          rm -rf "$TMP"
+
+      # --- 5. Update PKGBUILD -----------------------------------------------
       - name: Update PKGBUILD
         run: |
           VERSION="${{ steps.version.outputs.version }}"
@@ -91,7 +75,7 @@ jobs:
           echo "=== PKGBUILD ==="
           cat pkg/aur/PKGBUILD
 
-      # --- 6. Regenerate .SRCINFO inside an Arch container -------------------
+      # --- 6. Regenerate .SRCINFO (Arch container) --------------------------
       - name: Regenerate .SRCINFO
         uses: docker://archlinux:latest
         with:
@@ -107,7 +91,7 @@ jobs:
           echo "=== .SRCINFO ==="
           cat pkg/aur/.SRCINFO
 
-      # --- 7. Push updated files to AUR -------------------------------------
+      # --- 7. Push to AUR ---------------------------------------------------
       - name: Push to AUR
         run: |
           VERSION="${{ steps.version.outputs.version }}"
@@ -115,8 +99,8 @@ jobs:
 
           TMP=$(mktemp -d)
           git clone ssh://aur@aur.archlinux.org/whoisthat.git "$TMP"
-          cp pkg/aur/PKGBUILD         "$TMP/"
-          cp pkg/aur/.SRCINFO         "$TMP/"
+          cp pkg/aur/PKGBUILD          "$TMP/"
+          cp pkg/aur/.SRCINFO          "$TMP/"
           cp pkg/aur/whoisthat.install "$TMP/"
 
           git -C "$TMP" config user.email "ci@github-actions"
