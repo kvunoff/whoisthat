@@ -90,16 +90,41 @@ jobs:
           echo "=== PKGBUILD ==="
           cat pkg/aur/PKGBUILD
 
-      # --- 6. Regenerate .SRCINFO (Arch container) --------------------------
+      # --- 6. Regenerate .SRCINFO from PKGBUILD ----------------------------
+      #       Sources PKGBUILD as a bash script (it only contains variable
+      #       assignments), then prints fields in .SRCINFO format.
       - name: Regenerate .SRCINFO
-        uses: docker://archlinux:latest
-        with:
-          args: >
-            bash -c "
-              pacman -Sy --noconfirm base-devel &&
-              cd /github/workspace/pkg/aur &&
-              sudo -u nobody makepkg --printsrcinfo > .SRCINFO
-            "
+        run: |
+          cd pkg/aur
+
+          (
+            # shellcheck disable=SC1091
+            source PKGBUILD
+
+            echo "pkgbase = ${pkgname}"
+            echo -e "\tpkgdesc = ${pkgdesc}"
+            echo -e "\tpkgver = ${pkgver}"
+            echo -e "\tpkgrel = ${pkgrel}"
+            echo -e "\turl = ${url}"
+            echo -e "\tinstall = ${install}"
+            echo -e "\tarch = ${arch[0]}"
+            echo -e "\tlicense = ${license[0]}"
+
+            for dep in "${makedepends[@]}"; do
+              echo -e "\tmakedepends = ${dep}"
+            done
+            for dep in "${depends[@]}"; do
+              echo -e "\tdepends = ${dep}"
+            done
+            for dep in "${optdepends[@]}"; do
+              echo -e "\toptdepends = ${dep}"
+            done
+
+            echo -e "\tsource = ${pkgname}-${pkgver}.tar.gz::https://github.com/kvunoff/${pkgname}/archive/refs/tags/v${pkgver}.tar.gz"
+            echo -e "\tsha256sums = SKIP"
+            echo
+            echo "pkgname = ${pkgname}"
+          ) > .SRCINFO
 
       - name: Show .SRCINFO
         run: |
