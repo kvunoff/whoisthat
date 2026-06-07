@@ -159,6 +159,12 @@ Subscription metadata (`sub_*`) is populated from the `subscription-userinfo` HT
 ### Arch Linux (AUR)
 
 ```bash
+paru -S whoisthat
+```
+
+or
+
+```bash
 yay -S whoisthat
 ```
 
