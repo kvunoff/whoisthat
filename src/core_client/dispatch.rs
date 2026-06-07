@@ -26,6 +26,7 @@ pub enum CoreEvent {
     },
     Error(String),
     TrafficStats(TrafficStats),
+    RoutingUpdated(RoutingConfig),
     Disconnected,
 }
 
@@ -167,6 +168,13 @@ fn dispatch(msg: TcpMessage) -> CoreEvent {
             Err(e) => {
                 error!("Invalid traffic-stats: {}", e);
                 CoreEvent::Error("Invalid traffic-stats".into())
+            }
+        },
+        "routing-updated" => match serde_json::from_value::<RoutingUpdated>(msg.data) {
+            Ok(data) => CoreEvent::RoutingUpdated(data.config),
+            Err(e) => {
+                error!("Invalid routing-updated: {}", e);
+                CoreEvent::Error("Invalid routing-updated".into())
             }
         },
         other => {

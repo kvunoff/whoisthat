@@ -24,6 +24,7 @@ use tokio::sync::mpsc;
 use core_client::{CoreClient, CoreConnection, CoreEvent};
 use core_client::protocol::DieData;
 use ui::app::{ActiveTab, Focus, Popup};
+use ui::routing::{form_to_rule, RoutingPopup};
 use ui::App;
 
 // ---------------------------------------------------------------------------
@@ -179,6 +180,7 @@ async fn main() -> io::Result<()> {
     let read_conn = CoreConnection::connect(&cfg.core_host, cfg.core_tcp_port).await?;
     let mut core_rx = core_client::spawn_read_loop(read_conn);
     client.get_application_state().await?;
+    let _ = client.get_routing().await;
 
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -444,6 +446,14 @@ async fn handle_core_event(
         CoreEvent::GroupUpdated(g) => {
             app.apply_group_updated(&g);
             app.msg("Group updated");
+        }
+
+        CoreEvent::RoutingUpdated(cfg) => {
+            app.routing = cfg;
+            let len = app.routing.rules.len();
+            if app.routing_cursor >= len && len > 0 {
+                app.routing_cursor = len - 1;
+            }
         }
     }
     false
@@ -824,6 +834,127 @@ async fn handle_popup_input(
     false
 }
 
+async fn handle_routing_popup_input(
+    app: &mut App,
+    client: &CoreClient,
+    key: event::KeyEvent,
+) {
+    match app.routing_popup.take() {
+        Some(RoutingPopup::ConfirmDelete { index }) => match key.code {
+            KeyCode::Enter => {
+                app.routing.rules.remove(index);
+                if app.routing_cursor >= app.routing.rules.len() && app.routing_cursor > 0 {
+                    app.routing_cursor -= 1;
+                }
+                let _ = client.update_routing(&app.routing).await;
+            }
+            KeyCode::Esc => {}
+            _ => {
+                app.routing_popup = Some(RoutingPopup::ConfirmDelete { index });
+            }
+        },
+        Some(RoutingPopup::Add { mut match_type, mut value, mut outbound, mut cursor, mut field }) => {
+            let save = handle_routing_form(app, &mut match_type, &mut value, &mut outbound, &mut cursor, &mut field, key);
+            if save {
+                let rule = form_to_rule(match_type, &value, outbound);
+                app.routing.rules.push(rule);
+                let _ = client.update_routing(&app.routing).await;
+            } else {
+                app.routing_popup = Some(RoutingPopup::Add { match_type, value, outbound, cursor, field });
+            }
+        }
+        Some(RoutingPopup::Edit { index, mut match_type, mut value, mut outbound, mut cursor, mut field }) => {
+            let save = handle_routing_form(app, &mut match_type, &mut value, &mut outbound, &mut cursor, &mut field, key);
+            if save {
+                let rule = form_to_rule(match_type, &value, outbound);
+                app.routing.rules[index] = rule;
+                let _ = client.update_routing(&app.routing).await;
+            } else {
+                app.routing_popup = Some(RoutingPopup::Edit { index, match_type, value, outbound, cursor, field });
+            }
+        }
+        None => {}
+    }
+}
+
+fn handle_routing_form(
+    _app: &mut App,
+    match_type: &mut usize,
+    value: &mut String,
+    outbound: &mut usize,
+    cursor: &mut usize,
+    field: &mut usize,
+    key: event::KeyEvent,
+) -> bool {
+    let _edit_index: Option<usize> = None;
+    // We use repop only to reconstruct the popup; the actual save is in the caller.
+    match key.code {
+        KeyCode::Esc => { return false; }
+        KeyCode::Tab => {
+            *field = (*field + 1) % 3;
+            *cursor = if *field == 1 { value.len() } else { 0 };
+        }
+        KeyCode::Enter => {
+            if *field < 2 {
+                *field += 1;
+                *cursor = if *field == 1 { value.len() } else { 0 };
+            } else {
+                return true; // save
+            }
+        }
+        KeyCode::Char(c) => {
+            if *field == 0 {
+                *match_type = (*match_type + 1) % 4;
+            } else if *field == 2 {
+                *outbound = (*outbound + 1) % 3;
+            } else {
+                if c == 'v' && matches!(key.modifiers, crossterm::event::KeyModifiers::CONTROL) {
+                    if let Some(clip) = read_clipboard() {
+                        *value = clip;
+                        *cursor = value.len();
+                    }
+                } else {
+                    if *cursor <= value.len() {
+                        value.insert(*cursor, c);
+                    } else {
+                        value.push(c);
+                    }
+                    *cursor += 1;
+                }
+            }
+        }
+        KeyCode::Backspace => {
+            if *field == 1 && *cursor > 0 && !value.is_empty() {
+                value.remove(*cursor - 1);
+                *cursor -= 1;
+            }
+        }
+        KeyCode::Delete => {
+            if *field == 1 && *cursor < value.len() {
+                value.remove(*cursor);
+            }
+        }
+        KeyCode::Left => {
+            if *field == 1 {
+                *cursor = if *cursor > 0 { *cursor - 1 } else { 0 };
+            }
+        }
+        KeyCode::Right => {
+            if *field == 1 && *cursor < value.len() {
+                *cursor += 1;
+            }
+        }
+        KeyCode::Home => {
+            if *field == 1 { *cursor = 0; }
+        }
+        KeyCode::End => {
+            if *field == 1 { *cursor = value.len(); }
+        }
+        _ => {}
+    }
+    false
+}
+
 async fn handle_normal_input(
     app: &mut App,
     client: &CoreClient,
@@ -831,6 +962,66 @@ async fn handle_normal_input(
     cfg: &mut config::AppConfig,
 ) -> bool {
     app.clear_msg();
+
+    // Routing tab keys (before global handlers so 'a' etc. are intercepted)
+    if app.tab == ActiveTab::Routing {
+        if app.routing_popup.is_some() {
+            handle_routing_popup_input(app, client, key).await;
+            return false;
+        }
+        match key.code {
+            KeyCode::Char('j') | KeyCode::Down => {
+                let len = app.routing.rules.len();
+                if len > 0 && app.routing_cursor + 1 < len {
+                    app.routing_cursor += 1;
+                }
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                app.routing_cursor = app.routing_cursor.saturating_sub(1);
+            }
+            KeyCode::Char('a') => {
+                app.routing_popup = Some(RoutingPopup::Add {
+                    match_type: 0,
+                    value: String::new(),
+                    outbound: 0,
+                    cursor: 0,
+                    field: 0,
+                });
+                return false;
+            }
+            KeyCode::Char('e') => {
+                if let Some(rule) = app.routing.rules.get(app.routing_cursor) {
+                    let (mt, val, ob) = ui::routing::rule_to_form(rule);
+                    let cursor = val.len();
+                    app.routing_popup = Some(RoutingPopup::Edit {
+                        index: app.routing_cursor,
+                        match_type: mt,
+                        value: val,
+                        outbound: ob,
+                        cursor,
+                        field: 0,
+                    });
+                }
+                return false;
+            }
+            KeyCode::Char('x') => {
+                if app.routing.rules.get(app.routing_cursor).is_some() {
+                    app.routing_popup = Some(RoutingPopup::ConfirmDelete {
+                        index: app.routing_cursor,
+                    });
+                }
+                return false;
+            }
+            KeyCode::Char(' ') => {
+                if let Some(rule) = app.routing.rules.get_mut(app.routing_cursor) {
+                    rule.enabled = !rule.enabled;
+                    let _ = client.update_routing(&app.routing).await;
+                }
+                return false;
+            }
+            _ => {}
+        }
+    }
 
     // Global / tab-bar keys
     match key.code {
@@ -854,6 +1045,13 @@ async fn handle_normal_input(
         KeyCode::Char('l') => {
             app.tab = ActiveTab::Logs;
             app.focus = Focus::LeftPanel;
+            return false;
+        }
+        KeyCode::Char('r') => {
+            app.routing_popup = None;
+            app.tab = ActiveTab::Routing;
+            app.focus = Focus::LeftPanel;
+            let _ = client.get_routing().await;
             return false;
         }
         KeyCode::Char('s') => {

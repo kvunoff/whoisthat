@@ -140,6 +140,21 @@ Profile data is stored under `~/.local/share/whoisthat/db/`.
 
 4. **WhoisThat TUI** (this Rust binary) connects to the core over TCP on `127.0.0.1:4897`. It sends commands and receives asynchronous notifications. The TUI never touches networking directly — all VPN logic lives in the core.
 
+### Routing rules
+
+Custom routing rules (domain, IP, protocol, port) can redirect traffic to `proxy`, `direct`, or `block` outbounds. Rules are stored in `~/.local/share/whoisthat/db/routing.json` and injected into xray's JSON config on every connect.
+
+**Proxy mode (SOCKS5):**
+- DNS queries (UDP port 53) always go through `proxy` — this prevents user domain rules from interfering with DNS resolution
+- Matched traffic follows the user's rule; unmatched traffic implicitly falls back to `proxy` (first outbound)
+- `direct` rules work correctly: xray resolves the domain via its internal DNS (through proxy), then connects directly via the `freedom` outbound
+
+**TUN mode:**
+- The TUN default route sends ALL system traffic through `tun2socks` → SOCKS5 → xray. Without special handling, xray's own `freedom` outbound traffic would loop back into TUN
+- Xray runs under a **dedicated UID** (auto-picked from 61000+ range). The core configures `ip rule uidrange <xray_uid> lookup 100` and routes table 100 through the physical gateway, bypassing TUN
+- User applications retain their normal UID and stay under TUN routing
+- This ensures `freedom` (direct) outbound connections from xray bypass TUN while all user traffic stays protected
+
 ---
 
 ## TCP API Protocol

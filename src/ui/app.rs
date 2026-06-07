@@ -10,6 +10,7 @@ use crate::config;
 use crate::core_client::protocol::*;
 
 use super::logs::{render_logs, LogsState};
+use super::routing::{render_routing_popup, render_routing_tab, RoutingPopup};
 use super::settings::{render_settings, SettingsState};
 use super::theme::*;
 use super::uri;
@@ -19,6 +20,7 @@ pub enum ActiveTab {
     Profiles,
     Logs,
     Settings,
+    Routing,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -63,6 +65,9 @@ pub struct App {
     pub settings_state: SettingsState,
     pub logs_state: LogsState,
     pub traffic_stats: TrafficStats,
+    pub routing: RoutingConfig,
+    pub routing_cursor: usize,
+    pub routing_popup: Option<RoutingPopup>,
 }
 
 impl App {
@@ -93,6 +98,9 @@ impl App {
                     .unwrap_or("core.log"),
             ),
             traffic_stats: TrafficStats::default(),
+            routing: RoutingConfig::default(),
+            routing_cursor: 0,
+            routing_popup: None,
         }
     }
 
@@ -290,6 +298,9 @@ impl App {
         if let Some(ref popup) = self.popup {
             self.render_popup(f, popup, area);
         }
+        if let Some(ref popup) = self.routing_popup {
+            render_routing_popup(f, popup, area);
+        }
     }
 
     fn render_top_bar(&self, f: &mut Frame, area: Rect) {
@@ -358,6 +369,7 @@ impl App {
         let entries = [
             ('a', " add", ActiveTab::Profiles),
             ('u', " sub", ActiveTab::Profiles),
+            ('r', " route", ActiveTab::Routing),
             ('l', " logs", ActiveTab::Logs),
             ('s', " settings", ActiveTab::Settings),
             ('v', " tun", ActiveTab::Profiles),
@@ -395,6 +407,10 @@ impl App {
                     &self.settings_state,
                     focused,
                 );
+            }
+            ActiveTab::Routing => {
+                let focused = self.focus == Focus::LeftPanel;
+                render_routing_tab(f, area, &self.routing, self.routing_cursor, focused);
             }
         }
     }
@@ -908,6 +924,7 @@ impl App {
             ("v", "Toggle TUN mode"),
             ("Tab", "Switch focus (list ↔ details)"),
             ("l", "Logs tab"),
+            ("r", "Routing tab"),
             ("s", "Settings tab"),
             ("1", "Profiles tab"),
             ("h / ?", "This help"),
@@ -964,7 +981,7 @@ impl App {
         let inner = block.inner(area);
         f.render_widget(block, area);
 
-        let left = Span::styled(" WhoisThat v0.1.12 · xray-core", s_faint());
+        let left = Span::styled(" WhoisThat v0.2.0 · xray-core", s_faint());
         let left_w = left.width();
 
         let tun = if self.tun_enabled {

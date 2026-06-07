@@ -202,4 +202,25 @@ impl CoreClient {
             )
             .await
     }
+
+    pub async fn get_routing(&self) -> std::io::Result<()> {
+        self.conn
+            .lock()
+            .await
+            .send("get-routing", &GetRoutingData {})
+            .await
+    }
+
+    pub async fn update_routing(&self, config: &RoutingConfig) -> std::io::Result<()> {
+        self.conn
+            .lock()
+            .await
+            .send(
+                "update-routing",
+                &UpdateRoutingData {
+                    config: config.clone(),
+                },
+            )
+            .await
+    }
 }

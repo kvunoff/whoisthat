@@ -173,3 +173,28 @@ type TrafficStats struct {
 	DirectUp  int64 `json:"direct_up"`
 	DirectDown int64 `json:"direct_down"`
 }
+
+// routing types
+type RoutingRule struct {
+	Type        string `json:"type"`
+	Domain      string `json:"domain,omitzero"`
+	IP          string `json:"ip,omitzero"`
+	Protocol    string `json:"protocol,omitzero"`
+	Port        string `json:"port,omitzero"`
+	OutboundTag string `json:"outbound_tag"`
+	Enabled     bool   `json:"enabled"`
+}
+
+type RoutingConfig struct {
+	DomainStrategy string        `json:"domain_strategy"`
+	Rules          []RoutingRule `json:"rules"`
+}
+
+type GetRoutingData struct{}
+type UpdateRoutingData struct {
+	Config RoutingConfig `json:"config"`
+}
+
+type RoutingUpdated struct {
+	Config RoutingConfig `json:"config"`
+}

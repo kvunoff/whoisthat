@@ -1,6 +1,7 @@
 package mainproxy
 
 import (
+	"whoisthat-core/db"
 	"whoisthat-core/lib"
 	appconfig "whoisthat-core/lib/AppConfig"
 	portpool "whoisthat-core/lib/PortPool"
@@ -26,6 +27,7 @@ type ProxyManager struct {
 	TestResultChannel chan TestResult
 	portPool          *portpool.PortPool
 	statsCancel       chan struct{}
+	DB                *db.DB
 }
 
 func (p *ProxyManager) Init() {
@@ -72,6 +74,15 @@ func (p *ProxyManager) Connect(profile structs.Profile) error {
 
 	// Inject stats tracking config (policy + stats counters)
 	xray_config, _ = injectStatsConfig(xray_config)
+
+	// Inject routing rules + direct/block outbounds
+	if p.DB != nil {
+		var err error
+		xray_config, err = injectRoutingConfig(xray_config, p.DB)
+		if err != nil {
+			log.Printf("failed to inject routing config: %v", err)
+		}
+	}
 
 	if err := p.xray_core.Start(xray_config); err != nil {
 		return err

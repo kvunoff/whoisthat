@@ -255,6 +255,22 @@ func (s *Server) handleConnection(conn net.Conn, clientID string) {
 			}
 			command_handler.UpdateGroup(data)
 
+		case "get-routing":
+			var data structs.GetRoutingData
+			if err := json.Unmarshal(raw_tcp_message.Data, &data); err != nil {
+				log.Printf("Invalid body for get-routing%v", err)
+				return
+			}
+			command_handler.GetRouting(data)
+
+		case "update-routing":
+			var data structs.UpdateRoutingData
+			if err := json.Unmarshal(raw_tcp_message.Data, &data); err != nil {
+				log.Printf("Invalid body for update-routing%v", err)
+				return
+			}
+			command_handler.UpdateRouting(data)
+
 		default:
 			log.Println("Message not supported")
 		}

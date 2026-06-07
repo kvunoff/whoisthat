@@ -179,6 +179,35 @@ ip route del default via $TUN_IP dev $TUN_NAME metric 1 || true
 	return err
 }
 
+func addUidRouting(uid int, interface_name string, gateway_ip string) error {
+	script := fmt.Sprintf(`
+set -e
+IFACE="%s"
+GATEWAY="%s"
+RULE_UID=%d
+
+ip rule add uidrange $RULE_UID-$RULE_UID lookup 100 2>/dev/null || true
+ip route replace $GATEWAY/32 dev $IFACE table 100
+ip route replace default via $GATEWAY table 100
+`, interface_name, gateway_ip, uid)
+	_, err := runScriptWithSh(script)
+	return err
+}
+
+func removeUidRouting(uid int, interface_name string, gateway_ip string) error {
+	script := fmt.Sprintf(`
+IFACE="%s"
+GATEWAY="%s"
+RULE_UID=%d
+
+ip rule del uidrange $RULE_UID-$RULE_UID lookup 100 2>/dev/null || true
+ip route del $GATEWAY/32 dev $IFACE table 100 2>/dev/null || true
+ip route del default via $GATEWAY table 100 2>/dev/null || true
+`, interface_name, gateway_ip, uid)
+	_, err := runScriptWithSh(script)
+	return err
+}
+
 func loosenRpFilter(tun_name string, deafult_interface_name string) error {
 	script := fmt.Sprintf(`
 TUN_NAME="%s"

@@ -5,8 +5,10 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"os/exec"
 	"sync"
+	"syscall"
 )
 
 type XrayCore struct {
@@ -41,7 +43,30 @@ func (x *XrayCore) Start(stdinPipe []byte) error {
 	}
 
 	cmd.Stdout = nil
-	cmd.Stderr = nil
+	// Write xray stderr to a temp log so we can diagnose config errors
+	xrayLog, err := os.CreateTemp("", "whoisthat-xray-*.log")
+	if err == nil {
+		cmd.Stderr = xrayLog
+		log.Printf("xray stderr -> %s", xrayLog.Name())
+	} else {
+		cmd.Stderr = nil
+	}
+
+	// Run xray under a dedicated UID so its outbound traffic can be selectively
+	// routed around TUN via uidrange ip rule (leaving user traffic under TUN).
+	if uid := utils.DedicatedUid(); uid > 0 {
+		gid := utils.DedicatedGid()
+		if gid == 0 {
+			gid = uid
+		}
+		cmd.SysProcAttr = &syscall.SysProcAttr{
+			Credential: &syscall.Credential{
+				Uid: uint32(uid),
+				Gid: uint32(gid),
+			},
+		}
+		log.Printf("xray will run as uid=%d gid=%d", uid, gid)
+	}
 
 	if err := cmd.Start(); err != nil {
 		cancel()

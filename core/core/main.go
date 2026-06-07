@@ -22,12 +22,11 @@ func main() {
 	if err != nil {
 		configDir = filepath.Join(os.Getenv("HOME"), ".config")
 	}
-	logDir := filepath.Join(configDir, "whoisthat")
-	os.MkdirAll(logDir, 0755)
-	logPath := filepath.Join(logDir, "core.log")
+	logPath := filepath.Join(configDir, "whoisthat", "core.log")
+	if err := os.MkdirAll(filepath.Dir(logPath), 0755); err != nil {
+		logPath = "/tmp/whoisthat-core.log"
+	}
 
-	log.Println("logs:", logPath)
-	log.Println("tail -f", logPath)
 	log.SetOutput(&lumberjack.Logger{
 		Filename:   logPath,
 		MaxSize:    20,
@@ -43,6 +42,7 @@ func main() {
 	database := db.DB{}
 	database.Initialize()
 	proxy_manager := proxy.ProxyManager{}
+	proxy_manager.DB = &database
 	proxy_manager.Init()
 	tun_manager := tunmode.TunModeManager{}
 	tun_manager.Init()

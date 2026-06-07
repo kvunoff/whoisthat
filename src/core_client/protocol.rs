@@ -225,3 +225,51 @@ pub struct TrafficStats {
     #[serde(default)]
     pub direct_down: i64,
 }
+
+// routing types
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct RoutingRule {
+    #[serde(default)]
+    pub r#type: String,
+    #[serde(default)]
+    pub domain: String,
+    #[serde(default)]
+    pub ip: String,
+    #[serde(default)]
+    pub protocol: String,
+    #[serde(default)]
+    pub port: String,
+    #[serde(default)]
+    pub outbound_tag: String,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct RoutingConfig {
+    #[serde(default = "default_ipifnonmatch")]
+    pub domain_strategy: String,
+    #[serde(default)]
+    pub rules: Vec<RoutingRule>,
+}
+
+fn default_ipifnonmatch() -> String {
+    "IPIfNonMatch".into()
+}
+
+fn default_true() -> bool {
+    true
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GetRoutingData {}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateRoutingData {
+    pub config: RoutingConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RoutingUpdated {
+    pub config: RoutingConfig,
+}

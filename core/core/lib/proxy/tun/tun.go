@@ -1,10 +1,8 @@
 package tunmode
 
 import (
-	// appconfig "whoisthat-core/lib/AppConfig"
-	// "context"
-	// appconfig "whoisthat-core/lib/AppConfig"
 	appconfig "whoisthat-core/lib/AppConfig"
+	"whoisthat-core/utils"
 	"errors"
 	"fmt"
 	"log"
@@ -20,6 +18,7 @@ type TunModeManager struct {
 	default_interface_ip string
 	proxy_ipv4s          []string
 	dns                  string
+	sudoUid              int
 	StatusChanged        chan bool
 	IsEnabled            bool
 }
@@ -34,7 +33,6 @@ func (t *TunModeManager) Init() {
 }
 
 func (t *TunModeManager) Start(proxy_ipv4s []string, dns string) error {
-	log.Println("running ip commands")
 	interface_name, interface_ip, err := GetDefaultInterfaceAndIP()
 	if err != nil {
 		return fmt.Errorf("failed on getting default interafce %w", err)
@@ -44,6 +42,7 @@ func (t *TunModeManager) Start(proxy_ipv4s []string, dns string) error {
 	t.default_interface = interface_name
 	t.proxy_ipv4s = proxy_ipv4s
 	t.dns = dns
+	t.sudoUid = utils.DedicatedUid()
 
 	err = t.clearNetworkRules()
 	if err != nil {
@@ -74,6 +73,13 @@ func (t *TunModeManager) Start(proxy_ipv4s []string, dns string) error {
 		return fmt.Errorf("there was an error setting up dns ip route %w", err)
 	}
 
+	if t.sudoUid > 0 {
+		err = addUidRouting(t.sudoUid, interface_name, interface_ip)
+		if err != nil {
+			log.Printf("uid routing unavailable (direct rules in TUN mode may not work): %v", err)
+		}
+	}
+
 	err = setupDnsHijackRules(t.default_interface, t.dns)
 	if err != nil {
 		return fmt.Errorf("there was an error setting up dns hijack rules %w", err)
@@ -85,7 +91,6 @@ func (t *TunModeManager) Start(proxy_ipv4s []string, dns string) error {
 		return fmt.Errorf("there was an error setting up tun ip route %w", err)
 	}
 
-	log.Println("finished running ip commands")
 	if t.tun2socks.IsRunning() {
 		t.tun2socks.Stop()
 	}
@@ -142,6 +147,9 @@ func (t *TunModeManager) clearNetworkRules() error {
 		deleteDnsIpRoutes(t.dns, t.default_interface_ip),
 		cleanDnsHijackRules(t.default_interface, t.dns),
 		deleteProxyIpRoutes(t.proxy_ipv4s, t.default_interface_ip),
+	}
+	if t.sudoUid > 0 {
+		errs = append(errs, removeUidRouting(t.sudoUid, t.default_interface, t.default_interface_ip))
 	}
 	return errors.Join(errs...)
 }
