@@ -2,19 +2,23 @@
 
 A modern terminal-based VPN client. Rust TUI frontend. Go engine backed by Xray-core.
 
-**Supports**: VLESS with Reality, xHTTP, and gRPC. Full TUN-mode VPN.
+**Supports**: VLESS with Reality, xHTTP, and gRPC. Full TUN-mode VPN. Subscription-based profile management.
 
 ---
 
 ## Features
 
-- Import VLESS profiles (URI, clipboard, subscription-ready)
+- **Subscription support** — add groups with subscription URLs, refresh profiles, view metadata (traffic used/limit, expiry)
+- **Group management** — add, rename, edit subscription URL, delete entire groups
+- Import VLESS profiles (URI, clipboard paste, or subscription refresh)
 - Connect / disconnect / switch profiles
 - Full system-wide TUN-mode VPN (`tun2socks` + `iptables`)
 - Profile latency testing (SOCKS5 → Cloudflare)
-- Real-time connection status
+- Real-time connection status with uplink/downlink traffic stats
 - Log viewer (tail from core log file)
 - Autoconnect on startup
+- **Detach/reattach** — `q` leaves VPN running in background, reopen TUI to reattach
+- Public IP display (auto-refreshed every 30s and on connect/disconnect/TUN-toggle)
 - Dark color scheme (Tokyo Night inspired)
 - Keyboard-driven — mouse is optional
 
@@ -92,6 +96,7 @@ Both client→core commands and core→client notifications use the same framing
 | `disable-tun` | `{}` | `tun-status-changed` |
 | `is-root` | `{}` | `is-root-answer` |
 | `update-profile` | `{"Profile":{"id":int,"group_id":int},"Name":"str"}` | `profile-updated` |
+| `update-group` | `{"id":int,"name":"str","subscription_url":"str"}` | `group-updated` |
 | `add-group` | `{"name":"str","subscription_url":"str"}` | `group-added` |
 | `delete-group` | `{"id":int}` | `group-deleted` |
 | `update-subscription` | `{"group_id":int}` | `subscription-updated` |
@@ -108,9 +113,11 @@ Both client→core commands and core→client notifications use the same framing
 | `profile-updated` | `{"profile":{...}}` (also fires on test result) |
 | `group-added` | `{"id":int,"name":"str","subscription_url":"str"}` |
 | `group-deleted` | `{"id":int}` |
-| `subscription-updated` | `{"group_id":int,"profiles":[...]}` |
+| `group-updated` | `{"id":int,"name":"str",...}` (full Group object) |
+| `subscription-updated` | `{"group_id":int,"group":{...},"profiles":[...]}` |
 | `tun-status-changed` | `{"is_enabled":bool}` |
 | `is-root-answer` | `{"IsRoot":bool}` |
+| `traffic-stats` | `{"proxy_up":int,"proxy_down":int,"direct_up":int,"direct_down":int}` |
 | `warn` | `{"key":"str","content":"str"}` |
 
 ### Profile structure
@@ -118,6 +125,7 @@ Both client→core commands and core→client notifications use the same framing
 {
   "id": 1,
   "group_id": 0,
+  "nano-id": "abc123",
   "name": "My Server",
   "protocol": "vless",
   "uri": "vless://...",
@@ -127,6 +135,22 @@ Both client→core commands and core→client notifications use the same framing
 }
 ```
 `test-result`: `>0` = latency in ms, `-1` = failed, `-2` = testing, `0` = untested.
+
+### Group structure
+```json
+{
+  "id": 1,
+  "name": "My Sub",
+  "subscription_url": "https://...",
+  "last_id": 42,
+  "sub_last_updated": 1712345678,
+  "sub_expires": 1720000000,
+  "sub_upload": 1048576,
+  "sub_download": 52428800,
+  "sub_total": 107374182400
+}
+```
+Subscription metadata (`sub_*`) is populated from the `subscription-userinfo` HTTP header returned by the subscription server. Fields are `omitzero` — omitted from JSON when zero.
 
 ---
 
@@ -207,22 +231,27 @@ Profile data is stored under `~/.local/share/whoisthat/db/`.
 | `t` | Test profile latency |
 | `v` | Toggle TUN mode (requires root) |
 
-### Profiles
+### Profiles & Groups
 
 | Key | Action |
 |---|---|
-| `a` | Add/import VLESS URI (from clipboard or manual input) |
+| `a` | Import VLESS URI (clipboard or manual input) |
 | `x` | Delete selected profile |
-| `Ctrl+V` | Paste from clipboard in import popup |
+| `X` | Delete current group (with confirmation) |
+| `e` | Edit group (name + subscription URL) |
+| `U` | Add new group (name + subscription URL) |
+| `u` | Update subscription (refresh profiles from URL) |
+| `Ctrl+V` | Paste from clipboard in input popups |
 
-### Tabs
+### Tabs & Quit
 
 | Key | Action |
 |---|---|
 | `l` | Logs view |
 | `s` | Settings |
 | `Esc` / `1` | Back to Profiles |
-| `q` | Quit |
+| `q` | Detach TUI (VPN stays connected in background) |
+| `Q` / `Ctrl+C` | Full quit (stop VPN + exit) |
 
 ### Settings
 
@@ -235,6 +264,14 @@ Profile data is stored under `~/.local/share/whoisthat/db/`.
 TUN mode requires root privileges. The core creates a `whoisthattun` virtual interface, configures `iptables` rules, and routes all traffic through the VPN. DNS is handled at `8.8.8.8` to prevent leaks.
 
 Run with: `sudo -E whoisthat`
+
+### Subscription Workflow
+
+1. Press `U` to add a new group — enter a name and subscription URL
+2. Press `u` with the group selected to fetch and parse profiles from the URL
+3. The details panel shows subscription metadata when available (traffic used, expiry, last updated)
+4. Press `e` to edit the group name or subscription URL at any time
+5. Press `X` to delete the entire group and its profiles
 
 ---
 

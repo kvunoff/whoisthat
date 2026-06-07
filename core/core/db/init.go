@@ -23,44 +23,6 @@ func (db *DB) Initialize() {
 		log.Fatal("failed to create database directory " + db_path + ": " + err.Error())
 	}
 	db.ensureDBConfigExistance()
-	db.ensureDefaultGroupExistance()
-}
-
-func (db *DB) ensureDefaultGroupExistance() {
-	oldUmask := syscall.Umask(0)
-	defer syscall.Umask(oldUmask)
-	var default_group_dir = filepath.Join(db.Path, "groups", "0")
-
-	if err := os.MkdirAll(default_group_dir, 0777); err != nil {
-		log.Fatal("failed to create default group directory " + default_group_dir + ": " + err.Error())
-	}
-
-	default_group_path := db.GetGroupConfigFilePath(0)
-	if _, err := os.Stat(default_group_path); err == nil {
-		log.Println("using existing default group")
-		return
-	} else if !os.IsNotExist(err) {
-		log.Fatal("error checking for default groupo path " + default_group_path + ": " + err.Error())
-	}
-
-	group := structs.Group{
-		Id:              0,
-		Name:            "Default",
-		SubscriptionUrl: "",
-		LastId:          0,
-	}
-
-	json_data, err := json.MarshalIndent(group, "", " ")
-
-	if err != nil {
-		log.Fatal("failed to stringify default group config")
-	}
-
-	if err := os.WriteFile(default_group_path, json_data, 0666); err != nil {
-		log.Fatal("failed to write to default config " + default_group_path + ": " + err.Error())
-	}
-
-	log.Println("default group config initialized:", default_group_path)
 }
 
 func (db *DB) ensureDBConfigExistance() {

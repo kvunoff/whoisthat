@@ -16,6 +16,7 @@ func (db *DB) UpdateGroupAndProfiles(group_id int, profiles []structs.DBAddProfi
 	defer db.mu.Unlock()
 	profiles_added := []structs.Profile{}
 	group_dir := db.GetGroupDirPath(group_id)
+	var kept_uri string
 
 	group_config, err := db.loadGroupConfig(group_id)
 	group_config.LastId = 0
@@ -33,6 +34,7 @@ func (db *DB) UpdateGroupAndProfiles(group_id int, profiles []structs.DBAddProfi
 		if err == nil {
 			group_config.LastId = keep_profile_id
 			profiles_added = append(profiles_added, kept_profile)
+			kept_uri = kept_profile.Uri
 		} else {
 			keep_profile_id = 0
 		}
@@ -59,6 +61,9 @@ func (db *DB) UpdateGroupAndProfiles(group_id int, profiles []structs.DBAddProfi
 	}
 
 	for _, profile := range profiles {
+		if keep_profile_id != 0 && profile.Uri == kept_uri {
+			continue
+		}
 		profile_added, err := db.addProfile(profile)
 		if err == nil {
 			profiles_added = append(profiles_added, profile_added)
@@ -82,6 +87,12 @@ func (db *DB) updateGroup(group structs.Group) error {
 		return fmt.Errorf("failed to write %s: %w", group_config_path, err)
 	}
 	return nil
+}
+
+func (db *DB) SaveGroup(group structs.Group) error {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+	return db.updateGroup(group)
 }
 
 func (db *DB) GetAllGroupsAndProfiles() ([]structs.GroupWithProfiles, error) {

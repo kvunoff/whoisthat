@@ -161,6 +161,28 @@ impl CoreClient {
             .await
     }
 
+    pub async fn delete_group(&self, id: i32) -> std::io::Result<()> {
+        self.conn
+            .lock()
+            .await
+            .send("delete-group", &DeleteGroupData { id })
+            .await
+    }
+
+    pub async fn add_group(&self, name: &str, subscription_url: &str) -> std::io::Result<()> {
+        self.conn
+            .lock()
+            .await
+            .send(
+                "add-group",
+                &AddGroupData {
+                    name: name.to_string(),
+                    subscription_url: subscription_url.to_string(),
+                },
+            )
+            .await
+    }
+
     pub async fn update_group(
         &self,
         id: i32,

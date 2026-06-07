@@ -15,11 +15,6 @@ type Cmd struct {
 }
 
 func (cmd *Cmd) DeleteGroup(data structs.DeleteGroupData) {
-	if data.Id == 0 {
-		cmd.warn("delete-group-failed", "cannot delete default group")
-		return
-	}
-
 	err := cmd.DB.DeleteGroup(data.Id)
 	if err != nil {
 		log.Printf("there was an error deleting group %s", err.Error())

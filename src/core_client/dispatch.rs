@@ -15,7 +15,7 @@ pub enum CoreEvent {
     GroupDeleted(i32),
     GroupUpdated(Group),
     SubscriptionUpdated {
-        group_id: i32,
+        group: Group,
         profiles: Vec<Profile>,
     },
     TunStatusChanged(bool),
@@ -122,7 +122,7 @@ fn dispatch(msg: TcpMessage) -> CoreEvent {
         "subscription-updated" => {
             match serde_json::from_value::<SubscriptionUpdated>(msg.data) {
                 Ok(data) => CoreEvent::SubscriptionUpdated {
-                    group_id: data.group_id,
+                    group: data.group,
                     profiles: data.profiles,
                 },
                 Err(e) => {

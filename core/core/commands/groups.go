@@ -39,7 +39,7 @@ func (cmd *Cmd) UpdateSubscription(data structs.UpdateSubscriptionData, proxy_ma
 	// Parse subscription-userinfo header (traffic / expiry)
 	parseSubUserInfo(resp, &group)
 	group.SubLastUpdated = time.Now().Unix()
-	cmd.DB.UpdateGroupConfig(group.Id, group.Name, group.SubscriptionUrl)
+	cmd.DB.SaveGroup(group)
 
 	db_profiles := lib.GetDBAddProfileDatasFromStr(subscription_content, data.GroupId)
 	if len(db_profiles) == 0 {
@@ -59,7 +59,7 @@ func (cmd *Cmd) UpdateSubscription(data structs.UpdateSubscriptionData, proxy_ma
 		cmd.warn("update-subscription-failed", "Failed to add new subscription content to database")
 		return
 	}
-	cmd.send("subscription-updated", structs.SubscriptionUpdated{GroupId: data.GroupId, Profiles: profiles})
+	cmd.send("subscription-updated", structs.SubscriptionUpdated{GroupId: data.GroupId, Group: group, Profiles: profiles})
 
 }
 

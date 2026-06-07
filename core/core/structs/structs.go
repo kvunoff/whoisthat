@@ -78,6 +78,7 @@ type UpdateSubscriptionData struct {
 
 type SubscriptionUpdated struct {
 	GroupId  int       `json:"group_id"`
+	Group    Group     `json:"group"`
 	Profiles []Profile `json:"profiles"`
 }
 

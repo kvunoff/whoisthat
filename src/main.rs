@@ -426,8 +426,8 @@ async fn handle_core_event(
         CoreEvent::Disconnected => {
             app.msg("Error: Core disconnected. Press q to quit.");
         }
-        CoreEvent::SubscriptionUpdated { group_id: _, profiles } => {
-            app.apply_subscription_updated(profiles);
+        CoreEvent::SubscriptionUpdated { group, profiles } => {
+            app.apply_subscription_updated(group, profiles);
             app.msg("Subscription updated");
         }
 
@@ -437,6 +437,8 @@ async fn handle_core_event(
 
         CoreEvent::GroupDeleted(id) => {
             app.apply_group_deleted(id);
+            app.popup = None;
+            app.msg("Group deleted");
         }
 
         CoreEvent::GroupUpdated(g) => {
@@ -634,65 +636,175 @@ async fn handle_popup_input(
                 return false;
             }
         },
-        Some(Popup::EditSubscription { mut input, group_id, mut cursor }) => match key.code {
+        Some(Popup::ConfirmDeleteGroup { gid, .. }) => match key.code {
+            KeyCode::Enter => {
+                let _ = client.delete_group(gid).await;
+                app.msg("Deleting...");
+                app.focus = Focus::LeftPanel;
+            }
+            KeyCode::Esc => {
+                app.focus = Focus::LeftPanel;
+            }
+            _ => {
+                app.popup = Some(Popup::ConfirmDeleteGroup {
+                    gid,
+                    name: String::new(),
+                });
+                return false;
+            }
+        },
+        Some(Popup::EditSubscription { mut name, mut url, group_id, mut cursor, mut field }) => match key.code {
             KeyCode::Esc => {
                 app.popup = None;
                 app.focus = Focus::LeftPanel;
             }
+            KeyCode::Tab => {
+                field = if field == 0 { 1 } else { 0 };
+                cursor = if field == 0 { name.len() } else { url.len() };
+                app.popup = Some(Popup::EditSubscription { name, url, group_id, cursor, field });
+            }
             KeyCode::Enter => {
-                let url = input.trim().to_string();
-                let _ = client.update_group(group_id, "", &url).await;
-                app.msg("Updating subscription URL...");
-                app.focus = Focus::LeftPanel;
+                if field == 0 {
+                    field = 1;
+                    cursor = url.len();
+                    app.popup = Some(Popup::EditSubscription { name, url, group_id, cursor, field });
+                } else {
+                    let _ = client.update_group(group_id, &name, &url).await;
+                    app.msg("Updating group...");
+                    app.focus = Focus::LeftPanel;
+                }
             }
             KeyCode::Char(c) => {
                 if c == 'v'
                     && matches!(key.modifiers, crossterm::event::KeyModifiers::CONTROL)
                 {
                     if let Some(clip) = read_clipboard() {
-                        input = clip;
-                        cursor = input.len();
+                        if field == 0 { name = clip; cursor = name.len(); }
+                        else { url = clip; cursor = url.len(); }
                     }
                 } else {
-                    if cursor <= input.len() {
-                        input.insert(cursor, c);
+                    if field == 0 {
+                        if cursor <= name.len() { name.insert(cursor, c); } else { name.push(c); }
                     } else {
-                        input.push(c);
+                        if cursor <= url.len() { url.insert(cursor, c); } else { url.push(c); }
                     }
                     cursor += 1;
                 }
-                app.popup = Some(Popup::EditSubscription { input, group_id, cursor });
+                app.popup = Some(Popup::EditSubscription { name, url, group_id, cursor, field });
             }
             KeyCode::Backspace => {
-                if cursor > 0 && !input.is_empty() {
-                    input.remove(cursor - 1);
+                if field == 0 && cursor > 0 && !name.is_empty() {
+                    name.remove(cursor - 1);
+                    cursor -= 1;
+                } else if field == 1 && cursor > 0 && !url.is_empty() {
+                    url.remove(cursor - 1);
                     cursor -= 1;
                 }
-                app.popup = Some(Popup::EditSubscription { input, group_id, cursor });
+                app.popup = Some(Popup::EditSubscription { name, url, group_id, cursor, field });
             }
             KeyCode::Delete => {
-                if cursor < input.len() {
-                    input.remove(cursor);
+                if field == 0 && cursor < name.len() {
+                    name.remove(cursor);
+                } else if field == 1 && cursor < url.len() {
+                    url.remove(cursor);
                 }
-                app.popup = Some(Popup::EditSubscription { input, group_id, cursor });
+                app.popup = Some(Popup::EditSubscription { name, url, group_id, cursor, field });
             }
             KeyCode::Left => {
                 cursor = if cursor > 0 { cursor - 1 } else { 0 };
-                app.popup = Some(Popup::EditSubscription { input, group_id, cursor });
+                app.popup = Some(Popup::EditSubscription { name, url, group_id, cursor, field });
             }
             KeyCode::Right => {
-                if cursor < input.len() { cursor += 1; }
-                app.popup = Some(Popup::EditSubscription { input, group_id, cursor });
+                let max = if field == 0 { name.len() } else { url.len() };
+                if cursor < max { cursor += 1; }
+                app.popup = Some(Popup::EditSubscription { name, url, group_id, cursor, field });
             }
             KeyCode::Home => {
-                app.popup = Some(Popup::EditSubscription { input, group_id, cursor: 0 });
+                app.popup = Some(Popup::EditSubscription { name, url, group_id, cursor: 0, field });
             }
             KeyCode::End => {
-                cursor = input.len();
-                app.popup = Some(Popup::EditSubscription { input, group_id, cursor });
+                cursor = if field == 0 { name.len() } else { url.len() };
+                app.popup = Some(Popup::EditSubscription { name, url, group_id, cursor, field });
             }
             _ => {
-                app.popup = Some(Popup::EditSubscription { input, group_id, cursor });
+                app.popup = Some(Popup::EditSubscription { name, url, group_id, cursor, field });
+            }
+        },
+        Some(Popup::AddGroup { mut name, mut url, mut cursor, mut field }) => match key.code {
+            KeyCode::Esc => {
+                app.popup = None;
+                app.focus = Focus::LeftPanel;
+            }
+            KeyCode::Tab => {
+                field = if field == 0 { 1 } else { 0 };
+                cursor = if field == 0 { name.len() } else { url.len() };
+                app.popup = Some(Popup::AddGroup { name, url, cursor, field });
+            }
+            KeyCode::Enter => {
+                if field == 0 {
+                    field = 1;
+                    cursor = url.len();
+                    app.popup = Some(Popup::AddGroup { name, url, cursor, field });
+                } else {
+                    let _ = client.add_group(&name, &url).await;
+                    app.msg("Adding group...");
+                    app.focus = Focus::LeftPanel;
+                }
+            }
+            KeyCode::Char(c) => {
+                if c == 'v'
+                    && matches!(key.modifiers, crossterm::event::KeyModifiers::CONTROL)
+                {
+                    if let Some(clip) = read_clipboard() {
+                        if field == 0 { name = clip; cursor = name.len(); }
+                        else { url = clip; cursor = url.len(); }
+                    }
+                } else {
+                    if field == 0 {
+                        if cursor <= name.len() { name.insert(cursor, c); } else { name.push(c); }
+                    } else {
+                        if cursor <= url.len() { url.insert(cursor, c); } else { url.push(c); }
+                    }
+                    cursor += 1;
+                }
+                app.popup = Some(Popup::AddGroup { name, url, cursor, field });
+            }
+            KeyCode::Backspace => {
+                if field == 0 && cursor > 0 && !name.is_empty() {
+                    name.remove(cursor - 1);
+                    cursor -= 1;
+                } else if field == 1 && cursor > 0 && !url.is_empty() {
+                    url.remove(cursor - 1);
+                    cursor -= 1;
+                }
+                app.popup = Some(Popup::AddGroup { name, url, cursor, field });
+            }
+            KeyCode::Delete => {
+                if field == 0 && cursor < name.len() {
+                    name.remove(cursor);
+                } else if field == 1 && cursor < url.len() {
+                    url.remove(cursor);
+                }
+                app.popup = Some(Popup::AddGroup { name, url, cursor, field });
+            }
+            KeyCode::Left => {
+                cursor = if cursor > 0 { cursor - 1 } else { 0 };
+                app.popup = Some(Popup::AddGroup { name, url, cursor, field });
+            }
+            KeyCode::Right => {
+                let max = if field == 0 { name.len() } else { url.len() };
+                if cursor < max { cursor += 1; }
+                app.popup = Some(Popup::AddGroup { name, url, cursor, field });
+            }
+            KeyCode::Home => {
+                app.popup = Some(Popup::AddGroup { name, url, cursor: 0, field });
+            }
+            KeyCode::End => {
+                cursor = if field == 0 { name.len() } else { url.len() };
+                app.popup = Some(Popup::AddGroup { name, url, cursor, field });
+            }
+            _ => {
+                app.popup = Some(Popup::AddGroup { name, url, cursor, field });
             }
         },
         None => {}
@@ -824,15 +936,27 @@ async fn handle_normal_input(
                     }
                 }
             }
-            KeyCode::Char('U') => {
+            KeyCode::Char('e') => {
                 if let Some(g) = app.current_group() {
                     app.popup = Some(Popup::EditSubscription {
-                        input: g.group.subscription_url.clone(),
+                        name: g.group.name.clone(),
+                        url: g.group.subscription_url.clone(),
                         group_id: g.group.id,
                         cursor: g.group.subscription_url.len(),
+                        field: 1,
                     });
                     app.focus = Focus::Popup;
                 }
+            }
+            KeyCode::Char('U') => {
+                let default_name = format!("Group {}", app.groups.len() + 1);
+                app.popup = Some(Popup::AddGroup {
+                    name: default_name,
+                    url: String::new(),
+                    cursor: 0,
+                    field: 0,
+                });
+                app.focus = Focus::Popup;
             }
             KeyCode::Char('t') => {
                 if let Some(p) = app.selected_profile() {
@@ -855,6 +979,15 @@ async fn handle_normal_input(
                         gid: p.group_id,
                         pid: p.id,
                         name,
+                    });
+                    app.focus = Focus::Popup;
+                }
+            }
+            KeyCode::Char('X') => {
+                if let Some(g) = app.current_group() {
+                    app.popup = Some(Popup::ConfirmDeleteGroup {
+                        gid: g.group.id,
+                        name: g.group.name.clone(),
                     });
                     app.focus = Focus::Popup;
                 }

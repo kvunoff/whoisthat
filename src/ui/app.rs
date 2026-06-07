@@ -32,7 +32,9 @@ pub enum Focus {
 pub enum Popup {
     Import { input: String, cursor: usize },
     ConfirmDelete { gid: i32, pid: i32, name: String },
-    EditSubscription { input: String, group_id: i32, cursor: usize },
+    ConfirmDeleteGroup { gid: i32, name: String },
+    AddGroup { name: String, url: String, cursor: usize, field: usize },
+    EditSubscription { name: String, url: String, group_id: i32, cursor: usize, field: usize },
     Help,
 }
 
@@ -228,13 +230,12 @@ impl App {
         self.clamp_cursor();
     }
 
-    pub fn apply_subscription_updated(&mut self, profiles: Vec<Profile>) {
-        if let Some(gid) = profiles.first().map(|p| p.group_id) {
-            if let Some(g) = self.groups.iter_mut().find(|g| g.group.id == gid) {
-                g.profiles = profiles;
-            }
-            self.clamp_cursor();
+    pub fn apply_subscription_updated(&mut self, group: Group, profiles: Vec<Profile>) {
+        if let Some(g) = self.groups.iter_mut().find(|g| g.group.id == group.id) {
+            g.group = group;
+            g.profiles = profiles;
         }
+        self.clamp_cursor();
     }
 
     pub fn apply_profile_updated(&mut self, p: &Profile) {
@@ -709,9 +710,11 @@ impl App {
     fn render_popup(&self, f: &mut Frame, popup: &Popup, area: Rect) {
         match popup {
             Popup::Import { input, .. } => self.render_import_popup(f, input, area),
-            Popup::ConfirmDelete { name, .. } => self.render_confirm_popup(f, name, area),
-            Popup::EditSubscription { input, .. } => self.render_edit_sub_popup(f, input, area),
+            Popup::ConfirmDelete { name, .. } => self.render_confirm_popup(f, "profile", name, area),
+            Popup::ConfirmDeleteGroup { name, .. } => self.render_confirm_popup(f, "group", name, area),
+            Popup::EditSubscription { name, url, cursor, field, .. } => self.render_group_form(f, "Edit Group", name, url, *cursor, *field, area),
             Popup::Help => self.render_help_popup(f, area),
+            Popup::AddGroup { name, url, cursor, field } => self.render_group_form(f, "Add Group", name, url, *cursor, *field, area),
         }
     }
 
@@ -761,12 +764,12 @@ impl App {
         );
     }
 
-    fn render_edit_sub_popup(&self, f: &mut Frame, input: &str, area: Rect) {
-        let pa = centered_rect(70, 32, area);
+    fn render_group_form(&self, f: &mut Frame, title: &str, name: &str, url: &str, _cursor: usize, field: usize, area: Rect) {
+        let pa = centered_rect(70, 36, area);
         f.render_widget(Clear, pa);
 
         let block = Block::default()
-            .title(" Edit Subscription URL ")
+            .title(format!(" {} ", title))
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
             .border_style(Style::default().fg(ACCENT))
@@ -779,35 +782,57 @@ impl App {
             Constraint::Length(1),
             Constraint::Length(3),
             Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(3),
+            Constraint::Length(1),
             Constraint::Length(2),
         ])
         .split(inner);
 
-        f.render_widget(Paragraph::new("Subscription URL:").style(s_dim()), rows[0]);
+        let field0_style = if field == 0 {
+            Style::default().fg(ACCENT)
+        } else {
+            s_dim()
+        };
+        let field1_style = if field == 1 {
+            Style::default().fg(ACCENT)
+        } else {
+            s_dim()
+        };
 
-        let url = if input.is_empty() { "https://..." } else { input };
+        f.render_widget(Paragraph::new("Name:").style(field0_style), rows[0]);
+        let name_display = if name.is_empty() { "My Group" } else { name };
         f.render_widget(
-            Paragraph::new(url)
-                .block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .border_style(Style::default().fg(ACCENT)),
-                )
+            Paragraph::new(name_display)
+                .block(Block::default().borders(Borders::ALL).border_style(field0_style))
                 .style(s_text()),
             rows[1],
         );
 
         f.render_widget(Paragraph::new("").style(s_dim()), rows[2]);
 
+        f.render_widget(Paragraph::new("Subscription URL:").style(field1_style), rows[3]);
+        let url_display = if url.is_empty() { "https://..." } else { url };
         f.render_widget(
-            Paragraph::new(" Enter save | Esc cancel | Ctrl+V paste ")
+            Paragraph::new(url_display)
+                .block(Block::default().borders(Borders::ALL).border_style(field1_style))
+                .style(s_text()),
+            rows[4],
+        );
+
+        f.render_widget(Paragraph::new("").style(s_dim()), rows[5]);
+
+        let hint = if field == 0 { " Tab to switch field | Enter next | Esc cancel " }
+            else { " Tab to switch field | Enter create | Esc cancel " };
+        f.render_widget(
+            Paragraph::new(hint)
                 .style(s_dim())
                 .alignment(Alignment::Center),
-            rows[3],
+            rows[6],
         );
     }
 
-    fn render_confirm_popup(&self, f: &mut Frame, name: &str, area: Rect) {
+    fn render_confirm_popup(&self, f: &mut Frame, kind: &str, name: &str, area: Rect) {
         let pa = centered_rect(55, 25, area);
         f.render_widget(Clear, pa);
 
@@ -821,7 +846,7 @@ impl App {
         let inner = block.inner(pa);
         f.render_widget(block, pa);
 
-        let msg = format!("Delete profile \"{}\"?\nThis cannot be undone.", name);
+        let msg = format!("Delete {} \"{}\"?\nThis cannot be undone.", kind, name);
         let chunks =
             Layout::vertical([Constraint::Percentage(50), Constraint::Percentage(50)])
                 .split(inner);
@@ -866,8 +891,10 @@ impl App {
             ("t", "Test profile latency"),
             ("a", "Import VLESS profile"),
             ("x", "Delete selected profile"),
+            ("X", "Delete current group"),
             ("u", "Update subscription"),
-            ("U", "Edit subscription URL"),
+            ("e", "Edit subscription URL"),
+            ("U", "Add new group"),
             ("v", "Toggle TUN mode"),
             ("Tab", "Switch focus (list ↔ details)"),
             ("l", "Logs tab"),

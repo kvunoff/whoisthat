@@ -199,6 +199,7 @@ pub struct GroupDeleted {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SubscriptionUpdated {
     pub group_id: i32,
+    pub group: Group,
     pub profiles: Vec<Profile>,
 }
 
