@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # =============================================================================
-# WhoisThat — universal installer
+# WhoisThat — universal installer / updater
 # Usage:  curl -fsSL https://raw.githubusercontent.com/kvunoff/whoisthat/main/install.sh | bash
+#
+# Works for both fresh installs and upgrades. If whoisthat is already installed
+# it will rebuild from the latest tagged release and overwrite the old binaries.
 #
 # What it does:
 #   1. Detects the Linux distribution
@@ -315,7 +318,7 @@ install_tun2socks() {
 print_final_message() {
     echo
     echo -e "${GREEN}============================================${NC}"
-    echo -e "${GREEN}  WhoisThat installed successfully!${NC}"
+    echo -e "${GREEN}  WhoisThat ${mode,,}ed successfully!${NC}"
     echo -e "${GREEN}============================================${NC}"
     echo
     echo "  Usage:"
@@ -358,9 +361,17 @@ print_final_message() {
 # Main
 # =============================================================================
 main() {
+    local mode="Install"
+    if command -v whoisthat &>/dev/null || [ -f /usr/local/bin/whoisthat ]; then
+        mode="Upgrade"
+        local cur
+        cur=$(whoisthat --version 2>/dev/null || echo "unknown")
+        info "whoisthat ${cur} detected — will upgrade to latest release"
+    fi
+
     echo
-    echo -e "${CYAN}  WhoisThat — Universal Installer${NC}"
-    echo -e "${CYAN}  ================================${NC}"
+    echo -e "${CYAN}  WhoisThat — Universal ${mode}er${NC}"
+    echo -e "${CYAN}  ==================================${NC}"
     echo
 
     detect_distro
