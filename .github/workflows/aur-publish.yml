@@ -25,28 +25,43 @@ jobs:
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "Tag: ${RAW}  ->  Version: ${VERSION}"
 
-      # --- 3. Setup SSH (used by both AUR clone steps below) ---------------
+      # --- 3. Setup SSH -----------------------------------------------------
       - name: Setup SSH
-        uses: shimataro/ssh-key-action@v2
-        with:
-          key: ${{ secrets.AUR_SSH_KEY }}
-          known_hosts: unnecessary
-          config: |
-            Host aur.archlinux.org
-              IdentityFile ~/.ssh/id_rsa
-              User aur
+        env:
+          AUR_SSH_KEY: ${{ secrets.AUR_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
 
-      - name: Add known_hosts
-        run: ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts
+          # Write the key — printf avoids newline issues from GitHub Secrets
+          printf '%s\n' "$AUR_SSH_KEY" > ~/.ssh/aur_key
+          chmod 600 ~/.ssh/aur_key
+
+          # Verify the key looks like a private key
+          head -1 ~/.ssh/aur_key
+
+          ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+          cat > ~/.ssh/config <<'EOF'
+          Host aur.archlinux.org
+            HostName aur.archlinux.org
+            IdentityFile ~/.ssh/aur_key
+            User aur
+            StrictHostKeyChecking yes
+          EOF
+          chmod 600 ~/.ssh/config
+
+          # Test the connection
+          ssh -vT aur@aur.archlinux.org 2>&1 | tail -5 || true
 
       # --- 4. Clone AUR repo, compute pkgrel --------------------------------
-      #       If AUR pkgver matches ours → force-push fix, pkgrel++.
-      #       If version changed → new release, pkgrel=1.
       - name: Compute pkgrel from AUR state
         id: pkgrel
         run: |
           TMP=$(mktemp -d)
-          git clone ssh://aur@aur.archlinux.org/whoisthat.git "$TMP"
+          GIT_SSH_COMMAND="ssh -i ~/.ssh/aur_key -o StrictHostKeyChecking=accept-new" \
+            git clone ssh://aur@aur.archlinux.org/whoisthat.git "$TMP"
 
           AUR_VER=$(grep '^pkgver=' "$TMP/PKGBUILD" | cut -d= -f2)
           AUR_REL=$(grep '^pkgrel=' "$TMP/PKGBUILD" | cut -d= -f2)
@@ -98,7 +113,8 @@ jobs:
           PKGREL="${{ steps.pkgrel.outputs.pkgrel }}"
 
           TMP=$(mktemp -d)
-          git clone ssh://aur@aur.archlinux.org/whoisthat.git "$TMP"
+          GIT_SSH_COMMAND="ssh -i ~/.ssh/aur_key -o StrictHostKeyChecking=accept-new" \
+            git clone ssh://aur@aur.archlinux.org/whoisthat.git "$TMP"
           cp pkg/aur/PKGBUILD          "$TMP/"
           cp pkg/aur/.SRCINFO          "$TMP/"
           cp pkg/aur/whoisthat.install "$TMP/"
