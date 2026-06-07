@@ -15,6 +15,8 @@ pub struct AppConfig {
     pub last_profile_id: i32,
     #[serde(default)]
     pub core_version: String,
+    #[serde(default = "default_true")]
+    pub show_ip: bool,
 }
 
 fn default_core_tcp_port() -> u16 {
@@ -22,6 +24,9 @@ fn default_core_tcp_port() -> u16 {
 }
 fn default_core_host() -> String {
     "127.0.0.1".into()
+}
+fn default_true() -> bool {
+    true
 }
 
 impl Default for AppConfig {
@@ -33,6 +38,7 @@ impl Default for AppConfig {
             last_group_id: 0,
             last_profile_id: 0,
             core_version: String::new(),
+            show_ip: true,
         }
     }
 }

@@ -186,7 +186,7 @@ async fn main() -> io::Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut term = ratatui::Terminal::new(backend)?;
 
-    let mut app = App::new(cfg.autoconnect);
+    let mut app = App::new(cfg.autoconnect, cfg.show_ip);
 
     let (input_tx, mut input_rx) = mpsc::unbounded_channel();
     let input_tx2 = input_tx.clone();
@@ -464,7 +464,9 @@ async fn handle_input(
             app.logs_state.poll();
         }
         AppEvent::PublicIp(ip) => {
-            app.public_ip = ip;
+            if app.show_ip {
+                app.public_ip = ip;
+            }
         }
         AppEvent::Input(input) => match input {
             Event::Key(key) => {
@@ -891,6 +893,14 @@ async fn handle_normal_input(
                     0 => {
                         app.autoconnect = !app.autoconnect;
                         cfg.autoconnect = app.autoconnect;
+                        config::save_config(cfg);
+                    }
+                    1 => {
+                        app.show_ip = !app.show_ip;
+                        cfg.show_ip = app.show_ip;
+                        if !app.show_ip {
+                            app.public_ip = String::new();
+                        }
                         config::save_config(cfg);
                     }
                     _ => {}

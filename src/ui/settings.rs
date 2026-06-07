@@ -25,7 +25,9 @@ impl SettingsState {
     }
 
     pub fn cursor_down(&mut self) {
-        // only autoconnect exists for now (1 item)
+        if self.cursor < 1 {
+            self.cursor += 1;
+        }
     }
 }
 
@@ -33,6 +35,7 @@ pub fn render_settings(
     f: &mut Frame,
     area: Rect,
     autoconnect: bool,
+    show_ip: bool,
     state: &SettingsState,
     focused: bool,
 ) {
@@ -53,6 +56,7 @@ pub fn render_settings(
 
     let items = [
         ("Autoconnect", if autoconnect { "on" } else { "off" }),
+        ("Show IP",     if show_ip     { "on" } else { "off" }),
     ];
 
     let lines: Vec<Line> = items

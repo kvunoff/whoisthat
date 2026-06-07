@@ -50,6 +50,7 @@ pub struct App {
     pub tun_enabled: bool,
     pub last_msg: Option<String>,
     pub autoconnect: bool,
+    pub show_ip: bool,
     pub public_ip: String,
 
     pub tab: ActiveTab,
@@ -65,7 +66,7 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(autoconnect: bool) -> Self {
+    pub fn new(autoconnect: bool, show_ip: bool) -> Self {
         Self {
             groups: Vec::new(),
             connection_status: ProxyStatus {
@@ -76,6 +77,7 @@ impl App {
             tun_enabled: false,
             last_msg: None,
             autoconnect,
+            show_ip,
             public_ip: String::new(),
             tab: ActiveTab::Profiles,
             focus: Focus::LeftPanel,
@@ -303,11 +305,21 @@ impl App {
             "Disconnected"
         };
 
-        let ip_display = if self.public_ip.is_empty() {
-            "..."
-        } else {
-            &self.public_ip
-        };
+        let mut status_spans = vec![
+            Span::styled(" WhoisThat ", s_accent_bold().add_modifier(Modifier::BOLD)),
+            Span::styled("│ ", s_faint()),
+            Span::styled(format!(" {} {} ", icon, status_text), icon_style),
+        ];
+        if self.show_ip {
+            let ip_display = if self.public_ip.is_empty() {
+                "..."
+            } else {
+                &self.public_ip
+            };
+            status_spans.push(Span::styled("│ ", s_faint()));
+            status_spans.push(Span::styled(ip_display, s_dim()));
+        }
+        let status_line = Line::from(status_spans);
 
         let tab_line = Line::from(self.tab_spans());
 
@@ -328,13 +340,6 @@ impl App {
         ])
         .split(inner);
 
-        let status_line = Line::from(vec![
-            Span::styled(" WhoisThat ", s_accent_bold().add_modifier(Modifier::BOLD)),
-            Span::styled("│ ", s_faint()),
-            Span::styled(format!(" {} {} ", icon, status_text), icon_style),
-            Span::styled("│ ", s_faint()),
-            Span::styled(ip_display, s_dim()),
-        ]);
         f.render_widget(Paragraph::new(status_line), rows[0]);
 
         let ts = &self.traffic_stats;
@@ -386,6 +391,7 @@ impl App {
                     f,
                     area,
                     self.autoconnect,
+                    self.show_ip,
                     &self.settings_state,
                     focused,
                 );
@@ -958,7 +964,7 @@ impl App {
         let inner = block.inner(area);
         f.render_widget(block, area);
 
-        let left = Span::styled(" WhoisThat v0.1.11 · xray-core", s_faint());
+        let left = Span::styled(" WhoisThat v0.1.12 · xray-core", s_faint());
         let left_w = left.width();
 
         let tun = if self.tun_enabled {
