@@ -510,10 +510,20 @@ async fn handle_popup_input(
     key: event::KeyEvent,
 ) -> bool {
     match app.popup.take() {
-        Some(Popup::Help) => {
-            app.popup = None;
-            app.focus = Focus::LeftPanel;
-        }
+        Some(Popup::Help) => match key.code {
+            KeyCode::Char('j') | KeyCode::Down => {
+                app.help_scroll = app.help_scroll.saturating_add(1);
+                app.popup = Some(Popup::Help);
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                app.help_scroll = app.help_scroll.saturating_sub(1);
+                app.popup = Some(Popup::Help);
+            }
+            _ => {
+                app.popup = None;
+                app.focus = Focus::LeftPanel;
+            }
+        },
         Some(Popup::Import { input, cursor }) => match key.code {
             KeyCode::Esc => {
                 app.popup = None;
@@ -863,6 +873,7 @@ async fn handle_normal_input(
             return false;
         }
         KeyCode::Char('h') | KeyCode::Char('?') => {
+            app.help_scroll = 0;
             app.popup = Some(Popup::Help);
             app.focus = Focus::Popup;
             return false;
