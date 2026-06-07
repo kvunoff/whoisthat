@@ -4,6 +4,79 @@ A modern terminal-based VPN client. Rust TUI frontend. Go engine backed by Xray-
 
 **Supports**: VLESS with Reality, xHTTP, and gRPC. Full TUN-mode VPN. Subscription-based profile management.
 
+![WhoisThat](whoisthat-screen.jpg)
+
+---
+
+## Installation
+
+### Quick install (any Linux distribution)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/kvunoff/whoisthat/main/install.sh | bash
+```
+
+The script auto-detects your distro, installs Go and Rust from official channels,
+builds everything from the latest tagged release, and copies binaries to `/usr/local/bin`.
+Xray-core is included. tun2socks is offered as an opt-in for TUN mode.
+
+### Arch Linux (AUR)
+
+```bash
+paru -S whoisthat
+# or
+yay -S whoisthat
+```
+
+### Manual build
+
+Prerequisites: **Rust** 1.80+, **Go** 1.24+, **git**, **curl**, a C compiler.
+
+```bash
+git clone https://github.com/kvunoff/whoisthat.git
+cd whoisthat
+
+# Parser (standalone Rust binary — URI → Xray JSON)
+cd parser && cargo build --release && cd ..
+
+# Core (Go daemon — VPN engine)
+cd core/core && go build -o whoisthat-core && cd ../..
+
+# TUI (Rust — terminal interface)
+cargo build --release
+
+# Install
+sudo install -Dm755 target/release/whoisthat              /usr/local/bin/whoisthat
+sudo install -Dm755 core/core/whoisthat-core               /usr/local/bin/whoisthat-core
+sudo install -Dm755 parser/target/release/whoisthat-parser /usr/local/bin/whoisthat-parser
+```
+
+Xray-core can be installed via `go install github.com/XTLS/Xray-core@latest`
+and moved to PATH. tun2socks is only needed for TUN mode.
+
+### Configuration
+
+**TUI config** — `~/.config/whoisthat/config.toml`:
+```toml
+core_tcp_port = 4897
+core_host = "127.0.0.1"
+autoconnect = false
+last_group_id = 0
+last_profile_id = 0
+```
+
+**Core config** — `~/.config/whoisthat/config.json` (auto-generated):
+```json
+{
+  "socks-port": 3090,
+  "http-port": 3091,
+  "core-tcp-port": 4897,
+  "test-port-range": { "start": 3095, "end": 30120 }
+}
+```
+
+Profile data is stored under `~/.local/share/whoisthat/db/`.
+
 ---
 
 ## Features
@@ -154,67 +227,6 @@ Subscription metadata (`sub_*`) is populated from the `subscription-userinfo` HT
 
 ---
 
-## Installation
-
-### Arch Linux (AUR)
-
-```bash
-paru -S whoisthat
-```
-
-or
-
-```bash
-yay -S whoisthat
-```
-
-### Prerequisites (manual build)
-
-- **Rust** 1.80+
-- **Go** 1.24+
-- **Xray-core** — binary available in `PATH`
-- **whoisthat-parser** — VLESS URI → Xray JSON converter (bundled in `parser/`)
-- **tun2socks** — TUN→SOCKS bridge (required for TUN mode only)
-
-### Build
-
-```bash
-# Build the core (Go daemon)
-cd core/core
-go build -o whoisthat-core
-
-# Build the TUI (Rust)
-cd ../..
-cargo build --release
-```
-
-The resulting binary `target/release/whoisthat` will look for `whoisthat-core` in `PATH` or in `./core/core/`.
-
-### Configuration
-
-**TUI config** — `~/.config/whoisthat/config.toml`:
-```toml
-core_tcp_port = 4897
-core_host = "127.0.0.1"
-autoconnect = false
-last_group_id = 0
-last_profile_id = 0
-```
-
-**Core config** — `~/.config/whoisthat/config.json` (auto-generated):
-```json
-{
-  "socks-port": 3090,
-  "http-port": 3091,
-  "core-tcp-port": 4897,
-  "test-port-range": { "start": 3095, "end": 30120 }
-}
-```
-
-Profile data is stored under `~/.local/share/whoisthat/db/`.
-
----
-
 ## Usage
 
 ### Navigation
@@ -300,7 +312,8 @@ whoisthat/
 │       ├── settings.rs ← Settings screen
 │       ├── logs.rs     ← Log viewer (file tail)
 │       └── widgets.rs  ← Shared widget helpers
-├── parser/            ← VLESS URI → Xray JSON parser (Rust)
+├── install.sh          ← Universal installer script
+├── parser/             ← VLESS URI → Xray JSON parser (Rust)
 │   ├── Cargo.toml
 │   └── src/
 ├── core/               ← WhoisThat Core (Go VPN engine)
