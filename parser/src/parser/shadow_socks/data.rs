@@ -7,12 +7,15 @@ use crate::{
 };
 use base64::{engine::general_purpose, Engine};
 
-pub fn get_data(uri: &str) -> RawData {
-    let data = uri.split_once("ss://").unwrap().1;
+pub fn get_data(uri: &str) -> Result<RawData, String> {
+    let data = uri
+        .split_once("ss://")
+        .ok_or_else(|| "Invalid shadowsocks URI: missing 'ss://'".to_string())?
+        .1;
     let (raw_data, name) = data.split_once("#").unwrap_or((data, ""));
     let (raw_uri, _) = raw_data.split_once("?").unwrap_or((raw_data, ""));
-    let parsed_address = parse_ss_address(raw_uri);
-    return RawData {
+    let parsed_address = parse_ss_address(raw_uri)?;
+    Ok(RawData {
         remarks: url_decode(Some(String::from(name))).unwrap_or(String::from("")),
         server_method: url_decode(Some(parsed_address.method)),
         address: Some(parsed_address.address),
@@ -42,33 +45,41 @@ pub fn get_data(uri: &str) -> RawData {
         allowInsecure: None,
         vnext_security: None,
         username: None,
-    };
+    })
 }
 
-fn parse_ss_address(raw_data: &str) -> models::ShadowSocksAddress {
-    let (userinfo, raw_address): (String, &str) = match raw_data.split_once("@") {
-        None => {
-            panic!("Wrong shadowsocks format, no `@` found in the address");
-        }
-        Some(data) => (String::from(data.0), data.1),
-    };
+fn parse_ss_address(raw_data: &str) -> Result<models::ShadowSocksAddress, String> {
+    let (userinfo_raw, raw_address) = raw_data.split_once("@").ok_or_else(|| {
+        "Wrong shadowsocks format, no `@` found in the address".to_string()
+    })?;
+    let userinfo = String::from(userinfo_raw);
     let address_wo_slash = raw_address.strip_suffix("/").unwrap_or(raw_address);
 
-    let parsed = address_wo_slash.parse::<Uri>().unwrap();
+    let parsed: Uri = address_wo_slash
+        .parse()
+        .map_err(|e| format!("Invalid shadowsocks address URI: {}", e))?;
 
     let method_and_password = general_purpose::STANDARD
         .decode(url_decode_str(&userinfo).unwrap_or(userinfo))
-        .expect("User info is not base64");
+        .map_err(|e| format!("Shadowsocks user info is not valid base64: {}", e))?;
 
-    let (method, password) = std::str::from_utf8(&method_and_password)
-        .expect("Base64 did not yield a valid utf-8 string")
+    let decoded = std::str::from_utf8(&method_and_password)
+        .map_err(|e| format!("Shadowsocks base64 is not valid UTF-8: {}", e))?;
+
+    let (method, password) = decoded
         .split_once(":")
-        .expect("No `:` found in the decoded base64");
+        .ok_or_else(|| "No `:` found in decoded shadowsocks data".to_string())?;
 
-    return models::ShadowSocksAddress {
+    Ok(models::ShadowSocksAddress {
         method: String::from(method),
         password: String::from(password),
-        address: parsed.host().unwrap().to_string(),
-        port: parsed.port().unwrap().as_u16(),
-    };
+        address: parsed
+            .host()
+            .ok_or_else(|| "Missing host in shadowsocks address".to_string())?
+            .to_string(),
+        port: parsed
+            .port()
+            .ok_or_else(|| "Missing port in shadowsocks address".to_string())?
+            .as_u16(),
+    })
 }

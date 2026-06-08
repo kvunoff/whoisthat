@@ -25,7 +25,7 @@ func (cmd *Cmd) Connect(data structs.ConnectData, proxy_manager *proxy.ProxyMana
 		cmd.warn("connect-failed", "Failed to connect")
 		return
 	}
-	was_tun_enabled := tun_manager.IsEnabled
+	was_tun_enabled := tun_manager.IsEnabledLocked()
 
 	if was_tun_enabled {
 		tun_manager.Stop()

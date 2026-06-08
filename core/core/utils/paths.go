@@ -31,9 +31,13 @@ func GetWorkingDir() string {
 func GetHomeDir() (string, error) {
 	uid := os.Getuid()
 	if uid == 0 {
-		real_uid, err := strconv.Atoi(os.Getenv("SUDO_UID"))
+		uidStr := os.Getenv("SUDO_UID")
+		if uidStr == "" {
+			uidStr = os.Getenv("PKEXEC_UID")
+		}
+		real_uid, err := strconv.Atoi(uidStr)
 		if err != nil {
-			return "", fmt.Errorf("failed to get user id outside of sudo %w", err)
+			return "", fmt.Errorf("failed to get user id outside of sudo/pkexec %w", err)
 		}
 		uid = real_uid
 	}

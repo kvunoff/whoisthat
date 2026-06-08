@@ -18,7 +18,7 @@ func (cmd *Cmd) GetApplicationState(data structs.GetApplicationStateData, proxy_
 	application_state := structs.ApplicationState{
 		Groups:           groups,
 		ConnectionStatus: proxy_manager.GetStatus(),
-		TunStatus:        tun_manager.IsEnabled,
+		TunStatus:        tun_manager.IsEnabledLocked(),
 	}
 
 	cmd.send("application-state", application_state)

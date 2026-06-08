@@ -3,16 +3,26 @@ use crate::parser::trojan::models;
 use crate::utils::{get_parameter_value, url_decode};
 use http::Uri;
 
-pub fn get_data(uri: &str) -> RawData {
-    let data = uri.split_once("trojan://").unwrap().1;
-    let query_and_name = uri.split_once("?").unwrap().1;
+pub fn get_data(uri: &str) -> Result<RawData, String> {
+    let data = uri
+        .split_once("trojan://")
+        .ok_or_else(|| "Invalid trojan URI: missing 'trojan://'".to_string())?
+        .1;
+    let query_and_name = uri
+        .split_once("?")
+        .ok_or_else(|| "Missing query in trojan URI".to_string())?
+        .1;
     let (raw_query, name) = query_and_name
         .split_once("#")
         .unwrap_or((query_and_name, ""));
-    let parsed_address = parse_trojan_address(data.split_once("?").unwrap().0);
+    let parsed_address = parse_trojan_address(
+        data.split_once("?")
+            .ok_or_else(|| "Missing '?' in trojan URI".to_string())?
+            .0,
+    )?;
     let query: Vec<(&str, &str)> = querystring::querify(raw_query);
 
-    return RawData {
+    Ok(RawData {
         remarks: url_decode(Some(String::from(name))).unwrap_or(String::from("")),
         uuid: Some(parsed_address.uuid),
         port: Some(parsed_address.port),
@@ -42,23 +52,32 @@ pub fn get_data(uri: &str) -> RawData {
         allowInsecure: get_parameter_value(&query, "allowInsecure"),
         server_method: None,
         username: None,
-    };
+    })
 }
 
-fn parse_trojan_address(raw_data: &str) -> models::TrojanAddress {
-    let (uuid, raw_address): (String, &str) = match raw_data.split_once("@") {
-        None => {
-            panic!("Wrong trojan format, no `@` found in the address");
-        }
-        Some(data) => (String::from(data.0), data.1),
-    };
+fn parse_trojan_address(raw_data: &str) -> Result<models::TrojanAddress, String> {
+    let (uuid_raw, raw_address) = raw_data
+        .split_once("@")
+        .ok_or_else(|| "Wrong trojan format, no `@` found in the address".to_string())?;
+    let uuid = String::from(uuid_raw);
     let address_wo_slash = raw_address.strip_suffix("/").unwrap_or(raw_address);
 
-    let parsed = address_wo_slash.parse::<Uri>().unwrap();
+    let parsed: Uri = address_wo_slash
+        .parse()
+        .map_err(|e| format!("Invalid trojan address URI: {}", e))?;
 
-    return models::TrojanAddress {
-        uuid: url_decode(Some(uuid)).unwrap(),
-        address: parsed.host().unwrap().to_string(),
-        port: parsed.port().unwrap().as_u16(),
-    };
+    let uuid = url_decode(Some(uuid))
+        .ok_or_else(|| "Failed to URL-decode trojan password".to_string())?;
+
+    Ok(models::TrojanAddress {
+        uuid,
+        address: parsed
+            .host()
+            .ok_or_else(|| "Missing host in trojan address".to_string())?
+            .to_string(),
+        port: parsed
+            .port()
+            .ok_or_else(|| "Missing port in trojan address".to_string())?
+            .as_u16(),
+    })
 }

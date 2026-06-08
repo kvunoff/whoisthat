@@ -990,7 +990,7 @@ impl App {
         let inner = block.inner(area);
         f.render_widget(block, area);
 
-        let left = Span::styled(" WhoisThat v0.3.2 · xray-core", s_faint());
+        let left = Span::styled(" WhoisThat v0.3.3 · xray-core", s_faint());
         let left_w = left.width();
 
         let tun = if self.tun_enabled {
@@ -1026,8 +1026,9 @@ impl App {
         } else if msg.len() <= max_right {
             Span::styled(msg, s_dim())
         } else if max_right > 2 {
+            let truncated: String = msg.chars().take(max_right.saturating_sub(2)).collect();
             Span::styled(
-                format!("{}…", &msg[..max_right.saturating_sub(2)]),
+                format!("{}…", truncated),
                 s_dim(),
             )
         } else {

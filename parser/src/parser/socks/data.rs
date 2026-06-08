@@ -7,12 +7,15 @@ use crate::{
 };
 use base64::{engine::general_purpose, Engine};
 
-pub fn get_data(uri: &str) -> RawData {
-    let data = uri.split_once("://").unwrap().1;
+pub fn get_data(uri: &str) -> Result<RawData, String> {
+    let data = uri
+        .split_once("://")
+        .ok_or_else(|| "Invalid socks URI".to_string())?
+        .1;
     let (raw_data, name) = data.split_once("#").unwrap_or((data, ""));
     let (raw_uri, _) = raw_data.split_once("?").unwrap_or((raw_data, ""));
-    let parsed_address = parse_socks_address(raw_uri);
-    return RawData {
+    let parsed_address = parse_socks_address(raw_uri)?;
+    Ok(RawData {
         remarks: url_decode(Some(String::from(name))).unwrap_or(String::from("")),
         username: url_decode(parsed_address.username),
         address: Some(parsed_address.address),
@@ -42,17 +45,19 @@ pub fn get_data(uri: &str) -> RawData {
         quic_security: None,
         allowInsecure: None,
         vnext_security: None,
-    };
+    })
 }
 
-fn parse_socks_address(raw_data: &str) -> models::SocksAddress {
+fn parse_socks_address(raw_data: &str) -> Result<models::SocksAddress, String> {
     let (maybe_userinfo, raw_address): (Option<String>, &str) = match raw_data.split_once("@") {
         Some(data) => (Some(String::from(data.0)), data.1),
         None => (None, raw_data),
     };
     let address_wo_slash = raw_address.strip_suffix("/").unwrap_or(raw_address);
 
-    let parsed = address_wo_slash.parse::<Uri>().unwrap();
+    let parsed: Uri = address_wo_slash
+        .parse()
+        .map_err(|e| format!("Invalid socks address URI: {}", e))?;
 
     return match maybe_userinfo {
         Some(userinfo) => {
@@ -61,27 +66,40 @@ fn parse_socks_address(raw_data: &str) -> models::SocksAddress {
                 .decode(url_decoded.clone())
                 .map(|a| {
                     String::from(
-                        std::str::from_utf8(&a).expect("Base64 did not yield a valid utf-8 string"),
+                        std::str::from_utf8(&a)
+                            .unwrap_or("")
                     )
                 })
                 .unwrap_or(String::from(url_decoded.clone()));
 
             let (username, password) = username_and_password
                 .split_once(":")
-                .expect("No `:` found in the decoded base64");
+                .unwrap_or((&username_and_password, ""));
 
-            models::SocksAddress {
+            Ok(models::SocksAddress {
                 username: Some(String::from(username)),
-                password: Some(String::from(password)),
-                address: parsed.host().unwrap().to_string(),
-                port: parsed.port().unwrap().as_u16(),
-            }
+                password: if password.is_empty() { None } else { Some(String::from(password)) },
+                address: parsed
+                    .host()
+                    .ok_or_else(|| "Missing host in socks address".to_string())?
+                    .to_string(),
+                port: parsed
+                    .port()
+                    .ok_or_else(|| "Missing port in socks address".to_string())?
+                    .as_u16(),
+            })
         }
-        None => models::SocksAddress {
+        None => Ok(models::SocksAddress {
             username: None,
             password: None,
-            address: parsed.host().unwrap().to_string(),
-            port: parsed.port().unwrap().as_u16(),
-        },
+            address: parsed
+                .host()
+                .ok_or_else(|| "Missing host in socks address".to_string())?
+                .to_string(),
+            port: parsed
+                .port()
+                .ok_or_else(|| "Missing port in socks address".to_string())?
+                .as_u16(),
+        }),
     };
 }

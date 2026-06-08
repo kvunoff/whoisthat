@@ -32,6 +32,12 @@ func (t *TunModeManager) Init() {
 	}
 }
 
+func (t *TunModeManager) IsEnabledLocked() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.IsEnabled
+}
+
 func (t *TunModeManager) Start(proxy_ipv4s []string, dns string) error {
 	logger.Info("tun: starting...")
 	interface_name, interface_ip, err := GetDefaultInterfaceAndIP()

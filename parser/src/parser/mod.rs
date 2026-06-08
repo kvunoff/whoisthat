@@ -161,34 +161,34 @@ pub fn create_outbound_object(uri: &str) -> Result<config_models::Outbound, Stri
 }
 
 fn get_uri_data(uri: &str) -> Result<(String, RawData, OutboundSettings), String> {
-    let protocol = uri_identifier::get_uri_protocol(uri);
-    match protocol {
-        Some(uri_identifier::Protocols::Vless) => {
-            let d = vless::data::get_data(uri);
-            let s = vless::create_outbound_settings(&d);
-            Ok((String::from("vless"), d, s))
-        }
-        Some(uri_identifier::Protocols::Vmess) => {
-            let d = vmess::data::get_data(uri);
-            let s = vmess::create_outbound_settings(&d);
-            Ok((String::from("vmess"), d, s))
-        }
-        Some(uri_identifier::Protocols::Trojan) => {
-            let d = trojan::data::get_data(uri);
-            let s = trojan::create_outbound_settings(&d);
-            Ok((String::from("trojan"), d, s))
-        }
-        Some(uri_identifier::Protocols::Shadowsocks) => {
-            let d = shadow_socks::data::get_data(uri);
-            let s = shadow_socks::create_outbound_settings(&d);
-            Ok((String::from("shadowsocks"), d, s))
-        }
-        Some(uri_identifier::Protocols::Socks) => {
-            let d = socks::data::get_data(uri);
-            let s = socks::create_outbound_settings(&d);
-            Ok((String::from("socks"), d, s))
-        }
-        Some(_) => Err("The protocol was recognized but is not supported yet".to_string()),
-        None => Err("The protocol is not supported".to_string()),
-    }
+	let protocol = uri_identifier::get_uri_protocol(uri);
+	match protocol {
+		Some(uri_identifier::Protocols::Vless) => {
+			let d = vless::data::get_data(uri)?;
+			let s = vless::create_outbound_settings(&d);
+			Ok((String::from("vless"), d, s))
+		}
+		Some(uri_identifier::Protocols::Vmess) => {
+			let d = vmess::data::get_data(uri)?;
+			let s = vmess::create_outbound_settings(&d);
+			Ok((String::from("vmess"), d, s))
+		}
+		Some(uri_identifier::Protocols::Trojan) => {
+			let d = trojan::data::get_data(uri)?;
+			let s = trojan::create_outbound_settings(&d);
+			Ok((String::from("trojan"), d, s))
+		}
+		Some(uri_identifier::Protocols::Shadowsocks) => {
+			let d = shadow_socks::data::get_data(uri)?;
+			let s = shadow_socks::create_outbound_settings(&d);
+			Ok((String::from("shadowsocks"), d, s))
+		}
+		Some(uri_identifier::Protocols::Socks) => {
+			let d = socks::data::get_data(uri)?;
+			let s = socks::create_outbound_settings(&d);
+			Ok((String::from("socks"), d, s))
+		}
+		Some(_) => Err("The protocol was recognized but is not supported yet".to_string()),
+		None => Err("The protocol is not supported".to_string()),
+	}
 }

@@ -5,8 +5,11 @@ use base64::{engine::general_purpose, Engine};
 use http::Uri;
 use serde_json::Value;
 
-pub fn get_data(uri: &str) -> RawData {
-    let data = uri.split_once("vmess://").unwrap().1;
+pub fn get_data(uri: &str) -> Result<RawData, String> {
+    let data = uri
+        .split_once("vmess://")
+        .ok_or_else(|| "Invalid vmess URI: missing 'vmess://'".to_string())?
+        .1;
 
     return match general_purpose::STANDARD
         .decode(url_decode_str(data).unwrap_or(String::from(data)))
@@ -16,26 +19,27 @@ pub fn get_data(uri: &str) -> RawData {
     };
 }
 
-fn get_raw_data_from_base64(decoded_base64: &Vec<u8>) -> RawData {
-    let json_str = std::str::from_utf8(decoded_base64).unwrap();
-    let json = serde_json::from_str::<Value>(json_str).unwrap();
+fn get_raw_data_from_base64(decoded_base64: &[u8]) -> Result<RawData, String> {
+    let json_str = std::str::from_utf8(decoded_base64)
+        .map_err(|e| format!("Invalid UTF-8 in vmess base64: {}", e))?;
+    let json = serde_json::from_str::<Value>(json_str)
+        .map_err(|e| format!("Invalid JSON in vmess base64: {}", e))?;
 
-    return RawData {
+    let port = get_str_field(&json, "port")
+        .and_then(|s| s.parse::<u16>().ok());
+
+    Ok(RawData {
         remarks: url_decode(get_str_field(&json, "ps")).unwrap_or(String::from("")),
         uuid: get_str_field(&json, "id"),
-        port: get_str_field(&json, "port")
-            .and_then(|s| Some(s.parse::<u16>().expect("port is not a number"))),
+        port,
         address: get_str_field(&json, "add"),
         alpn: url_decode(get_str_field(&json, "alpn")),
         path: url_decode(get_str_field(&json, "path")),
         authority: url_decode(get_str_field(&json, "host")),
-        // this probably does not exist in vmess uri
         pbk: url_decode(get_str_field(&json, "pbk")),
         security: get_str_field(&json, "tls"),
         vnext_security: get_str_field(&json, "scy"),
-        // this probably does not exist in vmess uri
         sid: url_decode(get_str_field(&json, "sid")),
-        // this probably does not exist in vmess uri
         flow: url_decode(get_str_field(&json, "flow")),
         sni: get_str_field(&json, "sni"),
         fp: url_decode(get_str_field(&json, "fp")),
@@ -43,39 +47,36 @@ fn get_raw_data_from_base64(decoded_base64: &Vec<u8>) -> RawData {
         encryption: None,
         header_type: url_decode(get_str_field(&json, "type")),
         host: url_decode(get_str_field(&json, "host")),
-        // this probably does not exist in vmess uri
         seed: url_decode(get_str_field(&json, "seed")),
         quic_security: None,
         key: None,
         mode: url_decode(get_str_field(&json, "mode")),
         service_name: url_decode(get_str_field(&json, "path")),
-        // this probably does not exist in vmess uri
         slpn: url_decode(get_str_field(&json, "slpn")),
-        // this probably does not exist in vmess uri
         spx: url_decode(get_str_field(&json, "spx")),
-        // this probably does not exist in vmess uri
         extra: url_decode(get_str_field(&json, "extra")),
-        // this probably does not exist in vmess uri
         allowInsecure: None,
         server_method: None,
         username: None,
-    };
+    })
 }
 
 fn get_str_field(json: &Value, field: &str) -> Option<String> {
     return json.get(field).and_then(|v| v.as_str()).map(String::from);
 }
 
-fn get_raw_data_from_uri(data: &str) -> RawData {
-    let query_and_name = data.split_once("?").unwrap().1;
+fn get_raw_data_from_uri(data: &str) -> Result<RawData, String> {
+    let (before_query, query_and_name) = data
+        .split_once("?")
+        .ok_or_else(|| "Missing query in vmess URI".to_string())?;
 
     let (raw_query, name) = query_and_name
         .split_once("#")
         .unwrap_or((query_and_name, ""));
-    let parsed_address = parse_vmess_address(data.split_once("?").unwrap().0);
+    let parsed_address = parse_vmess_address(before_query)?;
     let query: Vec<(&str, &str)> = querystring::querify(raw_query);
 
-    return RawData {
+    Ok(RawData {
         remarks: url_decode(Some(String::from(name))).unwrap_or(String::from("")),
         uuid: Some(parsed_address.uuid),
         port: Some(parsed_address.port),
@@ -105,23 +106,35 @@ fn get_raw_data_from_uri(data: &str) -> RawData {
         allowInsecure: get_parameter_value(&query, "allowInsecure"),
         server_method: None,
         username: None,
-    };
+    })
 }
 
-fn parse_vmess_address(raw_data: &str) -> VmessAddress {
-    let (uuid, raw_address): (String, &str) = match raw_data.split_once("@") {
-        None => {
-            panic!("Wrong vmess format, no `@` found in the address and it was not a valid base64");
-        }
-        Some(data) => (String::from(data.0), data.1),
-    };
+fn parse_vmess_address(raw_data: &str) -> Result<VmessAddress, String> {
+    let (uuid_raw, raw_address) = raw_data
+        .split_once("@")
+        .ok_or_else(|| {
+            "Wrong vmess format, no `@` found in the address and it was not a valid base64"
+                .to_string()
+        })?;
+    let uuid = String::from(uuid_raw);
     let address_wo_slash = raw_address.strip_suffix("/").unwrap_or(raw_address);
 
-    let parsed = address_wo_slash.parse::<Uri>().unwrap();
+    let parsed: Uri = address_wo_slash
+        .parse()
+        .map_err(|e| format!("Invalid vmess address URI: {}", e))?;
 
-    return VmessAddress {
-        uuid: url_decode(Some(uuid)).unwrap(),
-        address: parsed.host().unwrap().to_string(),
-        port: parsed.port().unwrap().as_u16(),
-    };
+    let uuid = url_decode(Some(uuid))
+        .ok_or_else(|| "Failed to URL-decode vmess UUID".to_string())?;
+
+    Ok(VmessAddress {
+        uuid,
+        address: parsed
+            .host()
+            .ok_or_else(|| "Missing host in vmess address".to_string())?
+            .to_string(),
+        port: parsed
+            .port()
+            .ok_or_else(|| "Missing port in vmess address".to_string())?
+            .as_u16(),
+    })
 }
