@@ -17,6 +17,10 @@ pub struct AppConfig {
     pub core_version: String,
     #[serde(default = "default_true")]
     pub show_ip: bool,
+    #[serde(default)]
+    pub log_enabled: bool,
+    #[serde(default = "default_log_level")]
+    pub log_level: String,
 }
 
 fn default_core_tcp_port() -> u16 {
@@ -27,6 +31,9 @@ fn default_core_host() -> String {
 }
 fn default_true() -> bool {
     true
+}
+fn default_log_level() -> String {
+    "warn".into()
 }
 
 impl Default for AppConfig {
@@ -39,6 +46,8 @@ impl Default for AppConfig {
             last_profile_id: 0,
             core_version: String::new(),
             show_ip: true,
+            log_enabled: false,
+            log_level: default_log_level(),
         }
     }
 }
@@ -49,6 +58,15 @@ pub fn config_dir() -> PathBuf {
         .unwrap_or_else(|| {
             let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
             PathBuf::from(home).join(".config").join("whoisthat")
+        })
+}
+
+pub fn data_dir() -> PathBuf {
+    directories::ProjectDirs::from("", "", "whoisthat")
+        .map(|d| d.data_local_dir().to_path_buf())
+        .unwrap_or_else(|| {
+            let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
+            PathBuf::from(home).join(".local").join("share").join("whoisthat")
         })
 }
 

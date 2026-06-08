@@ -1,10 +1,10 @@
 package xray
 
 import (
+	"whoisthat-core/lib/logger"
 	"whoisthat-core/utils"
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"sync"
@@ -43,17 +43,14 @@ func (x *XrayCore) Start(stdinPipe []byte) error {
 	}
 
 	cmd.Stdout = nil
-	// Write xray stderr to a temp log so we can diagnose config errors
 	xrayLog, err := os.CreateTemp("", "whoisthat-xray-*.log")
 	if err == nil {
 		cmd.Stderr = xrayLog
-		log.Printf("xray stderr -> %s", xrayLog.Name())
+		logger.Infof("xray stderr -> %s", xrayLog.Name())
 	} else {
 		cmd.Stderr = nil
 	}
 
-	// Run xray under a dedicated UID so its outbound traffic can be selectively
-	// routed around TUN via uidrange ip rule (leaving user traffic under TUN).
 	if uid := utils.DedicatedUid(); uid > 0 {
 		gid := utils.DedicatedGid()
 		if gid == 0 {
@@ -65,13 +62,15 @@ func (x *XrayCore) Start(stdinPipe []byte) error {
 				Gid: uint32(gid),
 			},
 		}
-		log.Printf("xray will run as uid=%d gid=%d", uid, gid)
+		logger.Infof("xray will run as uid=%d gid=%d", uid, gid)
 	}
 
 	if err := cmd.Start(); err != nil {
 		cancel()
 		return err
 	}
+
+	logger.Infof("xray started (pid=%d)", cmd.Process.Pid)
 
 	go func() {
 		defer stdin.Close()
@@ -84,6 +83,7 @@ func (x *XrayCore) Start(stdinPipe []byte) error {
 
 	go func() {
 		err := cmd.Wait()
+		logger.Infof("xray stopped (pid=%d)", cmd.Process.Pid)
 		x.mu.Lock()
 		defer x.mu.Unlock()
 		if ctx.Err() == nil {
@@ -114,7 +114,7 @@ func (x *XrayCore) Stop() {
 	if x.cmd != nil && x.cmd.Process != nil {
 		err := x.cmd.Process.Kill()
 		if err != nil {
-			log.Println("error killing proces", err)
+			logger.Warn("error killing xray process:", err)
 		}
 	}
 	if x.cancel != nil {

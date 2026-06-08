@@ -1,10 +1,10 @@
 package appconfig
 
 import (
+	"whoisthat-core/lib/logger"
 	"whoisthat-core/utils"
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 )
@@ -42,7 +42,7 @@ func GetConfig() AppConfig {
 func LoadConfig() {
 	config, err := readConfig()
 	if err != nil {
-		log.Println("failed to read config file:", err, "using default config")
+		logger.Warn("failed to read config file:", err, "using default config")
 	}
 	application_configuration = config
 }

@@ -2,12 +2,12 @@ package cmd
 
 import (
 	proxy "whoisthat-core/lib/proxy/mainproxy"
+	"whoisthat-core/lib/logger"
 	"whoisthat-core/lib/proxy/tun"
 	"whoisthat-core/structs"
 	"whoisthat-core/utils"
 	"errors"
 	"fmt"
-	"log"
 )
 
 func (cmd *Cmd) DisableTun(data structs.DisableTunData, tun_manager *tunmode.TunModeManager) {
@@ -21,7 +21,6 @@ func (cmd *Cmd) EnableTun(data structs.EnableTunData, proxy_manager *proxy.Proxy
 	ConnectionMutex.Lock()
 	defer ConnectionMutex.Unlock()
 
-	log.Println("on enable tun")
 	status := proxy_manager.GetStatus()
 	if status.Connection != "connected" {
 		cmd.warn("enable-tun-failed", "A profile must be connected for tun mode to operate")
@@ -38,16 +37,16 @@ func (cmd *Cmd) EnableTun(data structs.EnableTunData, proxy_manager *proxy.Proxy
 func (cmd *Cmd) enableTun(profile structs.Profile, tun_manager *tunmode.TunModeManager) {
 	resolved, err := resolveHostAndAddress(profile)
 	if err != nil {
-		log.Println(err)
+		logger.Warn("tun: failed to resolve:", err)
 		cmd.warn("enable-tun-failed", "failed to resolve profile host")
 		return
 	}
 
-	log.Println("resolved:", resolved)
+	logger.Info("tun: resolved", resolved)
 
 	err = tun_manager.Start(resolved, "8.8.8.8")
 	if err != nil {
-		log.Println(err.Error())
+		logger.Warn("tun: failed to start:", err)
 		cmd.warn("enable-tun-failed", "Failed to enable tun mode")
 		return
 	}

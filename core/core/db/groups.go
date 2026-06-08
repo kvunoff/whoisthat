@@ -1,10 +1,10 @@
 package db
 
 import (
+	"whoisthat-core/lib/logger"
 	"whoisthat-core/structs"
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -57,7 +57,7 @@ func (db *DB) UpdateGroupAndProfiles(group_id int, profiles []structs.DBAddProfi
 
 	err = db.updateGroup(group_config)
 	if err != nil {
-		log.Println("warning while updating the group:", err)
+		logger.Warn("warning while updating the group:", err)
 	}
 
 	for _, profile := range profiles {
@@ -79,7 +79,7 @@ func (db *DB) updateGroup(group structs.Group) error {
 	group_config_path := db.GetGroupConfigFilePath(group.Id)
 	group_json, err := json.MarshalIndent(group, "", " ")
 	if err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 
 	err = os.WriteFile(group_config_path, group_json, 0666)
@@ -118,7 +118,7 @@ func (db *DB) GetAllGroupsAndProfiles() ([]structs.GroupWithProfiles, error) {
 		}
 		group, err := db.getGroupDataAndProfiles(group_id)
 		if err != nil {
-			log.Println("warning while gathering all groups:", err)
+			logger.Warn("warning while gathering all groups:", err)
 			continue
 		}
 		groups_with_profiles = append(groups_with_profiles, group)
@@ -216,7 +216,7 @@ func (db *DB) AddGroup(name string, subscription_url string) (structs.GroupAdded
 
 	group_json, err := json.MarshalIndent(group, "", " ")
 	if err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 
 	err = os.WriteFile(group_config_path, group_json, 0666)
@@ -281,11 +281,11 @@ func (db *DB) saveGroupConfig(group structs.Group) error {
 	json_data, err := json.MarshalIndent(group, "", " ")
 
 	if err != nil {
-		log.Fatal("failed to stringify default group config")
+		logger.Fatal("failed to stringify default group config")
 	}
 
 	if err := os.WriteFile(group_conf_file, json_data, 0666); err != nil {
-		log.Fatal("failed to write to group config " + group_conf_file + ": " + err.Error())
+		logger.Fatal("failed to write to group config " + group_conf_file + ": " + err.Error())
 	}
 	return nil
 }

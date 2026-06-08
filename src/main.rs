@@ -7,6 +7,7 @@ use std::io::{self, Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::os::unix::process::CommandExt;
 use std::process::Command;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -28,15 +29,18 @@ use ui::routing::{form_to_rule, RoutingPopup};
 use ui::App;
 
 // ---------------------------------------------------------------------------
-// File-only logger
+// File-only logger (disabled by default, enabled via config)
 // ---------------------------------------------------------------------------
 struct FileLogger {
     file: Mutex<File>,
+    enabled: AtomicBool,
+    level: Mutex<LevelFilter>,
 }
 
 impl Log for FileLogger {
-    fn enabled(&self, _: &Metadata) -> bool {
-        true
+    fn enabled(&self, metadata: &Metadata) -> bool {
+        self.enabled.load(Ordering::Relaxed)
+            && metadata.level() <= *self.level.lock().unwrap()
     }
     fn log(&self, record: &Record) {
         if self.enabled(record.metadata()) {
@@ -55,25 +59,44 @@ impl Log for FileLogger {
     }
 }
 
-fn init_logger() {
+fn init_logger() -> &'static FileLogger {
+    let log_dir = config::data_dir();
+    let _ = std::fs::create_dir_all(&log_dir);
+    let log_path = log_dir.join("tui.log");
+
     let file = OpenOptions::new()
         .create(true)
         .append(true)
-        .open("whoisthat.log")
+        .open(&log_path)
         .or_else(|_| {
             OpenOptions::new()
                 .create(true)
                 .append(true)
-                .open("/tmp/whoisthat.log")
+                .open("/tmp/whoisthat-tui.log")
         })
         .expect("failed to open log file");
 
-    let logger: &'static dyn Log = Box::leak(Box::new(FileLogger {
+    let logger: &'static FileLogger = Box::leak(Box::new(FileLogger {
         file: Mutex::new(file),
+        enabled: AtomicBool::new(false),
+        level: Mutex::new(LevelFilter::Warn),
     }));
-    log::set_logger(logger)
-        .map(|()| log::set_max_level(LevelFilter::Info))
-        .ok();
+    log::set_logger(logger).ok();
+    log::set_max_level(LevelFilter::Trace);
+    logger
+}
+
+fn configure_logger(logger: &FileLogger, enabled: bool, level: &str) {
+    let lf = match level.to_lowercase().as_str() {
+        "error" => LevelFilter::Error,
+        "warn" => LevelFilter::Warn,
+        "info" => LevelFilter::Info,
+        "debug" => LevelFilter::Debug,
+        "trace" => LevelFilter::Trace,
+        _ => LevelFilter::Warn,
+    };
+    *logger.level.lock().unwrap() = lf;
+    logger.enabled.store(enabled, Ordering::Relaxed);
 }
 
 // ---------------------------------------------------------------------------
@@ -86,9 +109,10 @@ enum AppEvent {
     PublicIp(String),
 }
 
-fn spawn_core() -> io::Result<()> {
+fn spawn_core(log_level: &str) -> io::Result<()> {
     let bin = find_core_binary();
     Command::new(&bin)
+        .env("WHOISTHAT_LOG_LEVEL", log_level)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -130,15 +154,24 @@ fn fetch_public_ip() -> Option<String> {
     if ip.is_empty() { None } else { Some(ip.to_string()) }
 }
 
+fn check_sudo_env() -> Option<&'static str> {
+    if std::env::var("SUDO_UID").is_ok() && std::env::var("HOME").unwrap_or_default() == "/root" {
+        Some("Restart with: sudo -E whoisthat")
+    } else {
+        None
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
-    init_logger();
+    let logger = init_logger();
 
     let mut cfg = config::load_config();
+    configure_logger(logger, cfg.log_enabled, &cfg.log_level);
     let current_version = env!("CARGO_PKG_VERSION").to_string();
 
     // Check if core is running and version matches
@@ -161,7 +194,7 @@ async fn main() -> io::Result<()> {
 
     if !core_alive {
         log::info!("Spawning fresh core v{current_version}");
-        spawn_core()?;
+        spawn_core(&cfg.log_level)?;
         tokio::time::sleep(Duration::from_millis(1200)).await;
         cfg.core_version = current_version;
         config::save_config(&cfg);
@@ -188,7 +221,12 @@ async fn main() -> io::Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut term = ratatui::Terminal::new(backend)?;
 
-    let mut app = App::new(cfg.autoconnect, cfg.show_ip);
+    let mut app = App::new(cfg.autoconnect, cfg.show_ip, cfg.log_enabled, cfg.log_level.clone());
+
+    if let Some(warning) = check_sudo_env() {
+        app.msg(warning);
+        eprintln!("whoisthat: {}", warning);
+    }
 
     let (input_tx, mut input_rx) = mpsc::unbounded_channel();
     let input_tx2 = input_tx.clone();
@@ -251,6 +289,7 @@ async fn main() -> io::Result<()> {
         do_autoconnect,
         &mut cfg,
         input_tx.clone(),
+        logger,
     )
     .await;
 
@@ -291,6 +330,7 @@ async fn run_loop<B: Backend>(
     mut do_autoconnect: bool,
     cfg: &mut config::AppConfig,
     ip_tx: mpsc::UnboundedSender<AppEvent>,
+    logger: &'static FileLogger,
 ) -> io::Result<()> {
     let mut first_state = true;
     loop {
@@ -303,7 +343,7 @@ async fn run_loop<B: Backend>(
                 }
             }
             Some(ev) = input_rx.recv() => {
-                if handle_input(app, client, ev, cfg).await {
+                if handle_input(app, client, ev, cfg, logger).await {
                     break;
                 }
             }
@@ -468,6 +508,7 @@ async fn handle_input(
     client: &CoreClient,
     ev: AppEvent,
     cfg: &mut config::AppConfig,
+    logger: &'static FileLogger,
 ) -> bool {
     match ev {
         AppEvent::Tick => {
@@ -504,7 +545,7 @@ async fn handle_input(
                     return handle_popup_input(app, client, key).await;
                 }
 
-                return handle_normal_input(app, client, key, cfg).await;
+                return handle_normal_input(app, client, key, cfg, logger).await;
             }
             Event::Mouse(mouse) => {
                 // Mouse not used for navigation in current version
@@ -960,6 +1001,7 @@ async fn handle_normal_input(
     client: &CoreClient,
     key: event::KeyEvent,
     cfg: &mut config::AppConfig,
+    logger: &'static FileLogger,
 ) -> bool {
     app.clear_msg();
 
@@ -1101,7 +1143,35 @@ async fn handle_normal_input(
                         }
                         config::save_config(cfg);
                     }
+                    2 => {
+                        app.log_enabled = !app.log_enabled;
+                        cfg.log_enabled = app.log_enabled;
+                        config::save_config(cfg);
+                        configure_logger(logger, cfg.log_enabled, &cfg.log_level);
+                    }
                     _ => {}
+                }
+            }
+            KeyCode::Char('l') | KeyCode::Right => {
+                if app.settings_state.cursor == 3 {
+                    let levels = ["error", "warn", "info", "debug", "trace"];
+                    let current = levels.iter().position(|l| *l == app.log_level.as_str()).unwrap_or(1);
+                    let next = (current + 1) % levels.len();
+                    app.log_level = levels[next].to_string();
+                    cfg.log_level = app.log_level.clone();
+                    config::save_config(cfg);
+                    configure_logger(logger, cfg.log_enabled, &cfg.log_level);
+                }
+            }
+            KeyCode::Char('h') | KeyCode::Left => {
+                if app.settings_state.cursor == 3 {
+                    let levels = ["error", "warn", "info", "debug", "trace"];
+                    let current = levels.iter().position(|l| *l == app.log_level.as_str()).unwrap_or(1);
+                    let prev = if current == 0 { levels.len() - 1 } else { current - 1 };
+                    app.log_level = levels[prev].to_string();
+                    cfg.log_level = app.log_level.clone();
+                    config::save_config(cfg);
+                    configure_logger(logger, cfg.log_enabled, &cfg.log_level);
                 }
             }
             _ => {}

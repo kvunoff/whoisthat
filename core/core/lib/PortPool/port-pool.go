@@ -3,7 +3,7 @@ package portpool
 import (
 	"errors"
 	"fmt"
-	"log"
+	"whoisthat-core/lib/logger"
 	"net"
 	"sync"
 )
@@ -17,7 +17,7 @@ type PortPool struct {
 
 func CreatePortPool(start_port int, end_port int) *PortPool {
 	if start_port < 0 || end_port < 0 || end_port <= start_port {
-		log.Fatal("invalid testing port range")
+		logger.Fatal("invalid testing port range")
 	}
 	return &PortPool{
 		start_port: start_port,

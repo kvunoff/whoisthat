@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"whoisthat-core/structs"
-	"log"
 	"os/exec"
 	"regexp"
 	"strconv"
@@ -43,8 +42,6 @@ type statsResponse struct {
 }
 
 func (p *ProxyManager) collectStats(socksPort int, cancel chan struct{}, out chan<- structs.TrafficStats) {
-	log.Println("Stats collector started on SOCKS port", socksPort)
-
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
@@ -54,33 +51,26 @@ func (p *ProxyManager) collectStats(socksPort int, cancel chan struct{}, out cha
 	for {
 		select {
 		case <-cancel:
-			log.Println("Stats collector stopped")
 			return
 		case <-ticker.C:
 			stats, err := querySsStats(socksPort)
 			if err != nil {
-				log.Println("Stats query failed:", err)
 				continue
 			}
 
 			var proxyUp, proxyDown int64
-			var matched int
 			for _, s := range stats.Stat {
 				v := parseValue(s.Value)
 				switch s.Name {
 				case "outbound>>>proxy>>>traffic>>>uplink":
 					proxyUp = v
-					matched++
 				case "outbound>>>proxy>>>traffic>>>downlink":
 					proxyDown = v
-					matched++
 				}
 			}
 
 			if firstRun {
 				firstRun = false
-				log.Printf("Stats first run: %d stats, %d matched, proxy(up=%d down=%d)\n",
-					len(stats.Stat), matched, proxyUp, proxyDown)
 				prevProxyUp, prevProxyDown = proxyUp, proxyDown
 				continue
 			}
@@ -91,11 +81,6 @@ func (p *ProxyManager) collectStats(socksPort int, cancel chan struct{}, out cha
 			}
 
 			prevProxyUp, prevProxyDown = proxyUp, proxyDown
-
-			if delta.ProxyUp > 0 || delta.ProxyDown > 0 {
-				log.Printf("Stats delta: proxy(↑%d ↓%d)",
-					delta.ProxyUp, delta.ProxyDown)
-			}
 
 			select {
 			case out <- delta:
@@ -111,11 +96,6 @@ var (
 )
 
 func querySsStats(port int) (*statsResponse, error) {
-	// Use ss -tie to get per-socket byte counters for the SOCKS port.
-	// This avoids the broken xray gRPC API in xray-bin 26.x.
-	// dport only: matches client→SOCKS connections, not SOCKS→client.
-	// Using sport+dport would count the same traffic twice (bytes_sent
-	// from client side = upload, bytes_sent from SOCKS side = download).
 	filter := fmt.Sprintf("dport = :%d", port)
 	cmd := exec.Command("ss", "-tie", filter)
 	output, err := cmd.Output()

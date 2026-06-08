@@ -1,10 +1,10 @@
 package db
 
 import (
+	"whoisthat-core/lib/logger"
 	"whoisthat-core/structs"
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"syscall"
 )
@@ -49,7 +49,7 @@ func (db *DB) updateProfile(profile structs.Profile) error {
 
 	profile_json, err := json.MarshalIndent(profile, "", " ")
 	if err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 
 	err = os.WriteFile(profile_config_path, profile_json, 0666)
@@ -76,7 +76,7 @@ func (db *DB) deleteProfile(group_id int, id int) error {
 	err := os.Remove(profile_config_path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			log.Printf("Profile removal warning: %s did not exist in the first place", profile_config_path)
+			logger.Warnf("Profile removal warning: %s did not exist", profile_config_path)
 		} else {
 			return fmt.Errorf("Failed to delete config file %w", err)
 		}
@@ -136,7 +136,7 @@ func (db *DB) addProfile(data structs.DBAddProfileData) (structs.Profile, error)
 	}
 	profile_json, err := json.MarshalIndent(profile, "", " ")
 	if err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 
 	err = os.WriteFile(profile_path, profile_json, 0666)

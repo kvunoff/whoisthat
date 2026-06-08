@@ -1,9 +1,9 @@
 package lib
 
 import (
+	"whoisthat-core/lib/logger"
 	"whoisthat-core/structs"
 	"encoding/json"
-	"log"
 )
 
 func CreateJsonNotification(msg string, obj any) []byte {
@@ -13,7 +13,7 @@ func CreateJsonNotification(msg string, obj any) []byte {
 	}
 	json_data, err := json.Marshal(data)
 	if err != nil {
-		log.Fatalf("failed to parse json trying to send a message %v %s", data, err)
+		logger.Fatalf("failed to parse json trying to send a message %v %s", data, err)
 	}
 	return json_data
 }

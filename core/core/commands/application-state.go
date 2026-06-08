@@ -1,16 +1,16 @@
 package cmd
 
 import (
+	"whoisthat-core/lib/logger"
 	proxy "whoisthat-core/lib/proxy/mainproxy"
 	tunmode "whoisthat-core/lib/proxy/tun"
 	"whoisthat-core/structs"
-	"log"
 )
 
 func (cmd *Cmd) GetApplicationState(data structs.GetApplicationStateData, proxy_manager *proxy.ProxyManager, tun_manager *tunmode.TunModeManager) {
 	groups, err := cmd.DB.GetAllGroupsAndProfiles()
 	if err != nil {
-		log.Println(err.Error())
+		logger.Warn("failed to read application state:", err)
 		cmd.warn("read-application-state-failed", "failed to read application state")
 		return
 	}

@@ -22,10 +22,11 @@ pub struct LogsState {
 impl LogsState {
     pub fn new(log_path: &str) -> Self {
         let (lines, reader) = read_log_file(log_path);
+        let scroll = lines.len().saturating_sub(1);
 
         Self {
             lines,
-            scroll: 0,
+            scroll,
             auto_scroll: true,
             reader,
             log_path: log_path.to_string(),
@@ -33,6 +34,13 @@ impl LogsState {
     }
 
     pub fn poll(&mut self) {
+        if self.reader.is_none() {
+            (self.lines, self.reader) = read_log_file(&self.log_path);
+            if self.reader.is_some() {
+                self.scroll = self.lines.len().saturating_sub(1);
+            }
+            return;
+        }
         if let Some(ref mut reader) = self.reader {
             let mut line = String::new();
             while reader.read_line(&mut line).unwrap_or(0) > 0 {
@@ -42,13 +50,20 @@ impl LogsState {
                         line.pop();
                     }
                 }
+                if self.lines.len() == 1
+                    && (self.lines[0] == "(log file not found)" || self.lines[0] == "(log file empty)")
+                {
+                    self.lines.clear();
+                }
                 self.lines.push(line.clone());
                 line.clear();
             }
-            // Keep only last 500 lines
             if self.lines.len() > 500 {
                 let drain = self.lines.len() - 500;
                 self.lines.drain(..drain);
+            }
+            if self.auto_scroll {
+                self.scroll = self.lines.len().saturating_sub(1);
             }
         }
     }
@@ -58,20 +73,26 @@ impl LogsState {
         if self.scroll < vis {
             self.scroll += 1;
         }
+        if self.scroll >= vis {
+            self.auto_scroll = true;
+        }
     }
 
     pub fn scroll_up(&mut self) {
         if self.scroll > 0 {
             self.scroll -= 1;
         }
+        self.auto_scroll = false;
     }
 
     pub fn scroll_bottom(&mut self) {
         self.scroll = self.lines.len().saturating_sub(1);
+        self.auto_scroll = true;
     }
 
     pub fn scroll_top(&mut self) {
         self.scroll = 0;
+        self.auto_scroll = false;
     }
 }
 

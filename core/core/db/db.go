@@ -1,10 +1,10 @@
 package db
 
 import (
+	"whoisthat-core/lib/logger"
 	"whoisthat-core/structs"
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -25,11 +25,11 @@ func (db *DB) saveDBConfig(db_config structs.DBConfig) error {
 	json_data, err := json.MarshalIndent(db_config, "", " ")
 
 	if err != nil {
-		log.Fatal("failed to stringify db config")
+		logger.Fatal("failed to stringify db config")
 	}
 
 	if err := os.WriteFile(db_config_file, json_data, 0666); err != nil {
-		log.Fatal("failed to write to db config " + db_config_file + ": " + err.Error())
+		logger.Fatal("failed to write to db config " + db_config_file + ": " + err.Error())
 	}
 	return nil
 }

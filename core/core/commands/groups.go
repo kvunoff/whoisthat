@@ -2,11 +2,11 @@ package cmd
 
 import (
 	"whoisthat-core/lib"
+	"whoisthat-core/lib/logger"
 	proxy "whoisthat-core/lib/proxy/mainproxy"
 	"whoisthat-core/structs"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -31,7 +31,7 @@ func (cmd *Cmd) UpdateSubscription(data structs.UpdateSubscriptionData, proxy_ma
 
 	subscription_content, resp, err := get(group.SubscriptionUrl)
 	if err != nil {
-		log.Printf("update-subscription: failed to GET %s: %v", group.SubscriptionUrl, err)
+		logger.Warnf("update-subscription: failed to GET %s: %v", group.SubscriptionUrl, err)
 		cmd.warn("update-subscription-failed", fmt.Sprintf("Failed to get subscription: %v", err))
 		return
 	}
@@ -43,7 +43,7 @@ func (cmd *Cmd) UpdateSubscription(data structs.UpdateSubscriptionData, proxy_ma
 
 	db_profiles := lib.GetDBAddProfileDatasFromStr(subscription_content, data.GroupId)
 	if len(db_profiles) == 0 {
-		log.Printf("update-subscription: parsed 0 profiles from content (len=%d)", len(subscription_content))
+		logger.Warnf("update-subscription: parsed 0 profiles from content (len=%d)", len(subscription_content))
 		cmd.warn("update-subscription-failed", "No profiles found in subscription")
 		return
 	}
@@ -55,10 +55,11 @@ func (cmd *Cmd) UpdateSubscription(data structs.UpdateSubscriptionData, proxy_ma
 
 	profiles, err := cmd.DB.UpdateGroupAndProfiles(data.GroupId, db_profiles, keep_profile_id)
 	if err != nil {
-		log.Println(err)
+		logger.Warn("update-subscription: failed to update DB:", err)
 		cmd.warn("update-subscription-failed", "Failed to add new subscription content to database")
 		return
 	}
+	logger.Infof("subscription %s: %d profiles", group.Name, len(profiles))
 	cmd.send("subscription-updated", structs.SubscriptionUpdated{GroupId: data.GroupId, Group: group, Profiles: profiles})
 
 }

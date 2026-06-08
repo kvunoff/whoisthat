@@ -5,6 +5,7 @@ import (
 	cmd "whoisthat-core/commands"
 	"whoisthat-core/db"
 	appconfig "whoisthat-core/lib/AppConfig"
+	"whoisthat-core/lib/logger"
 	proxy "whoisthat-core/lib/proxy/mainproxy"
 	tunmode "whoisthat-core/lib/proxy/tun"
 	"whoisthat-core/structs"
@@ -12,9 +13,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net"
-	"os"
 	"sync"
 )
 
@@ -42,11 +41,10 @@ func (s *Server) Start() {
 	listen, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", app_config.CoreTCPPort))
 
 	if err != nil {
-		log.Fatal(err)
-		os.Exit(0)
+		logger.Fatal("failed to listen:", err)
 	}
 
-	log.Println("server is listening on port", app_config.CoreTCPPort)
+	logger.Info("listening on port", app_config.CoreTCPPort)
 
 	go s.handleTunModeStatusChange()
 	go s.handleStatusChange()
@@ -58,7 +56,8 @@ func (s *Server) Start() {
 			conn, err := listen.Accept()
 
 			if err != nil {
-				log.Printf("failed to accept connection: %v", err)
+				logger.Warn("failed to accept connection:", err)
+				continue
 			}
 
 			s.mutex.Lock()
@@ -75,20 +74,18 @@ func (s *Server) BroadCast(msg []byte) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
-	for clientID, conn := range s.clients {
+	for _, conn := range s.clients {
 
 		length := make([]byte, 4)
 		binary.BigEndian.PutUint32(length, uint32(len(msg)))
 
 		_, err := conn.Write(length)
 		if err != nil {
-			log.Printf("Error sending length %d to %s: %v\n", length, clientID, err)
 			conn.Close()
 			continue
 		}
 		_, err = conn.Write(msg)
 		if err != nil {
-			log.Printf("Error sending %s to $%s: %v\n", msg, clientID, err)
 			conn.Close()
 			continue
 		}
@@ -101,7 +98,6 @@ func (s *Server) handleConnection(conn net.Conn, clientID string) {
 		s.mutex.Lock()
 		delete(s.clients, clientID)
 		s.mutex.Unlock()
-		log.Println("Disconnected:", clientID)
 	}()
 
 	command_handler := cmd.Cmd{DB: s.DB, Conn: conn, BroadCast: s.BroadCast}
@@ -113,14 +109,14 @@ func (s *Server) handleConnection(conn net.Conn, clientID string) {
 
 		if err != nil {
 			if err != io.EOF {
-				log.Printf("Failed to read length , %v", err)
+				logger.Warn("Failed to read length:", err)
 			}
 			return
 		}
 
 		length := binary.BigEndian.Uint32(lengthBuf)
 		if length == 0 || length > 100*1024*1024 {
-			log.Printf("Invalid length %d", length)
+			logger.Warn("Invalid length", length)
 			return
 		}
 
@@ -129,14 +125,14 @@ func (s *Server) handleConnection(conn net.Conn, clientID string) {
 		_, err = io.ReadFull(reader, payload)
 
 		if err != nil {
-			log.Printf("Failed to read the payload %v", err)
+			logger.Warn("Failed to read the payload:", err)
 			return
 		}
 
 		var raw_tcp_message structs.TCPMessage
 
 		if err := json.Unmarshal(payload, &raw_tcp_message); err != nil {
-			log.Printf("Invalid JSON: %v", err)
+			logger.Warn("Invalid JSON:", err)
 			return
 		}
 
@@ -146,7 +142,7 @@ func (s *Server) handleConnection(conn net.Conn, clientID string) {
 		case "add-profiles":
 			var data structs.AddProfilesData
 			if err := json.Unmarshal(raw_tcp_message.Data, &data); err != nil {
-				log.Printf("Invalid body for add-profiles %v", err)
+				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
 			command_handler.AddProfiles(data)
@@ -154,7 +150,7 @@ func (s *Server) handleConnection(conn net.Conn, clientID string) {
 		case "delete-profiles":
 			var data structs.DeleteProfilesData
 			if err := json.Unmarshal(raw_tcp_message.Data, &data); err != nil {
-				log.Printf("Invalid body for delete-profiles %v", err)
+				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
 			command_handler.DeleteProfiles(data)
@@ -162,7 +158,7 @@ func (s *Server) handleConnection(conn net.Conn, clientID string) {
 		case "add-group":
 			var data structs.AddGroupData
 			if err := json.Unmarshal(raw_tcp_message.Data, &data); err != nil {
-				log.Printf("Invalid body for add-group %v", err)
+				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
 			command_handler.AddGroup(data)
@@ -170,7 +166,7 @@ func (s *Server) handleConnection(conn net.Conn, clientID string) {
 		case "delete-group":
 			var data structs.DeleteGroupData
 			if err := json.Unmarshal(raw_tcp_message.Data, &data); err != nil {
-				log.Printf("Invalid body for delete-group %v", err)
+				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
 			command_handler.DeleteGroup(data)
@@ -178,7 +174,7 @@ func (s *Server) handleConnection(conn net.Conn, clientID string) {
 		case "connect":
 			var data structs.ConnectData
 			if err := json.Unmarshal(raw_tcp_message.Data, &data); err != nil {
-				log.Printf("Invalid body for connect %v", err)
+				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
 			command_handler.Connect(data, s.proxy_manager, s.tun_namager)
@@ -186,7 +182,7 @@ func (s *Server) handleConnection(conn net.Conn, clientID string) {
 		case "disconnect":
 			var data structs.DisconnectData
 			if err := json.Unmarshal(raw_tcp_message.Data, &data); err != nil {
-				log.Printf("Invalid body for disconnect %v", err)
+				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
 			command_handler.Disconnect(data, s.proxy_manager, s.tun_namager)
@@ -194,7 +190,7 @@ func (s *Server) handleConnection(conn net.Conn, clientID string) {
 		case "test-profile":
 			var data structs.TestProfileData
 			if err := json.Unmarshal(raw_tcp_message.Data, &data); err != nil {
-				log.Printf("Invalid body for test-profile%v", err)
+				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
 			go command_handler.TestProfile(data, s.proxy_manager)
@@ -202,7 +198,7 @@ func (s *Server) handleConnection(conn net.Conn, clientID string) {
 		case "get-application-state":
 			var data structs.GetApplicationStateData
 			if err := json.Unmarshal(raw_tcp_message.Data, &data); err != nil {
-				log.Printf("Invalid body for get-application-state%v", err)
+				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
 			command_handler.GetApplicationState(data, s.proxy_manager, s.tun_namager)
@@ -210,7 +206,7 @@ func (s *Server) handleConnection(conn net.Conn, clientID string) {
 		case "update-subscription":
 			var data structs.UpdateSubscriptionData
 			if err := json.Unmarshal(raw_tcp_message.Data, &data); err != nil {
-				log.Printf("Invalid body for update-subscription%v", err)
+				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
 			go command_handler.UpdateSubscription(data, s.proxy_manager)
@@ -218,7 +214,7 @@ func (s *Server) handleConnection(conn net.Conn, clientID string) {
 		case "enable-tun":
 			var data structs.EnableTunData
 			if err := json.Unmarshal(raw_tcp_message.Data, &data); err != nil {
-				log.Printf("Invalid body for enable-tun%v", err)
+				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
 			command_handler.EnableTun(data, s.proxy_manager, s.tun_namager)
@@ -226,7 +222,7 @@ func (s *Server) handleConnection(conn net.Conn, clientID string) {
 		case "disable-tun":
 			var data structs.DisableTunData
 			if err := json.Unmarshal(raw_tcp_message.Data, &data); err != nil {
-				log.Printf("Invalid body for disable-tun%v", err)
+				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
 			command_handler.DisableTun(data, s.tun_namager)
@@ -234,7 +230,7 @@ func (s *Server) handleConnection(conn net.Conn, clientID string) {
 		case "is-root":
 			var data structs.IsRootData
 			if err := json.Unmarshal(raw_tcp_message.Data, &data); err != nil {
-				log.Printf("Invalid body for is-root%v", err)
+				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
 			command_handler.IsRoot(data)
@@ -242,7 +238,7 @@ func (s *Server) handleConnection(conn net.Conn, clientID string) {
 		case "update-profile":
 			var data structs.UpdateProfileData
 			if err := json.Unmarshal(raw_tcp_message.Data, &data); err != nil {
-				log.Printf("Invalid body for update-profile%v", err)
+				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
 			command_handler.UpdateProfile(data)
@@ -250,7 +246,7 @@ func (s *Server) handleConnection(conn net.Conn, clientID string) {
 		case "update-group":
 			var data structs.UpdateGroupData
 			if err := json.Unmarshal(raw_tcp_message.Data, &data); err != nil {
-				log.Printf("Invalid body for update-group%v", err)
+				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
 			command_handler.UpdateGroup(data)
@@ -258,7 +254,7 @@ func (s *Server) handleConnection(conn net.Conn, clientID string) {
 		case "get-routing":
 			var data structs.GetRoutingData
 			if err := json.Unmarshal(raw_tcp_message.Data, &data); err != nil {
-				log.Printf("Invalid body for get-routing%v", err)
+				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
 			command_handler.GetRouting(data)
@@ -266,13 +262,13 @@ func (s *Server) handleConnection(conn net.Conn, clientID string) {
 		case "update-routing":
 			var data structs.UpdateRoutingData
 			if err := json.Unmarshal(raw_tcp_message.Data, &data); err != nil {
-				log.Printf("Invalid body for update-routing%v", err)
+				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
 			command_handler.UpdateRouting(data)
 
 		default:
-			log.Println("Message not supported")
+			logger.Warn("Unknown message:", raw_tcp_message.Msg)
 		}
 	}
 }

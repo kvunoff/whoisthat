@@ -3,7 +3,7 @@ package mainproxy
 import (
 	"encoding/json"
 	"whoisthat-core/db"
-	"log"
+	"whoisthat-core/lib/logger"
 	"strings"
 )
 
@@ -15,7 +15,7 @@ func injectRoutingConfig(configJSON []byte, database *db.DB) ([]byte, error) {
 
 	routingCfg, err := database.LoadRouting()
 	if err != nil {
-		log.Printf("failed to load routing config, skipping injection: %v", err)
+		logger.Warnf("failed to load routing config, skipping injection: %v", err)
 		return configJSON, nil
 	}
 
@@ -86,7 +86,7 @@ func injectRoutingConfig(configJSON []byte, database *db.DB) ([]byte, error) {
 	// Add direct and block outbounds
 	outboundsRaw, ok := config["outbounds"].([]interface{})
 	if !ok {
-		log.Println("outbounds not found in config, cannot inject routing outbounds")
+		logger.Warn("outbounds not found in config, cannot inject routing outbounds")
 		return json.Marshal(config)
 	}
 

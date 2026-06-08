@@ -5,6 +5,7 @@ import (
 	"whoisthat-core/lib"
 	"whoisthat-core/lib/AppConfig"
 	"whoisthat-core/lib/TCPServer"
+	"whoisthat-core/lib/logger"
 	proxy "whoisthat-core/lib/proxy/mainproxy"
 	tunmode "whoisthat-core/lib/proxy/tun"
 	"whoisthat-core/structs"
@@ -35,8 +36,9 @@ func main() {
 		Compress:   false,
 	})
 
-	log.SetPrefix("debug: ")
-	log.SetFlags(log.LstdFlags | log.Lmsgprefix)
+	log.SetFlags(log.Ltime)
+	logger.SetLevel(os.Getenv("WHOISTHAT_LOG_LEVEL"))
+
 	stop_sig := make(chan bool, 1)
 	appconfig.LoadConfig()
 	database := db.DB{}
@@ -55,11 +57,11 @@ func main() {
 		reason := ""
 		select {
 		case sig := <-sigs:
-			reason = fmt.Sprintf("Received signal %v , cleaning up...", sig)
+			reason = fmt.Sprintf("Received signal %v", sig)
 		case <-stop_sig:
-			reason = "Received stop request , cleaning up..."
+			reason = "Received stop request"
 		}
-		log.Println(reason)
+		logger.Info("whoisthat-core shutting down:", reason)
 		proxy_manager.Stop()
 		tun_manager.Stop()
 		server.BroadCast(lib.CreateJsonNotification("warn", structs.Warning{Key: "died", Content: reason}))

@@ -2,7 +2,7 @@ package utils
 
 import (
 	"fmt"
-	"log"
+	"whoisthat-core/lib/logger"
 	"net"
 	"sort"
 	"time"
@@ -16,7 +16,7 @@ func ResolveDomainIpv4(domain string) ([]string, error) {
 	for _, server := range dnsServers {
 		ips, err := queryDNSServer(domain, server)
 		if err != nil {
-			log.Printf("Query to %s failed: %v", server, err)
+			logger.Warnf("Query to %s failed: %v", server, err)
 			continue
 		}
 
@@ -33,7 +33,7 @@ func ResolveDomainIpv4(domain string) ([]string, error) {
 	sort.Strings(result)
 
 	if len(result) == 0 {
-		log.Printf("No IPs found via DNS servers, falling back to system resolver")
+		logger.Warn("No IPs found via DNS servers, falling back to system resolver")
 		systemIPs, err := ResolveDomainSystem(domain)
 		if err != nil {
 			return nil, fmt.Errorf("DNS servers and system resolver both failed: %w", err)

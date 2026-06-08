@@ -1,4 +1,4 @@
-use log::{error, info};
+use log::error;
 use serde::Serialize;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
@@ -14,7 +14,6 @@ impl CoreConnection {
         let addr = format!("{}:{}", host, port);
         let stream = TcpStream::connect(&addr).await?;
         stream.set_nodelay(true)?;
-        info!("Connected to core at {}", addr);
         Ok(Self { stream })
     }
 
@@ -59,7 +58,6 @@ impl CoreConnection {
             std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string())
         })?;
 
-        info!("[core] {}", msg.msg);
         Ok(msg)
     }
 }

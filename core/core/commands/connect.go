@@ -2,9 +2,9 @@ package cmd
 
 import (
 	proxy "whoisthat-core/lib/proxy/mainproxy"
+	"whoisthat-core/lib/logger"
 	tunmode "whoisthat-core/lib/proxy/tun"
 	"whoisthat-core/structs"
-	"log"
 )
 
 func (cmd *Cmd) Disconnect(data structs.DisconnectData, proxy_manager *proxy.ProxyManager, tun_manager *tunmode.TunModeManager) {
@@ -21,7 +21,7 @@ func (cmd *Cmd) Connect(data structs.ConnectData, proxy_manager *proxy.ProxyMana
 
 	profile, err := cmd.DB.GetProfile(data.Profile.GroupId, data.Profile.Id)
 	if err != nil {
-		log.Println(err.Error())
+		logger.Warn("connect: failed to get profile:", err)
 		cmd.warn("connect-failed", "Failed to connect")
 		return
 	}
@@ -32,7 +32,7 @@ func (cmd *Cmd) Connect(data structs.ConnectData, proxy_manager *proxy.ProxyMana
 	}
 
 	if err := proxy_manager.Connect(profile); err != nil {
-		log.Println(err.Error())
+		logger.Warn("connect failed:", err)
 		cmd.warn("connect-failed", "Failed to connect")
 		return
 	}

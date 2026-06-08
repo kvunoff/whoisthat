@@ -4,10 +4,10 @@ import (
 	"whoisthat-core/db"
 	"whoisthat-core/lib"
 	appconfig "whoisthat-core/lib/AppConfig"
+	"whoisthat-core/lib/logger"
 	portpool "whoisthat-core/lib/PortPool"
 	"whoisthat-core/lib/proxy/xray"
 	"whoisthat-core/structs"
-	"log"
 	"sync"
 	"time"
 )
@@ -80,13 +80,16 @@ func (p *ProxyManager) Connect(profile structs.Profile) error {
 		var err error
 		xray_config, err = injectRoutingConfig(xray_config, p.DB)
 		if err != nil {
-			log.Printf("failed to inject routing config: %v", err)
+			logger.Warnf("failed to inject routing config: %v", err)
 		}
 	}
 
 	if err := p.xray_core.Start(xray_config); err != nil {
 		return err
 	}
+
+	logger.Infof("connected to %s (%s://%s)",
+		profile.Name, profile.Protocol, profile.Address)
 
 	// Start stats collector (uses ss -tie on SOCKS port, no xray gRPC API)
 	if p.statsCancel != nil {
@@ -101,7 +104,6 @@ func (p *ProxyManager) Connect(profile structs.Profile) error {
 		ConnectedAt: time.Now().Unix(),
 	}
 	p.StatusChanged <- p.status
-	log.Println("changing connection status to", p.status.Connection)
 
 	go func() {
 		for {
@@ -124,6 +126,7 @@ func (p *ProxyManager) Connect(profile structs.Profile) error {
 func (p *ProxyManager) Stop() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	logger.Info("disconnecting")
 	if p.statsCancel != nil {
 		close(p.statsCancel)
 		p.statsCancel = nil

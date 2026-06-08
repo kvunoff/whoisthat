@@ -1,10 +1,10 @@
 package tunmode
 
 import (
+	"whoisthat-core/lib/logger"
 	"whoisthat-core/utils"
 	"context"
 	"fmt"
-	"log"
 	"os/exec"
 	"sync"
 )
@@ -79,7 +79,7 @@ func (n *Tun2Socks) Stop() {
 	if n.cmd != nil && n.cmd.Process != nil {
 		err := n.cmd.Process.Kill()
 		if err != nil {
-			log.Println("error killing proces", err)
+			logger.Warn("error killing tun2socks process:", err)
 		}
 	}
 	if n.cancel != nil {

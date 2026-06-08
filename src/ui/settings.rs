@@ -25,7 +25,7 @@ impl SettingsState {
     }
 
     pub fn cursor_down(&mut self) {
-        if self.cursor < 1 {
+        if self.cursor < 3 {
             self.cursor += 1;
         }
     }
@@ -36,6 +36,8 @@ pub fn render_settings(
     area: Rect,
     autoconnect: bool,
     show_ip: bool,
+    log_enabled: bool,
+    log_level: &str,
     state: &SettingsState,
     focused: bool,
 ) {
@@ -57,6 +59,8 @@ pub fn render_settings(
     let items = [
         ("Autoconnect", if autoconnect { "on" } else { "off" }),
         ("Show IP",     if show_ip     { "on" } else { "off" }),
+        ("TUI log",     if log_enabled { "on" } else { "off" }),
+        ("Log level",   log_level),
     ];
 
     let lines: Vec<Line> = items
@@ -66,20 +70,30 @@ pub fn render_settings(
             let cursor = i == state.cursor && focused;
             let ls = if cursor { s_accent() } else { s_dim() };
             let marker = if cursor && focused { ">" } else { " " };
-            let on = *val == "on";
-            let val_style = if on { s_success() } else { s_disconnected() };
-            let toggle = format!(" {}", if on { "●" } else { "○" });
+            let is_toggle = i < 3;
+            let val_style = if is_toggle && *val == "on" {
+                s_success()
+            } else if is_toggle {
+                s_disconnected()
+            } else {
+                s_success()
+            };
+            let indicator = if is_toggle {
+                format!(" {}", if *val == "on" { "●" } else { "○" })
+            } else {
+                String::new()
+            };
             Line::from(vec![
                 Span::raw(format!(" {} ", marker)),
                 Span::styled(*label, ls),
                 Span::raw("  "),
-                Span::styled(toggle, val_style),
+                Span::styled(indicator, val_style),
                 Span::styled(format!(" {}", val), val_style),
             ])
         })
         .collect();
 
-    let help = Paragraph::new(" j/k navigate  │  Space/Enter toggle ")
+    let help = Paragraph::new(" j/k navigate  │  Space/Enter toggle  │  l/r cycle log level")
         .style(s_faint())
         .alignment(Alignment::Center);
 

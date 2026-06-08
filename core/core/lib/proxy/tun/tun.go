@@ -2,10 +2,10 @@ package tunmode
 
 import (
 	appconfig "whoisthat-core/lib/AppConfig"
+	"whoisthat-core/lib/logger"
 	"whoisthat-core/utils"
 	"errors"
 	"fmt"
-	"log"
 	"sync"
 )
 
@@ -33,6 +33,7 @@ func (t *TunModeManager) Init() {
 }
 
 func (t *TunModeManager) Start(proxy_ipv4s []string, dns string) error {
+	logger.Info("tun: starting...")
 	interface_name, interface_ip, err := GetDefaultInterfaceAndIP()
 	if err != nil {
 		return fmt.Errorf("failed on getting default interafce %w", err)
@@ -54,6 +55,7 @@ func (t *TunModeManager) Start(proxy_ipv4s []string, dns string) error {
 		t.clearNetworkRules()
 		return fmt.Errorf("there was an error creating tun interface %w", err)
 	}
+	logger.Infof("tun: interface %s created (%s)", t.tun_name, t.tun_ip)
 
 	err = setupProxyIpRoutes(t.proxy_ipv4s, t.default_interface_ip)
 	if err != nil {
@@ -76,7 +78,9 @@ func (t *TunModeManager) Start(proxy_ipv4s []string, dns string) error {
 	if t.sudoUid > 0 {
 		err = addUidRouting(t.sudoUid, interface_name, interface_ip)
 		if err != nil {
-			log.Printf("uid routing unavailable (direct rules in TUN mode may not work): %v", err)
+			logger.Warnf("uid routing unavailable (direct rules in TUN mode may not work): %v", err)
+		} else {
+			logger.Infof("tun: uid routing added for uid=%d", t.sudoUid)
 		}
 	}
 
@@ -107,9 +111,11 @@ func (t *TunModeManager) Start(proxy_ipv4s []string, dns string) error {
 	if err := t.tun2socks.Start(t.tun_name, appconfig.GetConfig().SocksPort); err != nil {
 		return err
 	}
+	logger.Info("tun: tun2socks started")
 
 	t.IsEnabled = true
 	t.StatusChanged <- t.IsEnabled
+	logger.Info("tun: enabled")
 
 	go func() {
 		for {
@@ -131,9 +137,9 @@ func (t *TunModeManager) Stop() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if !t.IsEnabled {
-		log.Printf("tried to stop an already stopped tun")
 		return
 	}
+	logger.Info("tun: disabling...")
 	t.clearNetworkRules()
 	t.tun2socks.Stop()
 	t.IsEnabled = false

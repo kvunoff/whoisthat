@@ -2,7 +2,7 @@ package utils
 
 import (
 	"fmt"
-	"log"
+	"whoisthat-core/lib/logger"
 	"os"
 	osuser "os/user"
 	"strconv"
@@ -23,7 +23,7 @@ func GetXrayBin() (string, error) {
 func GetWorkingDir() string {
 	dir, err := os.Getwd()
 	if err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 	return dir
 }
@@ -40,7 +40,7 @@ func GetHomeDir() (string, error) {
 
 	user, err := osuser.LookupId(strconv.Itoa(uid))
 	if err != nil {
-		log.Fatal("failed to get user from uid")
+		logger.Fatal("failed to get user from uid")
 		return "", fmt.Errorf("failed to get user from uid %d: %w", uid, err)
 	}
 	return user.HomeDir, nil

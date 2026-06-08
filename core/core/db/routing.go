@@ -1,9 +1,9 @@
 package db
 
 import (
+	"whoisthat-core/lib/logger"
 	"whoisthat-core/structs"
 	"encoding/json"
-	"log"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -29,7 +29,7 @@ func (db *DB) LoadRouting() (structs.RoutingConfig, error) {
 	}
 
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		log.Printf("routing config corrupted, using defaults: %v", err)
+		logger.Warnf("routing config corrupted, using defaults: %v", err)
 		return defaultRouting(), nil
 	}
 
