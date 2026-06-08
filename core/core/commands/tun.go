@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	appconfig "whoisthat-core/lib/AppConfig"
 	proxy "whoisthat-core/lib/proxy/mainproxy"
 	"whoisthat-core/lib/logger"
 	"whoisthat-core/lib/proxy/tun"
@@ -35,7 +36,7 @@ func (cmd *Cmd) EnableTun(data structs.EnableTunData, proxy_manager *proxy.Proxy
 }
 
 func (cmd *Cmd) enableTun(profile structs.Profile, tun_manager *tunmode.TunModeManager) {
-	resolved, err := resolveHostAndAddress(profile)
+	resolved, err := resolveHostAndAddress(profile, appconfig.GetConfig().DnsServers)
 	if err != nil {
 		logger.Warn("tun: failed to resolve:", err)
 		cmd.warn("enable-tun-failed", "failed to resolve profile host")
@@ -44,7 +45,11 @@ func (cmd *Cmd) enableTun(profile structs.Profile, tun_manager *tunmode.TunModeM
 
 	logger.Info("tun: resolved", resolved)
 
-	err = tun_manager.Start(resolved, "8.8.8.8")
+	dns := "1.1.1.1"
+	if len(appconfig.GetConfig().DnsServers) > 0 {
+		dns = appconfig.GetConfig().DnsServers[0]
+	}
+	err = tun_manager.Start(resolved, dns)
 	if err != nil {
 		logger.Warn("tun: failed to start:", err)
 		cmd.warn("enable-tun-failed", "Failed to enable tun mode")
@@ -52,11 +57,11 @@ func (cmd *Cmd) enableTun(profile structs.Profile, tun_manager *tunmode.TunModeM
 	}
 }
 
-func resolveHostAndAddress(profile structs.Profile) ([]string, error) {
+func resolveHostAndAddress(profile structs.Profile, dnsServers []string) ([]string, error) {
 	var ipv4s []string
 	var errs []error
 	if profile.Host != "" {
-		resolved, err := utils.ResolveDomainIpv4(profile.Host)
+		resolved, err := utils.ResolveDomainIpv4(profile.Host, dnsServers)
 		if err == nil {
 			ipv4s = append(ipv4s, resolved...)
 		} else {
@@ -64,7 +69,7 @@ func resolveHostAndAddress(profile structs.Profile) ([]string, error) {
 		}
 	}
 	if profile.Address != "" {
-		resolved, err := utils.ResolveDomainIpv4(profile.Address)
+		resolved, err := utils.ResolveDomainIpv4(profile.Address, dnsServers)
 		if err == nil {
 			ipv4s = append(ipv4s, resolved...)
 		} else {

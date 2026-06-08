@@ -10,11 +10,10 @@ import (
 	"github.com/miekg/dns"
 )
 
-func ResolveDomainIpv4(domain string) ([]string, error) {
+func ResolveDomainIpv4(domain string, dnsServers []string) ([]string, error) {
 	ipSet := make(map[string]bool)
-	dnsServers := []string{"1.1.1.1:53", "8.8.8.8:53", "208.67.222.222:53"}
 	for _, server := range dnsServers {
-		ips, err := queryDNSServer(domain, server)
+		ips, err := queryDNSServer(domain, server+":53")
 		if err != nil {
 			logger.Warnf("Query to %s failed: %v", server, err)
 			continue

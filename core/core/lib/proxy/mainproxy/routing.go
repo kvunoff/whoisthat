@@ -2,6 +2,7 @@ package mainproxy
 
 import (
 	"encoding/json"
+	appconfig "whoisthat-core/lib/AppConfig"
 	"whoisthat-core/db"
 	"whoisthat-core/lib/logger"
 	"strings"
@@ -75,11 +76,12 @@ func injectRoutingConfig(configJSON []byte, database *db.DB) ([]byte, error) {
 	// DNS section — needed for the freedom (direct) outbound to resolve domains.
 	// Without this, domain-routed direct traffic has no DNS resolver.
 	if _, exists := config["dns"]; !exists {
+		dnsServersRaw := make([]map[string]interface{}, len(appconfig.GetConfig().DnsServers))
+		for i, s := range appconfig.GetConfig().DnsServers {
+			dnsServersRaw[i] = map[string]interface{}{"address": s}
+		}
 		config["dns"] = map[string]interface{}{
-			"servers": []map[string]interface{}{
-				{"address": "1.1.1.1"},
-				{"address": "8.8.8.8"},
-			},
+			"servers": dnsServersRaw,
 		}
 	}
 

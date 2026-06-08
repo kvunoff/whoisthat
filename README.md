@@ -71,9 +71,15 @@ last_profile_id = 0
   "socks-port": 3090,
   "http-port": 3091,
   "core-tcp-port": 4897,
-  "test-port-range": { "start": 3095, "end": 30120 }
+  "test-port-range": { "start": 3095, "end": 30120 },
+  "dns-servers": ["1.1.1.1", "8.8.8.8"]
 }
 ```
+
+`dns-servers` is a list of DNS server IPs used in three contexts:
+- **Profile resolution** — resolving proxy hostnames to IPs (all servers queried, results merged)
+- **Xray direct outbound** — DNS servers injected into xray's config for `freedom` (direct) outbound domain resolution
+- **TUN mode** — the first server in the list is used for system-wide DNS hijack via iptables DNAT rules
 
 Profile data is stored under `~/.local/share/whoisthat/db/`.
 
