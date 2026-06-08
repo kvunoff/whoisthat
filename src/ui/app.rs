@@ -537,10 +537,24 @@ impl App {
                 } else {
                     s_dim()
                 };
+                let warn = if p.uri.starts_with("ss://") {
+                    if let Some(method) = uri::parse_ss_method(&p.uri) {
+                        if uri::is_insecure_ss_cipher(&method) {
+                            Span::styled(" ⚠", s_error())
+                        } else {
+                            Span::styled("", s_dim())
+                        }
+                    } else {
+                        Span::styled("", s_dim())
+                    }
+                } else {
+                    Span::styled("", s_dim())
+                };
                 items.push(ListItem::new(Line::from(vec![
                     Span::styled("  ", s_dim()),
                     conn_mark,
                     Span::styled(name, style),
+                    warn,
                     Span::styled(format!(" [{}]", proto.to_uppercase()), s_faint()),
                     test,
                 ])));
@@ -728,6 +742,18 @@ impl App {
         rows.push(kv_row("Transport", transport));
         rows.push(kv_row("Security", security));
         rows.push(kv_row("Flow", flow));
+
+        if p.uri.starts_with("ss://") {
+            if let Some(method) = uri::parse_ss_method(&p.uri) {
+                let method_display = if uri::is_insecure_ss_cipher(&method) {
+                    format!("⚠ {} (insecure)", method)
+                } else {
+                    method
+                };
+                rows.push(kv_row("Cipher", method_display));
+            }
+        }
+
         rows.push(Line::from(""));
 
         rows.push(section_header("Status"));

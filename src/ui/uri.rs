@@ -82,6 +82,49 @@ pub fn parse_vless_uri(uri: &str) -> VlessParams {
     params
 }
 
+/// Extract the cipher method from an ss:// URI (SIP002 format).
+/// Returns None if the URI is not shadowsocks or parsing fails.
+pub fn parse_ss_method(uri: &str) -> Option<String> {
+    let without_scheme = uri.strip_prefix("ss://")?;
+    let without_fragment = without_scheme.split('#').next()?;
+    let without_query = without_fragment.split('?').next()?;
+    let userinfo = without_query.split('@').next()?;
+    let decoded = base64::Engine::decode(
+        &base64::engine::general_purpose::STANDARD,
+        userinfo,
+    )
+    .ok()?;
+    let decoded_str = String::from_utf8(decoded).ok()?;
+    decoded_str.split(':').next().map(|s| s.to_string())
+}
+
+/// Returns true if the cipher method is known-insecure (non-AEAD or broken).
+pub fn is_insecure_ss_cipher(method: &str) -> bool {
+    matches!(
+        method,
+        "none"
+            | "table"
+            | "rc4"
+            | "rc4-md5"
+            | "aes-128-cfb"
+            | "aes-192-cfb"
+            | "aes-256-cfb"
+            | "aes-128-ctr"
+            | "aes-192-ctr"
+            | "aes-256-ctr"
+            | "des-cfb"
+            | "rc2-cfb"
+            | "idea-cfb"
+            | "seed-cfb"
+            | "camellia-128-cfb"
+            | "camellia-192-cfb"
+            | "camellia-256-cfb"
+            | "bf-cfb"
+            | "salsa20"
+            | "chacha20"
+    )
+}
+
 fn urlencoding(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let bytes = s.as_bytes();
