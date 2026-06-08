@@ -63,6 +63,10 @@ core_host = "127.0.0.1"
 autoconnect = false
 last_group_id = 0
 last_profile_id = 0
+show_ip = true
+log_enabled = false
+log_level = "warn"
+test_method = "http-get"
 ```
 
 **Core config** — `~/.config/whoisthat/config.json` (auto-generated):
@@ -81,6 +85,8 @@ last_profile_id = 0
 - **Xray direct outbound** — DNS servers injected into xray's config for `freedom` (direct) outbound domain resolution
 - **TUN mode** — the first server in the list is used for system-wide DNS hijack via iptables DNAT rules
 
+`socks-port` and `http-port` set the local SOCKS5/HTTP proxy ports. `test-port-range` defines the port pool for latency testing (spawns temporary xray instances).
+
 Profile data is stored under `~/.local/share/whoisthat/db/`.
 
 ---
@@ -92,11 +98,14 @@ Profile data is stored under `~/.local/share/whoisthat/db/`.
 - Import VLESS profiles (URI, clipboard paste, or subscription refresh)
 - Connect / disconnect / switch profiles
 - Full system-wide TUN-mode VPN (`tun2socks` + `iptables`)
-- Profile latency testing (SOCKS5 → Cloudflare)
+- **Profile testing** — three methods: TCP connect, HTTP GET (SOCKS5 → Cloudflare), HTTP HEAD
+- **Scan-all testing** — `t` scans all profiles across all groups with dedup; `T` tests only focused profile/subscription
+- **Custom routing rules** — domain, IP, protocol, port → proxy/direct/block (`r` tab)
 - Real-time connection status with uplink/downlink traffic stats
-- Log viewer (tail from core log file)
-- Autoconnect on startup
+- **Log viewer** — live tail from core log, auto-scroll, [WARN]/[ERRO] highlighting
+- **Configurable** — DNS servers, proxy ports, log level, test method via settings and config files
 - **Detach/reattach** — `q` leaves VPN running in background, reopen TUI to reattach
+- Autoconnect on startup
 - Public IP display (auto-refreshed every 30s and on connect/disconnect/TUN-toggle)
 - Dark color scheme (Tokyo Night inspired)
 - Keyboard-driven — mouse is optional
@@ -185,7 +194,7 @@ Both client→core commands and core→client notifications use the same framing
 | `disconnect` | `{}` | `status-changed` |
 | `add-profiles` | `{"uris":"...","group_id":int}` | `profiles-added` |
 | `delete-profiles` | `{"profiles":[{"id":int,"group_id":int}]}` | `profiles-deleted` |
-| `test-profile` | `{"profile":{"id":int,"group_id":int}}` | `profile-updated` |
+| `test-profile` | `{"profile":{"id":int,"group_id":int},"method":"str"}` | `profile-updated` |
 | `enable-tun` | `{}` | `tun-status-changed` |
 | `disable-tun` | `{}` | `tun-status-changed` |
 | `is-root` | `{}` | `is-root-answer` |
@@ -267,7 +276,8 @@ Subscription metadata (`sub_*`) is populated from the `subscription-userinfo` HT
 |---|---|
 | `c` / `Enter` | Connect to selected profile |
 | `d` | Disconnect |
-| `t` | Test profile latency |
+| `t` | Test all profiles (starts from cursor, top-to-bottom, dedup) |
+| `T` | Test focused profile or subscription group only |
 | `v` | Toggle TUN mode (requires root) |
 
 ### Profiles & Groups
@@ -286,7 +296,8 @@ Subscription metadata (`sub_*`) is populated from the `subscription-userinfo` HT
 
 | Key | Action |
 |---|---|
-| `l` | Logs view |
+| `l` | Logs view (live tail with auto-scroll) |
+| `r` | Routing rules (domain/IP/protocol/port → proxy/direct/block) |
 | `s` | Settings |
 | `Esc` / `1` | Back to Profiles |
 | `q` | Detach TUI (VPN stays connected in background) |
@@ -294,15 +305,23 @@ Subscription metadata (`sub_*`) is populated from the `subscription-userinfo` HT
 
 ### Settings
 
-| Setting | Description |
-|---|---|
-| Autoconnect | Automatically connect to last used profile on startup |
+| Setting | Values | Description |
+|---|---|---|
+| Autoconnect | on/off | Automatically connect to last used profile on startup |
+| Show IP | on/off | Display public IP in top bar |
+| TUI log | on/off | Enable Rust TUI debug log (writes to `~/.local/share/whoisthat/tui.log`) |
+| Log level | error/warn/info/debug/trace | Minimum log level for both TUI and core |
+| Test method | tcp/http-get/http-head | Latency test method (tcp = direct dial, http = via SOCKS5 proxy) |
+
+Navigate with `j`/`k`, toggle booleans with `Space`/`Enter`, cycle values with `h`/`l`.
 
 ### TUN Mode
 
-TUN mode requires root privileges. The core creates a `whoisthattun` virtual interface, configures `iptables` rules, and routes all traffic through the VPN. DNS is handled at `8.8.8.8` to prevent leaks.
+TUN mode requires root privileges. The core creates a `whoisthattun` virtual interface, configures `iptables` rules, and routes all traffic through the VPN. DNS queries are redirected to the first server in `dns-servers` config.
 
 Run with: `sudo -E whoisthat`
+
+The `-E` flag is **required** — without it the environment is not preserved and the core cannot find your config, profiles, or log files. The TUI will display a warning if `-E` is missing.
 
 ### Subscription Workflow
 
@@ -331,7 +350,8 @@ whoisthat/
 │       ├── app.rs      ← Main app state + rendering
 │       ├── theme.rs    ← Color palette (Tokyo Night)
 │       ├── settings.rs ← Settings screen
-│       ├── logs.rs     ← Log viewer (file tail)
+│       ├── routing.rs  ← Routing rules tab + popups
+│       ├── logs.rs     ← Log viewer (live tail + auto-scroll)
 │       └── widgets.rs  ← Shared widget helpers
 ├── install.sh          ← Universal installer script
 ├── parser/             ← VLESS URI → Xray JSON parser (Rust)
@@ -343,6 +363,7 @@ whoisthat/
 │       ├── commands/   ← TCP command handlers
 │       ├── db/         ← JSON file-based profile DB
 │       ├── lib/        ← Core libraries
+│       │   ├── logger/     ← Structured logger ([INFO]/[WARN]/[ERRO])
 │       │   ├── TCPServer/  ← TCP server + dispatcher
 │       │   ├── AppConfig/  ← Core configuration
 │       │   ├── PortPool/   ← Dynamic port allocator
