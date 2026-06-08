@@ -133,6 +133,7 @@ pub struct UpdateSubscriptionData {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TestProfileData {
     pub profile: ProfileID,
+    pub method: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

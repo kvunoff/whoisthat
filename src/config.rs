@@ -21,6 +21,8 @@ pub struct AppConfig {
     pub log_enabled: bool,
     #[serde(default = "default_log_level")]
     pub log_level: String,
+    #[serde(default = "default_test_method")]
+    pub test_method: String,
 }
 
 fn default_core_tcp_port() -> u16 {
@@ -35,6 +37,9 @@ fn default_true() -> bool {
 fn default_log_level() -> String {
     "warn".into()
 }
+fn default_test_method() -> String {
+    "http-get".into()
+}
 
 impl Default for AppConfig {
     fn default() -> Self {
@@ -48,6 +53,7 @@ impl Default for AppConfig {
             show_ip: true,
             log_enabled: false,
             log_level: default_log_level(),
+            test_method: default_test_method(),
         }
     }
 }

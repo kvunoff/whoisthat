@@ -55,6 +55,7 @@ pub struct App {
     pub show_ip: bool,
     pub log_enabled: bool,
     pub log_level: String,
+    pub test_method: String,
     pub public_ip: String,
 
     pub tab: ActiveTab,
@@ -73,7 +74,7 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(autoconnect: bool, show_ip: bool, log_enabled: bool, log_level: String) -> Self {
+    pub fn new(autoconnect: bool, show_ip: bool, log_enabled: bool, log_level: String, test_method: String) -> Self {
         Self {
             groups: Vec::new(),
             connection_status: ProxyStatus {
@@ -87,6 +88,7 @@ impl App {
             show_ip,
             log_enabled,
             log_level,
+            test_method,
             public_ip: String::new(),
             tab: ActiveTab::Profiles,
             focus: Focus::LeftPanel,
@@ -410,6 +412,7 @@ impl App {
                     self.show_ip,
                     self.log_enabled,
                     &self.log_level,
+                    &self.test_method,
                     &self.settings_state,
                     focused,
                 );
@@ -987,7 +990,7 @@ impl App {
         let inner = block.inner(area);
         f.render_widget(block, area);
 
-        let left = Span::styled(" WhoisThat v0.2.2 · xray-core", s_faint());
+        let left = Span::styled(" WhoisThat v0.2.3 · xray-core", s_faint());
         let left_w = left.width();
 
         let tun = if self.tun_enabled {

@@ -23,7 +23,7 @@ type ProxyManager struct {
 	xray_core         xray.XrayCore
 	StatusChanged     chan structs.ProxyStatus
 	StatsChanged      chan structs.TrafficStats
-	testChannel       chan structs.Profile
+	testChannel       chan TestRequest
 	TestResultChannel chan TestResult
 	portPool          *portpool.PortPool
 	statsCancel       chan struct{}
@@ -36,7 +36,7 @@ func (p *ProxyManager) Init() {
 	}
 	p.StatusChanged = make(chan structs.ProxyStatus)
 	p.StatsChanged = make(chan structs.TrafficStats)
-	test_channel := make(chan structs.Profile)
+	test_channel := make(chan TestRequest)
 	go p.listenForTests(test_channel)
 	p.testChannel = test_channel
 	p.TestResultChannel = make(chan TestResult)

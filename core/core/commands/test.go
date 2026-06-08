@@ -13,5 +13,9 @@ func (cmd *Cmd) TestProfile(data structs.TestProfileData, proxy_manager *proxy.P
 		cmd.warn("test-failed", err.Error())
 		return
 	}
-	proxy_manager.TestProfile(profile)
+	method := data.Method
+	if method == "" {
+		method = "http-get"
+	}
+	proxy_manager.TestProfile(profile, method)
 }

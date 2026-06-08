@@ -25,7 +25,7 @@ impl SettingsState {
     }
 
     pub fn cursor_down(&mut self) {
-        if self.cursor < 3 {
+        if self.cursor < 4 {
             self.cursor += 1;
         }
     }
@@ -38,6 +38,7 @@ pub fn render_settings(
     show_ip: bool,
     log_enabled: bool,
     log_level: &str,
+    test_method: &str,
     state: &SettingsState,
     focused: bool,
 ) {
@@ -61,6 +62,7 @@ pub fn render_settings(
         ("Show IP",     if show_ip     { "on" } else { "off" }),
         ("TUI log",     if log_enabled { "on" } else { "off" }),
         ("Log level",   log_level),
+        ("Test method", test_method),
     ];
 
     let lines: Vec<Line> = items
@@ -93,7 +95,7 @@ pub fn render_settings(
         })
         .collect();
 
-    let help = Paragraph::new(" j/k navigate  │  Space/Enter toggle  │  l/r cycle log level")
+    let help = Paragraph::new(" j/k navigate  │  Space/Enter toggle  │  l/r cycle value")
         .style(s_faint())
         .alignment(Alignment::Center);
 

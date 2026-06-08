@@ -58,6 +58,7 @@ type DisconnectData struct{}
 
 type TestProfileData struct {
 	Profile ProfileID `json:"profile"`
+	Method  string    `json:"method"`
 }
 
 type ProfileUpdated struct {

@@ -221,7 +221,7 @@ async fn main() -> io::Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut term = ratatui::Terminal::new(backend)?;
 
-    let mut app = App::new(cfg.autoconnect, cfg.show_ip, cfg.log_enabled, cfg.log_level.clone());
+    let mut app = App::new(cfg.autoconnect, cfg.show_ip, cfg.log_enabled, cfg.log_level.clone(), cfg.test_method.clone());
 
     if let Some(warning) = check_sudo_env() {
         app.msg(warning);
@@ -996,6 +996,47 @@ fn handle_routing_form(
     false
 }
 
+fn build_test_list(app: &ui::App, focused_only: bool) -> Vec<(i32, i32)> {
+    let mut list = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+
+    let mut add_profile = |gid: i32, pid: i32| {
+        if seen.insert((gid, pid)) {
+            list.push((gid, pid));
+        }
+    };
+
+    if focused_only {
+        if app.on_group() {
+            if let Some(g) = app.current_group() {
+                for p in &g.profiles {
+                    add_profile(g.group.id, p.id);
+                }
+            }
+        } else if let Some(p) = app.selected_profile() {
+            add_profile(p.group_id, p.id);
+        }
+        return list;
+    }
+
+    // Scan all: start with cursor item, then everything top-to-bottom
+    if let Some(p) = app.selected_profile() {
+        add_profile(p.group_id, p.id);
+    } else if let Some(g) = app.current_group() {
+        for p in &g.profiles {
+            add_profile(g.group.id, p.id);
+        }
+    }
+
+    for g in &app.groups {
+        for p in &g.profiles {
+            add_profile(g.group.id, p.id);
+        }
+    }
+
+    list
+}
+
 async fn handle_normal_input(
     app: &mut App,
     client: &CoreClient,
@@ -1162,6 +1203,14 @@ async fn handle_normal_input(
                     config::save_config(cfg);
                     configure_logger(logger, cfg.log_enabled, &cfg.log_level);
                 }
+                if app.settings_state.cursor == 4 {
+                    let methods = ["tcp", "http-get", "http-head"];
+                    let current = methods.iter().position(|m| *m == app.test_method.as_str()).unwrap_or(1);
+                    let next = (current + 1) % methods.len();
+                    app.test_method = methods[next].to_string();
+                    cfg.test_method = app.test_method.clone();
+                    config::save_config(cfg);
+                }
             }
             KeyCode::Char('h') | KeyCode::Left => {
                 if app.settings_state.cursor == 3 {
@@ -1172,6 +1221,14 @@ async fn handle_normal_input(
                     cfg.log_level = app.log_level.clone();
                     config::save_config(cfg);
                     configure_logger(logger, cfg.log_enabled, &cfg.log_level);
+                }
+                if app.settings_state.cursor == 4 {
+                    let methods = ["tcp", "http-get", "http-head"];
+                    let current = methods.iter().position(|m| *m == app.test_method.as_str()).unwrap_or(1);
+                    let prev = if current == 0 { methods.len() - 1 } else { current - 1 };
+                    app.test_method = methods[prev].to_string();
+                    cfg.test_method = app.test_method.clone();
+                    config::save_config(cfg);
                 }
             }
             _ => {}
@@ -1248,10 +1305,20 @@ async fn handle_normal_input(
                 app.focus = Focus::Popup;
             }
             KeyCode::Char('t') => {
-                if let Some(p) = app.selected_profile() {
-                    let _ = client.test_profile(p.group_id, p.id).await;
-                    app.msg("Testing...");
+                let method = app.test_method.clone();
+                let list = build_test_list(app, false);
+                for (gid, pid) in &list {
+                    let _ = client.test_profile(*gid, *pid, &method).await;
                 }
+                app.msg(format!("Testing {} profiles...", list.len()));
+            }
+            KeyCode::Char('T') => {
+                let method = app.test_method.clone();
+                let list = build_test_list(app, true);
+                for (gid, pid) in &list {
+                    let _ = client.test_profile(*gid, *pid, &method).await;
+                }
+                app.msg(format!("Testing {} profiles...", list.len()));
             }
             KeyCode::Char('x') => {
                 if let Some(p) = app.selected_profile() {
@@ -1296,6 +1363,22 @@ async fn handle_normal_input(
             }
             KeyCode::Char('j') | KeyCode::Down => app.cursor_down(),
             KeyCode::Char('k') | KeyCode::Up => app.cursor_up(),
+            KeyCode::Char('t') => {
+                let method = app.test_method.clone();
+                let list = build_test_list(app, false);
+                for (gid, pid) in &list {
+                    let _ = client.test_profile(*gid, *pid, &method).await;
+                }
+                app.msg(format!("Testing {} profiles...", list.len()));
+            }
+            KeyCode::Char('T') => {
+                let method = app.test_method.clone();
+                let list = build_test_list(app, true);
+                for (gid, pid) in &list {
+                    let _ = client.test_profile(*gid, *pid, &method).await;
+                }
+                app.msg(format!("Testing {} profiles...", list.len()));
+            }
             _ => {}
         },
         Focus::Popup => {}

@@ -80,7 +80,7 @@ impl CoreClient {
             .await
     }
 
-    pub async fn test_profile(&self, group_id: i32, profile_id: i32) -> std::io::Result<()> {
+    pub async fn test_profile(&self, group_id: i32, profile_id: i32, method: &str) -> std::io::Result<()> {
         self.conn
             .lock()
             .await
@@ -91,6 +91,7 @@ impl CoreClient {
                         id: profile_id,
                         group_id,
                     },
+                    method: method.to_string(),
                 },
             )
             .await
