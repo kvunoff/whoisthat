@@ -214,6 +214,27 @@ ip route del default via $GATEWAY table 100 2>/dev/null || true
 	return err
 }
 
+func addFwmarkRouting(mark int, iface string, gateway string) error {
+	script := fmt.Sprintf(`
+set -e
+ip rule add fwmark %d table 100 2>/dev/null || true
+ip route replace %s/32 dev %s table 100
+ip route replace default via %s table 100
+`, mark, gateway, iface, gateway)
+	_, err := runScriptWithSh(script)
+	return err
+}
+
+func removeFwmarkRouting(mark int, iface string, gateway string) error {
+	script := fmt.Sprintf(`
+ip rule del fwmark %d table 100 2>/dev/null || true
+ip route del %s/32 dev %s table 100 2>/dev/null || true
+ip route del default via %s table 100 2>/dev/null || true
+`, mark, gateway, iface, gateway)
+	_, err := runScriptWithSh(script)
+	return err
+}
+
 func loosenRpFilter(tun_name string, default_interface_name string) error {
 	script := fmt.Sprintf(`
 TUN_NAME="%s"

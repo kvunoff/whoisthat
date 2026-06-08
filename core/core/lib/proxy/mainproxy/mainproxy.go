@@ -1,6 +1,7 @@
 package mainproxy
 
 import (
+	"encoding/json"
 	"whoisthat-core/db"
 	"whoisthat-core/lib"
 	appconfig "whoisthat-core/lib/AppConfig"
@@ -80,10 +81,13 @@ func (p *ProxyManager) Connect(profile structs.Profile) error {
 
 	// Inject routing rules + direct/block outbounds
 	if p.DB != nil {
+		prevOutboundsCount := countOutbounds(xray_config)
 		xray_config, err = injectRoutingConfig(xray_config, p.DB)
 		if err != nil {
 			logger.Warnf("failed to inject routing config: %v", err)
 		}
+		afterOutboundsCount := countOutbounds(xray_config)
+		logger.Infof("routing: outbounds %d → %d", prevOutboundsCount, afterOutboundsCount)
 	}
 
 	if err := p.xray_core.Start(xray_config); err != nil {
@@ -149,4 +153,16 @@ func (p *ProxyManager) GetStatus() structs.ProxyStatus {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.status
+}
+
+func countOutbounds(configJSON []byte) int {
+	var cfg map[string]interface{}
+	if err := json.Unmarshal(configJSON, &cfg); err != nil {
+		return -1
+	}
+	obs, ok := cfg["outbounds"].([]interface{})
+	if !ok {
+		return 0
+	}
+	return len(obs)
 }

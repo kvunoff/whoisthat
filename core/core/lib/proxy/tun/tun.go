@@ -81,6 +81,8 @@ func (t *TunModeManager) Start(proxy_ipv4s []string, dns string) error {
 		return fmt.Errorf("there was an error loosening rp filter %w", err)
 	}
 
+	err = addFwmarkRouting(1, interface_name, interface_ip)
+
 	if t.sudoUid > 0 {
 		err = addUidRouting(t.sudoUid, interface_name, interface_ip)
 		if err != nil {
@@ -160,6 +162,7 @@ func (t *TunModeManager) clearNetworkRules() error {
 		deleteDnsIpRoutes(t.dns, t.default_interface_ip),
 		cleanDnsHijackRules(t.default_interface, t.dns),
 		deleteProxyIpRoutes(t.proxy_ipv4s, t.default_interface_ip),
+		removeFwmarkRouting(1, t.default_interface, t.default_interface_ip),
 	}
 	if t.sudoUid > 0 {
 		errs = append(errs, removeUidRouting(t.sudoUid, t.default_interface, t.default_interface_ip))

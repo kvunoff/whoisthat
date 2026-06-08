@@ -107,6 +107,11 @@ func injectRoutingConfig(configJSON []byte, database *db.DB) ([]byte, error) {
 		"settings": map[string]interface{}{
 			"domainStrategy": "UseIP",
 		},
+		"streamSettings": map[string]interface{}{
+			"sockopt": map[string]interface{}{
+				"mark": 1,
+			},
+		},
 	}
 	block := map[string]interface{}{
 		"tag":      "block",
