@@ -3,7 +3,6 @@ package db
 import (
 	"whoisthat-core/lib/logger"
 	"whoisthat-core/structs"
-	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
@@ -77,13 +76,7 @@ func (db *DB) updateGroup(group structs.Group) error {
 	oldUmask := syscall.Umask(0)
 	defer syscall.Umask(oldUmask)
 	group_config_path := db.GetGroupConfigFilePath(group.Id)
-	group_json, err := json.MarshalIndent(group, "", " ")
-	if err != nil {
-		logger.Fatal(err)
-	}
-
-	err = os.WriteFile(group_config_path, group_json, 0666)
-	if err != nil {
+	if err := db.writeEncryptedJSON(group_config_path, group); err != nil {
 		return fmt.Errorf("failed to write %s: %w", group_config_path, err)
 	}
 	return nil
@@ -214,13 +207,7 @@ func (db *DB) AddGroup(name string, subscription_url string) (structs.GroupAdded
 		LastId:          0,
 	}
 
-	group_json, err := json.MarshalIndent(group, "", " ")
-	if err != nil {
-		logger.Fatal(err)
-	}
-
-	err = os.WriteFile(group_config_path, group_json, 0666)
-	if err != nil {
+	if err := db.writeEncryptedJSON(group_config_path, group); err != nil {
 		return group_added, fmt.Errorf("failed to write %s: %w", group_config_path, err)
 	}
 
@@ -261,14 +248,8 @@ func (db *DB) LoadGroupConfig(id int) (structs.Group, error) {
 func (db *DB) loadGroupConfig(id int) (structs.Group, error) {
 	var group_data structs.Group
 	group_conf_file := db.GetGroupConfigFilePath(id)
-	data, err := os.ReadFile(group_conf_file)
-	if err != nil {
-		return group_data, err
-	}
-	err = json.Unmarshal(data, &group_data)
-	if err != nil {
-		err = fmt.Errorf("Failed to parse json group data for %d: %w", id, err)
-		return group_data, err
+	if err := db.readEncryptedJSON(group_conf_file, &group_data); err != nil {
+		return group_data, fmt.Errorf("Failed to load group data for %d: %w", id, err)
 	}
 	return group_data, nil
 }
@@ -278,13 +259,7 @@ func (db *DB) saveGroupConfig(group structs.Group) error {
 	defer syscall.Umask(oldUmask)
 
 	group_conf_file := db.GetGroupConfigFilePath(group.Id)
-	json_data, err := json.MarshalIndent(group, "", " ")
-
-	if err != nil {
-		logger.Fatal("failed to stringify default group config")
-	}
-
-	if err := os.WriteFile(group_conf_file, json_data, 0666); err != nil {
+	if err := db.writeEncryptedJSON(group_conf_file, group); err != nil {
 		logger.Fatal("failed to write to group config " + group_conf_file + ": " + err.Error())
 	}
 	return nil

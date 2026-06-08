@@ -3,7 +3,6 @@ package db
 import (
 	"whoisthat-core/lib/logger"
 	"whoisthat-core/structs"
-	"encoding/json"
 	"fmt"
 	"os"
 	"syscall"
@@ -47,13 +46,7 @@ func (db *DB) updateProfile(profile structs.Profile) error {
 		return fmt.Errorf("update error gid: %d, id: %d: Profile nano id mismatch old: %s, new: %s", profile.GroupId, profile.Id, old_profile_data.NanoID, profile.NanoID)
 	}
 
-	profile_json, err := json.MarshalIndent(profile, "", " ")
-	if err != nil {
-		logger.Fatal(err)
-	}
-
-	err = os.WriteFile(profile_config_path, profile_json, 0666)
-	if err != nil {
+	if err := db.writeEncryptedJSON(profile_config_path, profile); err != nil {
 		return fmt.Errorf("update error: failed to write %s: %w", profile_config_path, err)
 	}
 	return nil
@@ -93,11 +86,7 @@ func (db *DB) AddProfile(data structs.DBAddProfileData) (structs.Profile, error)
 func (db *DB) getProfile(group_id int, id int) (structs.Profile, error) {
 	var profile structs.Profile
 	profile_config_path := db.GetProfileFilePath(group_id, id)
-	data, err := os.ReadFile(profile_config_path)
-	if err != nil {
-		return profile, fmt.Errorf("Error reading profile config with gid: %d, id: %d: %w", group_id, id, err)
-	}
-	if err := json.Unmarshal(data, &profile); err != nil {
+	if err := db.readEncryptedJSON(profile_config_path, &profile); err != nil {
 		return profile, fmt.Errorf("Error reading profile config with gid: %d, id: %d: %w", group_id, id, err)
 	}
 	return profile, nil
@@ -134,13 +123,8 @@ func (db *DB) addProfile(data structs.DBAddProfileData) (structs.Profile, error)
 		Host:     data.Host,
 		Address:  data.Address,
 	}
-	profile_json, err := json.MarshalIndent(profile, "", " ")
-	if err != nil {
-		logger.Fatal(err)
-	}
 
-	err = os.WriteFile(profile_path, profile_json, 0666)
-	if err != nil {
+	if err := db.writeEncryptedJSON(profile_path, profile); err != nil {
 		return profile_added, fmt.Errorf("failed to write %s: %w", profile_path, err)
 	}
 

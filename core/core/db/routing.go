@@ -3,7 +3,6 @@ package db
 import (
 	"whoisthat-core/lib/logger"
 	"whoisthat-core/structs"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -20,15 +19,10 @@ func (db *DB) LoadRouting() (structs.RoutingConfig, error) {
 	var cfg structs.RoutingConfig
 
 	path := db.GetRoutingFilePath()
-	data, err := os.ReadFile(path)
-	if err != nil {
+	if err := db.readEncryptedJSON(path, &cfg); err != nil {
 		if os.IsNotExist(err) {
 			return defaultRouting(), nil
 		}
-		return cfg, err
-	}
-
-	if err := json.Unmarshal(data, &cfg); err != nil {
 		logger.Warnf("routing config corrupted, using defaults: %v", err)
 		return defaultRouting(), nil
 	}
@@ -44,12 +38,7 @@ func (db *DB) SaveRouting(cfg structs.RoutingConfig) error {
 	defer db.mu.Unlock()
 
 	path := db.GetRoutingFilePath()
-	data, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		return err
-	}
-
-	return os.WriteFile(path, data, 0666)
+	return db.writeEncryptedJSON(path, cfg)
 }
 
 func defaultRouting() structs.RoutingConfig {

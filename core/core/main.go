@@ -43,6 +43,7 @@ func main() {
 	appconfig.LoadConfig()
 	database := db.DB{}
 	database.Initialize()
+	appconfig.SaveConfig()
 	proxy_manager := proxy.ProxyManager{}
 	proxy_manager.DB = &database
 	proxy_manager.Init()

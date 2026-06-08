@@ -49,6 +49,31 @@ func LoadConfig() {
 	application_configuration = config
 }
 
+func SaveConfig() {
+	home_dir, err := utils.GetHomeDir()
+	if err != nil {
+		logger.Warn("save config: cannot get home dir:", err)
+		return
+	}
+	var dir_path = filepath.Join(home_dir, ".config", "whoisthat")
+	var config_path = filepath.Join(dir_path, "config.json")
+
+	if err := os.MkdirAll(dir_path, 0777); err != nil {
+		logger.Warn("save config: cannot create dir:", err)
+		return
+	}
+
+	jsonData, err := json.MarshalIndent(application_configuration, "", " ")
+	if err != nil {
+		logger.Warn("save config: marshal failed:", err)
+		return
+	}
+
+	if err := os.WriteFile(config_path, jsonData, 0666); err != nil {
+		logger.Warn("save config: write failed:", err)
+	}
+}
+
 func readConfig() (AppConfig, error) {
 	var default_config AppConfig = defaultConfig()
 	home_dir, err := utils.GetHomeDir()
@@ -67,20 +92,6 @@ func readConfig() (AppConfig, error) {
 
 	if !os.IsNotExist(err) {
 		return default_config, fmt.Errorf("failed to read config file")
-	}
-
-	if err := os.MkdirAll(dir_path, 0777); err != nil {
-		return default_config, fmt.Errorf("config file was not found and failed to create config directory " + dir_path + ": " + err.Error())
-	}
-
-	default_config_json, err := json.MarshalIndent(defaultConfig(), "", " ")
-
-	if err != nil {
-		return default_config, fmt.Errorf("config file was not found and failed to parse default config: " + err.Error())
-	}
-
-	if err := os.WriteFile(config_path, default_config_json, 0666); err != nil {
-		return default_config, fmt.Errorf("config file was not found and failed to write default config: " + err.Error())
 	}
 
 	return default_config, nil
