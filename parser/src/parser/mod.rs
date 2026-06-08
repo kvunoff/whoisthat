@@ -52,7 +52,7 @@ pub fn create_config(
 pub fn create_outbound_object(uri: &str) -> Result<config_models::Outbound, String> {
     let (name, data, outbound_settings) = get_uri_data(uri)?;
 
-    let network_type = data.r#type.clone().unwrap_or(String::from(""));
+    let network_type = data.r#type.as_deref().unwrap_or("");
     let allow_insecure = data.allowInsecure == Some(String::from("true"))
         || data.allowInsecure == Some(String::from("1"));
 
@@ -62,8 +62,8 @@ pub fn create_outbound_object(uri: &str) -> Result<config_models::Outbound, Stri
         streamSettings: StreamSettings {
             network: data.r#type.clone(),
             security: data.security.clone(),
-            tlsSettings: if data.security == Some(String::from("tls")) {
-                Some(TlsSettings {
+            tlsSettings: match data.security.as_deref() {
+                Some("tls") => Some(TlsSettings {
                     alpn: data.alpn.map(|alpn| vec![alpn]),
                     rejectUnknownSni: None,
                     enableSessionResumption: None,
@@ -75,62 +75,56 @@ pub fn create_outbound_object(uri: &str) -> Result<config_models::Outbound, Stri
                     fingerprint: data.fp.clone(),
                     serverName: data.sni.clone(),
                     allowInsecure: allow_insecure,
-                })
-            } else {
-                None
+                }),
+                _ => None,
             },
-            wsSettings: if network_type == String::from("ws") {
-                Some(WsSettings {
-                    Host: data.host.clone(),
-                    path: data.path.clone(),
-                    acceptProxyProtocol: None,
-                })
-            } else {
-                None
-            },
-            tcpSettings: if network_type == String::from("tcp") {
-                Some(TCPSettings {
-                    header: Some(TCPHeader {
-                        r#type: Some(data.header_type.unwrap_or(String::from("none"))),
-                    }),
-                    acceptProxyProtocol: None,
-                })
-            } else {
-                None
-            },
-            realitySettings: if data.security == Some(String::from("reality")) {
-                Some(RealitySettings {
+            realitySettings: match data.security.as_deref() {
+                Some("reality") => Some(RealitySettings {
                     publicKey: data.pbk,
                     serverName: data.sni.clone(),
                     shortId: data.sid,
                     spiderX: Some(String::from("")),
                     fingerprint: data.fp.clone(),
-                })
-            } else {
-                None
+                }),
+                _ => None,
             },
-            grpcSettings: if network_type == String::from("grpc") {
-                Some(GRPCSettings {
+            wsSettings: match network_type {
+                "ws" => Some(WsSettings {
+                    Host: data.host.clone(),
+                    path: data.path.clone(),
+                    acceptProxyProtocol: None,
+                }),
+                _ => None,
+            },
+            tcpSettings: match network_type {
+                "tcp" => Some(TCPSettings {
+                    header: Some(TCPHeader {
+                        r#type: Some(data.header_type.unwrap_or(String::from("none"))),
+                    }),
+                    acceptProxyProtocol: None,
+                }),
+                _ => None,
+            },
+            grpcSettings: match network_type {
+                "grpc" => Some(GRPCSettings {
                     authority: data.authority,
                     multiMode: Some(false),
                     serviceName: data.service_name,
-                })
-            } else {
-                None
+                }),
+                _ => None,
             },
-            quicSettings: if network_type == String::from("quic") {
-                Some(QuicSettings {
+            quicSettings: match network_type {
+                "quic" => Some(QuicSettings {
                     header: Some(NonHeaderObject {
                         r#type: Some(String::from("none")),
                     }),
                     security: Some(String::from("none")),
                     key: Some(String::from("")),
-                })
-            } else {
-                None
+                }),
+                _ => None,
             },
-            kcpSettings: if network_type == String::from("kcp") {
-                Some(KCPSettings {
+            kcpSettings: match network_type {
+                "kcp" => Some(KCPSettings {
                     mtu: None,
                     tti: None,
                     congestion: None,
@@ -139,19 +133,17 @@ pub fn create_outbound_object(uri: &str) -> Result<config_models::Outbound, Stri
                     writeBufferSize: None,
                     downlinkCapacity: None,
                     seed: data.seed,
-                })
-            } else {
-                None
+                }),
+                _ => None,
             },
-            xhttpSettings: if network_type == String::from("xhttp") {
-                Some(XHTTPSettings {
+            xhttpSettings: match network_type {
+                "xhttp" => Some(XHTTPSettings {
                     host: data.host.clone(),
                     path: data.path.clone(),
                     mode: data.mode,
                     extra: data.extra.and_then(|e| parse_raw_json(e.as_str())),
-                })
-            } else {
-                None
+                }),
+                _ => None,
             },
         },
         settings: outbound_settings,

@@ -246,7 +246,22 @@ async fn main() -> io::Result<()> {
         log::info!("Spawning fresh core v{current_version}");
         ensure_core_caps(&find_core_binary());
         spawn_core(&cfg.log_level)?;
-        tokio::time::sleep(Duration::from_millis(1200)).await;
+        // Wait for core to start listening (retry with backoff)
+        let addr = format!("{}:{}", cfg.core_host, cfg.core_tcp_port);
+        let mut retries = 0u32;
+        loop {
+            if tokio::net::TcpStream::connect(&addr).await.is_ok() {
+                break;
+            }
+            retries += 1;
+            if retries > 30 {
+                return Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "Core failed to start within 30s",
+                ));
+            }
+            tokio::time::sleep(Duration::from_millis(1000)).await;
+        }
         cfg.core_version = current_version;
         config::save_config(&cfg);
     }

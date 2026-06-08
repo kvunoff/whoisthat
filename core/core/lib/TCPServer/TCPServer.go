@@ -22,7 +22,7 @@ type Server struct {
 	DB            *db.DB
 	mutex         sync.Mutex
 	proxy_manager *proxy.ProxyManager
-	tun_namager   *tunmode.TunModeManager
+	tun_manager   *tunmode.TunModeManager
 	stop_sig      chan<- bool
 }
 
@@ -31,7 +31,7 @@ func NewServer(database *db.DB, proxy_manager *proxy.ProxyManager, tun_manager *
 		DB:            database,
 		clients:       make(map[string]net.Conn),
 		proxy_manager: proxy_manager,
-		tun_namager:   tun_manager,
+		tun_manager:   tun_manager,
 		stop_sig:      stop_sig,
 	}
 }
@@ -177,7 +177,7 @@ func (s *Server) handleConnection(conn net.Conn, clientID string) {
 				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
-			command_handler.Connect(data, s.proxy_manager, s.tun_namager)
+			command_handler.Connect(data, s.proxy_manager, s.tun_manager)
 
 		case "disconnect":
 			var data structs.DisconnectData
@@ -185,7 +185,7 @@ func (s *Server) handleConnection(conn net.Conn, clientID string) {
 				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
-			command_handler.Disconnect(data, s.proxy_manager, s.tun_namager)
+			command_handler.Disconnect(data, s.proxy_manager, s.tun_manager)
 
 		case "test-profile":
 			var data structs.TestProfileData
@@ -201,7 +201,7 @@ func (s *Server) handleConnection(conn net.Conn, clientID string) {
 				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
-			command_handler.GetApplicationState(data, s.proxy_manager, s.tun_namager)
+			command_handler.GetApplicationState(data, s.proxy_manager, s.tun_manager)
 
 		case "update-subscription":
 			var data structs.UpdateSubscriptionData
@@ -217,7 +217,7 @@ func (s *Server) handleConnection(conn net.Conn, clientID string) {
 				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
-			command_handler.EnableTun(data, s.proxy_manager, s.tun_namager)
+			command_handler.EnableTun(data, s.proxy_manager, s.tun_manager)
 
 		case "disable-tun":
 			var data structs.DisableTunData
@@ -225,7 +225,7 @@ func (s *Server) handleConnection(conn net.Conn, clientID string) {
 				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
-			command_handler.DisableTun(data, s.tun_namager)
+			command_handler.DisableTun(data, s.tun_manager)
 
 		case "is-root":
 			var data structs.IsRootData

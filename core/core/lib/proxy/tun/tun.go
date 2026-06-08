@@ -92,6 +92,7 @@ func (t *TunModeManager) Start(proxy_ipv4s []string, dns string) error {
 
 	err = setupDnsHijackRules(t.default_interface, t.dns)
 	if err != nil {
+		t.clearNetworkRules()
 		return fmt.Errorf("there was an error setting up dns hijack rules %w", err)
 	}
 

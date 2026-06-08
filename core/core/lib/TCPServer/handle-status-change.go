@@ -14,7 +14,7 @@ func (s *Server) handleStatusChange() {
 }
 
 func (s *Server) handleTunModeStatusChange() {
-	for status := range s.tun_namager.StatusChanged {
+	for status := range s.tun_manager.StatusChanged {
 		logger.Info("TUN mode:", status)
 		s.BroadCast(lib.CreateJsonNotification("tun-status-changed", structs.TunStatus{IsEnabled: status}))
 	}
