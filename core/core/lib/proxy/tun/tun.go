@@ -72,7 +72,7 @@ func (t *TunModeManager) Start(proxy_ipv4s []string, dns string) error {
 	err = loosenRpFilter(t.tun_name, t.default_interface)
 	if err != nil {
 		t.clearNetworkRules()
-		return fmt.Errorf("there was an error setting up dns ip route %w", err)
+		return fmt.Errorf("there was an error loosening rp filter %w", err)
 	}
 
 	if t.sudoUid > 0 {

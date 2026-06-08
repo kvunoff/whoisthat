@@ -2,6 +2,7 @@ package utils
 
 import (
 	"bytes"
+	"log"
 	"os"
 	"os/exec"
 	"syscall"
@@ -15,6 +16,7 @@ func RaiseAmbientCaps() {
 	hdr.Pid = 0
 	var data [2]unix.CapUserData
 	if err := unix.Capget(&hdr, &data[0]); err != nil {
+		log.Printf("[WARN] RaiseAmbientCaps: capget failed: %v", err)
 		return
 	}
 
@@ -24,11 +26,14 @@ func RaiseAmbientCaps() {
 	}
 
 	if err := unix.Capset(&hdr, &data[0]); err != nil {
+		log.Printf("[WARN] RaiseAmbientCaps: capset failed: %v", err)
 		return
 	}
 
 	for _, cap := range caps {
-		unix.Prctl(unix.PR_CAP_AMBIENT, unix.PR_CAP_AMBIENT_RAISE, cap, 0, 0)
+		if err := unix.Prctl(unix.PR_CAP_AMBIENT, unix.PR_CAP_AMBIENT_RAISE, cap, 0, 0); err != nil {
+			log.Printf("[WARN] RaiseAmbientCaps: prctl PR_CAP_AMBIENT_RAISE for cap %d failed: %v", cap, err)
+		}
 	}
 }
 

@@ -34,7 +34,7 @@ fn get_raw_data_from_base64(decoded_base64: &Vec<u8>) -> RawData {
         security: get_str_field(&json, "tls"),
         vnext_security: get_str_field(&json, "scy"),
         // this probably does not exist in vmess uri
-        sid: url_decode(get_str_field(&json, "pbk")),
+        sid: url_decode(get_str_field(&json, "sid")),
         // this probably does not exist in vmess uri
         flow: url_decode(get_str_field(&json, "flow")),
         sni: get_str_field(&json, "sni"),
@@ -47,7 +47,7 @@ fn get_raw_data_from_base64(decoded_base64: &Vec<u8>) -> RawData {
         seed: url_decode(get_str_field(&json, "seed")),
         quic_security: None,
         key: None,
-        mode: url_decode(get_str_field(&json, "type")),
+        mode: url_decode(get_str_field(&json, "mode")),
         service_name: url_decode(get_str_field(&json, "path")),
         // this probably does not exist in vmess uri
         slpn: url_decode(get_str_field(&json, "slpn")),

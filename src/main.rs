@@ -40,13 +40,13 @@ struct FileLogger {
 impl Log for FileLogger {
     fn enabled(&self, metadata: &Metadata) -> bool {
         self.enabled.load(Ordering::Relaxed)
-            && metadata.level() <= *self.level.lock().unwrap()
+            && metadata.level() <= *self.level.lock().unwrap_or_else(|e| e.into_inner())
     }
     fn log(&self, record: &Record) {
         if self.enabled(record.metadata()) {
             let ts = chrono::Local::now().format("%H:%M:%S");
             let _ = writeln!(
-                self.file.lock().unwrap(),
+                self.file.lock().unwrap_or_else(|e| e.into_inner()),
                 "{} {:5} {}",
                 ts,
                 record.level(),
@@ -55,7 +55,7 @@ impl Log for FileLogger {
         }
     }
     fn flush(&self) {
-        let _ = self.file.lock().unwrap().flush();
+        let _ = self.file.lock().unwrap_or_else(|e| e.into_inner()).flush();
     }
 }
 
@@ -74,7 +74,14 @@ fn init_logger() -> &'static FileLogger {
                 .append(true)
                 .open("/tmp/whoisthat-tui.log")
         })
-        .expect("failed to open log file");
+        .unwrap_or_else(|_| {
+            // Final fallback: /dev/null so Mutex<File> is always valid
+            OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open("/dev/null")
+                .expect("failed to open /dev/null")
+        });
 
     let logger: &'static FileLogger = Box::leak(Box::new(FileLogger {
         file: Mutex::new(file),
@@ -95,7 +102,7 @@ fn configure_logger(logger: &FileLogger, enabled: bool, level: &str) {
         "trace" => LevelFilter::Trace,
         _ => LevelFilter::Warn,
     };
-    *logger.level.lock().unwrap() = lf;
+    *logger.level.lock().unwrap_or_else(|e| e.into_inner()) = lf;
     logger.enabled.store(enabled, Ordering::Relaxed);
 }
 

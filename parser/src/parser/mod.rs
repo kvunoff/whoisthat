@@ -12,8 +12,8 @@ mod uri_identifier;
 mod vless;
 mod vmess;
 
-pub fn get_metadata(uri: &str) -> String {
-    let (protocol, data, _) = get_uri_data(uri);
+pub fn get_metadata(uri: &str) -> Result<String, String> {
+    let (protocol, data, _) = get_uri_data(uri)?;
     let meta_data = ConfigMetaData {
         name: data.remarks,
         host: data.host.clone(),
@@ -21,22 +21,22 @@ pub fn get_metadata(uri: &str) -> String {
         port: data.port.clone(),
         protocol,
     };
-    let serialized = serde_json::to_string(&meta_data).unwrap();
-    return serialized;
+    let serialized = serde_json::to_string(&meta_data).map_err(|e| e.to_string())?;
+    Ok(serialized)
 }
 
-pub fn create_json_config(uri: &str, socks_port: Option<u16>, http_port: Option<u16>) -> String {
-    let config = create_config(uri, socks_port, http_port);
-    let serialized = serde_json::to_string(&config).unwrap();
-    return serialized;
+pub fn create_json_config(uri: &str, socks_port: Option<u16>, http_port: Option<u16>) -> Result<String, String> {
+    let config = create_config(uri, socks_port, http_port)?;
+    let serialized = serde_json::to_string(&config).map_err(|e| e.to_string())?;
+    Ok(serialized)
 }
 
 pub fn create_config(
     uri: &str,
     socks_port: Option<u16>,
     http_port: Option<u16>,
-) -> config_models::Config {
-    let outbound_object = create_outbound_object(uri);
+) -> Result<config_models::Config, String> {
+    let outbound_object = create_outbound_object(uri)?;
     let inbound_config =
         inbound_generator::generate_inbound_config(inbound_generator::InboundGenerationOptions {
             socks_port,
@@ -46,11 +46,11 @@ pub fn create_config(
         outbounds: vec![outbound_object],
         inbounds: inbound_config,
     };
-    return config;
+    Ok(config)
 }
 
-pub fn create_outbound_object(uri: &str) -> config_models::Outbound {
-    let (name, data, outbound_settings) = get_uri_data(uri);
+pub fn create_outbound_object(uri: &str) -> Result<config_models::Outbound, String> {
+    let (name, data, outbound_settings) = get_uri_data(uri)?;
 
     let network_type = data.r#type.clone().unwrap_or(String::from(""));
     let allow_insecure = data.allowInsecure == Some(String::from("true"))
@@ -157,42 +157,38 @@ pub fn create_outbound_object(uri: &str) -> config_models::Outbound {
         settings: outbound_settings,
     };
 
-    return outbound;
+    Ok(outbound)
 }
 
-fn get_uri_data(uri: &str) -> (String, RawData, OutboundSettings) {
+fn get_uri_data(uri: &str) -> Result<(String, RawData, OutboundSettings), String> {
     let protocol = uri_identifier::get_uri_protocol(uri);
-    return match protocol {
+    match protocol {
         Some(uri_identifier::Protocols::Vless) => {
             let d = vless::data::get_data(uri);
             let s = vless::create_outbound_settings(&d);
-            (String::from("vless"), d, s)
+            Ok((String::from("vless"), d, s))
         }
         Some(uri_identifier::Protocols::Vmess) => {
             let d = vmess::data::get_data(uri);
             let s = vmess::create_outbound_settings(&d);
-            (String::from("vmess"), d, s)
+            Ok((String::from("vmess"), d, s))
         }
         Some(uri_identifier::Protocols::Trojan) => {
             let d = trojan::data::get_data(uri);
             let s = trojan::create_outbound_settings(&d);
-            (String::from("trojan"), d, s)
+            Ok((String::from("trojan"), d, s))
         }
         Some(uri_identifier::Protocols::Shadowsocks) => {
             let d = shadow_socks::data::get_data(uri);
             let s = shadow_socks::create_outbound_settings(&d);
-            (String::from("shadowsocks"), d, s)
+            Ok((String::from("shadowsocks"), d, s))
         }
         Some(uri_identifier::Protocols::Socks) => {
             let d = socks::data::get_data(uri);
             let s = socks::create_outbound_settings(&d);
-            (String::from("socks"), d, s)
+            Ok((String::from("socks"), d, s))
         }
-        Some(_) => {
-            panic!("The protocol was recognized but is not supported yet");
-        }
-        None => {
-            panic!("The protocol is not supported");
-        }
-    };
+        Some(_) => Err("The protocol was recognized but is not supported yet".to_string()),
+        None => Err("The protocol is not supported".to_string()),
+    }
 }

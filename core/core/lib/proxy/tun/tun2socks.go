@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"os/exec"
 	"sync"
+	"syscall"
+
+	"golang.org/x/sys/unix"
 )
 
 type Tun2Socks struct {
@@ -34,6 +37,9 @@ func (n *Tun2Socks) Start(tun_name string, port int) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	socks_proxy := fmt.Sprintf("socks5://127.0.0.1:%d", port)
 	cmd := exec.CommandContext(ctx, tun2socksbin, "-device", tun_name, "-proxy", socks_proxy)
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		AmbientCaps: []uintptr{unix.CAP_NET_ADMIN},
+	}
 
 	cmd.Stdout = nil
 	cmd.Stderr = nil

@@ -73,7 +73,10 @@ func (p *ProxyManager) Connect(profile structs.Profile) error {
 	}
 
 	// Inject stats tracking config (policy + stats counters)
-	xray_config, _ = injectStatsConfig(xray_config)
+	xray_config, err = injectStatsConfig(xray_config)
+	if err != nil {
+		logger.Warnf("failed to inject stats config: %v", err)
+	}
 
 	// Inject routing rules + direct/block outbounds
 	if p.DB != nil {

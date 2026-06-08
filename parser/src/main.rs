@@ -35,18 +35,36 @@ fn main() {
         .get_matches();
 
     let uri = match matches.get_one::<String>("uri") {
-        Some(uri) => Some(uri.to_owned()),
-        None => dialoguer::Input::new().interact_text().ok()
-    }.unwrap();
+        Some(uri) => uri.to_owned(),
+        None => match dialoguer::Input::new().interact_text() {
+            Ok(uri) => uri,
+            Err(e) => {
+                eprintln!("Error reading URI from terminal: {}", e);
+                std::process::exit(1);
+            }
+        }
+    };
     let socksport = matches.get_one::<u16>("socksport").copied();
     let httpport = matches.get_one::<u16>("httpport").copied();
     let get_metadata = matches.get_flag("get_metadata");
 
     if get_metadata {
-        print!("{}", parser::get_metadata(uri.as_str()));
+        match parser::get_metadata(uri.as_str()) {
+            Ok(meta) => print!("{}", meta),
+            Err(e) => {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+        }
         return;
     }
 
-    let json_config = parser::create_json_config(uri.as_str(), socksport, httpport);
+    let json_config = match parser::create_json_config(uri.as_str(), socksport, httpport) {
+        Ok(config) => config,
+        Err(e) => {
+            eprintln!("Error: {}", e);
+            std::process::exit(1);
+        }
+    };
     println!("{}", json_config);
 }

@@ -990,7 +990,7 @@ impl App {
         let inner = block.inner(area);
         f.render_widget(block, area);
 
-        let left = Span::styled(" WhoisThat v0.3.1 · xray-core", s_faint());
+        let left = Span::styled(" WhoisThat v0.3.2 · xray-core", s_faint());
         let left_w = left.width();
 
         let tun = if self.tun_enabled {
@@ -1080,7 +1080,7 @@ fn format_bytes(bytes: i64) -> String {
 fn format_relative(unix_ts: i64) -> String {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
+        .unwrap_or_default()
         .as_secs() as i64;
     let diff = now - unix_ts;
     if diff < 0 {
