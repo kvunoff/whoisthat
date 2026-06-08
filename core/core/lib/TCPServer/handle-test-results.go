@@ -23,6 +23,6 @@ func (s *Server) handleTestResults() {
 		profile_updated := structs.ProfileUpdated{
 			Profile: result.Profile,
 		}
-		s.BroadCast(lib.CreateJsonNotification("profile-updated", profile_updated))
+		s.Broadcast(lib.CreateJsonNotification("profile-updated", profile_updated))
 	}
 }

@@ -127,7 +127,6 @@ func querySsStats(port int) (*statsResponse, error) {
 }
 
 func parseValue(s string) int64 {
-	var v int64
-	fmt.Sscanf(s, "%d", &v)
+	v, _ := strconv.ParseInt(s, 10, 64)
 	return v
 }

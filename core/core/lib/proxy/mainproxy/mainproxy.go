@@ -80,7 +80,6 @@ func (p *ProxyManager) Connect(profile structs.Profile) error {
 
 	// Inject routing rules + direct/block outbounds
 	if p.DB != nil {
-		var err error
 		xray_config, err = injectRoutingConfig(xray_config, p.DB)
 		if err != nil {
 			logger.Warnf("failed to inject routing config: %v", err)

@@ -22,7 +22,7 @@ func ParseUri(uri string, socksport int, httpport int) ([]byte, error) {
 
 	parsed_config, err = parser_parse_cmd.Output()
 	if err != nil {
-		return parsed_config, fmt.Errorf("parsing uri fialed: %w", err)
+		return parsed_config, fmt.Errorf("parsing uri failed: %w", err)
 	}
 
 	return parsed_config, nil

@@ -70,7 +70,7 @@ func (s *Server) Start() {
 	}()
 }
 
-func (s *Server) BroadCast(msg []byte) {
+func (s *Server) Broadcast(msg []byte) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
@@ -100,7 +100,7 @@ func (s *Server) handleConnection(conn net.Conn, clientID string) {
 		s.mutex.Unlock()
 	}()
 
-	command_handler := cmd.Cmd{DB: s.DB, Conn: conn, BroadCast: s.BroadCast}
+	command_handler := cmd.Cmd{DB: s.DB, Broadcast: s.Broadcast}
 	reader := bufio.NewReader(conn)
 
 	for {

@@ -7,11 +7,11 @@ import (
 )
 
 func GetDefaultInterfaceAndIP() (name string, ip string, err error) {
-	out, err := exec.Command("ip", "route", "get", "142.250.186.78").Output()
+	out, err := exec.Command("ip", "route", "show", "default").Output()
 	if err != nil {
 		return "", "", fmt.Errorf("failed to get default route: %w", err)
 	}
-	// 142.250.186.78 via 192.168.1.1 dev wlp3s0 src 192.168.1.2 uid 1000
+	// default via 192.168.1.1 dev wlp3s0
 	output := string(out)
 	fields := strings.Fields(output)
 	var iface, gatewayIP string

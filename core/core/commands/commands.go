@@ -5,12 +5,10 @@ import (
 	"whoisthat-core/lib"
 	"whoisthat-core/lib/logger"
 	"whoisthat-core/structs"
-	"net"
 )
 
 type Cmd struct {
-	Conn      net.Conn
-	BroadCast func([]byte)
+	Broadcast func([]byte)
 	DB        *db.DB
 }
 
@@ -78,9 +76,9 @@ func (cmd *Cmd) DeleteProfiles(data structs.DeleteProfilesData) {
 }
 
 func (cmd *Cmd) warn(key string, msg string) {
-	cmd.BroadCast(lib.CreateJsonNotification("warn", structs.Warning{Key: key, Content: msg}))
+	cmd.Broadcast(lib.CreateJsonNotification("warn", structs.Warning{Key: key, Content: msg}))
 }
 
 func (cmd *Cmd) send(msg string, obj any) {
-	cmd.BroadCast(lib.CreateJsonNotification(msg, obj))
+	cmd.Broadcast(lib.CreateJsonNotification(msg, obj))
 }

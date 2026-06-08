@@ -41,7 +41,7 @@ func (p *PortPool) GetPort() (int, error) {
 			return i, nil
 		}
 	}
-	return -1, errors.New("no port availbe")
+	return -1, errors.New("no port available")
 }
 
 func (p *PortPool) isPortInUse(port int) bool {

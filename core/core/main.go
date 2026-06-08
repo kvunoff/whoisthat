@@ -67,7 +67,7 @@ func main() {
 		logger.Info("whoisthat-core shutting down:", reason)
 		proxy_manager.Stop()
 		tun_manager.Stop()
-		server.BroadCast(lib.CreateJsonNotification("warn", structs.Warning{Key: "died", Content: reason}))
+		server.Broadcast(lib.CreateJsonNotification("warn", structs.Warning{Key: "died", Content: reason}))
 		os.Exit(0)
 	}()
 	select {}

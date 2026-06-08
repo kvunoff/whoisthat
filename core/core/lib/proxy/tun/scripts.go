@@ -214,7 +214,7 @@ ip route del default via $GATEWAY table 100 2>/dev/null || true
 	return err
 }
 
-func loosenRpFilter(tun_name string, deafult_interface_name string) error {
+func loosenRpFilter(tun_name string, default_interface_name string) error {
 	script := fmt.Sprintf(`
 TUN_NAME="%s"
 DEF_IFACE="%s"
@@ -227,7 +227,7 @@ for IFACE in "$DEF_IFACE" "$TUN_NAME"; do
         echo "Warning: Interface '$IFACE' not found, skipping."
     fi
 done
-	`, tun_name, deafult_interface_name)
+	`, tun_name, default_interface_name)
 
 	_, err := runScriptWithSh(script)
 	return err
