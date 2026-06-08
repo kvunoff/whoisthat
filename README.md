@@ -49,6 +49,9 @@ cargo build --release
 sudo install -Dm755 target/release/whoisthat              /usr/local/bin/whoisthat
 sudo install -Dm755 core/core/whoisthat-core               /usr/local/bin/whoisthat-core
 sudo install -Dm755 parser/target/release/whoisthat-parser /usr/local/bin/whoisthat-parser
+
+# TUN mode capability setup (one-time, optional — TUI auto-prompts if skipped)
+sudo setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep /usr/local/bin/whoisthat-core
 ```
 
 Xray-core can be installed via `go install github.com/XTLS/Xray-core@latest`
@@ -278,7 +281,7 @@ Subscription metadata (`sub_*`) is populated from the `subscription-userinfo` HT
 | `d` | Disconnect |
 | `t` | Test all profiles (starts from cursor, top-to-bottom, dedup) |
 | `T` | Test focused profile or subscription group only |
-| `v` | Toggle TUN mode (requires root) |
+| `v` | Toggle TUN mode (auto-setup via pkexec on first run) |
 
 ### Profiles & Groups
 
@@ -317,11 +320,18 @@ Navigate with `j`/`k`, toggle booleans with `Space`/`Enter`, cycle values with `
 
 ### TUN Mode
 
-TUN mode requires root privileges. The core creates a `whoisthattun` virtual interface, configures `iptables` rules, and routes all traffic through the VPN. DNS queries are redirected to the first server in `dns-servers` config.
+TUN mode creates a `whoisthattun` virtual interface, configures `iptables` rules (DNS hijack, MASQUERADE), and routes all system traffic through the VPN. DNS queries are redirected to the first server in `dns-servers` config.
 
-Run with: `sudo -E whoisthat`
+**No root required.** TUN mode runs under file capabilities (`cap_net_admin`, `cap_net_raw`, `cap_setpcap`). On first launch, the TUI detects missing capabilities and offers a one-time `pkexec` setup. After that, TUN works as a normal user. The install script sets capabilities automatically.
 
-The `-E` flag is **required** — without it the environment is not preserved and the core cannot find your config, profiles, or log files. The TUI will display a warning if `-E` is missing.
+**How it works internally:**
+- `whoisthat-core` has `cap_net_admin,cap_net_raw,cap_setpcap=+ep` set on its binary
+- At startup, the core uses `capset(2)` to move permitted capabilities into the inheritable set (`CAP_SETPCAP` enables this)
+- `prctl(PR_CAP_AMBIENT_RAISE)` promotes them to the ambient set
+- All subprocesses (`sh`, `ip`, `iptables`, `tun2socks`) automatically inherit the capabilities
+- No `sudo`, no root, no setuid — pure Linux capabilities
+
+For debugging or manual setup: `sudo setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep /path/to/whoisthat-core`.
 
 ### Subscription Workflow
 

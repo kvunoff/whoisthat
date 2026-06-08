@@ -9,6 +9,7 @@ import (
 	proxy "whoisthat-core/lib/proxy/mainproxy"
 	tunmode "whoisthat-core/lib/proxy/tun"
 	"whoisthat-core/structs"
+	"whoisthat-core/utils"
 	"fmt"
 	lumberjack "gopkg.in/natefinch/lumberjack.v2"
 	"log"
@@ -40,6 +41,7 @@ func main() {
 	logger.SetLevel(os.Getenv("WHOISTHAT_LOG_LEVEL"))
 
 	stop_sig := make(chan bool, 1)
+	utils.RaiseAmbientCaps()
 	appconfig.LoadConfig()
 	database := db.DB{}
 	database.Initialize()

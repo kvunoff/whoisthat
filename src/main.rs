@@ -139,6 +139,49 @@ fn find_core_binary() -> String {
     "whoisthat-core".to_string()
 }
 
+fn has_cap_net(path: &std::path::Path) -> bool {
+    if let Ok(output) = Command::new("getcap").arg(path).output() {
+        String::from_utf8_lossy(&output.stdout).contains("cap_net_admin")
+    } else {
+        false
+    }
+}
+
+fn ensure_core_caps(core_path: &str) {
+    let core = std::path::absolute(core_path).unwrap_or_else(|_| core_path.into());
+
+    if has_cap_net(&core) {
+        return;
+    }
+
+    eprintln!("whoisthat: TUN mode needs network capabilities on core binary.");
+    eprint!("Set up via pkexec? [Y/n] ");
+    io::stderr().flush().ok();
+
+    let caps = "cap_net_admin,cap_net_raw,cap_setpcap=+ep";
+    let mut answer = String::new();
+    if io::stdin().read_line(&mut answer).is_err() {
+        eprintln!("\nRun manually: sudo setcap {} {}", caps, core.display());
+        return;
+    }
+    let answer = answer.trim().to_lowercase();
+    if !answer.is_empty() && answer != "y" && answer != "yes" {
+        eprintln!("Run manually: sudo setcap {} {}", caps, core.display());
+        return;
+    }
+
+    let s = Command::new("pkexec")
+        .arg("setcap")
+        .arg(caps)
+        .arg(core.as_os_str())
+        .status();
+
+    match s {
+        Ok(s) if s.success() => eprintln!("whoisthat: capabilities set. TUN mode ready."),
+        _ => eprintln!("whoisthat: failed. Run: sudo setcap {} {}", caps, core.display()),
+    }
+}
+
 fn fetch_public_ip() -> Option<String> {
     let addr = "api.ipify.org:80"
         .to_socket_addrs()
@@ -194,6 +237,7 @@ async fn main() -> io::Result<()> {
 
     if !core_alive {
         log::info!("Spawning fresh core v{current_version}");
+        ensure_core_caps(&find_core_binary());
         spawn_core(&cfg.log_level)?;
         tokio::time::sleep(Duration::from_millis(1200)).await;
         cfg.core_version = current_version;
@@ -449,7 +493,7 @@ async fn handle_core_event(
                 app.msg("Ok");
                 let _ = client.enable_tun().await;
             } else {
-                app.msg("Error: need root for TUN. Restart with sudo.");
+                app.msg("Error: no TUN permission. Run: sudo setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep /path/to/whoisthat-core");
             }
         }
 

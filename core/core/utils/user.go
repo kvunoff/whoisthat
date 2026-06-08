@@ -61,6 +61,9 @@ var (
 
 func DedicatedUid() int {
 	dedicatedOnce.Do(func() {
+		if os.Getuid() != 0 {
+			return
+		}
 		for uid := 61000; uid < 62000; uid++ {
 			if _, err := user.LookupId(strconv.Itoa(uid)); err != nil {
 				dedicatedUid = uid

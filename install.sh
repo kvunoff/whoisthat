@@ -246,6 +246,7 @@ install_binaries() {
     sudo install -Dm755 target/release/whoisthat              /usr/local/bin/whoisthat
     sudo install -Dm755 core/core/whoisthat-core               /usr/local/bin/whoisthat-core
     sudo install -Dm755 parser/target/release/whoisthat-parser /usr/local/bin/whoisthat-parser
+    sudo setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep /usr/local/bin/whoisthat-core
 
     info "Binaries installed:"
     info "  whoisthat        — TUI (run 'whoisthat' to start)"

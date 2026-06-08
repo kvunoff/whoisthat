@@ -4,10 +4,16 @@ import (
 	"bytes"
 	"fmt"
 	"os/exec"
+	"syscall"
+
+	"golang.org/x/sys/unix"
 )
 
 func runScriptWithSh(script string) (string, error) {
 	cmd := exec.Command("sh")
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		AmbientCaps: []uintptr{unix.CAP_NET_ADMIN, unix.CAP_NET_RAW},
+	}
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return "", fmt.Errorf("failed to get stdin of sh %w", err)
@@ -109,7 +115,7 @@ ip link set dev $TUN_NAME up
 func deleteTun(name string) error {
 	script := fmt.Sprintf(`
 TUN_NAME="%s"
-sudo ip tuntap del mode tun dev $TUN_NAME
+ip tuntap del mode tun dev $TUN_NAME
 	`, name)
 	_, err := runScriptWithSh(script)
 	return err
