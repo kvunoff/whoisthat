@@ -224,4 +224,12 @@ impl CoreClient {
             )
             .await
     }
+
+    pub async fn set_hwid(&self, data: &SetHwidData) -> std::io::Result<()> {
+        self.conn
+            .lock()
+            .await
+            .send("set-hwid", data)
+            .await
+    }
 }

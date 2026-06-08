@@ -71,6 +71,7 @@ type ApplicationState struct {
 	Groups           []GroupWithProfiles `json:"groups"`
 	ConnectionStatus ProxyStatus         `json:"connection-status"`
 	TunStatus        bool                `json:"tun-status"`
+	HwidInfo         HwidData            `json:"hwid_info"`
 }
 
 type UpdateSubscriptionData struct {
@@ -93,6 +94,21 @@ type DieData struct{}
 type IsRootData struct{}
 type IsRootAnswer struct {
 	IsRoot bool
+}
+
+type HwidData struct {
+	Enabled   bool   `json:"enabled"`
+	Hwid      string `json:"hwid"`
+	UserAgent string `json:"user_agent"`
+	Platform  string `json:"platform"`
+	Kernel    string `json:"kernel"`
+	Model     string `json:"model"`
+}
+
+type SetHwidData struct {
+	Enabled   *bool   `json:"enabled,omitempty"`
+	UserAgent *string `json:"user_agent,omitempty"`
+	Reset     bool    `json:"reset"`
 }
 
 type UpdateProfileData struct {

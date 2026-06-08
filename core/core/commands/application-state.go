@@ -19,6 +19,7 @@ func (cmd *Cmd) GetApplicationState(data structs.GetApplicationStateData, proxy_
 		Groups:           groups,
 		ConnectionStatus: proxy_manager.GetStatus(),
 		TunStatus:        tun_manager.IsEnabledLocked(),
+		HwidInfo:         GetHwidInfo(),
 	}
 
 	cmd.send("application-state", application_state)

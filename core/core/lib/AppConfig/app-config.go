@@ -3,10 +3,15 @@ package appconfig
 import (
 	"whoisthat-core/lib/logger"
 	"whoisthat-core/utils"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strings"
 )
 
 type AppConfig struct {
@@ -15,6 +20,9 @@ type AppConfig struct {
 	CoreTCPPort   int       `json:"core-tcp-port"`
 	TestPortRange PortRange `json:"test-port-range"`
 	DnsServers    []string  `json:"dns-servers"`
+	HwidEnabled   bool      `json:"hwid-enabled"`
+	Hwid          string    `json:"hwid"`
+	UserAgent     string    `json:"user-agent"`
 }
 
 type PortRange struct {
@@ -33,7 +41,9 @@ func defaultConfig() AppConfig {
 			Start: 3095,
 			End:   30120,
 		},
-		DnsServers: []string{"1.1.1.1", "8.8.8.8"},
+		DnsServers:  []string{"1.1.1.1", "8.8.8.8"},
+		HwidEnabled: true,
+		UserAgent:   "whoisthat/v0.3.6",
 	}
 }
 
@@ -46,7 +56,61 @@ func LoadConfig() {
 	if err != nil {
 		logger.Warn("failed to read config file:", err, "using default config")
 	}
+	if config.HwidEnabled && config.Hwid == "" {
+		config.Hwid = generateHwid()
+	}
 	application_configuration = config
+}
+
+func generateHwid() string {
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		logger.Warn("hwid: failed to generate random bytes, using fallback")
+		return "0000000000000000"
+	}
+	return hex.EncodeToString(b)
+}
+
+func Platform() string {
+	return runtime.GOOS
+}
+
+func KernelVersion() string {
+	out, err := exec.Command("uname", "-r").Output()
+	if err != nil {
+		return "unknown"
+	}
+	return strings.TrimSpace(string(out))
+}
+
+func DistroModel() string {
+	data, err := os.ReadFile("/etc/os-release")
+	if err != nil {
+		return "Linux"
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.HasPrefix(line, "PRETTY_NAME=") {
+			v := strings.TrimPrefix(line, "PRETTY_NAME=")
+			v = strings.Trim(v, "\"")
+			return v
+		}
+	}
+	return "Linux"
+}
+
+func EnableHwid(enable bool) {
+	application_configuration.HwidEnabled = enable
+	SaveConfig()
+}
+
+func ResetHwid() {
+	application_configuration.Hwid = generateHwid()
+	SaveConfig()
+}
+
+func SetUserAgent(ua string) {
+	application_configuration.UserAgent = ua
+	SaveConfig()
 }
 
 func SaveConfig() {

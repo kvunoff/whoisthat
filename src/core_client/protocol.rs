@@ -74,6 +74,8 @@ pub struct ApplicationState {
     pub connection_status: ProxyStatus,
     #[serde(rename = "tun-status", default)]
     pub tun_status: bool,
+    #[serde(rename = "hwid_info", default)]
+    pub hwid_info: Option<HwidData>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -158,6 +160,32 @@ pub struct UpdateGroupData {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DieData {}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HwidData {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub hwid: String,
+    #[serde(default)]
+    pub user_agent: String,
+    #[serde(default)]
+    pub platform: String,
+    #[serde(default)]
+    pub kernel: String,
+    #[serde(default)]
+    pub model: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct SetHwidData {
+    #[serde(default)]
+    pub enabled: Option<bool>,
+    #[serde(default)]
+    pub user_agent: Option<String>,
+    #[serde(default)]
+    pub reset: bool,
+}
 
 // --- Notification/response types ---
 

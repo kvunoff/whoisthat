@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"whoisthat-core/lib"
+	appconfig "whoisthat-core/lib/AppConfig"
 	"whoisthat-core/lib/logger"
 	proxy "whoisthat-core/lib/proxy/mainproxy"
 	"whoisthat-core/structs"
@@ -29,7 +30,7 @@ func (cmd *Cmd) UpdateSubscription(data structs.UpdateSubscriptionData, proxy_ma
 		return
 	}
 
-	subscription_content, resp, err := get(group.SubscriptionUrl)
+	subscription_content, resp, err := fetchSubscription(group)
 	if err != nil {
 		logger.Warnf("update-subscription: failed to GET %s: %v", group.SubscriptionUrl, err)
 		cmd.warn("update-subscription-failed", fmt.Sprintf("Failed to get subscription: %v", err))
@@ -64,15 +65,28 @@ func (cmd *Cmd) UpdateSubscription(data structs.UpdateSubscriptionData, proxy_ma
 
 }
 
-func get(url string) (string, *http.Response, error) {
-	resp, err := http.Get(url)
+func fetchSubscription(group structs.Group) (string, *http.Response, error) {
+	req, err := http.NewRequest("GET", group.SubscriptionUrl, nil)
+	if err != nil {
+		return "", nil, err
+	}
+
+	cfg := appconfig.GetConfig()
+	if cfg.HwidEnabled && cfg.Hwid != "" {
+		req.Header.Set("x-hwid", cfg.Hwid)
+		req.Header.Set("x-device-os", appconfig.Platform())
+		req.Header.Set("x-ver-os", appconfig.KernelVersion())
+		req.Header.Set("x-device-model", appconfig.DistroModel())
+	}
+	req.Header.Set("user-agent", cfg.UserAgent)
+
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return "", nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		resp.Body.Close()
 		return "", nil, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
 

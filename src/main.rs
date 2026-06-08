@@ -24,6 +24,7 @@ use tokio::sync::mpsc;
 
 use core_client::{CoreClient, CoreConnection, CoreEvent};
 use core_client::protocol::DieData;
+use core_client::protocol::SetHwidData;
 use ui::app::{ActiveTab, Focus, Popup};
 use ui::routing::{form_to_rule, RoutingPopup};
 use ui::App;
@@ -561,6 +562,9 @@ async fn handle_core_event(
                 app.routing_cursor = len - 1;
             }
         }
+        CoreEvent::HwidUpdated(hw) => {
+            app.hwid_info = Some(hw);
+        }
     }
     false
 }
@@ -663,6 +667,27 @@ async fn handle_popup_input(
             _ => {
                 edit_text_field(&mut input, &mut cursor, key);
                 app.popup = Some(Popup::Import { input, cursor });
+            }
+        },
+        Some(Popup::EditUserAgent { mut input, mut cursor }) => match key.code {
+            KeyCode::Esc => {
+                app.popup = None;
+                app.focus = Focus::LeftPanel;
+            }
+            KeyCode::Enter => {
+                let ua = input.trim().to_string();
+                if !ua.is_empty() {
+                    let _ = client.set_hwid(&SetHwidData {
+                        user_agent: Some(ua),
+                        ..Default::default()
+                    }).await;
+                }
+                app.popup = None;
+                app.focus = Focus::LeftPanel;
+            }
+            _ => {
+                edit_text_field(&mut input, &mut cursor, key);
+                app.popup = Some(Popup::EditUserAgent { input, cursor });
             }
         },
         Some(Popup::ConfirmDelete { gid, pid, .. }) => match key.code {
@@ -1061,10 +1086,10 @@ async fn handle_normal_input(
     // Settings tab keys
     if app.tab == ActiveTab::Settings {
         match key.code {
-            KeyCode::Char('j') | KeyCode::Down => app.settings_state.cursor_down(),
+            KeyCode::Char('j') | KeyCode::Down => app.settings_state.cursor_down(8),
             KeyCode::Char('k') | KeyCode::Up => app.settings_state.cursor_up(),
             KeyCode::Char(' ') | KeyCode::Enter => {
-                match app.settings_state.cursor {
+                match app.settings_state.cursor() {
                     0 => {
                         app.autoconnect = !app.autoconnect;
                         cfg.autoconnect = app.autoconnect;
@@ -1084,11 +1109,34 @@ async fn handle_normal_input(
                         config::save_config(cfg);
                         configure_logger(logger, cfg.log_enabled, &cfg.log_level);
                     }
+                    5 => {
+                        if let Some(ref hw) = app.hwid_info {
+                            let _ = client.set_hwid(&SetHwidData {
+                                enabled: Some(!hw.enabled),
+                                ..Default::default()
+                            }).await;
+                        }
+                    }
+                    7 => {
+                        let _ = client.set_hwid(&SetHwidData {
+                            reset: true,
+                            ..Default::default()
+                        }).await;
+                    }
+                    8 => {
+                        if let Some(ref hw) = app.hwid_info {
+                            app.popup = Some(Popup::EditUserAgent {
+                                input: hw.user_agent.clone(),
+                                cursor: hw.user_agent.len(),
+                            });
+                            app.focus = Focus::Popup;
+                        }
+                    }
                     _ => {}
                 }
             }
             KeyCode::Char('l') | KeyCode::Right => {
-                if app.settings_state.cursor == 3 {
+                if app.settings_state.cursor() == 3 {
                     let levels = ["error", "warn", "info", "debug", "trace"];
                     let current = levels.iter().position(|l| *l == app.log_level.as_str()).unwrap_or(1);
                     let next = (current + 1) % levels.len();
@@ -1097,7 +1145,7 @@ async fn handle_normal_input(
                     config::save_config(cfg);
                     configure_logger(logger, cfg.log_enabled, &cfg.log_level);
                 }
-                if app.settings_state.cursor == 4 {
+                if app.settings_state.cursor() == 4 {
                     let methods = ["tcp", "http-get", "http-head"];
                     let current = methods.iter().position(|m| *m == app.test_method.as_str()).unwrap_or(1);
                     let next = (current + 1) % methods.len();
@@ -1107,7 +1155,7 @@ async fn handle_normal_input(
                 }
             }
             KeyCode::Char('h') | KeyCode::Left => {
-                if app.settings_state.cursor == 3 {
+                if app.settings_state.cursor() == 3 {
                     let levels = ["error", "warn", "info", "debug", "trace"];
                     let current = levels.iter().position(|l| *l == app.log_level.as_str()).unwrap_or(1);
                     let prev = if current == 0 { levels.len() - 1 } else { current - 1 };
@@ -1116,7 +1164,7 @@ async fn handle_normal_input(
                     config::save_config(cfg);
                     configure_logger(logger, cfg.log_enabled, &cfg.log_level);
                 }
-                if app.settings_state.cursor == 4 {
+                if app.settings_state.cursor() == 4 {
                     let methods = ["tcp", "http-get", "http-head"];
                     let current = methods.iter().position(|m| *m == app.test_method.as_str()).unwrap_or(1);
                     let prev = if current == 0 { methods.len() - 1 } else { current - 1 };

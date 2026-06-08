@@ -62,11 +62,11 @@ pub fn parse_vless_uri(uri: &str) -> VlessParams {
         String::new()
     };
 
-    let authority = if let Some(a) = before_query.strip_prefix('@') {
-        a.to_string()
-    } else {
-        before_query.to_string()
-    };
+	let authority = if let Some(pos) = before_query.rfind('@') {
+		before_query[pos + 1..].to_string()
+	} else {
+		before_query.to_string()
+	};
 
     if let Some((host_part, port_part)) = authority.rsplit_once(':') {
         if !host_part.is_empty() && port_part.chars().all(|c| c.is_ascii_digit()) {

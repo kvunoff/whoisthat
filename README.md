@@ -2,7 +2,7 @@
 
 A modern terminal-based VPN client. Rust TUI frontend. Go engine backed by Xray-core.
 
-**Supports**: VLESS with Reality, xHTTP, and gRPC. Full TUN-mode VPN. Subscription-based profile management.
+**Supports**: VLESS (Reality/xHTTP/gRPC), VMess, Trojan, Shadowsocks, SOCKS5. Full TUN-mode VPN. Subscription-based profile management. HWID device identification.
 
 ![WhoisThat](whoisthat-screen.jpg)
 
@@ -79,7 +79,10 @@ test_method = "http-get"
   "http-port": 3091,
   "core-tcp-port": 4897,
   "test-port-range": { "start": 3095, "end": 30120 },
-  "dns-servers": ["1.1.1.1", "8.8.8.8"]
+  "dns-servers": ["1.1.1.1", "8.8.8.8"],
+  "hwid-enabled": true,
+  "hwid": "1fb1e0141ab3e35a",
+  "user-agent": "whoisthat/v0.4.0"
 }
 ```
 
@@ -91,22 +94,24 @@ test_method = "http-get"
 `socks-port` and `http-port` set the local SOCKS5/HTTP proxy ports. `test-port-range` defines the port pool for latency testing (spawns temporary xray instances).
 
 Profile data is stored under `~/.local/share/whoisthat/db/`.
+Encrypted at rest with AES-256-GCM — key auto-generated on first run.
 
 ---
 
 ## Features
 
 - **Subscription support** — add groups with subscription URLs, refresh profiles, view metadata (traffic used/limit, expiry)
+- **HWID device identification** — auto-generated hardware ID sent with subscription requests (Remnawave-compatible x-hwid headers). Configurable: toggle on/off, reset, custom user-agent. Respects `x-hwid-max-devices-reached` and other HWID response headers from the subscription server.
 - **Group management** — add, rename, edit subscription URL, delete entire groups
-- Import VLESS profiles (URI, clipboard paste, or subscription refresh)
+- **Profile import** — VLESS, VMess, Trojan, Shadowsocks, SOCKS5 URIs (paste, clipboard, or subscription refresh)
 - Connect / disconnect / switch profiles
 - Full system-wide TUN-mode VPN (`tun2socks` + `iptables`)
 - **Profile testing** — three methods: TCP connect, HTTP GET (SOCKS5 → Cloudflare), HTTP HEAD
 - **Scan-all testing** — `t` scans all profiles across all groups with dedup; `T` tests only focused profile/subscription
-- **Custom routing rules** — domain, IP, protocol, port → proxy/direct/block (`r` tab)
+- **Custom routing rules** — domain, IP, protocol, port → proxy/direct/block (`r` tab). `direct` outbound works correctly in TUN mode via SO_MARK + fwmark routing (no root required).
 - Real-time connection status with uplink/downlink traffic stats
 - **Log viewer** — live tail from core log, auto-scroll, [WARN]/[ERRO] highlighting
-- **Configurable** — DNS servers, proxy ports, log level, test method via settings and config files
+- **Configurable** — DNS servers, proxy ports, log level, test method, HWID, user-agent via settings and config files
 - **Detach/reattach** — `q` leaves VPN running in background, reopen TUI to reattach
 - Autoconnect on startup
 - Public IP display (auto-refreshed every 30s and on connect/disconnect/TUN-toggle)
@@ -152,7 +157,7 @@ Profile data is stored under `~/.local/share/whoisthat/db/`.
 
 1. **WhoisThat Core** is a long-running Go daemon. It manages VPN profiles (stored as JSON files under `~/.local/share/whoisthat/db/`), launches Xray-core as a subprocess, and controls the TUN device via `iproute2` + `tun2socks`.
 
-2. **Xray-core** handles all protocol-level work: VLESS handshake, Reality authentication, xHTTP/gRPC transport, SOCKS5 local proxy. Its JSON config is generated on-the-fly from profile URIs by the bundled `whoisthat-parser`.
+2. **Xray-core** handles all protocol-level work: VLESS/VMess/Trojan/Shadowsocks/SOCKS handshakes, Reality authentication, xHTTP/gRPC/WS/TCP transport, SOCKS5 local proxy. Its JSON config is generated on-the-fly from profile URIs by the bundled `whoisthat-parser`.
 
 3. **TUN mode** creates a virtual network interface (`whoisthattun`), sets up `iptables` rules (DNS hijack, MASQUERADE), and routes all system traffic through the Xray SOCKS5 proxy via `tun2socks`.
 
@@ -169,9 +174,26 @@ Custom routing rules (domain, IP, protocol, port) can redirect traffic to `proxy
 
 **TUN mode:**
 - The TUN default route sends ALL system traffic through `tun2socks` → SOCKS5 → xray. Without special handling, xray's own `freedom` outbound traffic would loop back into TUN
-- Xray runs under a **dedicated UID** (auto-picked from 61000+ range). The core configures `ip rule uidrange <xray_uid> lookup 100` and routes table 100 through the physical gateway, bypassing TUN
-- User applications retain their normal UID and stay under TUN routing
-- This ensures `freedom` (direct) outbound connections from xray bypass TUN while all user traffic stays protected
+- **Root mode:** Xray runs under a dedicated UID (61000+ range). `ip rule uidrange` + table 100 routes xray traffic through the physical gateway, bypassing TUN
+- **Capability mode (no root):** Freedom outbound sets `SO_MARK` via xray's `sockopt.mark`. `ip rule fwmark 1 table 100` routes marked packets through the physical gateway. Works under file capabilities — no root needed
+- User applications retain their normal routing and stay under TUN protection
+- This ensures `direct` outbound connections from xray bypass TUN while all user traffic stays protected
+
+### HWID (Device Identification)
+
+When subscription updates are fetched, the core sends HTTP headers identifying the device (Remnawave/Happ standard):
+
+| Header | Value | Source |
+|--------|-------|--------|
+| `x-hwid` | `1fb1e0141ab3e35a` | Auto-generated 8-byte hex (stored in config.json) |
+| `x-device-os` | `Linux` | `runtime.GOOS` |
+| `x-ver-os` | `6.12.0-arch1-1` | `uname -r` |
+| `x-device-model` | `Arch Linux` | `/etc/os-release` PRETTY_NAME |
+| `user-agent` | `whoisthat/v0.4.0` | User-configurable (Settings) |
+
+Response headers (`x-hwid-max-devices-reached`, `x-hwid-not-supported`, `x-hwid-limit`) are inspected and trigger warnings when device limits are reached.
+
+HWID can be toggled off, reset, or have its user-agent customized in Settings.
 
 ---
 
@@ -206,13 +228,16 @@ Both client→core commands and core→client notifications use the same framing
 | `add-group` | `{"name":"str","subscription_url":"str"}` | `group-added` |
 | `delete-group` | `{"id":int}` | `group-deleted` |
 | `update-subscription` | `{"group_id":int}` | `subscription-updated` |
+| `set-hwid` | `{"enabled":true/false,"user_agent":"str","reset":true/false}` | `hwid-updated` |
+| `get-routing` | `{}` | `routing-updated` |
+| `update-routing` | `{"config":{...}}` | `routing-updated` |
 | `die` | `{}` | (stops core) |
 
 ### Notifications (Core → All Clients)
 
 | Message | Data |
 |---|---|
-| `application-state` | Full state: groups, profiles, connection status, TUN status |
+| `application-state` | Full state: groups, profiles, connection status, TUN status, HWID info |
 | `status-changed` | `{"connection":"connected"\|"disconnected","profile":{...}}` |
 | `profiles-added` | `{"profiles":[...]}` |
 | `profiles-deleted` | `{"deleted-profiles":[...]}` |
@@ -223,7 +248,9 @@ Both client→core commands and core→client notifications use the same framing
 | `subscription-updated` | `{"group_id":int,"group":{...},"profiles":[...]}` |
 | `tun-status-changed` | `{"is_enabled":bool}` |
 | `is-root-answer` | `{"IsRoot":bool}` |
+| `hwid-updated` | `{"enabled":bool,"hwid":"str","user_agent":"str","platform":"str","kernel":"str","model":"str"}` |
 | `traffic-stats` | `{"proxy_up":int,"proxy_down":int,"direct_up":int,"direct_down":int}` |
+| `routing-updated` | `{"config":{...}}` |
 | `warn` | `{"key":"str","content":"str"}` |
 
 ### Profile structure
@@ -287,7 +314,7 @@ Subscription metadata (`sub_*`) is populated from the `subscription-userinfo` HT
 
 | Key | Action |
 |---|---|
-| `a` | Import VLESS URI (clipboard or manual input) |
+| `a` | Import profile URI (clipboard or manual input — vless://, vmess://, trojan://, ss://, socks://) |
 | `x` | Delete selected profile |
 | `X` | Delete current group (with confirmation) |
 | `e` | Edit group (name + subscription URL) |
@@ -310,13 +337,17 @@ Subscription metadata (`sub_*`) is populated from the `subscription-userinfo` HT
 
 | Setting | Values | Description |
 |---|---|---|
-| Autoconnect | on/off | Automatically connect to last used profile on startup |
+| Autoconnect | on/off | Auto-connect to last used profile on startup |
 | Show IP | on/off | Display public IP in top bar |
-| TUI log | on/off | Enable Rust TUI debug log (writes to `~/.local/share/whoisthat/tui.log`) |
-| Log level | error/warn/info/debug/trace | Minimum log level for both TUI and core |
+| TUI log | on/off | Enable Rust TUI debug log (`~/.local/share/whoisthat/tui.log`) |
+| Log level | error/warn/info/debug/trace | Minimum log level for TUI and core |
 | Test method | tcp/http-get/http-head | Latency test method (tcp = direct dial, http = via SOCKS5 proxy) |
+| HWID: Enabled | on/off | Send HWID headers with subscription requests |
+| HWID | 1fb1e0141ab3e35a | Device identifier (read-only, auto-generated) |
+| Reset HWID | ⏎ | Generate a new random HWID |
+| UA | whoisthat/v0.4.0 | User-Agent header (editable — press Enter to modify) |
 
-Navigate with `j`/`k`, toggle booleans with `Space`/`Enter`, cycle values with `h`/`l`.
+Navigate with `j`/`k`, toggle booleans with `Space`/`Enter`, cycle values with `h`/`l`. Scrolls automatically as items overflow.
 
 ### TUN Mode
 
@@ -336,7 +367,7 @@ For debugging or manual setup: `sudo setcap cap_net_admin,cap_net_raw,cap_setpca
 ### Subscription Workflow
 
 1. Press `U` to add a new group — enter a name and subscription URL
-2. Press `u` with the group selected to fetch and parse profiles from the URL
+2. Press `u` with the group selected to fetch and parse profiles from the URL (sends HWID headers if enabled)
 3. The details panel shows subscription metadata when available (traffic used, expiry, last updated)
 4. Press `e` to edit the group name or subscription URL at any time
 5. Press `X` to delete the entire group and its profiles
@@ -362,9 +393,10 @@ whoisthat/
 │       ├── settings.rs ← Settings screen
 │       ├── routing.rs  ← Routing rules tab + popups
 │       ├── logs.rs     ← Log viewer (live tail + auto-scroll)
+│       ├── uri.rs      ← URI detail parser (VLESS/VMess/Trojan/SS/SOCKS)
 │       └── widgets.rs  ← Shared widget helpers
 ├── install.sh          ← Universal installer script
-├── parser/             ← VLESS URI → Xray JSON parser (Rust)
+├── parser/             ← URI → Xray JSON parser (Rust)
 │   ├── Cargo.toml
 │   └── src/
 ├── core/               ← WhoisThat Core (Go VPN engine)
@@ -379,7 +411,7 @@ whoisthat/
 │       │   ├── PortPool/   ← Dynamic port allocator
 │       │   └── proxy/      ← Xray wrapper, TUN manager, tun2socks
 │       ├── structs/    ← Shared data types
-│       └── utils/      ← Binary detection, DNS resolution
+│       └── utils/      ← Binary detection, DNS resolution, capabilities
 └── .gitignore
 ```
 

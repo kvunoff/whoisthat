@@ -235,6 +235,14 @@ func (s *Server) handleConnection(conn net.Conn, clientID string) {
 			}
 			command_handler.IsRoot(data)
 
+		case "set-hwid":
+			var data structs.SetHwidData
+			if err := json.Unmarshal(raw_tcp_message.Data, &data); err != nil {
+				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
+				return
+			}
+			command_handler.SetHwid(data)
+
 		case "update-profile":
 			var data structs.UpdateProfileData
 			if err := json.Unmarshal(raw_tcp_message.Data, &data); err != nil {

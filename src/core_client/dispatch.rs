@@ -27,6 +27,7 @@ pub enum CoreEvent {
     Error(String),
     TrafficStats(TrafficStats),
     RoutingUpdated(RoutingConfig),
+    HwidUpdated(HwidData),
     Disconnected,
 }
 
@@ -97,6 +98,7 @@ fn dispatch(msg: TcpMessage) -> CoreEvent {
         "error" => try_dispatch!(msg, "error", Warning, |d| CoreEvent::Error(d.content)),
         "traffic-stats" => try_dispatch!(msg, "traffic-stats", TrafficStats, TrafficStats),
         "routing-updated" => try_dispatch!(msg, "routing-updated", RoutingUpdated, |d| CoreEvent::RoutingUpdated(d.config)),
+        "hwid-updated" => try_dispatch!(msg, "hwid-updated", HwidData, HwidUpdated),
         other => {
             warn!("Unknown message type: {}", other);
             CoreEvent::Error(format!("Unknown message: {}", other))

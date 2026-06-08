@@ -2,7 +2,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Clear, List, ListItem, Paragraph, Wrap},
+    widgets::{Block, BorderType, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap},
     Frame,
 };
 
@@ -39,6 +39,7 @@ pub enum Popup {
     ConfirmDeleteGroup { gid: i32, name: String },
     AddGroup { name: String, url: String, cursor: usize, field: usize },
     EditSubscription { name: String, url: String, group_id: i32, cursor: usize, field: usize },
+    EditUserAgent { input: String, cursor: usize },
     Help,
 }
 
@@ -58,11 +59,13 @@ pub struct App {
     pub log_enabled: bool,
     pub log_level: String,
     pub test_method: String,
+    pub hwid_info: Option<HwidData>,
     pub public_ip: String,
 
     pub tab: ActiveTab,
     pub focus: Focus,
     pub cursor: usize,
+    pub tree_scroll: usize,
     pub popup: Option<Popup>,
     pub help_scroll: usize,
 
@@ -92,10 +95,12 @@ impl App {
             log_enabled,
             log_level,
             test_method,
+            hwid_info: None,
             public_ip: String::new(),
             tab: ActiveTab::Profiles,
             focus: Focus::LeftPanel,
             cursor: 0,
+            tree_scroll: 0,
             popup: None,
             help_scroll: 0,
             settings_state: SettingsState::new(),
@@ -204,6 +209,7 @@ impl App {
 
     pub fn cursor_top(&mut self) {
         self.cursor = 0;
+        self.tree_scroll = 0;
     }
 
     pub fn cursor_bottom(&mut self) {
@@ -240,6 +246,7 @@ impl App {
         self.groups = state.groups;
         self.connection_status = state.connection_status;
         self.tun_enabled = state.tun_status;
+        self.hwid_info = state.hwid_info;
         self.clamp_cursor();
     }
 
@@ -305,7 +312,7 @@ impl App {
 // ===================== RENDER =====================
 
 impl App {
-    pub fn render(&self, f: &mut Frame) {
+    pub fn render(&mut self, f: &mut Frame) {
         let area = f.area();
         f.render_widget(Block::default().style(s_bg()), area);
 
@@ -412,7 +419,7 @@ impl App {
         result
     }
 
-    fn render_main(&self, f: &mut Frame, area: Rect) {
+    fn render_main(&mut self, f: &mut Frame, area: Rect) {
         match self.tab {
             ActiveTab::Profiles => self.render_profiles_view(f, area),
             ActiveTab::Logs => {
@@ -429,7 +436,8 @@ impl App {
                     self.log_enabled,
                     &self.log_level,
                     &self.test_method,
-                    &self.settings_state,
+                    self.hwid_info.as_ref(),
+                    &mut self.settings_state,
                     focused,
                 );
             }
@@ -440,7 +448,7 @@ impl App {
         }
     }
 
-    fn render_profiles_view(&self, f: &mut Frame, area: Rect) {
+    fn render_profiles_view(&mut self, f: &mut Frame, area: Rect) {
         let h = Layout::horizontal([
             Constraint::Percentage(55),
             Constraint::Percentage(45),
@@ -451,7 +459,7 @@ impl App {
         self.render_details(f, h[1]);
     }
 
-    fn render_tree(&self, f: &mut Frame, area: Rect) {
+    fn render_tree(&mut self, f: &mut Frame, area: Rect) {
         let left_focus = self.focus == Focus::LeftPanel;
         let border_color = if left_focus { BORDER_ACTIVE } else { BORDER };
 
@@ -539,11 +547,23 @@ impl App {
             }
         }
 
+        // Keep cursor visible by adjusting scroll
+        let visible = inner.height.saturating_sub(1) as usize;
+        if cursor_pos_in_list < self.tree_scroll {
+            self.tree_scroll = cursor_pos_in_list;
+        } else if visible > 0 && cursor_pos_in_list >= self.tree_scroll + visible {
+            self.tree_scroll = cursor_pos_in_list.saturating_sub(visible).saturating_add(1);
+        }
+
+        let mut list_state = ListState::default()
+            .with_selected(Some(cursor_pos_in_list))
+            .with_offset(self.tree_scroll);
+
         let list = List::new(items)
             .highlight_style(Style::default())
             .scroll_padding(5);
 
-        f.render_widget(list, inner);
+        f.render_stateful_widget(list, inner, &mut list_state);
     }
 
     fn render_details(&self, f: &mut Frame, area: Rect) {
@@ -748,7 +768,8 @@ impl App {
 
     fn render_popup(&self, f: &mut Frame, popup: &Popup, area: Rect) {
         match popup {
-            Popup::Import { input, .. } => self.render_import_popup(f, input, area),
+            Popup::Import { input, .. } => self.render_text_popup(f, " Import Profile URI ", "Paste or type URI (vless:// vmess:// trojan:// ss:// socks://):", input, area),
+            Popup::EditUserAgent { input, .. } => self.render_text_popup(f, " Edit User-Agent ", "Enter custom User-Agent:", input, area),
             Popup::ConfirmDelete { name, .. } => self.render_confirm_popup(f, "profile", name, area),
             Popup::ConfirmDeleteGroup { name, .. } => self.render_confirm_popup(f, "group", name, area),
             Popup::EditSubscription { name, url, cursor, field, .. } => self.render_group_form(f, "Edit Group", name, url, *cursor, *field, area),
@@ -757,12 +778,12 @@ impl App {
         }
     }
 
-    fn render_import_popup(&self, f: &mut Frame, input: &str, area: Rect) {
+    fn render_text_popup(&self, f: &mut Frame, title: &str, hint: &str, input: &str, area: Rect) {
         let pa = centered_rect(70, 32, area);
         f.render_widget(Clear, pa);
 
         let block = Block::default()
-            .title(" Import VLESS URI ")
+            .title(title)
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
             .border_style(Style::default().fg(ACCENT))
@@ -779,9 +800,9 @@ impl App {
         ])
         .split(inner);
 
-        f.render_widget(Paragraph::new("Paste or type VLESS URI:").style(s_dim()), rows[0]);
+        f.render_widget(Paragraph::new(hint).style(s_dim()), rows[0]);
 
-        let inp = if input.is_empty() { "vless://..." } else { input };
+        let inp = if input.is_empty() { "" } else { input };
         f.render_widget(
             Paragraph::new(inp)
                 .block(
@@ -930,7 +951,7 @@ impl App {
             ("c / Enter", "Connect to profile"),
             ("d", "Disconnect"),
             ("t", "Test profile latency"),
-            ("a", "Import VLESS profile"),
+            ("a", "Import profile"),
             ("x", "Delete selected profile"),
             ("X", "Delete current group"),
             ("u", "Update subscription"),
