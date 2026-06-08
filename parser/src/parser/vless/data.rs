@@ -1,5 +1,4 @@
-use crate::config_models::RawData;
-use crate::parser::vless::models;
+use crate::config_models::{RawData, UserAddress};
 use crate::utils::{get_parameter_value, url_decode};
 use http::Uri;
 
@@ -55,7 +54,7 @@ pub fn get_data(uri: &str) -> Result<RawData, String> {
     })
 }
 
-fn parse_vless_address(raw_data: &str) -> Result<models::VlessAddress, String> {
+fn parse_vless_address(raw_data: &str) -> Result<UserAddress, String> {
     let (uuid_raw, raw_address) = raw_data.split_once("@").ok_or_else(|| {
         "Wrong vless format, no `@` found in the address".to_string()
     })?;
@@ -69,7 +68,7 @@ fn parse_vless_address(raw_data: &str) -> Result<models::VlessAddress, String> {
     let uuid = url_decode(Some(uuid))
         .ok_or_else(|| "Failed to URL-decode vless UUID".to_string())?;
 
-    Ok(models::VlessAddress {
+    Ok(UserAddress {
         uuid,
         address: parsed
             .host()

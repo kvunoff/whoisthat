@@ -628,7 +628,7 @@ async fn handle_popup_input(
                 app.focus = Focus::LeftPanel;
             }
         },
-        Some(Popup::Import { input, cursor }) => match key.code {
+        Some(Popup::Import { mut input, mut cursor }) => match key.code {
             KeyCode::Esc => {
                 app.popup = None;
                 app.focus = Focus::LeftPanel;
@@ -645,85 +645,8 @@ async fn handle_popup_input(
                     app.focus = Focus::LeftPanel;
                 }
             }
-            KeyCode::Char(c) => {
-                if c == 'v'
-                    && matches!(key.modifiers, crossterm::event::KeyModifiers::CONTROL)
-                {
-                    if let Some(clip) = read_clipboard() {
-                        app.popup = Some(Popup::Import {
-                            input: clip,
-                            cursor: 0,
-                        });
-                    } else {
-                        app.popup = Some(Popup::Import { input, cursor });
-                    }
-                } else {
-                    let mut s = input;
-                    let mut cur = cursor;
-                    if cur <= s.len() {
-                        s.insert(cur, c);
-                    } else {
-                        s.push(c);
-                    }
-                    cur += 1;
-                    app.popup = Some(Popup::Import {
-                        input: s,
-                        cursor: cur,
-                    });
-                }
-            }
-            KeyCode::Backspace => {
-                let mut cur = cursor;
-                if cur > 0 && !input.is_empty() {
-                    let mut s = input;
-                    s.remove(cur - 1);
-                    cur -= 1;
-                    app.popup = Some(Popup::Import {
-                        input: s,
-                        cursor: cur,
-                    });
-                } else {
-                    app.popup = Some(Popup::Import { input, cursor });
-                }
-            }
-            KeyCode::Delete => {
-                if cursor < input.len() {
-                    let mut s = input;
-                    s.remove(cursor);
-                    app.popup = Some(Popup::Import { input: s, cursor });
-                } else {
-                    app.popup = Some(Popup::Import { input, cursor });
-                }
-            }
-            KeyCode::Left => {
-                let cur = if cursor > 0 { cursor - 1 } else { 0 };
-                app.popup = Some(Popup::Import {
-                    input,
-                    cursor: cur,
-                });
-            }
-            KeyCode::Right => {
-                let cur = if cursor < input.len() {
-                    cursor + 1
-                } else {
-                    cursor
-                };
-                app.popup = Some(Popup::Import {
-                    input,
-                    cursor: cur,
-                });
-            }
-            KeyCode::Home => {
-                app.popup = Some(Popup::Import { input, cursor: 0 });
-            }
-            KeyCode::End => {
-                let len = input.len();
-                app.popup = Some(Popup::Import {
-                    input,
-                    cursor: len,
-                });
-            }
             _ => {
+                edit_text_field(&mut input, &mut cursor, key);
                 app.popup = Some(Popup::Import { input, cursor });
             }
         },
@@ -767,160 +690,36 @@ async fn handle_popup_input(
                 return false;
             }
         },
-        Some(Popup::EditSubscription { mut name, mut url, group_id, mut cursor, mut field }) => match key.code {
-            KeyCode::Esc => {
+        Some(Popup::EditSubscription { mut name, mut url, group_id, mut cursor, mut field }) => {
+            let consumed = handle_two_field_popup(
+                &mut name, &mut url, &mut cursor, &mut field, key,
+            );
+            if consumed {
+                let _ = client.update_group(group_id, &name, &url).await;
+                app.msg("Updating group...");
+                app.focus = Focus::LeftPanel;
+            } else if key.code == KeyCode::Esc {
                 app.popup = None;
                 app.focus = Focus::LeftPanel;
-            }
-            KeyCode::Tab => {
-                field = if field == 0 { 1 } else { 0 };
-                cursor = if field == 0 { name.len() } else { url.len() };
+            } else {
                 app.popup = Some(Popup::EditSubscription { name, url, group_id, cursor, field });
             }
-            KeyCode::Enter => {
-                if field == 0 {
-                    field = 1;
-                    cursor = url.len();
-                    app.popup = Some(Popup::EditSubscription { name, url, group_id, cursor, field });
-                } else {
-                    let _ = client.update_group(group_id, &name, &url).await;
-                    app.msg("Updating group...");
-                    app.focus = Focus::LeftPanel;
-                }
-            }
-            KeyCode::Char(c) => {
-                if c == 'v'
-                    && matches!(key.modifiers, crossterm::event::KeyModifiers::CONTROL)
-                {
-                    if let Some(clip) = read_clipboard() {
-                        if field == 0 { name = clip; cursor = name.len(); }
-                        else { url = clip; cursor = url.len(); }
-                    }
-                } else {
-                    if field == 0 {
-                        if cursor <= name.len() { name.insert(cursor, c); } else { name.push(c); }
-                    } else {
-                        if cursor <= url.len() { url.insert(cursor, c); } else { url.push(c); }
-                    }
-                    cursor += 1;
-                }
-                app.popup = Some(Popup::EditSubscription { name, url, group_id, cursor, field });
-            }
-            KeyCode::Backspace => {
-                if field == 0 && cursor > 0 && !name.is_empty() {
-                    name.remove(cursor - 1);
-                    cursor -= 1;
-                } else if field == 1 && cursor > 0 && !url.is_empty() {
-                    url.remove(cursor - 1);
-                    cursor -= 1;
-                }
-                app.popup = Some(Popup::EditSubscription { name, url, group_id, cursor, field });
-            }
-            KeyCode::Delete => {
-                if field == 0 && cursor < name.len() {
-                    name.remove(cursor);
-                } else if field == 1 && cursor < url.len() {
-                    url.remove(cursor);
-                }
-                app.popup = Some(Popup::EditSubscription { name, url, group_id, cursor, field });
-            }
-            KeyCode::Left => {
-                cursor = if cursor > 0 { cursor - 1 } else { 0 };
-                app.popup = Some(Popup::EditSubscription { name, url, group_id, cursor, field });
-            }
-            KeyCode::Right => {
-                let max = if field == 0 { name.len() } else { url.len() };
-                if cursor < max { cursor += 1; }
-                app.popup = Some(Popup::EditSubscription { name, url, group_id, cursor, field });
-            }
-            KeyCode::Home => {
-                app.popup = Some(Popup::EditSubscription { name, url, group_id, cursor: 0, field });
-            }
-            KeyCode::End => {
-                cursor = if field == 0 { name.len() } else { url.len() };
-                app.popup = Some(Popup::EditSubscription { name, url, group_id, cursor, field });
-            }
-            _ => {
-                app.popup = Some(Popup::EditSubscription { name, url, group_id, cursor, field });
-            }
-        },
-        Some(Popup::AddGroup { mut name, mut url, mut cursor, mut field }) => match key.code {
-            KeyCode::Esc => {
+        }
+        Some(Popup::AddGroup { mut name, mut url, mut cursor, mut field }) => {
+            let consumed = handle_two_field_popup(
+                &mut name, &mut url, &mut cursor, &mut field, key,
+            );
+            if consumed {
+                let _ = client.add_group(&name, &url).await;
+                app.msg("Adding group...");
+                app.focus = Focus::LeftPanel;
+            } else if key.code == KeyCode::Esc {
                 app.popup = None;
                 app.focus = Focus::LeftPanel;
-            }
-            KeyCode::Tab => {
-                field = if field == 0 { 1 } else { 0 };
-                cursor = if field == 0 { name.len() } else { url.len() };
+            } else {
                 app.popup = Some(Popup::AddGroup { name, url, cursor, field });
             }
-            KeyCode::Enter => {
-                if field == 0 {
-                    field = 1;
-                    cursor = url.len();
-                    app.popup = Some(Popup::AddGroup { name, url, cursor, field });
-                } else {
-                    let _ = client.add_group(&name, &url).await;
-                    app.msg("Adding group...");
-                    app.focus = Focus::LeftPanel;
-                }
-            }
-            KeyCode::Char(c) => {
-                if c == 'v'
-                    && matches!(key.modifiers, crossterm::event::KeyModifiers::CONTROL)
-                {
-                    if let Some(clip) = read_clipboard() {
-                        if field == 0 { name = clip; cursor = name.len(); }
-                        else { url = clip; cursor = url.len(); }
-                    }
-                } else {
-                    if field == 0 {
-                        if cursor <= name.len() { name.insert(cursor, c); } else { name.push(c); }
-                    } else {
-                        if cursor <= url.len() { url.insert(cursor, c); } else { url.push(c); }
-                    }
-                    cursor += 1;
-                }
-                app.popup = Some(Popup::AddGroup { name, url, cursor, field });
-            }
-            KeyCode::Backspace => {
-                if field == 0 && cursor > 0 && !name.is_empty() {
-                    name.remove(cursor - 1);
-                    cursor -= 1;
-                } else if field == 1 && cursor > 0 && !url.is_empty() {
-                    url.remove(cursor - 1);
-                    cursor -= 1;
-                }
-                app.popup = Some(Popup::AddGroup { name, url, cursor, field });
-            }
-            KeyCode::Delete => {
-                if field == 0 && cursor < name.len() {
-                    name.remove(cursor);
-                } else if field == 1 && cursor < url.len() {
-                    url.remove(cursor);
-                }
-                app.popup = Some(Popup::AddGroup { name, url, cursor, field });
-            }
-            KeyCode::Left => {
-                cursor = if cursor > 0 { cursor - 1 } else { 0 };
-                app.popup = Some(Popup::AddGroup { name, url, cursor, field });
-            }
-            KeyCode::Right => {
-                let max = if field == 0 { name.len() } else { url.len() };
-                if cursor < max { cursor += 1; }
-                app.popup = Some(Popup::AddGroup { name, url, cursor, field });
-            }
-            KeyCode::Home => {
-                app.popup = Some(Popup::AddGroup { name, url, cursor: 0, field });
-            }
-            KeyCode::End => {
-                cursor = if field == 0 { name.len() } else { url.len() };
-                app.popup = Some(Popup::AddGroup { name, url, cursor, field });
-            }
-            _ => {
-                app.popup = Some(Popup::AddGroup { name, url, cursor, field });
-            }
-        },
+        }
         None => {}
     }
     false
@@ -969,6 +768,36 @@ async fn handle_routing_popup_input(
     }
 }
 
+fn handle_two_field_popup(
+    field0: &mut String,
+    field1: &mut String,
+    cursor: &mut usize,
+    field: &mut usize,
+    key: event::KeyEvent,
+) -> bool {
+    match key.code {
+        KeyCode::Tab => {
+            *field = if *field == 0 { 1 } else { 0 };
+            *cursor = if *field == 0 { field0.len() } else { field1.len() };
+            false
+        }
+        KeyCode::Enter => {
+            if *field == 0 {
+                *field = 1;
+                *cursor = field1.len();
+                false
+            } else {
+                true // save
+            }
+        }
+        _ => {
+            let target = if *field == 0 { field0 } else { field1 };
+            edit_text_field(target, cursor, key);
+            false
+        }
+    }
+}
+
 fn handle_routing_form(
     _app: &mut App,
     match_type: &mut usize,
@@ -978,7 +807,6 @@ fn handle_routing_form(
     field: &mut usize,
     key: event::KeyEvent,
 ) -> bool {
-    let _edit_index: Option<usize> = None;
     // We use repop only to reconstruct the popup; the actual save is in the caller.
     match key.code {
         KeyCode::Esc => { return false; }
@@ -1441,3 +1269,60 @@ async fn handle_normal_input(
 fn read_clipboard() -> Option<String> {
     arboard::Clipboard::new().ok()?.get_text().ok()
 }
+
+fn edit_text_field(s: &mut String, cursor: &mut usize, key: event::KeyEvent) -> bool {
+    match key.code {
+        KeyCode::Char(c) if c == 'v'
+            && matches!(key.modifiers, crossterm::event::KeyModifiers::CONTROL) =>
+        {
+            if let Some(clip) = read_clipboard() {
+                *s = clip;
+                *cursor = s.len();
+            }
+            false
+        }
+        KeyCode::Char(c) => {
+            if *cursor <= s.len() {
+                s.insert(*cursor, c);
+            } else {
+                s.push(c);
+            }
+            *cursor += 1;
+            false
+        }
+        KeyCode::Backspace => {
+            if *cursor > 0 && !s.is_empty() {
+                s.remove(*cursor - 1);
+                *cursor -= 1;
+            }
+            false
+        }
+        KeyCode::Delete => {
+            if *cursor < s.len() {
+                s.remove(*cursor);
+            }
+            false
+        }
+        KeyCode::Left => {
+            *cursor = cursor.saturating_sub(1);
+            false
+        }
+        KeyCode::Right => {
+            if *cursor < s.len() {
+                *cursor += 1;
+            }
+            false
+        }
+        KeyCode::Home => {
+            *cursor = 0;
+            false
+        }
+        KeyCode::End => {
+            *cursor = s.len();
+            false
+        }
+        _ => false,
+    }
+}
+
+

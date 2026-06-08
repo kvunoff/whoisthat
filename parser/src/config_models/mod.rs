@@ -149,12 +149,6 @@ pub struct TCPSettings {
 
 #[allow(non_snake_case)]
 #[derive(Serialize, Deserialize)]
-pub struct HeaderSetting {
-    pub Host: Option<String>,
-}
-
-#[allow(non_snake_case)]
-#[derive(Serialize, Deserialize)]
 pub struct WsSettings {
     pub path: Option<String>,
     pub Host: Option<String>,
@@ -264,6 +258,12 @@ pub struct RawData {
     pub port: Option<u16>,
     pub server_method: Option<String>,
     pub username: Option<String>,
+}
+
+pub struct UserAddress {
+    pub uuid: String,
+    pub address: String,
+    pub port: u16,
 }
 
 #[derive(Serialize, Deserialize)]

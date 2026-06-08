@@ -7,12 +7,6 @@ pub struct TcpMessage {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Message<T: Serialize> {
-    pub msg: String,
-    pub data: T,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Profile {
     pub id: i32,
     pub group_id: i32,

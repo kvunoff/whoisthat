@@ -20,14 +20,6 @@ func GetXrayBin() (string, error) {
 	return GetBinPath("xray")
 }
 
-func GetWorkingDir() string {
-	dir, err := os.Getwd()
-	if err != nil {
-		logger.Fatal(err)
-	}
-	return dir
-}
-
 func GetHomeDir() (string, error) {
 	uid := os.Getuid()
 	if uid == 0 {

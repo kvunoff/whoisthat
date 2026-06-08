@@ -97,14 +97,14 @@ impl LogsState {
 }
 
 fn read_log_file(path: &str) -> (Vec<String>, Option<BufReader<File>>) {
-    let file = match File::open(path) {
+    let mut file = match File::open(path) {
         Ok(f) => f,
         Err(_) => return (vec!["(log file not found)".into()], None),
     };
 
-    let mut reader = BufReader::new(file);
     let mut lines = Vec::new();
     let mut line = String::new();
+    let mut reader = BufReader::new(&file);
     while reader.read_line(&mut line).unwrap_or(0) > 0 {
         if line.ends_with('\n') {
             line.pop();
@@ -115,12 +115,9 @@ fn read_log_file(path: &str) -> (Vec<String>, Option<BufReader<File>>) {
         lines.push(line.clone());
         line.clear();
     }
+    drop(reader);
 
     // Seek to end for tailing
-    let mut file = match File::open(path) {
-        Ok(f) => f,
-        Err(_) => return (lines, None),
-    };
     let _ = file.seek(SeekFrom::End(0));
     let reader = BufReader::new(file);
 

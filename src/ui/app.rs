@@ -13,7 +13,9 @@ use super::logs::{render_logs, LogsState};
 use super::routing::{render_routing_popup, render_routing_tab, RoutingPopup};
 use super::settings::{render_settings, SettingsState};
 use super::theme::*;
-use super::uri;
+use super::uri::{self, VlessParams};
+
+use std::cell::RefCell;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ActiveTab {
@@ -61,7 +63,6 @@ pub struct App {
     pub tab: ActiveTab,
     pub focus: Focus,
     pub cursor: usize,
-    pub scroll: usize,
     pub popup: Option<Popup>,
     pub help_scroll: usize,
 
@@ -71,6 +72,8 @@ pub struct App {
     pub routing: RoutingConfig,
     pub routing_cursor: usize,
     pub routing_popup: Option<RoutingPopup>,
+
+    uri_cache: RefCell<Option<(i32, i32, VlessParams)>>,
 }
 
 impl App {
@@ -93,7 +96,6 @@ impl App {
             tab: ActiveTab::Profiles,
             focus: Focus::LeftPanel,
             cursor: 0,
-            scroll: 0,
             popup: None,
             help_scroll: 0,
             settings_state: SettingsState::new(),
@@ -107,6 +109,7 @@ impl App {
             routing: RoutingConfig::default(),
             routing_cursor: 0,
             routing_popup: None,
+            uri_cache: RefCell::new(None),
         }
     }
 
@@ -153,10 +156,6 @@ impl App {
             TreeNode::Group(gi) => self.groups.get(gi),
             TreeNode::Profile(gi, _) => self.groups.get(gi),
         }
-    }
-
-    pub fn current_group_id(&self) -> i32 {
-        self.current_group().map(|g| g.group.id).unwrap_or(0)
     }
 
     pub fn selected_profile(&self) -> Option<&Profile> {
@@ -218,6 +217,19 @@ impl App {
         self.last_msg = None;
     }
 
+    pub fn cached_uri_params(&self, p: &Profile) -> VlessParams {
+        let mut cache = self.uri_cache.borrow_mut();
+        match *cache {
+            Some((gid, pid, ref params)) if gid == p.group_id && pid == p.id => {
+                return params.clone();
+            }
+            _ => {}
+        }
+        let params = uri::parse_vless_uri(&p.uri);
+        *cache = Some((p.group_id, p.id, params.clone()));
+        params
+    }
+
     pub fn msg(&mut self, text: impl Into<String>) {
         self.last_msg = Some(text.into());
     }
@@ -231,7 +243,12 @@ impl App {
         self.clamp_cursor();
     }
 
+    pub fn invalidate_uri_cache(&self) {
+        self.uri_cache.borrow_mut().take();
+    }
+
     pub fn apply_profiles_added(&mut self, profiles: Vec<Profile>) {
+        self.invalidate_uri_cache();
         for p in profiles {
             if let Some(g) = self.groups.iter_mut().find(|g| g.group.id == p.group_id) {
                 g.profiles.push(p);
@@ -240,6 +257,7 @@ impl App {
     }
 
     pub fn apply_profiles_deleted(&mut self, deleted: &[ProfileID]) {
+        self.invalidate_uri_cache();
         for d in deleted {
             if let Some(g) = self.groups.iter_mut().find(|g| g.group.id == d.group_id) {
                 g.profiles.retain(|p| p.id != d.id);
@@ -257,6 +275,7 @@ impl App {
     }
 
     pub fn apply_profile_updated(&mut self, p: &Profile) {
+        self.invalidate_uri_cache();
         if let Some(g) = self.groups.iter_mut().find(|g| g.group.id == p.group_id) {
             if let Some(existing) = g.profiles.iter_mut().find(|pr| pr.id == p.id) {
                 *existing = p.clone();
@@ -364,9 +383,6 @@ impl App {
             Span::styled(" P:", s_faint()),
             Span::styled(format!("↑{}", format_bytes(ts.proxy_up)), s_success()),
             Span::styled(format!(" ↓{}", format_bytes(ts.proxy_down)), s_success()),
-            Span::styled("  D:", s_faint()),
-            Span::styled(format!("↑{}", format_bytes(ts.direct_up)), s_dim()),
-            Span::styled(format!(" ↓{}", format_bytes(ts.direct_down)), s_dim()),
         ]);
         f.render_widget(Paragraph::new(stats_line), rows[1]);
     }
@@ -622,17 +638,12 @@ impl App {
             rows.push(Line::from(Span::styled("● Connected to this group", s_success())));
         }
 
-        let rows_v: Vec<ratatui::widgets::Paragraph> = rows
-            .into_iter()
-            .map(|l| Paragraph::new(l))
-            .collect();
-
-        let mut y = 1;
-        for p in &rows_v {
-            if y < inner.height {
-                let r = Rect::new(inner.x + 1, inner.y + y, inner.width.saturating_sub(2), 1);
-                f.render_widget(p.clone(), r);
-                y += 1;
+        let y_start = inner.y + 1;
+        let w = inner.width.saturating_sub(2);
+        for (i, line) in rows.iter().enumerate() {
+            let y = y_start + i as u16;
+            if y < inner.y + inner.height {
+                f.render_widget(Paragraph::new(line.clone()), Rect::new(inner.x + 1, y, w, 1));
             }
         }
     }
@@ -643,7 +654,7 @@ impl App {
         let inner = block.inner(area);
         f.render_widget(block, area);
 
-        let uri_params = uri::parse_vless_uri(&p.uri);
+        let uri_params = self.cached_uri_params(p);
         let group_name = self.current_group().map(|g| g.group.name.as_str()).unwrap_or("?");
 
         let name = if p.name.is_empty() {
@@ -723,17 +734,12 @@ impl App {
         }
         rows.push(kv_row("TUN", if self.tun_enabled { "on" } else { "off" }));
 
-        let rows_v: Vec<ratatui::widgets::Paragraph> = rows
-            .into_iter()
-            .map(|l| Paragraph::new(l))
-            .collect();
-
-        let mut y = 0;
-        for p in &rows_v {
-            if y < inner.height {
-                let r = Rect::new(inner.x + 1, inner.y + y, inner.width.saturating_sub(2), 1);
-                f.render_widget(p.clone(), r);
-                y += 1;
+        let y_start = inner.y;
+        let w = inner.width.saturating_sub(2);
+        for (i, line) in rows.iter().enumerate() {
+            let y = y_start + i as u16;
+            if y < inner.y + inner.height {
+                f.render_widget(Paragraph::new(line.clone()), Rect::new(inner.x + 1, y, w, 1));
             }
         }
     }
@@ -990,7 +996,10 @@ impl App {
         let inner = block.inner(area);
         f.render_widget(block, area);
 
-        let left = Span::styled(" WhoisThat v0.3.3 · xray-core", s_faint());
+        let left = Span::styled(
+            format!(" WhoisThat v{} · xray-core", env!("CARGO_PKG_VERSION")),
+            s_faint(),
+        );
         let left_w = left.width();
 
         let tun = if self.tun_enabled {

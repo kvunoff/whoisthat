@@ -30,6 +30,20 @@ pub enum CoreEvent {
     Disconnected,
 }
 
+macro_rules! try_dispatch {
+    ($msg:expr, $name:expr, $ty:ty, |$d:ident| $map:expr) => {
+        serde_json::from_value::<$ty>(($msg).data)
+            .map(|$d| $map)
+            .unwrap_or_else(|e| {
+                warn!(concat!("Invalid ", $name, ": {}"), e);
+                CoreEvent::Error(concat!("Invalid ", $name).into())
+            })
+    };
+    ($msg:expr, $name:expr, $ty:ty, $var:ident) => {
+        try_dispatch!($msg, $name, $ty, |d| CoreEvent::$var(d))
+    };
+}
+
 pub fn spawn_read_loop(mut conn: CoreConnection) -> mpsc::UnboundedReceiver<CoreEvent> {
     let (tx, rx) = mpsc::unbounded_channel();
 
@@ -56,138 +70,33 @@ pub fn spawn_read_loop(mut conn: CoreConnection) -> mpsc::UnboundedReceiver<Core
 
 fn dispatch(msg: TcpMessage) -> CoreEvent {
     match msg.msg.as_str() {
-        "application-state" => {
-            serde_json::from_value::<ApplicationState>(msg.data)
-                .map(CoreEvent::ApplicationState)
-                .unwrap_or_else(|e| {
-                    warn!("Invalid application-state: {}", e);
-                    CoreEvent::Error("Invalid application-state".into())
-                })
-        }
-        "status-changed" => {
-            serde_json::from_value::<ProxyStatus>(msg.data)
-                .map(CoreEvent::StatusChanged)
-                .unwrap_or_else(|e| {
-                    warn!("Invalid status-changed: {}", e);
-                    CoreEvent::Error("Invalid status-changed".into())
-                })
-        }
-        "profiles-added" => {
-            serde_json::from_value::<ProfilesAdded>(msg.data)
-                .map(|d| CoreEvent::ProfilesAdded(d.profiles))
-                .unwrap_or_else(|e| {
-                    warn!("Invalid profiles-added: {}", e);
-                    CoreEvent::Error("Invalid profiles-added".into())
-                })
-        }
-        "profiles-deleted" => {
-            serde_json::from_value::<ProfilesDeleted>(msg.data)
-                .map(|d| CoreEvent::ProfilesDeleted(d.deleted_profiles))
-                .unwrap_or_else(|e| {
-                    warn!("Invalid profiles-deleted: {}", e);
-                    CoreEvent::Error("Invalid profiles-deleted".into())
-                })
-        }
-        "profile-updated" => {
-            serde_json::from_value::<ProfileUpdated>(msg.data)
-                .map(|d| CoreEvent::ProfileUpdated(d.profile))
-                .unwrap_or_else(|e| {
-                    warn!("Invalid profile-updated: {}", e);
-                    CoreEvent::Error("Invalid profile-updated".into())
-                })
-        }
-        "group-added" => {
-            serde_json::from_value::<GroupAdded>(msg.data)
-                .map(|d| CoreEvent::GroupAdded(Group {
-                    id: d.id,
-                    name: d.name,
-                    subscription_url: d.subscription_url,
-                    last_id: 0,
-                    ..Default::default()
-                }))
-                .unwrap_or_else(|e| {
-                    warn!("Invalid group-added: {}", e);
-                    CoreEvent::Error("Invalid group-added".into())
-                })
-        }
-        "group-deleted" => {
-            serde_json::from_value::<GroupDeleted>(msg.data)
-                .map(|d| CoreEvent::GroupDeleted(d.id))
-                .unwrap_or_else(|e| {
-                    warn!("Invalid group-deleted: {}", e);
-                    CoreEvent::Error("Invalid group-deleted".into())
-                })
-        }
-        "group-updated" => {
-            serde_json::from_value::<Group>(msg.data)
-                .map(CoreEvent::GroupUpdated)
-                .unwrap_or_else(|e| {
-                    warn!("Invalid group-updated: {}", e);
-                    CoreEvent::Error("Invalid group-updated".into())
-                })
-        }
-        "subscription-updated" => {
-            serde_json::from_value::<SubscriptionUpdated>(msg.data)
-                .map(|d| CoreEvent::SubscriptionUpdated {
-                    group: d.group,
-                    profiles: d.profiles,
-                })
-                .unwrap_or_else(|e| {
-                    warn!("Invalid subscription-updated: {}", e);
-                    CoreEvent::Error("Invalid subscription-updated".into())
-                })
-        }
-        "tun-status-changed" => {
-            serde_json::from_value::<TunStatus>(msg.data)
-                .map(|d| CoreEvent::TunStatusChanged(d.is_enabled))
-                .unwrap_or_else(|e| {
-                    warn!("Invalid tun-status-changed: {}", e);
-                    CoreEvent::Error("Invalid tun-status-changed".into())
-                })
-        }
-        "is-root-answer" => {
-            serde_json::from_value::<IsRootAnswer>(msg.data)
-                .map(|d| CoreEvent::IsRootAnswer(d.is_root))
-                .unwrap_or_else(|e| {
-                    warn!("Invalid is-root-answer: {}", e);
-                    CoreEvent::Error("Invalid is-root-answer".into())
-                })
-        }
-        "warn" => {
-            serde_json::from_value::<Warning>(msg.data)
-                .map(|d| CoreEvent::Warning {
-                    key: d.key,
-                    content: d.content,
-                })
-                .unwrap_or_else(|e| {
-                    warn!("Invalid warn: {}", e);
-                    CoreEvent::Error("Invalid warn".into())
-                })
-        }
-        "error" => {
-            serde_json::from_value::<Warning>(msg.data)
-                .map(|d| CoreEvent::Error(d.content))
-                .unwrap_or_else(|e| {
-                    warn!("Invalid error: {}", e);
-                    CoreEvent::Error("Invalid error".into())
-                })
-        }
-        "traffic-stats" => {
-            serde_json::from_value::<TrafficStats>(msg.data)
-                .map(CoreEvent::TrafficStats)
-                .unwrap_or_else(|e| {
-                    warn!("Invalid traffic-stats: {}", e);
-                    CoreEvent::Error("Invalid traffic-stats".into())
-                })
-        }
-        "routing-updated" => {
-            serde_json::from_value::<RoutingUpdated>(msg.data)
-                .map(|d| CoreEvent::RoutingUpdated(d.config))
-                .unwrap_or_else(|e| {
-                    warn!("Invalid routing-updated: {}", e);
-                    CoreEvent::Error("Invalid routing-updated".into())
-                })
-        }
+        "application-state" => try_dispatch!(msg, "application-state", ApplicationState, ApplicationState),
+        "status-changed" => try_dispatch!(msg, "status-changed", ProxyStatus, StatusChanged),
+        "profiles-added" => try_dispatch!(msg, "profiles-added", ProfilesAdded, |d| CoreEvent::ProfilesAdded(d.profiles)),
+        "profiles-deleted" => try_dispatch!(msg, "profiles-deleted", ProfilesDeleted, |d| CoreEvent::ProfilesDeleted(d.deleted_profiles)),
+        "profile-updated" => try_dispatch!(msg, "profile-updated", ProfileUpdated, |d| CoreEvent::ProfileUpdated(d.profile)),
+        "group-added" => try_dispatch!(msg, "group-added", GroupAdded, |d| CoreEvent::GroupAdded(Group {
+            id: d.id,
+            name: d.name,
+            subscription_url: d.subscription_url,
+            last_id: 0,
+            ..Default::default()
+        })),
+        "group-deleted" => try_dispatch!(msg, "group-deleted", GroupDeleted, |d| CoreEvent::GroupDeleted(d.id)),
+        "group-updated" => try_dispatch!(msg, "group-updated", Group, GroupUpdated),
+        "subscription-updated" => try_dispatch!(msg, "subscription-updated", SubscriptionUpdated, |d| CoreEvent::SubscriptionUpdated {
+            group: d.group,
+            profiles: d.profiles,
+        }),
+        "tun-status-changed" => try_dispatch!(msg, "tun-status-changed", TunStatus, |d| CoreEvent::TunStatusChanged(d.is_enabled)),
+        "is-root-answer" => try_dispatch!(msg, "is-root-answer", IsRootAnswer, |d| CoreEvent::IsRootAnswer(d.is_root)),
+        "warn" => try_dispatch!(msg, "warn", Warning, |d| CoreEvent::Warning {
+            key: d.key,
+            content: d.content,
+        }),
+        "error" => try_dispatch!(msg, "error", Warning, |d| CoreEvent::Error(d.content)),
+        "traffic-stats" => try_dispatch!(msg, "traffic-stats", TrafficStats, TrafficStats),
+        "routing-updated" => try_dispatch!(msg, "routing-updated", RoutingUpdated, |d| CoreEvent::RoutingUpdated(d.config)),
         other => {
             warn!("Unknown message type: {}", other);
             CoreEvent::Error(format!("Unknown message: {}", other))

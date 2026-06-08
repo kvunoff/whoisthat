@@ -1,5 +1,4 @@
-use crate::config_models::RawData;
-use crate::parser::trojan::models;
+use crate::config_models::{RawData, UserAddress};
 use crate::utils::{get_parameter_value, url_decode};
 use http::Uri;
 
@@ -55,7 +54,7 @@ pub fn get_data(uri: &str) -> Result<RawData, String> {
     })
 }
 
-fn parse_trojan_address(raw_data: &str) -> Result<models::TrojanAddress, String> {
+fn parse_trojan_address(raw_data: &str) -> Result<UserAddress, String> {
     let (uuid_raw, raw_address) = raw_data
         .split_once("@")
         .ok_or_else(|| "Wrong trojan format, no `@` found in the address".to_string())?;
@@ -69,7 +68,7 @@ fn parse_trojan_address(raw_data: &str) -> Result<models::TrojanAddress, String>
     let uuid = url_decode(Some(uuid))
         .ok_or_else(|| "Failed to URL-decode trojan password".to_string())?;
 
-    Ok(models::TrojanAddress {
+    Ok(UserAddress {
         uuid,
         address: parsed
             .host()

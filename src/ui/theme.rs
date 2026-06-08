@@ -2,10 +2,7 @@ use ratatui::style::{Color, Style};
 
 pub const BG: Color = Color::Rgb(26, 27, 38); // #1a1b26 dark gray-blue
 pub const SURFACE: Color = Color::Rgb(36, 37, 58); // #24253a
-pub const SURFACE_HL: Color = Color::Rgb(41, 43, 66); // #292b42
-
 pub const ACCENT: Color = Color::Rgb(125, 207, 255); // #7dcfff soft blue
-pub const ACCENT_DIM: Color = Color::Rgb(86, 95, 137); // #565f89
 pub const ACCENT_GLOW: Color = Color::Rgb(158, 206, 219); // #9ecedb
 
 pub const TEXT: Color = Color::Rgb(192, 202, 245); // #c0caf5

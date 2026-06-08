@@ -25,7 +25,7 @@ impl CoreConnection {
         let json = serde_json::to_vec(&payload)?;
 
         let len = json.len() as u32;
-        if len == 0 || len > 100 * 1024 * 1024 {
+        if len == 0 || len > 10 * 1024 * 1024 {
             error!("Invalid payload length: {}", len);
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
@@ -44,7 +44,7 @@ impl CoreConnection {
         self.stream.read_exact(&mut len_buf).await?;
 
         let len = u32::from_be_bytes(len_buf);
-        if len == 0 || len > 100 * 1024 * 1024 {
+        if len == 0 || len > 10 * 1024 * 1024 {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 format!("Invalid message length: {}", len),

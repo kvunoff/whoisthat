@@ -1,5 +1,4 @@
-use crate::config_models::RawData;
-use crate::parser::vmess::models::VmessAddress;
+use crate::config_models::{RawData, UserAddress};
 use crate::utils::{get_parameter_value, url_decode, url_decode_str};
 use base64::{engine::general_purpose, Engine};
 use http::Uri;
@@ -109,7 +108,7 @@ fn get_raw_data_from_uri(data: &str) -> Result<RawData, String> {
     })
 }
 
-fn parse_vmess_address(raw_data: &str) -> Result<VmessAddress, String> {
+fn parse_vmess_address(raw_data: &str) -> Result<UserAddress, String> {
     let (uuid_raw, raw_address) = raw_data
         .split_once("@")
         .ok_or_else(|| {
@@ -126,7 +125,7 @@ fn parse_vmess_address(raw_data: &str) -> Result<VmessAddress, String> {
     let uuid = url_decode(Some(uuid))
         .ok_or_else(|| "Failed to URL-decode vmess UUID".to_string())?;
 
-    Ok(VmessAddress {
+    Ok(UserAddress {
         uuid,
         address: parsed
             .host()
