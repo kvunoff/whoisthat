@@ -4,10 +4,34 @@ import (
 	"bytes"
 	"fmt"
 	"os/exec"
+	"sync"
 	"syscall"
 
 	"golang.org/x/sys/unix"
 )
+
+type firewallBackend int
+
+const (
+	firewallIptables firewallBackend = iota
+	firewallNftables
+)
+
+var (
+	fwBackend firewallBackend
+	fwOnce    sync.Once
+)
+
+func probeFirewall() firewallBackend {
+	fwOnce.Do(func() {
+		if _, err := exec.LookPath("nft"); err == nil {
+			fwBackend = firewallNftables
+		} else {
+			fwBackend = firewallIptables
+		}
+	})
+	return fwBackend
+}
 
 func runScriptWithSh(script string) (string, error) {
 	cmd := exec.Command("sh")
@@ -38,6 +62,15 @@ func runScriptWithSh(script string) (string, error) {
 }
 
 func setupDnsHijackRules(interface_name string, dns_ip string) error {
+	switch probeFirewall() {
+	case firewallNftables:
+		return setupDnsHijackRulesNftables(interface_name, dns_ip)
+	default:
+		return setupDnsHijackRulesIptables(interface_name, dns_ip)
+	}
+}
+
+func setupDnsHijackRulesIptables(interface_name string, dns_ip string) error {
 	script := fmt.Sprintf(`
 IFACE="%s"
 DNS_IP="%s"
@@ -64,7 +97,40 @@ iptables -t nat -A OUTPUT -p tcp --dport 53 \
 
 }
 
+func setupDnsHijackRulesNftables(interface_name string, dns_ip string) error {
+	script := fmt.Sprintf(`
+set -e
+IFACE="%s"
+DNS_IP="%s"
+
+nft delete table ip whoisthat 2>/dev/null || true
+
+nft add table ip whoisthat
+nft add chain ip whoisthat prerouting '{ type nat hook prerouting priority -100; }'
+nft add chain ip whoisthat postrouting '{ type nat hook postrouting priority 100; }'
+nft add chain ip whoisthat output '{ type nat hook output priority -100; }'
+
+nft add rule ip whoisthat prerouting udp dport 53 dnat to $DNS_IP:53
+nft add rule ip whoisthat prerouting tcp dport 53 dnat to $DNS_IP:53
+nft add rule ip whoisthat postrouting ip daddr $DNS_IP udp dport 53 oif $IFACE masquerade
+nft add rule ip whoisthat postrouting ip daddr $DNS_IP tcp dport 53 oif $IFACE masquerade
+nft add rule ip whoisthat output udp dport 53 dnat to $DNS_IP:53
+nft add rule ip whoisthat output tcp dport 53 dnat to $DNS_IP:53
+`, interface_name, dns_ip)
+	_, err := runScriptWithSh(script)
+	return err
+}
+
 func cleanDnsHijackRules(interface_name string, dns_ip string) error {
+	switch probeFirewall() {
+	case firewallNftables:
+		return cleanDnsHijackRulesNftables(interface_name, dns_ip)
+	default:
+		return cleanDnsHijackRulesIptables(interface_name, dns_ip)
+	}
+}
+
+func cleanDnsHijackRulesIptables(interface_name string, dns_ip string) error {
 	script := fmt.Sprintf(`
 IFACE="%s"
 DNS_IP="%s"
@@ -96,6 +162,11 @@ delete_all_matches nat OUTPUT -p tcp --dport 53 \
   -j DNAT --to-destination ${DNS_IP}:53
 	`, interface_name, dns_ip)
 	_, err := runScriptWithSh(script)
+	return err
+}
+
+func cleanDnsHijackRulesNftables(interface_name string, dns_ip string) error {
+	_, err := runScriptWithSh("nft delete table ip whoisthat 2>/dev/null || true")
 	return err
 }
 

@@ -89,7 +89,7 @@ test_method = "http-get"
 `dns-servers` is a list of DNS server IPs used in three contexts:
 - **Profile resolution** — resolving proxy hostnames to IPs (all servers queried, results merged)
 - **Xray direct outbound** — DNS servers injected into xray's config for `freedom` (direct) outbound domain resolution
-- **TUN mode** — the first server in the list is used for system-wide DNS hijack via iptables DNAT rules
+- **TUN mode** — the first server in the list is used for system-wide DNS hijack via iptables/nftables DNAT rules
 
 `socks-port` and `http-port` set the local SOCKS5/HTTP proxy ports. `test-port-range` defines the port pool for latency testing (spawns temporary xray instances).
 
@@ -105,7 +105,7 @@ Encrypted at rest with AES-256-GCM — key auto-generated on first run.
 - **Group management** — add, rename, edit subscription URL, delete entire groups
 - **Profile import** — VLESS, VMess, Trojan, Shadowsocks, SOCKS5 URIs (paste, clipboard, or subscription refresh)
 - Connect / disconnect / switch profiles
-- Full system-wide TUN-mode VPN (`tun2socks` + `iptables`)
+- Full system-wide TUN-mode VPN (`tun2socks` + `iptables`/`nftables`, auto-detected)
 - **Profile testing** — three methods: TCP connect, HTTP GET (SOCKS5 → Cloudflare), HTTP HEAD
 - **Scan-all testing** — `t` scans all profiles across all groups with dedup; `T` tests only focused profile/subscription
 - **Custom routing rules** — domain, IP, protocol, port → proxy/direct/block (`r` tab). `direct` outbound works correctly in TUN mode via SO_MARK + fwmark routing (no root required).
@@ -149,8 +149,8 @@ Encrypted at rest with AES-256-GCM — key auto-generated on first run.
            │
      ┌─────┴─────┐
      ▼           ▼
-  TUN device   DNS routing
-  (tun2socks)  (iptables)
+   TUN device   DNS routing
+   (tun2socks)  (iptables/nftables)
 ```
 
 ### How it works
@@ -159,7 +159,7 @@ Encrypted at rest with AES-256-GCM — key auto-generated on first run.
 
 2. **Xray-core** handles all protocol-level work: VLESS/VMess/Trojan/Shadowsocks/SOCKS handshakes, Reality authentication, xHTTP/gRPC/WS/TCP transport, SOCKS5 local proxy. Its JSON config is generated on-the-fly from profile URIs by the bundled `whoisthat-parser`.
 
-3. **TUN mode** creates a virtual network interface (`whoisthattun`), sets up `iptables` rules (DNS hijack, MASQUERADE), and routes all system traffic through the Xray SOCKS5 proxy via `tun2socks`.
+3. **TUN mode** creates a virtual network interface (`whoisthattun`), sets up `iptables`/`nftables` rules (DNS hijack, MASQUERADE, auto-detected at runtime), and routes all system traffic through the Xray SOCKS5 proxy via `tun2socks`.
 
 4. **WhoisThat TUI** (this Rust binary) connects to the core over TCP on `127.0.0.1:4897`. It sends commands and receives asynchronous notifications. The TUI never touches networking directly — all VPN logic lives in the core.
 
@@ -351,7 +351,7 @@ Navigate with `j`/`k`, toggle booleans with `Space`/`Enter`, cycle values with `
 
 ### TUN Mode
 
-TUN mode creates a `whoisthattun` virtual interface, configures `iptables` rules (DNS hijack, MASQUERADE), and routes all system traffic through the VPN. DNS queries are redirected to the first server in `dns-servers` config.
+TUN mode creates a `whoisthattun` virtual interface, configures `iptables` or `nftables` rules (DNS hijack, MASQUERADE — auto-detected at runtime), and routes all system traffic through the VPN. DNS queries are redirected to the first server in `dns-servers` config.
 
 **No root required.** TUN mode runs under file capabilities (`cap_net_admin`, `cap_net_raw`, `cap_setpcap`). On first launch, the TUI detects missing capabilities and offers a one-time `pkexec` setup. After that, TUN works as a normal user. The install script sets capabilities automatically.
 
@@ -359,7 +359,7 @@ TUN mode creates a `whoisthattun` virtual interface, configures `iptables` rules
 - `whoisthat-core` has `cap_net_admin,cap_net_raw,cap_setpcap=+ep` set on its binary
 - At startup, the core uses `capset(2)` to move permitted capabilities into the inheritable set (`CAP_SETPCAP` enables this)
 - `prctl(PR_CAP_AMBIENT_RAISE)` promotes them to the ambient set
-- All subprocesses (`sh`, `ip`, `iptables`, `tun2socks`) automatically inherit the capabilities
+- All subprocesses (`sh`, `ip`, `iptables`/`nftables`, `tun2socks`) automatically inherit the capabilities
 - No `sudo`, no root, no setuid — pure Linux capabilities
 
 For debugging or manual setup: `sudo setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep /path/to/whoisthat-core`.
