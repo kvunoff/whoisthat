@@ -486,7 +486,7 @@ impl App {
         let mut cursor_pos_in_list = 0;
         let mut pos = 0;
 
-        for (gi, g) in self.groups.iter().enumerate() {
+        for (_gi, g) in self.groups.iter().enumerate() {
             if pos == self.cursor {
                 cursor_pos_in_list = items.len();
             }
@@ -509,7 +509,7 @@ impl App {
                 Span::styled(format!(" {} ({})", g.group.name, g.profiles.len()), s_text()),
             ])));
 
-            for (pi, p) in g.profiles.iter().enumerate() {
+            for (_pi, p) in g.profiles.iter().enumerate() {
                 if pos == self.cursor {
                     cursor_pos_in_list = items.len();
                 }
@@ -709,8 +709,7 @@ impl App {
             p.protocol.to_uppercase()
         };
 
-        let port = if !uri_params.port.is_empty() { &uri_params.port }
-            else if !p.uri.is_empty() { "—" } else { "—" };
+        let port = if !uri_params.port.is_empty() { &uri_params.port } else { "—" };
 
         let sni = if !uri_params.sni.is_empty() { &uri_params.sni }
             else if !p.host.is_empty() { &p.host } else { "—" };
@@ -821,16 +820,14 @@ impl App {
         let rows = Layout::vertical([
             Constraint::Length(1),
             Constraint::Length(3),
-            Constraint::Length(1),
             Constraint::Length(2),
         ])
         .split(inner);
 
         f.render_widget(Paragraph::new(hint).style(s_dim()), rows[0]);
 
-        let inp = if input.is_empty() { "" } else { input };
         f.render_widget(
-            Paragraph::new(inp)
+            Paragraph::new(input)
                 .block(
                     Block::default()
                         .borders(Borders::ALL)
@@ -840,13 +837,11 @@ impl App {
             rows[1],
         );
 
-        f.render_widget(Paragraph::new("").style(s_dim()), rows[2]);
-
         f.render_widget(
             Paragraph::new(" Enter import | Esc cancel | Ctrl+V paste from clipboard ")
                 .style(s_dim())
                 .alignment(Alignment::Center),
-            rows[3],
+            rows[2],
         );
     }
 
