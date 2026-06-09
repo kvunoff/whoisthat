@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 #[derive(Debug, Default, Clone)]
-pub struct VlessParams {
+pub struct ParsedUri {
     pub host: String,
     pub port: String,
     pub sni: String,
@@ -12,8 +12,8 @@ pub struct VlessParams {
     pub protocol: String,
 }
 
-pub fn parse_vless_uri(uri: &str) -> VlessParams {
-    let mut params = VlessParams::default();
+pub fn parse_uri(uri: &str) -> ParsedUri {
+    let mut params = ParsedUri::default();
 
     let without_scheme = uri.strip_prefix("vless://").unwrap_or(uri);
     let without_scheme = without_scheme.strip_prefix("vmess://").unwrap_or(without_scheme);

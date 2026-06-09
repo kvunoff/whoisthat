@@ -13,7 +13,7 @@ use super::logs::{render_logs, LogsState};
 use super::routing::{render_routing_popup, render_routing_tab, RoutingPopup};
 use super::settings::{render_settings, SettingsState};
 use super::theme::*;
-use super::uri::{self, VlessParams};
+use super::uri::{self, ParsedUri};
 
 use std::cell::RefCell;
 
@@ -76,7 +76,7 @@ pub struct App {
     pub routing_cursor: usize,
     pub routing_popup: Option<RoutingPopup>,
 
-    uri_cache: RefCell<Option<(i32, i32, VlessParams)>>,
+    uri_cache: RefCell<Option<(i32, i32, ParsedUri)>>,
 }
 
 impl App {
@@ -223,7 +223,7 @@ impl App {
         self.last_msg = None;
     }
 
-    pub fn cached_uri_params(&self, p: &Profile) -> VlessParams {
+    pub fn cached_uri_params(&self, p: &Profile) -> ParsedUri {
         let mut cache = self.uri_cache.borrow_mut();
         match *cache {
             Some((gid, pid, ref params)) if gid == p.group_id && pid == p.id => {
@@ -231,7 +231,7 @@ impl App {
             }
             _ => {}
         }
-        let params = uri::parse_vless_uri(&p.uri);
+        let params = uri::parse_uri(&p.uri);
         *cache = Some((p.group_id, p.id, params.clone()));
         params
     }
