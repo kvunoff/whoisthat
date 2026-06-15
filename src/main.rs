@@ -115,6 +115,7 @@ enum AppEvent {
     Input(Event),
     Tick,
     PublicIp(String),
+    PublicIpv6(String),
 }
 
 fn spawn_core(log_level: &str) -> io::Result<()> {
@@ -198,6 +199,21 @@ fn fetch_public_ip() -> Option<String> {
     let mut stream = TcpStream::connect_timeout(&addr, Duration::from_secs(5)).ok()?;
     stream.set_read_timeout(Some(Duration::from_secs(5))).ok()?;
     stream.write_all(b"GET / HTTP/1.0\r\nHost: api.ipify.org\r\nConnection: close\r\n\r\n").ok()?;
+    let mut buf = String::new();
+    stream.read_to_string(&mut buf).ok()?;
+    let body = buf.split("\r\n\r\n").nth(1)?;
+    let ip = body.trim();
+    if ip.is_empty() { None } else { Some(ip.to_string()) }
+}
+
+fn fetch_public_ipv6() -> Option<String> {
+    let addr = "api6.ipify.org:80"
+        .to_socket_addrs()
+        .ok()?
+        .next()?;
+    let mut stream = TcpStream::connect_timeout(&addr, Duration::from_secs(5)).ok()?;
+    stream.set_read_timeout(Some(Duration::from_secs(5))).ok()?;
+    stream.write_all(b"GET / HTTP/1.0\r\nHost: api6.ipify.org\r\nConnection: close\r\n\r\n").ok()?;
     let mut buf = String::new();
     stream.read_to_string(&mut buf).ok()?;
     let body = buf.split("\r\n\r\n").nth(1)?;
@@ -329,6 +345,9 @@ async fn main() -> io::Result<()> {
                 if let Some(ip) = tokio::task::spawn_blocking(fetch_public_ip).await.unwrap_or(None) {
                     let _ = ip_tx.send(AppEvent::PublicIp(ip));
                 }
+                if let Some(ip) = tokio::task::spawn_blocking(fetch_public_ipv6).await.unwrap_or(None) {
+                    let _ = ip_tx.send(AppEvent::PublicIpv6(ip));
+                }
                 tokio::time::sleep(Duration::from_secs(30)).await;
             }
         })
@@ -340,6 +359,9 @@ async fn main() -> io::Result<()> {
         tokio::spawn(async move {
             if let Some(ip) = tokio::task::spawn_blocking(fetch_public_ip).await.unwrap_or(None) {
                 let _ = ip_tx.send(AppEvent::PublicIp(ip));
+            }
+            if let Some(ip) = tokio::task::spawn_blocking(fetch_public_ipv6).await.unwrap_or(None) {
+                let _ = ip_tx.send(AppEvent::PublicIpv6(ip));
             }
         });
     }
@@ -464,6 +486,9 @@ async fn handle_core_event(
                     if let Some(ip) = tokio::task::spawn_blocking(fetch_public_ip).await.unwrap_or(None) {
                         let _ = tx.send(AppEvent::PublicIp(ip));
                     }
+                    if let Some(ip) = tokio::task::spawn_blocking(fetch_public_ipv6).await.unwrap_or(None) {
+                        let _ = tx.send(AppEvent::PublicIpv6(ip));
+                    }
                 });
             }
             // Save last connected profile
@@ -507,6 +532,9 @@ async fn handle_core_event(
                 tokio::time::sleep(Duration::from_secs(1)).await;
                 if let Some(ip) = tokio::task::spawn_blocking(fetch_public_ip).await.unwrap_or(None) {
                     let _ = tx.send(AppEvent::PublicIp(ip));
+                }
+                if let Some(ip) = tokio::task::spawn_blocking(fetch_public_ipv6).await.unwrap_or(None) {
+                    let _ = tx.send(AppEvent::PublicIpv6(ip));
                 }
             });
         }
@@ -587,6 +615,11 @@ async fn handle_input(
         AppEvent::PublicIp(ip) => {
             if app.show_ip {
                 app.public_ip = ip;
+            }
+        }
+        AppEvent::PublicIpv6(ip) => {
+            if app.show_ip {
+                app.public_ipv6 = ip;
             }
         }
         AppEvent::Input(input) => match input {
@@ -864,7 +897,7 @@ fn handle_routing_form(
         }
         KeyCode::Char(c) => {
             if *field == 0 {
-                *match_type = (*match_type + 1) % 4;
+                *match_type = (*match_type + 1) % 6;
             } else if *field == 2 {
                 *outbound = (*outbound + 1) % 3;
             } else {
@@ -1100,6 +1133,7 @@ async fn handle_normal_input(
                         cfg.show_ip = app.show_ip;
                         if !app.show_ip {
                             app.public_ip = String::new();
+                            app.public_ipv6 = String::new();
                         }
                         config::save_config(cfg);
                     }

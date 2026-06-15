@@ -41,7 +41,7 @@ func defaultConfig() AppConfig {
 			Start: 3095,
 			End:   30120,
 		},
-		DnsServers:  []string{"1.1.1.1", "8.8.8.8"},
+		DnsServers:  []string{"1.1.1.1", "8.8.8.8", "2606:4700:4700::1111", "2001:4860:4860::8888"},
 		HwidEnabled: true,
 		UserAgent:   "whoisthat/v0.3.6",
 	}

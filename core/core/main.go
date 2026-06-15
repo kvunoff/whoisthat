@@ -5,6 +5,7 @@ import (
 	"whoisthat-core/lib"
 	"whoisthat-core/lib/AppConfig"
 	"whoisthat-core/lib/TCPServer"
+	"whoisthat-core/lib/geo"
 	"whoisthat-core/lib/logger"
 	proxy "whoisthat-core/lib/proxy/mainproxy"
 	tunmode "whoisthat-core/lib/proxy/tun"
@@ -39,10 +40,15 @@ func main() {
 
 	log.SetFlags(log.Ltime)
 	logger.SetLevel(os.Getenv("WHOISTHAT_LOG_LEVEL"))
+	logger.Info("whoisthat-core starting")
 
 	stop_sig := make(chan bool, 1)
 	utils.RaiseAmbientCaps()
 	appconfig.LoadConfig()
+	geoDir := filepath.Join(configDir, "whoisthat", "geo")
+	if _, err := geo.EnsureAssets(geoDir); err != nil {
+		logger.Warnf("main: geo assets not available: %v", err)
+	}
 	database := db.DB{}
 	database.Initialize()
 	appconfig.SaveConfig()

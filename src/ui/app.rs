@@ -61,6 +61,7 @@ pub struct App {
     pub test_method: String,
     pub hwid_info: Option<HwidData>,
     pub public_ip: String,
+    pub public_ipv6: String,
 
     pub tab: ActiveTab,
     pub focus: Focus,
@@ -97,6 +98,7 @@ impl App {
             test_method,
             hwid_info: None,
             public_ip: String::new(),
+            public_ipv6: String::new(),
             tab: ActiveTab::Profiles,
             focus: Focus::LeftPanel,
             cursor: 0,
@@ -354,13 +356,10 @@ impl App {
             Span::styled(format!(" {} {} ", icon, status_text), icon_style),
         ];
         if self.show_ip {
-            let ip_display = if self.public_ip.is_empty() {
-                "..."
-            } else {
-                &self.public_ip
-            };
+            let ip4 = if self.public_ip.is_empty() { "..." } else { &self.public_ip };
+            let ip6 = if self.public_ipv6.is_empty() { "..." } else { &self.public_ipv6 };
             status_spans.push(Span::styled("│ ", s_faint()));
-            status_spans.push(Span::styled(ip_display, s_dim()));
+            status_spans.push(Span::styled(format!("{} {}", ip4, ip6), s_dim()));
         }
         let status_line = Line::from(status_spans);
 

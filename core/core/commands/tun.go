@@ -9,6 +9,7 @@ import (
 	"whoisthat-core/utils"
 	"errors"
 	"fmt"
+	"net"
 )
 
 func (cmd *Cmd) DisableTun(data structs.DisableTunData, tun_manager *tunmode.TunModeManager) {
@@ -35,6 +36,34 @@ func (cmd *Cmd) EnableTun(data structs.EnableTunData, proxy_manager *proxy.Proxy
 	cmd.enableTun(status.Profile, tun_manager)
 }
 
+func pickDns(dnsServers []string) (dns4, dns6 string) {
+	for _, s := range dnsServers {
+		ip := net.ParseIP(s)
+		if ip == nil {
+			continue
+		}
+		if ip.To4() != nil {
+			if dns4 == "" {
+				dns4 = s
+			}
+		} else {
+			if dns6 == "" {
+				dns6 = s
+			}
+		}
+		if dns4 != "" && dns6 != "" {
+			break
+		}
+	}
+	if dns4 == "" {
+		dns4 = "1.1.1.1"
+	}
+	if dns6 == "" {
+		dns6 = "2606:4700:4700::1111"
+	}
+	return
+}
+
 func (cmd *Cmd) enableTun(profile structs.Profile, tun_manager *tunmode.TunModeManager) {
 	resolved, err := resolveHostAndAddress(profile, appconfig.GetConfig().DnsServers)
 	if err != nil {
@@ -43,13 +72,10 @@ func (cmd *Cmd) enableTun(profile structs.Profile, tun_manager *tunmode.TunModeM
 		return
 	}
 
-	logger.Info("tun: resolved", resolved)
+	logger.Infof("tun: resolved %d IPv4, %d IPv6", len(resolved.IPv4), len(resolved.IPv6))
 
-	dns := "1.1.1.1"
-	if len(appconfig.GetConfig().DnsServers) > 0 {
-		dns = appconfig.GetConfig().DnsServers[0]
-	}
-	err = tun_manager.Start(resolved, dns)
+	dns4, dns6 := pickDns(appconfig.GetConfig().DnsServers)
+	err = tun_manager.Start(resolved.IPv4, resolved.IPv6, dns4, dns6)
 	if err != nil {
 		logger.Warn("tun: failed to start:", err)
 		cmd.warn("enable-tun-failed", "Failed to enable tun mode")
@@ -57,28 +83,30 @@ func (cmd *Cmd) enableTun(profile structs.Profile, tun_manager *tunmode.TunModeM
 	}
 }
 
-func resolveHostAndAddress(profile structs.Profile, dnsServers []string) ([]string, error) {
-	var ipv4s []string
+func resolveHostAndAddress(profile structs.Profile, dnsServers []string) (*utils.ResolvedIPs, error) {
+	result := &utils.ResolvedIPs{}
 	var errs []error
-	if profile.Host != "" {
-		resolved, err := utils.ResolveDomainIpv4(profile.Host, dnsServers)
-		if err == nil {
-			ipv4s = append(ipv4s, resolved...)
-		} else {
-			errs = append(errs, err)
+
+	resolve := func(domain string) {
+		if domain == "" {
+			return
 		}
-	}
-	if profile.Address != "" {
-		resolved, err := utils.ResolveDomainIpv4(profile.Address, dnsServers)
-		if err == nil {
-			ipv4s = append(ipv4s, resolved...)
-		} else {
+		r, err := utils.ResolveDomain(domain, dnsServers)
+		if err != nil {
 			errs = append(errs, err)
+			return
 		}
+		result.IPv4 = append(result.IPv4, r.IPv4...)
+		result.IPv6 = append(result.IPv6, r.IPv6...)
 	}
-	if len(ipv4s) == 0 {
-		return ipv4s, fmt.Errorf("failed to resolve any ipv4s: %w", errors.Join(errs...))
+
+	resolve(profile.Host)
+	resolve(profile.Address)
+
+	if len(result.IPv4) == 0 && len(result.IPv6) == 0 {
+		return result, fmt.Errorf("failed to resolve any IPs: %w", errors.Join(errs...))
 	}
-	unique_ips := utils.RemoveDuplicates(ipv4s)
-	return unique_ips, nil
+	result.IPv4 = utils.RemoveDuplicates(result.IPv4)
+	result.IPv6 = utils.RemoveDuplicates(result.IPv6)
+	return result, nil
 }

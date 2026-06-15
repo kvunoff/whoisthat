@@ -10,28 +10,46 @@ import (
 	"github.com/miekg/dns"
 )
 
-func ResolveDomainIpv4(domain string, dnsServers []string) ([]string, error) {
-	ipSet := make(map[string]bool)
+type ResolvedIPs struct {
+	IPv4 []string
+	IPv6 []string
+}
+
+func ResolveDomain(domain string, dnsServers []string) (*ResolvedIPs, error) {
+	result := &ResolvedIPs{}
+	ipSet4 := make(map[string]bool)
+	ipSet6 := make(map[string]bool)
+
 	for _, server := range dnsServers {
-		ips, err := queryDNSServer(domain, server+":53")
+		v4, err := queryDNSServer(domain, server+":53", dns.TypeA)
 		if err != nil {
-			logger.Warnf("Query to %s failed: %v", server, err)
-			continue
+			logger.Warnf("A query to %s failed: %v", server, err)
+		} else {
+			for _, ip := range v4 {
+				ipSet4[ip] = true
+			}
 		}
 
-		for _, ip := range ips {
-			ipSet[ip] = true
+		v6, err := queryDNSServer(domain, server+":53", dns.TypeAAAA)
+		if err != nil {
+			logger.Warnf("AAAA query to %s failed: %v", server, err)
+		} else {
+			for _, ip := range v6 {
+				ipSet6[ip] = true
+			}
 		}
 	}
 
-	var result []string
-	for ip := range ipSet {
-		result = append(result, ip)
+	for ip := range ipSet4 {
+		result.IPv4 = append(result.IPv4, ip)
 	}
+	for ip := range ipSet6 {
+		result.IPv6 = append(result.IPv6, ip)
+	}
+	sort.Strings(result.IPv4)
+	sort.Strings(result.IPv6)
 
-	sort.Strings(result)
-
-	if len(result) == 0 {
+	if len(result.IPv4) == 0 && len(result.IPv6) == 0 {
 		logger.Warn("No IPs found via DNS servers, falling back to system resolver")
 		systemIPs, err := ResolveDomainSystem(domain)
 		if err != nil {
@@ -43,7 +61,18 @@ func ResolveDomainIpv4(domain string, dnsServers []string) ([]string, error) {
 	return result, nil
 }
 
-func queryDNSServer(domain, server string) ([]string, error) {
+func ResolveDomainIpv4(domain string, dnsServers []string) ([]string, error) {
+	r, err := ResolveDomain(domain, dnsServers)
+	if err != nil {
+		return nil, err
+	}
+	if len(r.IPv4) == 0 {
+		return nil, fmt.Errorf("no A records found for %s", domain)
+	}
+	return r.IPv4, nil
+}
+
+func queryDNSServer(domain, server string, recordType uint16) ([]string, error) {
 	var ips []string
 
 	udpClient := &dns.Client{
@@ -52,7 +81,7 @@ func queryDNSServer(domain, server string) ([]string, error) {
 	}
 
 	msg := new(dns.Msg)
-	msg.SetQuestion(dns.Fqdn(domain), dns.TypeA)
+	msg.SetQuestion(dns.Fqdn(domain), recordType)
 	msg.RecursionDesired = true
 	msg.SetEdns0(4096, false) // Disable DNS cookies
 
@@ -73,30 +102,39 @@ func queryDNSServer(domain, server string) ([]string, error) {
 	}
 
 	for _, answer := range resp.Answer {
-		if a, ok := answer.(*dns.A); ok {
-			ips = append(ips, a.A.String())
+		switch recordType {
+		case dns.TypeA:
+			if a, ok := answer.(*dns.A); ok {
+				ips = append(ips, a.A.String())
+			}
+		case dns.TypeAAAA:
+			if a, ok := answer.(*dns.AAAA); ok {
+				ips = append(ips, a.AAAA.String())
+			}
 		}
 	}
 
 	return ips, nil
 }
 
-func ResolveDomainSystem(domain string) ([]string, error) {
+func ResolveDomainSystem(domain string) (*ResolvedIPs, error) {
 	ips, err := net.LookupIP(domain)
 	if err != nil {
 		return nil, err
 	}
 
-	var ipv4s []string
+	result := &ResolvedIPs{}
 	for _, ip := range ips {
 		if ip.To4() != nil {
-			ipv4s = append(ipv4s, ip.String())
+			result.IPv4 = append(result.IPv4, ip.String())
+		} else if ip.To16() != nil {
+			result.IPv6 = append(result.IPv6, ip.String())
 		}
 	}
 
-	if len(ipv4s) == 0 {
-		return ipv4s, fmt.Errorf("no ipv4 found for domain: %s", domain)
+	if len(result.IPv4) == 0 && len(result.IPv6) == 0 {
+		return result, fmt.Errorf("no IPs found for domain: %s", domain)
 	}
 
-	return ipv4s, nil
+	return result, nil
 }

@@ -38,36 +38,44 @@ func NewServer(database *db.DB, proxy_manager *proxy.ProxyManager, tun_manager *
 
 func (s *Server) Start() {
 	app_config := appconfig.GetConfig()
-	listen, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", app_config.CoreTCPPort))
+	port := app_config.CoreTCPPort
 
+	listen4, err := net.Listen("tcp4", fmt.Sprintf("127.0.0.1:%d", port))
 	if err != nil {
-		logger.Fatal("failed to listen:", err)
+		logger.Fatal("failed to listen on IPv4:", err)
 	}
 
-	logger.Info("listening on port", app_config.CoreTCPPort)
+	listen6, err := net.Listen("tcp6", fmt.Sprintf("[::1]:%d", port))
+	if err != nil {
+		logger.Warn("failed to listen on IPv6:", err)
+	}
+
+	logger.Infof("listening on port %d (v4 + v6)", port)
 
 	go s.handleTunModeStatusChange()
 	go s.handleStatusChange()
 	go s.handleTestResults()
 	go s.handleStatsChange()
 
-	go func() {
+	accept := func(listener net.Listener) {
 		for {
-			conn, err := listen.Accept()
-
+			conn, err := listener.Accept()
 			if err != nil {
 				logger.Warn("failed to accept connection:", err)
 				continue
 			}
-
 			s.mutex.Lock()
 			clientID := conn.RemoteAddr().String()
 			s.clients[clientID] = conn
 			s.mutex.Unlock()
-
 			go s.handleConnection(conn, clientID)
 		}
-	}()
+	}
+
+	go accept(listen4)
+	if listen6 != nil {
+		go accept(listen6)
+	}
 }
 
 func (s *Server) Broadcast(msg []byte) {

@@ -1,6 +1,7 @@
 package xray
 
 import (
+	"whoisthat-core/lib/geo"
 	"whoisthat-core/lib/logger"
 	"whoisthat-core/utils"
 	"context"
@@ -9,6 +10,7 @@ import (
 	"os/exec"
 	"sync"
 	"syscall"
+	"time"
 )
 
 type XrayCore struct {
@@ -63,6 +65,16 @@ func (x *XrayCore) Start(stdinPipe []byte) error {
 			},
 		}
 		logger.Infof("xray will run as uid=%d gid=%d", uid, gid)
+	}
+
+	if ad := geo.AssetDir(); ad != "" {
+		geo.WaitReady(3 * time.Second)
+		if geo.IsReady() {
+			cmd.Env = append(os.Environ(), "XRAY_LOCATION_ASSET="+ad)
+			logger.Infof("xray XRAY_LOCATION_ASSET=%s", ad)
+		} else {
+			logger.Warn("xray: geo assets not ready, skipping XRAY_LOCATION_ASSET")
+		}
 	}
 
 	if err := cmd.Start(); err != nil {

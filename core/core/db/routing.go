@@ -47,7 +47,7 @@ func defaultRouting() structs.RoutingConfig {
 		Rules: []structs.RoutingRule{
 			{
 				Type:        "field",
-				IP:          "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16",
+				IP:          "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7,fe80::/10,::1/128",
 				OutboundTag: "direct",
 				Enabled:     true,
 			},

@@ -10,7 +10,7 @@ use crate::core_client::protocol::*;
 
 use super::theme::*;
 
-const TYPE_LABELS: &[&str] = &["domain", "ip", "protocol", "port"];
+const TYPE_LABELS: &[&str] = &["domain", "ip", "protocol", "port", "geoip", "geosite"];
 const OUTBOUND_LABELS: &[&str] = &["proxy", "direct", "block"];
 
 #[derive(Debug, Clone, PartialEq)]
@@ -37,9 +37,17 @@ pub enum RoutingPopup {
 
 fn rule_match_label(rule: &RoutingRule) -> String {
     if !rule.domain.is_empty() {
-        format!("domain: {}", rule.domain)
+        if rule.domain.starts_with("geosite:") {
+            format!("geosite: {}", &rule.domain[8..])
+        } else {
+            format!("domain: {}", rule.domain)
+        }
     } else if !rule.ip.is_empty() {
-        format!("ip: {}", rule.ip)
+        if rule.ip.starts_with("geoip:") {
+            format!("geoip: {}", &rule.ip[6..])
+        } else {
+            format!("ip: {}", rule.ip)
+        }
     } else if !rule.protocol.is_empty() {
         format!("protocol: {}", rule.protocol)
     } else if !rule.port.is_empty() {
@@ -54,7 +62,11 @@ fn rule_outbound_label(rule: &RoutingRule) -> &str {
 }
 
 pub fn rule_to_form(rule: &RoutingRule) -> (usize, String, usize) {
-    let (match_type, value) = if !rule.domain.is_empty() {
+    let (match_type, value) = if rule.domain.starts_with("geosite:") {
+        (5, rule.domain.clone())
+    } else if rule.ip.starts_with("geoip:") {
+        (4, rule.ip.clone())
+    } else if !rule.domain.is_empty() {
         (0, rule.domain.clone())
     } else if !rule.ip.is_empty() {
         (1, rule.ip.clone())
@@ -83,6 +95,8 @@ pub fn form_to_rule(match_type: usize, value: &str, outbound: usize) -> RoutingR
         1 => rule.ip = value.to_string(),
         2 => rule.protocol = value.to_string(),
         3 => rule.port = value.to_string(),
+        4 => rule.ip = value.to_string(),
+        5 => rule.domain = value.to_string(),
         _ => {}
     }
     rule
@@ -231,14 +245,16 @@ fn render_rule_form(
 
     let value_label = match match_type {
         0 => "Domain:  (e.g. geosite:category-ads, example.com)",
-        1 => "IP:  (e.g. geoip:private, 10.0.0.0/8)",
+        1 => "IP:  (e.g. geoip:private, 10.0.0.0/8, fc00::/7)",
         2 => "Protocol:  (e.g. http, tls, bittorrent)",
         3 => "Port:  (e.g. 443, 8000-9000)",
+        4 => "GeoIP:  (e.g. geoip:ru, geoip:cn, geoip:private)",
+        5 => "GeoSite:  (e.g. geosite:youtube, geosite:netflix)",
         _ => "",
     };
     f.render_widget(Paragraph::new(value_label).style(f1), Rect::new(inner.x + 1, y, w, 1));
     y += 1;
-    let val = if value.is_empty() { match match_type { 0 => "geosite:...", 1 => "geoip:...", 2 => "http", _ => "443" } } else { value };
+    let val = if value.is_empty() { match match_type { 0 => "geosite:...", 1 => "geoip:...", 2 => "http", 3 => "443", 4 => "geoip:ru", 5 => "geosite:youtube", _ => "" } } else { value };
     f.render_widget(
         Paragraph::new(val)
             .block(Block::default().borders(Borders::ALL).border_style(f1))
