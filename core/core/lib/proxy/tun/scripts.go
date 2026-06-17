@@ -305,6 +305,7 @@ ip link set dev $TUN_NAME up
 func deleteTun(name string) error {
 	script := fmt.Sprintf(`
 TUN_NAME="%s"
+ip link set $TUN_NAME down 2>/dev/null || true
 ip tuntap del mode tun dev $TUN_NAME
 	`, name)
 	_, err := runScriptWithSh(script)

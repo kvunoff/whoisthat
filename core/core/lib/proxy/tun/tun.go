@@ -6,6 +6,7 @@ import (
 	"whoisthat-core/utils"
 	"errors"
 	"fmt"
+	"os/exec"
 	"sync"
 )
 
@@ -191,6 +192,9 @@ func (t *TunModeManager) Stop() {
 }
 
 func (t *TunModeManager) clearNetworkRules() error {
+	// Kill any leftover tun2socks that might be holding the TUN interface
+	exec.Command("pkill", "-9", "tun2socks").Run()
+
 	errs := []error{
 		deleteTunIpRoute(t.tun_name, t.tun_ip),
 		deleteTunIpRoute6(t.tun_name, t.tun_ipv6),

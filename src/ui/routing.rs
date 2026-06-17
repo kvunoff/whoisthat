@@ -281,6 +281,138 @@ fn render_rule_form(
     );
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core_client::protocol::RoutingRule;
+
+    fn rule(domain: &str, ip: &str, protocol: &str, port: &str, outbound_tag: &str) -> RoutingRule {
+        RoutingRule {
+            r#type: "field".into(),
+            domain: domain.into(),
+            ip: ip.into(),
+            protocol: protocol.into(),
+            port: port.into(),
+            outbound_tag: outbound_tag.into(),
+            enabled: true,
+        }
+    }
+
+    // --- form_to_rule ---
+
+    #[test]
+    fn form_to_rule_domain() {
+        let r = form_to_rule(0, "example.com", 0);
+        assert_eq!(r.domain, "example.com");
+        assert!(r.ip.is_empty());
+        assert_eq!(r.outbound_tag, "proxy");
+        assert_eq!(r.r#type, "field");
+        assert!(r.enabled);
+    }
+
+    #[test]
+    fn form_to_rule_ip() {
+        let r = form_to_rule(1, "10.0.0.0/8", 1);
+        assert_eq!(r.ip, "10.0.0.0/8");
+        assert!(r.domain.is_empty());
+        assert_eq!(r.outbound_tag, "direct");
+    }
+
+    #[test]
+    fn form_to_rule_protocol() {
+        let r = form_to_rule(2, "bittorrent", 2);
+        assert_eq!(r.protocol, "bittorrent");
+        assert_eq!(r.outbound_tag, "block");
+    }
+
+    #[test]
+    fn form_to_rule_port() {
+        let r = form_to_rule(3, "8000-9000", 0);
+        assert_eq!(r.port, "8000-9000");
+    }
+
+    #[test]
+    fn form_to_rule_geoip() {
+        let r = form_to_rule(4, "geoip:ru", 1);
+        assert_eq!(r.ip, "geoip:ru");
+        assert!(r.domain.is_empty());
+    }
+
+    #[test]
+    fn form_to_rule_geosite() {
+        let r = form_to_rule(5, "geosite:youtube", 2);
+        assert_eq!(r.domain, "geosite:youtube");
+        assert!(r.ip.is_empty());
+    }
+
+    // --- rule_to_form ---
+
+    #[test]
+    fn rule_to_form_domain() {
+        let (mt, val, ob) = rule_to_form(&rule("example.com", "", "", "", ""));
+        assert_eq!(mt, 0);
+        assert_eq!(val, "example.com");
+        assert_eq!(ob, 0); // proxy
+    }
+
+    #[test]
+    fn rule_to_form_ip() {
+        let (mt, val, ob) = rule_to_form(&rule("", "192.168.1.0/24", "", "", "direct"));
+        assert_eq!(mt, 1);
+        assert_eq!(val, "192.168.1.0/24");
+        assert_eq!(ob, 1);
+    }
+
+    #[test]
+    fn rule_to_form_protocol() {
+        let (mt, val, ob) = rule_to_form(&rule("", "", "http", "", "block"));
+        assert_eq!(mt, 2);
+        assert_eq!(val, "http");
+        assert_eq!(ob, 2);
+    }
+
+    #[test]
+    fn rule_to_form_port() {
+        let (mt, val, _ob) = rule_to_form(&rule("", "", "", "443", ""));
+        assert_eq!(mt, 3);
+        assert_eq!(val, "443");
+    }
+
+    #[test]
+    fn rule_to_form_geoip() {
+        let (mt, val, _ob) = rule_to_form(&rule("", "geoip:private", "", "", ""));
+        assert_eq!(mt, 4);
+        assert_eq!(val, "geoip:private");
+    }
+
+    #[test]
+    fn rule_to_form_geosite() {
+        let (mt, val, _ob) = rule_to_form(&rule("geosite:netflix", "", "", "", ""));
+        assert_eq!(mt, 5);
+        assert_eq!(val, "geosite:netflix");
+    }
+
+    // --- round-trip ---
+
+    #[test]
+    fn round_trip_domain_proxy() {
+        let original = rule("example.com", "", "", "", "proxy");
+        let (mt, val, ob) = rule_to_form(&original);
+        let reconstructed = form_to_rule(mt, &val, ob);
+        assert_eq!(reconstructed.domain, original.domain);
+        assert_eq!(reconstructed.outbound_tag, original.outbound_tag);
+    }
+
+    #[test]
+    fn round_trip_geosite_block() {
+        let original = rule("geosite:category-ads", "", "", "", "block");
+        let (mt, val, ob) = rule_to_form(&original);
+        let reconstructed = form_to_rule(mt, &val, ob);
+        assert_eq!(reconstructed.domain, original.domain);
+        assert_eq!(reconstructed.outbound_tag, "block");
+    }
+}
+
 fn render_routing_confirm(f: &mut Frame, area: Rect) {
     let v = Layout::vertical([
         Constraint::Fill(1),
