@@ -1,6 +1,7 @@
 package appconfig
 
 import (
+	"net"
 	"regexp"
 	"testing"
 )
@@ -71,5 +72,37 @@ func TestDefaultConfigUserAgent(t *testing.T) {
 	cfg := defaultConfig()
 	if cfg.UserAgent == "" {
 		t.Error("UserAgent must not be empty")
+	}
+}
+
+func TestSanitizeDnsServersKeepsValidDropsInvalid(t *testing.T) {
+	in := []string{
+		"1.1.1.1",
+		"2606:4700:4700::1111",
+		"8.8.8.8\" || touch /tmp/pwned || echo \"", // shell injection attempt
+		"not-an-ip",
+		"",
+	}
+	got := sanitizeDnsServers(in)
+	want := []string{"1.1.1.1", "2606:4700:4700::1111"}
+	if len(got) != len(want) {
+		t.Fatalf("sanitizeDnsServers(%v) = %v, want %v", in, got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("got[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestSanitizeDnsServersFallsBackToDefaults(t *testing.T) {
+	got := sanitizeDnsServers([]string{"garbage", ""})
+	if len(got) == 0 {
+		t.Fatal("expected fallback to defaults, got empty slice")
+	}
+	for _, s := range got {
+		if net.ParseIP(s) == nil {
+			t.Errorf("fallback returned non-IP entry %q", s)
+		}
 	}
 }

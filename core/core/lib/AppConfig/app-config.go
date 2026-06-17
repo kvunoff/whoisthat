@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -43,7 +44,7 @@ func defaultConfig() AppConfig {
 		},
 		DnsServers:  []string{"1.1.1.1", "8.8.8.8", "2606:4700:4700::1111", "2001:4860:4860::8888"},
 		HwidEnabled: true,
-		UserAgent:   "whoisthat/v0.5.0",
+		UserAgent:   "whoisthat/v0.5.1",
 	}
 }
 
@@ -59,7 +60,28 @@ func LoadConfig() {
 	if config.HwidEnabled && config.Hwid == "" {
 		config.Hwid = generateHwid()
 	}
+	config.DnsServers = sanitizeDnsServers(config.DnsServers)
 	application_configuration = config
+}
+
+// sanitizeDnsServers drops any entry that is not a literal IP address. DNS
+// servers are interpolated into root-capable shell scripts (TUN DNS hijack/
+// routing) and into xray's config; restricting them to parseable IPs closes
+// that injection surface. Falls back to defaults if nothing valid remains.
+func sanitizeDnsServers(servers []string) []string {
+	valid := make([]string, 0, len(servers))
+	for _, s := range servers {
+		if net.ParseIP(s) != nil {
+			valid = append(valid, s)
+			continue
+		}
+		logger.Warnf("config: ignoring invalid dns server %q", s)
+	}
+	if len(valid) == 0 {
+		logger.Warn("config: no valid dns servers configured, using defaults")
+		return defaultConfig().DnsServers
+	}
+	return valid
 }
 
 func generateHwid() string {
