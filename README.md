@@ -374,6 +374,35 @@ For debugging or manual setup: `sudo setcap cap_net_admin,cap_net_raw,cap_setpca
 
 ---
 
+## Testing
+
+The project has unit tests for both the Rust TUI and the Go core. No external dependencies or network access required — all tests run in milliseconds.
+
+### Rust
+
+```bash
+cargo test
+```
+
+Covers:
+- **Message dispatch** (`src/core_client/dispatch.rs`) — all 16 TCP message types, unknown type handling, malformed JSON
+- **Routing form logic** (`src/ui/routing.rs`) — `form_to_rule` / `rule_to_form` for all 6 match types and 3 outbounds, round-trip consistency
+- **Text editor** (`src/main.rs`) — `edit_text_field`: insert, backspace, delete, cursor movement, Home/End boundary conditions
+
+### Go
+
+```bash
+cd core/core
+go test ./lib/crypto/... ./lib/AppConfig/... ./db/...
+```
+
+Covers:
+- **Crypto** (`lib/crypto`) — AES-256-GCM encrypt/decrypt round-trip, base64 wrappers, wrong key, short ciphertext, empty plaintext, nonce randomness
+- **Config** (`lib/AppConfig`) — default port values, DNS servers, HWID format (16 lowercase hex chars), HWID randomness
+- **Database** (`db`) — path helpers, encrypt/decrypt round-trip via `writeEncryptedJSON`/`readEncryptedJSON`, encrypted file detection, key file creation and reuse across instances
+
+---
+
 ## File Structure
 
 ```
