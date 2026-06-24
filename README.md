@@ -60,6 +60,7 @@ and moved to PATH. tun2socks is only needed for TUN mode.
 ### Configuration
 
 **TUI config** — `~/.config/whoisthat/config.toml`:
+
 ```toml
 core_tcp_port = 4897
 core_host = "127.0.0.1"
@@ -73,6 +74,7 @@ test_method = "http-get"
 ```
 
 **Core config** — `~/.config/whoisthat/config.json` (auto-generated):
+
 ```json
 {
   "socks-port": 3090,
@@ -87,6 +89,7 @@ test_method = "http-get"
 ```
 
 `dns-servers` is a list of DNS server IPs used in three contexts:
+
 - **Profile resolution** — resolving proxy hostnames to IPs (all servers queried, results merged)
 - **Xray direct outbound** — DNS servers injected into xray's config for `freedom` (direct) outbound domain resolution
 - **TUN mode** — the first server in the list is used for system-wide DNS hijack via iptables/nftables DNAT rules
@@ -122,7 +125,7 @@ Encrypted at rest with AES-256-GCM — key auto-generated on first run.
 
 ## Architecture
 
-```
+```text
 ┌──────────────────────────────┐
 │  WhoisThat (Rust TUI)        │  ratatui + crossterm
 │  ⋅ Profiles ⋅ Logs ⋅ Settings│
@@ -168,11 +171,13 @@ Encrypted at rest with AES-256-GCM — key auto-generated on first run.
 Custom routing rules (domain, IP, protocol, port) can redirect traffic to `proxy`, `direct`, or `block` outbounds. Rules are stored in `~/.local/share/whoisthat/db/routing.json` and injected into xray's JSON config on every connect.
 
 **Proxy mode (SOCKS5):**
+
 - DNS queries (UDP port 53) always go through `proxy` — this prevents user domain rules from interfering with DNS resolution
 - Matched traffic follows the user's rule; unmatched traffic implicitly falls back to `proxy` (first outbound)
 - `direct` rules work correctly: xray resolves the domain via its internal DNS (through proxy), then connects directly via the `freedom` outbound
 
 **TUN mode:**
+
 - The TUN default route sends ALL system traffic through `tun2socks` → SOCKS5 → xray. Without special handling, xray's own `freedom` outbound traffic would loop back into TUN
 - **Root mode:** Xray runs under a dedicated UID (61000+ range). `ip rule uidrange` + table 100 routes xray traffic through the physical gateway, bypassing TUN
 - **Capability mode (no root):** Freedom outbound sets `SO_MARK` via xray's `sockopt.mark`. `ip rule fwmark 1 table 100` routes marked packets through the physical gateway. Works under file capabilities — no root needed
@@ -185,7 +190,7 @@ Custom routing rules (domain, IP, protocol, port) can redirect traffic to `proxy
 When subscription updates are fetched, the core sends HTTP headers identifying the device (Remnawave/Happ standard):
 
 | Header | Value | Source |
-|--------|-------|--------|
+| -------- | ------- | -------- |
 | `x-hwid` | `1fb1e0141ab3e35a` | Auto-generated 8-byte hex (stored in config.json) |
 | `x-device-os` | `Linux` | `runtime.GOOS` |
 | `x-ver-os` | `6.12.0-arch1-1` | `uname -r` |
@@ -202,7 +207,7 @@ HWID can be toggled off, reset, or have its user-agent customized in Settings.
 
 ### Wire format
 
-```
+```text
 ┌──────────────┬───────────────────────────┐
 │ 4 bytes (BE) │ JSON payload              │
 │ uint32 len   │ {"msg":"...","data":{...}}│
@@ -214,7 +219,7 @@ Both client→core commands and core→client notifications use the same framing
 ### Commands (Client → Core)
 
 | Message | Data | Response |
-|---|---|---|
+| --- | --- | --- |
 | `get-application-state` | `{}` | `application-state` |
 | `connect` | `{"profile":{"id":int,"group_id":int}}` | `status-changed` |
 | `disconnect` | `{}` | `status-changed` |
@@ -237,7 +242,7 @@ Both client→core commands and core→client notifications use the same framing
 ### Notifications (Core → All Clients)
 
 | Message | Data |
-|---|---|
+| -- | --- |
 | `application-state` | Full state: groups, profiles, connection status, TUN status, HWID info |
 | `status-changed` | `{"connection":"connected"\|"disconnected","profile":{...}}` |
 | `profiles-added` | `{"profiles":[...]}` |
@@ -255,6 +260,7 @@ Both client→core commands and core→client notifications use the same framing
 | `warn` | `{"key":"str","content":"str"}` |
 
 ### Profile structure
+
 ```json
 {
   "id": 1,
@@ -268,9 +274,11 @@ Both client→core commands and core→client notifications use the same framing
   "test-result": 45
 }
 ```
+
 `test-result`: `>0` = latency in ms, `-1` = failed, `-2` = testing, `0` = untested.
 
 ### Group structure
+
 ```json
 {
   "id": 1,
@@ -284,6 +292,7 @@ Both client→core commands and core→client notifications use the same framing
   "sub_total": 107374182400
 }
 ```
+
 Subscription metadata (`sub_*`) is populated from the `subscription-userinfo` HTTP header returned by the subscription server. Fields are `omitzero` — omitted from JSON when zero.
 
 ---
@@ -293,7 +302,7 @@ Subscription metadata (`sub_*`) is populated from the `subscription-userinfo` HT
 ### Navigation
 
 | Key | Action |
-|---|---|
+| --- | --- |
 | `j` / `↓` | Move cursor down |
 | `k` / `↑` | Move cursor up |
 | `g` | Jump to top |
@@ -304,7 +313,7 @@ Subscription metadata (`sub_*`) is populated from the `subscription-userinfo` HT
 ### Connection
 
 | Key | Action |
-|---|---|
+| --- | --- |
 | `c` / `Enter` | Connect to selected profile |
 | `d` | Disconnect |
 | `t` | Test all profiles (starts from cursor, top-to-bottom, dedup) |
@@ -314,7 +323,7 @@ Subscription metadata (`sub_*`) is populated from the `subscription-userinfo` HT
 ### Profiles & Groups
 
 | Key | Action |
-|---|---|
+| --- | --- |
 | `a` | Import profile URI (clipboard or manual input — vless://, vmess://, trojan://, ss://, socks://) |
 | `x` | Delete selected profile |
 | `X` | Delete current group (with confirmation) |
@@ -326,7 +335,7 @@ Subscription metadata (`sub_*`) is populated from the `subscription-userinfo` HT
 ### Tabs & Quit
 
 | Key | Action |
-|---|---|
+| --- | --- |
 | `l` | Logs view (live tail with auto-scroll) |
 | `r` | Routing rules (domain/IP/protocol/port → proxy/direct/block) |
 | `s` | Settings |
@@ -337,7 +346,7 @@ Subscription metadata (`sub_*`) is populated from the `subscription-userinfo` HT
 ### Settings
 
 | Setting | Values | Description |
-|---|---|---|
+| --- | --- | --- |
 | Autoconnect | on/off | Auto-connect to last used profile on startup |
 | Show IP | on/off | Display public IP in top bar |
 | TUI log | on/off | Enable Rust TUI debug log (`~/.local/share/whoisthat/tui.log`) |
@@ -357,6 +366,7 @@ TUN mode creates a `whoisthattun` virtual interface, configures `iptables` or `n
 **No root required.** TUN mode runs under file capabilities (`cap_net_admin`, `cap_net_raw`, `cap_setpcap`). On first launch, the TUI detects missing capabilities and offers a one-time `pkexec` setup. After that, TUN works as a normal user. The install script sets capabilities automatically.
 
 **How it works internally:**
+
 - `whoisthat-core` has `cap_net_admin,cap_net_raw,cap_setpcap=+ep` set on its binary
 - At startup, the core uses `capset(2)` to move permitted capabilities into the inheritable set (`CAP_SETPCAP` enables this)
 - `prctl(PR_CAP_AMBIENT_RAISE)` promotes them to the ambient set
@@ -386,6 +396,7 @@ cargo test
 ```
 
 Covers:
+
 - **Message dispatch** (`src/core_client/dispatch.rs`) — all 16 TCP message types, unknown type handling, malformed JSON
 - **Routing form logic** (`src/ui/routing.rs`) — `form_to_rule` / `rule_to_form` for all 6 match types and 3 outbounds, round-trip consistency
 - **Text editor** (`src/main.rs`) — `edit_text_field`: insert, backspace, delete, cursor movement, Home/End boundary conditions
@@ -398,6 +409,7 @@ go test ./lib/crypto/... ./lib/AppConfig/... ./db/...
 ```
 
 Covers:
+
 - **Crypto** (`lib/crypto`) — AES-256-GCM encrypt/decrypt round-trip, base64 wrappers, wrong key, short ciphertext, empty plaintext, nonce randomness
 - **Config** (`lib/AppConfig`) — default port values, DNS servers, HWID format (16 lowercase hex chars), HWID randomness
 - **Database** (`db`) — path helpers, encrypt/decrypt round-trip via `writeEncryptedJSON`/`readEncryptedJSON`, encrypted file detection, key file creation and reuse across instances
@@ -406,7 +418,7 @@ Covers:
 
 ## File Structure
 
-```
+```text
 whoisthat/
 ├── Cargo.toml          ← Rust project manifest
 ├── src/                ← Rust TUI source
