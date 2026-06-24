@@ -380,6 +380,8 @@ TUN mode creates a virtual interface (configurable in Settings, default `whoisth
 
 For debugging or manual setup: `sudo setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep /path/to/whoisthat-core`.
 
+**Capability detection** (`v` key before enabling TUN) creates a real test TUN device (`wt-capcheck`) and tears it down — a true functional check, not just a UID test. This means capabilities mode works correctly even when the binary has `+ep` but the user is not root.
+
 ### Subscription Workflow
 
 1. Press `U` to add a new group — enter a name and subscription URL
