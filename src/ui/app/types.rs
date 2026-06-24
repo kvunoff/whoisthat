@@ -21,6 +21,7 @@ pub enum Popup {
     AddGroup { name: String, url: String, cursor: usize, field: usize },
     EditSubscription { name: String, url: String, group_id: i32, cursor: usize, field: usize },
     EditUserAgent { input: String, cursor: usize },
+    EditTunName { input: String, cursor: usize },
     Help,
 }
 

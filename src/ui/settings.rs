@@ -49,6 +49,7 @@ pub fn render_settings(
     log_enabled: bool,
     log_level: &str,
     test_method: &str,
+    tun_name: &str,
     hwid: Option<&HwidData>,
     state: &mut SettingsState,
     focused: bool,
@@ -72,12 +73,13 @@ pub fn render_settings(
     let hwid_val = hwid.map(|h| h.hwid.as_str()).unwrap_or("");
     let hwid_ua = hwid.map(|h| h.user_agent.as_str()).unwrap_or("");
 
-    let items_data: [(&str, &str, bool, bool); 9] = [
+    let items_data: [(&str, &str, bool, bool); 10] = [
         ("Autoconnect",     if autoconnect { "on" } else { "off" }, true,  false),
         ("Show IP",         if show_ip     { "on" } else { "off" }, true,  false),
         ("TUI log",         if log_enabled { "on" } else { "off" }, true,  false),
         ("Log level",       log_level,                               false, false),
         ("Test method",     test_method,                             false, false),
+        ("TUN name",        tun_name,                                false, false),
         ("HWID: Enabled",   if hwid_enabled { "on" } else { "off" }, true,  false),
         ("HWID",            hwid_val,                                false, false),
         ("Reset HWID",      "\u{23ce}",                              false, true),

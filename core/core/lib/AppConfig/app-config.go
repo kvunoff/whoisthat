@@ -6,14 +6,18 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 )
+
+var tunNameRe = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_-]{0,14}$`)
 
 type AppConfig struct {
 	SocksPort     int       `json:"socks-port"`
@@ -21,6 +25,7 @@ type AppConfig struct {
 	CoreTCPPort   int       `json:"core-tcp-port"`
 	TestPortRange PortRange `json:"test-port-range"`
 	DnsServers    []string  `json:"dns-servers"`
+	TunName       string    `json:"tun-name"`
 	HwidEnabled   bool      `json:"hwid-enabled"`
 	Hwid          string    `json:"hwid"`
 	UserAgent     string    `json:"user-agent"`
@@ -43,8 +48,9 @@ func defaultConfig() AppConfig {
 			End:   30120,
 		},
 		DnsServers:  []string{"1.1.1.1", "8.8.8.8", "2606:4700:4700::1111", "2001:4860:4860::8888"},
+		TunName:     "whoisthattun",
 		HwidEnabled: true,
-		UserAgent:   "whoisthat/v0.5.3",
+		UserAgent:   "whoisthat/v0.5.4",
 	}
 }
 
@@ -61,6 +67,7 @@ func LoadConfig() {
 		config.Hwid = generateHwid()
 	}
 	config.DnsServers = sanitizeDnsServers(config.DnsServers)
+	config.TunName = sanitizeTunName(config.TunName)
 	application_configuration = config
 }
 
@@ -133,6 +140,29 @@ func ResetHwid() {
 func SetUserAgent(ua string) {
 	application_configuration.UserAgent = ua
 	SaveConfig()
+}
+
+func sanitizeTunName(name string) string {
+	if name == "" || !tunNameRe.MatchString(name) {
+		logger.Warnf("config: invalid tun name %q, using default", name)
+		return defaultConfig().TunName
+	}
+	return name
+}
+
+func SetTunName(name string) error {
+	if name == "" {
+		return errors.New("tun name must not be empty")
+	}
+	if len(name) > 15 {
+		return fmt.Errorf("tun name too long: %d characters (max 15)", len(name))
+	}
+	if !tunNameRe.MatchString(name) {
+		return errors.New("tun name must start with a letter and contain only [a-zA-Z0-9_-]")
+	}
+	application_configuration.TunName = name
+	SaveConfig()
+	return nil
 }
 
 func SaveConfig() {

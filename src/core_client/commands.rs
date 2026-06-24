@@ -113,6 +113,16 @@ impl CoreClient {
             .await
     }
 
+    pub async fn set_tun_name(&self, name: &str) -> std::io::Result<()> {
+        self.conn
+            .lock()
+            .await
+            .send("set-tun-name", &SetTunNameData {
+                tun_name: name.to_string(),
+            })
+            .await
+    }
+
     pub async fn is_root(&self) -> std::io::Result<()> {
         self.conn
             .lock()

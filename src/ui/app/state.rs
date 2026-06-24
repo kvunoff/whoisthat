@@ -20,6 +20,7 @@ pub struct App {
     pub log_enabled: bool,
     pub log_level: String,
     pub test_method: String,
+    pub tun_name: String,
     pub hwid_info: Option<HwidData>,
     pub public_ip: String,
     pub public_ipv6: String,
@@ -42,7 +43,7 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(autoconnect: bool, show_ip: bool, log_enabled: bool, log_level: String, test_method: String) -> Self {
+    pub fn new(autoconnect: bool, show_ip: bool, log_enabled: bool, log_level: String, test_method: String, tun_name: String) -> Self {
         Self {
             groups: Vec::new(),
             connection_status: ProxyStatus {
@@ -57,6 +58,7 @@ impl App {
             log_enabled,
             log_level,
             test_method,
+            tun_name,
             hwid_info: None,
             public_ip: String::new(),
             public_ipv6: String::new(),

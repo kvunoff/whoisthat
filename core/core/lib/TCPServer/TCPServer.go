@@ -243,6 +243,14 @@ func (s *Server) handleConnection(conn net.Conn, clientID string) {
 			}
 			command_handler.IsRoot(data)
 
+		case "set-tun-name":
+			var data structs.SetTunNameData
+			if err := json.Unmarshal(raw_tcp_message.Data, &data); err != nil {
+				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
+				return
+			}
+			command_handler.SetTunName(data)
+
 		case "set-hwid":
 			var data structs.SetHwidData
 			if err := json.Unmarshal(raw_tcp_message.Data, &data); err != nil {

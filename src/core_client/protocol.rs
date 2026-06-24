@@ -139,6 +139,11 @@ pub struct EnableTunData {}
 pub struct DisableTunData {}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SetTunNameData {
+    pub tun_name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IsRootData {}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

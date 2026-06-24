@@ -29,7 +29,6 @@ type TunModeManager struct {
 }
 
 func (t *TunModeManager) Init() {
-	t.tun_name = "whoisthattun"
 	t.tun_ip = "198.18.0.1"
 	t.tun_ipv6 = "fd00::1"
 	t.StatusChanged = make(chan bool)
@@ -45,6 +44,7 @@ func (t *TunModeManager) IsEnabledLocked() bool {
 }
 
 func (t *TunModeManager) Start(proxy_ipv4s []string, proxy_ipv6s []string, dns string, dns_ipv6 string) error {
+	t.tun_name = appconfig.GetConfig().TunName
 	logger.Info("tun: starting...")
 	interface_name, interface_ip, interface_ipv6, err := GetDefaultInterfaceAndIP()
 	if err != nil {

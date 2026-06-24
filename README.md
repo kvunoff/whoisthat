@@ -71,6 +71,7 @@ show_ip = true
 log_enabled = false
 log_level = "warn"
 test_method = "http-get"
+tun_name = "whoisthattun"
 ```
 
 **Core config** — `~/.config/whoisthat/config.json` (auto-generated):
@@ -82,6 +83,7 @@ test_method = "http-get"
   "core-tcp-port": 4897,
   "test-port-range": { "start": 3095, "end": 30120 },
   "dns-servers": ["1.1.1.1", "8.8.8.8"],
+  "tun-name": "whoisthattun",
   "hwid-enabled": true,
   "hwid": "1fb1e0141ab3e35a",
   "user-agent": "whoisthat/v0.4.0"
@@ -162,7 +164,7 @@ Encrypted at rest with AES-256-GCM — key auto-generated on first run.
 
 2. **Xray-core** handles all protocol-level work: VLESS/VMess/Trojan/Shadowsocks/SOCKS handshakes, Reality authentication, xHTTP/gRPC/WS/TCP transport, SOCKS5 local proxy. Its JSON config is generated on-the-fly from profile URIs by the bundled `whoisthat-parser`.
 
-3. **TUN mode** creates a virtual network interface (`whoisthattun`), sets up `iptables`/`nftables` rules (DNS hijack, MASQUERADE, auto-detected at runtime), and routes all system traffic through the Xray SOCKS5 proxy via `tun2socks`.
+3. **TUN mode** creates a virtual network interface (configurable name, default `whoisthattun`), sets up `iptables`/`nftables` rules (DNS hijack, MASQUERADE, auto-detected at runtime), and routes all system traffic through the Xray SOCKS5 proxy via `tun2socks`.
 
 4. **WhoisThat TUI** (this Rust binary) connects to the core over TCP on `127.0.0.1:4897`. It sends commands and receives asynchronous notifications. The TUI never touches networking directly — all VPN logic lives in the core.
 
@@ -234,6 +236,7 @@ Both client→core commands and core→client notifications use the same framing
 | `add-group` | `{"name":"str","subscription_url":"str"}` | `group-added` |
 | `delete-group` | `{"id":int}` | `group-deleted` |
 | `update-subscription` | `{"group_id":int}` | `subscription-updated` |
+| `set-tun-name` | `{"tun_name":"str"}` | `tun-name-updated` |
 | `set-hwid` | `{"enabled":true/false,"user_agent":"str","reset":true/false}` | `hwid-updated` |
 | `get-routing` | `{}` | `routing-updated` |
 | `update-routing` | `{"config":{...}}` | `routing-updated` |
@@ -242,7 +245,7 @@ Both client→core commands and core→client notifications use the same framing
 ### Notifications (Core → All Clients)
 
 | Message | Data |
-| -- | --- |
+| --- | --- |
 | `application-state` | Full state: groups, profiles, connection status, TUN status, HWID info |
 | `status-changed` | `{"connection":"connected"\|"disconnected","profile":{...}}` |
 | `profiles-added` | `{"profiles":[...]}` |
@@ -253,6 +256,7 @@ Both client→core commands and core→client notifications use the same framing
 | `group-updated` | `{"id":int,"name":"str",...}` (full Group object) |
 | `subscription-updated` | `{"group_id":int,"group":{...},"profiles":[...]}` |
 | `tun-status-changed` | `{"is_enabled":bool}` |
+| `tun-name-updated` | `{"tun_name":"str"}` |
 | `is-root-answer` | `{"IsRoot":bool}` |
 | `hwid-updated` | `{"enabled":bool,"hwid":"str","user_agent":"str","platform":"str","kernel":"str","model":"str"}` |
 | `traffic-stats` | `{"proxy_up":int,"proxy_down":int,"direct_up":int,"direct_down":int}` |
@@ -352,6 +356,7 @@ Subscription metadata (`sub_*`) is populated from the `subscription-userinfo` HT
 | TUI log | on/off | Enable Rust TUI debug log (`~/.local/share/whoisthat/tui.log`) |
 | Log level | error/warn/info/debug/trace | Minimum log level for TUI and core |
 | Test method | tcp/http-get/http-head | Latency test method (tcp = direct dial, http = via SOCKS5 proxy) |
+| TUN name | editable text | TUN interface name (1-15 chars, letters/digits/underscore/dash, default `whoisthattun`) |
 | HWID: Enabled | on/off | Send HWID headers with subscription requests |
 | HWID | 1fb1e0141ab3e35a | Device identifier (read-only, auto-generated) |
 | Reset HWID | ⏎ | Generate a new random HWID |
@@ -361,7 +366,7 @@ Navigate with `j`/`k`, toggle booleans with `Space`/`Enter`, cycle values with `
 
 ### TUN Mode
 
-TUN mode creates a `whoisthattun` virtual interface, configures `iptables` or `nftables` rules (DNS hijack, MASQUERADE — auto-detected at runtime), and routes all system traffic through the VPN. DNS queries are redirected to the first server in `dns-servers` config.
+TUN mode creates a virtual interface (configurable in Settings, default `whoisthattun`), configures `iptables` or `nftables` rules (DNS hijack, MASQUERADE — auto-detected at runtime), and routes all system traffic through the VPN. DNS queries are redirected to the first server in `dns-servers` config.
 
 **No root required.** TUN mode runs under file capabilities (`cap_net_admin`, `cap_net_raw`, `cap_setpcap`). On first launch, the TUI detects missing capabilities and offers a one-time `pkexec` setup. After that, TUN works as a normal user. The install script sets capabilities automatically.
 
@@ -397,7 +402,7 @@ cargo test
 
 Covers:
 
-- **Message dispatch** (`src/core_client/dispatch.rs`) — all 16 TCP message types, unknown type handling, malformed JSON
+- **Message dispatch** (`src/core_client/dispatch.rs`) — all notification message types (17), unknown type handling, malformed JSON
 - **Routing form logic** (`src/ui/routing.rs`) — `form_to_rule` / `rule_to_form` for all 6 match types and 3 outbounds, round-trip consistency
 - **Text editor** (`src/main.rs`) — `edit_text_field`: insert, backspace, delete, cursor movement, Home/End boundary conditions
 

@@ -111,6 +111,10 @@ type SetHwidData struct {
 	Reset     bool    `json:"reset"`
 }
 
+type SetTunNameData struct {
+	TunName string `json:"tun_name"`
+}
+
 type UpdateProfileData struct {
 	Profile ProfileID
 	Name    string

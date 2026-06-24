@@ -14,6 +14,7 @@ impl App {
         match popup {
             Popup::Import { input, .. } => self.render_text_popup(f, " Import Profile URI ", "Paste or type URI (vless:// vmess:// trojan:// ss:// socks://):", input, area),
             Popup::EditUserAgent { input, .. } => self.render_text_popup(f, " Edit User-Agent ", "Enter custom User-Agent:", input, area),
+            Popup::EditTunName { input, .. } => self.render_text_popup(f, " Edit TUN Name ", "Enter TUN interface name (1-15 chars, letters/digits/underscore/dash):", input, area),
             Popup::ConfirmDelete { name, .. } => self.render_confirm_popup(f, "profile", name, area),
             Popup::ConfirmDeleteGroup { name, .. } => self.render_confirm_popup(f, "group", name, area),
             Popup::EditSubscription { name, url, cursor, field, .. } => self.render_group_form(f, "Edit Group", name, url, *cursor, *field, area),

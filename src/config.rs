@@ -23,6 +23,8 @@ pub struct AppConfig {
     pub log_level: String,
     #[serde(default = "default_test_method")]
     pub test_method: String,
+    #[serde(default = "default_tun_name")]
+    pub tun_name: String,
 }
 
 fn default_core_tcp_port() -> u16 {
@@ -40,6 +42,9 @@ fn default_log_level() -> String {
 fn default_test_method() -> String {
     "http-get".into()
 }
+fn default_tun_name() -> String {
+    "whoisthattun".into()
+}
 
 impl Default for AppConfig {
     fn default() -> Self {
@@ -54,6 +59,7 @@ impl Default for AppConfig {
             log_enabled: false,
             log_level: default_log_level(),
             test_method: default_test_method(),
+            tun_name: default_tun_name(),
         }
     }
 }

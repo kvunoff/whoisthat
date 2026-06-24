@@ -83,6 +83,15 @@ func (cmd *Cmd) enableTun(profile structs.Profile, tun_manager *tunmode.TunModeM
 	}
 }
 
+func (cmd *Cmd) SetTunName(data structs.SetTunNameData) {
+	if err := appconfig.SetTunName(data.TunName); err != nil {
+		cmd.warn("set-tun-name-failed", err.Error())
+		return
+	}
+	logger.Infof("tun name set to %q", data.TunName)
+	cmd.send("tun-name-updated", structs.SetTunNameData{TunName: data.TunName})
+}
+
 func resolveHostAndAddress(profile structs.Profile, dnsServers []string) (*utils.ResolvedIPs, error) {
 	result := &utils.ResolvedIPs{}
 	var errs []error

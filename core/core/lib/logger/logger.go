@@ -11,7 +11,6 @@ const (
 	ERROR Level = iota
 	WARN
 	INFO
-	DEBUG
 )
 
 var logLevel = INFO
@@ -23,7 +22,7 @@ func SetLevel(s string) {
 	case "warn":
 		logLevel = WARN
 	case "debug", "trace":
-		logLevel = DEBUG
+		logLevel = INFO
 	default:
 		logLevel = INFO
 	}

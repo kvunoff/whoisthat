@@ -28,6 +28,7 @@ pub enum CoreEvent {
     TrafficStats(TrafficStats),
     RoutingUpdated(RoutingConfig),
     HwidUpdated(HwidData),
+    TunNameUpdated(String),
     Disconnected,
 }
 
@@ -99,6 +100,7 @@ pub(crate) fn dispatch(msg: TcpMessage) -> CoreEvent {
         "traffic-stats" => try_dispatch!(msg, "traffic-stats", TrafficStats, TrafficStats),
         "routing-updated" => try_dispatch!(msg, "routing-updated", RoutingUpdated, |d| CoreEvent::RoutingUpdated(d.config)),
         "hwid-updated" => try_dispatch!(msg, "hwid-updated", HwidData, HwidUpdated),
+        "tun-name-updated" => try_dispatch!(msg, "tun-name-updated", SetTunNameData, |d| CoreEvent::TunNameUpdated(d.tun_name)),
         other => {
             warn!("Unknown message type: {}", other);
             CoreEvent::Error(format!("Unknown message: {}", other))
@@ -302,5 +304,15 @@ mod tests {
         // "groups" field is required for application-state but missing
         let event = dispatch(make_msg("application-state", json!({ "garbage": true })));
         assert!(matches!(event, CoreEvent::Error(_)));
+    }
+
+    #[test]
+    fn test_dispatch_tun_name_updated() {
+        let event = dispatch(make_msg("tun-name-updated", json!({ "tun_name": "mytun0" })));
+        if let CoreEvent::TunNameUpdated(name) = event {
+            assert_eq!(name, "mytun0");
+        } else {
+            panic!("expected TunNameUpdated");
+        }
     }
 }

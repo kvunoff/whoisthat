@@ -6,6 +6,6 @@ import (
 )
 
 func (cmd *Cmd) IsRoot(data structs.IsRootData) {
-	is_root := utils.IsRoot()
+	is_root := utils.CanTun()
 	cmd.send("is-root-answer", structs.IsRootAnswer{IsRoot: is_root})
 }
