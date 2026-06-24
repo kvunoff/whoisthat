@@ -178,6 +178,7 @@ Custom routing rules (domain, IP, protocol, port) can redirect traffic to `proxy
 - **Capability mode (no root):** Freedom outbound sets `SO_MARK` via xray's `sockopt.mark`. `ip rule fwmark 1 table 100` routes marked packets through the physical gateway. Works under file capabilities — no root needed
 - User applications retain their normal routing and stay under TUN protection
 - This ensures `direct` outbound connections from xray bypass TUN while all user traffic stays protected
+- **Incoming connections to local services** (e.g., a web or game server) are also handled correctly via conntrack-based reply routing: incoming flows on the physical interface are tagged in the connection tracker, and reply packets are marked with `fwmark 1` to bypass TUN and exit through the physical gateway. Works for both host-local servers and Docker-published ports, in both nftables and iptables backends
 
 ### HWID (Device Identification)
 

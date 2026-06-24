@@ -103,6 +103,12 @@ func (t *TunModeManager) Start(proxy_ipv4s []string, proxy_ipv6s []string, dns s
 		}
 	}
 
+	err = setupConntrackRules(t.tun_name, t.default_interface)
+	if err != nil {
+		t.clearNetworkRules()
+		return fmt.Errorf("there was an error setting up conntrack bypass rules: %w", err)
+	}
+
 	if t.sudoUid > 0 {
 		err = addUidRouting(t.sudoUid, interface_name, interface_ip)
 		if err != nil {
@@ -206,6 +212,7 @@ func (t *TunModeManager) clearNetworkRules() error {
 		deleteProxyIpRoutes(t.proxy_ipv4s, t.proxy_ipv6s, t.default_interface_ip, t.default_interface_ipv6),
 		removeFwmarkRouting(1, t.default_interface, t.default_interface_ip),
 		removeFwmarkRouting6(1, t.default_interface, t.default_interface_ipv6),
+		cleanConntrackRules(t.tun_name, t.default_interface),
 	}
 	if t.sudoUid > 0 {
 		errs = append(errs, removeUidRouting(t.sudoUid, t.default_interface, t.default_interface_ip))

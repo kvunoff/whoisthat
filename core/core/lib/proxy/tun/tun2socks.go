@@ -1,13 +1,13 @@
 package tunmode
 
 import (
-	"whoisthat-core/lib/logger"
-	"whoisthat-core/utils"
 	"context"
 	"fmt"
 	"os/exec"
 	"sync"
 	"syscall"
+	"whoisthat-core/lib/logger"
+	"whoisthat-core/utils"
 
 	"golang.org/x/sys/unix"
 )
