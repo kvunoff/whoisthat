@@ -72,6 +72,7 @@ log_enabled = false
 log_level = "warn"
 test_method = "http-get"
 tun_name = "whoisthattun"
+kill_switch_enabled = false
 ```
 
 **Core config** — `~/.config/whoisthat/config.json` (auto-generated):
@@ -114,6 +115,7 @@ Encrypted at rest with AES-256-GCM — key auto-generated on first run.
 - **Profile testing** — three methods: TCP connect, HTTP GET (SOCKS5 → Cloudflare), HTTP HEAD
 - **Scan-all testing** — `t` scans all profiles across all groups with dedup; `T` tests only focused profile/subscription
 - **Custom routing rules** — domain, IP, protocol, port → proxy/direct/block (`r` tab). `direct` outbound works correctly in TUN mode via SO_MARK + fwmark routing (no root required).
+- **Kill-switch** — When enabled, blocks all non-VPN traffic if the connection drops. Uses a dedicated firewall table (`whoisthat_ks`) independent of TUN rules. Works in both SOCKS and TUN modes. Toggle in Settings.
 - Real-time connection status with uplink/downlink traffic stats
 - **Log viewer** — live tail from core log, auto-scroll, [WARN]/[ERRO] highlighting
 - **Configurable** — DNS servers, proxy ports, log level, test method, HWID, user-agent via settings and config files
@@ -241,6 +243,7 @@ Both client→core commands and core→client notifications use the same framing
 | `get-routing` | `{}` | `routing-updated` |
 | `update-routing` | `{"config":{...}}` | `routing-updated` |
 | `die` | `{}` | (stops core) |
+| `set-kill-switch` | `{"enabled":bool}` | `kill-switch-updated` |
 
 ### Notifications (Core → All Clients)
 
@@ -262,6 +265,7 @@ Both client→core commands and core→client notifications use the same framing
 | `traffic-stats` | `{"proxy_up":int,"proxy_down":int,"direct_up":int,"direct_down":int}` |
 | `routing-updated` | `{"config":{...}}` |
 | `warn` | `{"key":"str","content":"str"}` |
+| `kill-switch-updated` | `{"enabled":bool}` |
 
 ### Profile structure
 
@@ -357,6 +361,7 @@ Subscription metadata (`sub_*`) is populated from the `subscription-userinfo` HT
 | Log level | error/warn/info/debug/trace | Minimum log level for TUI and core |
 | Test method | tcp/http-get/http-head | Latency test method (tcp = direct dial, http = via SOCKS5 proxy) |
 | TUN name | editable text | TUN interface name (1-15 chars, letters/digits/underscore/dash, default `whoisthattun`) |
+| Kill Switch | on/off | Block all non-VPN traffic on connection drop (dedicated firewall table, works in both SOCKS and TUN modes) |
 | HWID: Enabled | on/off | Send HWID headers with subscription requests |
 | HWID | 1fb1e0141ab3e35a | Device identifier (read-only, auto-generated) |
 | Reset HWID | ⏎ | Generate a new random HWID |

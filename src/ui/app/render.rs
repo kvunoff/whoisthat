@@ -135,6 +135,7 @@ impl App {
                     &self.log_level,
                     &self.test_method,
                     &self.tun_name,
+                    self.kill_switch_enabled,
                     self.hwid_info.as_ref(),
                     &mut self.settings_state,
                     focused,

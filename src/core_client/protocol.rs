@@ -76,6 +76,8 @@ pub struct ApplicationState {
     pub tun_status: bool,
     #[serde(rename = "hwid_info", default)]
     pub hwid_info: Option<HwidData>,
+    #[serde(rename = "kill_switch", default)]
+    pub kill_switch: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -300,4 +302,9 @@ pub struct UpdateRoutingData {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RoutingUpdated {
     pub config: RoutingConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SetKillSwitchData {
+    pub enabled: bool,
 }

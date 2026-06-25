@@ -2,6 +2,7 @@ package mainproxy
 
 import (
 	"encoding/json"
+	"net"
 	"whoisthat-core/db"
 	"whoisthat-core/lib"
 	appconfig "whoisthat-core/lib/AppConfig"
@@ -29,6 +30,7 @@ type ProxyManager struct {
 	portPool          *portpool.PortPool
 	statsCancel       chan struct{}
 	DB                *db.DB
+	proxyIPs          []string
 }
 
 func (p *ProxyManager) Init() {
@@ -93,6 +95,8 @@ func (p *ProxyManager) Connect(profile structs.Profile) error {
 	if err := p.xray_core.Start(xray_config); err != nil {
 		return err
 	}
+
+	p.proxyIPs = resolveProfileIPs(profile.Address)
 
 	logger.Infof("connected to %s (%s://%s)",
 		profile.Name, profile.Protocol, profile.Address)
@@ -165,4 +169,26 @@ func countOutbounds(configJSON []byte) int {
 		return 0
 	}
 	return len(obs)
+}
+
+func (p *ProxyManager) KillSwitchEnabled() bool {
+	return appconfig.GetConfig().KillSwitchEnabled
+}
+
+func (p *ProxyManager) GetProxyIPs() []string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.proxyIPs
+}
+
+func resolveProfileIPs(address string) []string {
+	ips, err := net.LookupIP(address)
+	if err != nil {
+		return nil
+	}
+	var result []string
+	for _, ip := range ips {
+		result = append(result, ip.String())
+	}
+	return result
 }

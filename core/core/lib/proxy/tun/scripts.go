@@ -714,3 +714,101 @@ done
 	_, err := runScriptWithSh(script)
 	return err
 }
+
+// ---------------------------------------------------------------------------
+// Kill-switch block (drop all except loopback + proxy IPs)
+// ---------------------------------------------------------------------------
+
+func SetupKillSwitchBlock(proxyIPs []string) error {
+	switch probeFirewall() {
+	case firewallNftables:
+		return setupKillSwitchBlockNftables(proxyIPs)
+	default:
+		return setupKillSwitchBlockIptables(proxyIPs)
+	}
+}
+
+func setupKillSwitchBlockIptables(proxyIPs []string) error {
+	script := `
+set -e
+
+iptables -D OUTPUT -j WHOISTHAT_KS 2>/dev/null || true
+iptables -F WHOISTHAT_KS 2>/dev/null || true
+iptables -X WHOISTHAT_KS 2>/dev/null || true
+
+iptables -N WHOISTHAT_KS
+iptables -A WHOISTHAT_KS -o lo -j ACCEPT
+iptables -A WHOISTHAT_KS -d 127.0.0.1 -j ACCEPT
+`
+
+	for _, ip := range proxyIPs {
+		script += fmt.Sprintf("iptables -A WHOISTHAT_KS -d %s -j ACCEPT\n", ip)
+	}
+
+	script += `
+iptables -A WHOISTHAT_KS -j DROP
+iptables -I OUTPUT -j WHOISTHAT_KS
+
+ip6tables -D OUTPUT -j WHOISTHAT_KS 2>/dev/null || true
+ip6tables -F WHOISTHAT_KS 2>/dev/null || true
+ip6tables -X WHOISTHAT_KS 2>/dev/null || true
+
+ip6tables -N WHOISTHAT_KS
+ip6tables -A WHOISTHAT_KS -o lo -j ACCEPT
+ip6tables -A WHOISTHAT_KS -d ::1 -j ACCEPT
+ip6tables -A WHOISTHAT_KS -j DROP
+ip6tables -I OUTPUT -j WHOISTHAT_KS
+`
+
+	_, err := runScriptWithSh(script)
+	return err
+}
+
+func setupKillSwitchBlockNftables(proxyIPs []string) error {
+	cleanScript := "nft delete table inet whoisthat_ks 2>/dev/null || true\n"
+	_, err := runScriptWithSh(cleanScript)
+	if err != nil {
+		return err
+	}
+
+	script := `
+set -e
+nft add table inet whoisthat_ks
+nft add chain inet whoisthat_ks output '{ type filter hook output priority 0; policy accept; }'
+nft add rule inet whoisthat_ks output oif lo accept
+nft add rule inet whoisthat_ks output ip daddr 127.0.0.1 accept
+nft add rule inet whoisthat_ks output ip6 daddr ::1 accept
+`
+
+	for _, ip := range proxyIPs {
+		if strings.Contains(ip, ":") {
+			script += fmt.Sprintf("nft add rule inet whoisthat_ks output ip6 daddr %s accept\n", ip)
+		} else {
+			script += fmt.Sprintf("nft add rule inet whoisthat_ks output ip daddr %s accept\n", ip)
+		}
+	}
+
+	script += "nft add rule inet whoisthat_ks output drop\n"
+
+	_, err = runScriptWithSh(script)
+	return err
+}
+
+func RemoveKillSwitchBlock() error {
+	switch probeFirewall() {
+	case firewallNftables:
+		_, err := runScriptWithSh("nft delete table inet whoisthat_ks 2>/dev/null || true")
+		return err
+	default:
+		script := `
+iptables -D OUTPUT -j WHOISTHAT_KS 2>/dev/null || true
+iptables -F WHOISTHAT_KS 2>/dev/null || true
+iptables -X WHOISTHAT_KS 2>/dev/null || true
+ip6tables -D OUTPUT -j WHOISTHAT_KS 2>/dev/null || true
+ip6tables -F WHOISTHAT_KS 2>/dev/null || true
+ip6tables -X WHOISTHAT_KS 2>/dev/null || true
+`
+		_, err := runScriptWithSh(script)
+		return err
+	}
+}

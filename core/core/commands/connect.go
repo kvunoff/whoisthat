@@ -3,6 +3,7 @@ package cmd
 import (
 	proxy "whoisthat-core/lib/proxy/mainproxy"
 	"whoisthat-core/lib/logger"
+	appconfig "whoisthat-core/lib/AppConfig"
 	tunmode "whoisthat-core/lib/proxy/tun"
 	"whoisthat-core/structs"
 )
@@ -11,8 +12,19 @@ func (cmd *Cmd) Disconnect(data structs.DisconnectData, proxy_manager *proxy.Pro
 	ConnectionMutex.Lock()
 	defer ConnectionMutex.Unlock()
 
+	killSwitchEnabled := proxy_manager.KillSwitchEnabled()
+	proxyIPs := proxy_manager.GetProxyIPs()
+
 	proxy_manager.Stop()
 	tun_manager.Stop()
+
+	if killSwitchEnabled && len(proxyIPs) > 0 {
+		if err := tunmode.SetupKillSwitchBlock(proxyIPs); err != nil {
+			logger.Warn("kill-switch: failed to apply block on disconnect:", err)
+		} else {
+			logger.Info("kill-switch: block applied after disconnect")
+		}
+	}
 }
 
 func (cmd *Cmd) Connect(data structs.ConnectData, proxy_manager *proxy.ProxyManager, tun_manager *tunmode.TunModeManager) {
@@ -31,10 +43,31 @@ func (cmd *Cmd) Connect(data structs.ConnectData, proxy_manager *proxy.ProxyMana
 		tun_manager.Stop()
 	}
 
+	killSwitchEnabled := appconfig.GetConfig().KillSwitchEnabled
+
+	if killSwitchEnabled {
+		if err := tunmode.RemoveKillSwitchBlock(); err != nil {
+			logger.Warn("kill-switch: failed to remove old block:", err)
+		}
+	}
+
 	if err := proxy_manager.Connect(profile); err != nil {
 		logger.Warn("connect failed:", err)
 		cmd.warn("connect-failed", "Failed to connect")
 		return
+	}
+
+	if killSwitchEnabled {
+		proxyIPs := proxy_manager.GetProxyIPs()
+		if len(proxyIPs) > 0 {
+			if err := tunmode.SetupKillSwitchBlock(proxyIPs); err != nil {
+				logger.Warn("kill-switch: failed to apply block:", err)
+			} else {
+				logger.Info("kill-switch: block applied, whitelisted IPs:", proxyIPs)
+			}
+		} else {
+			logger.Warn("kill-switch: no proxy IPs resolved, skipping block")
+		}
 	}
 
 	if was_tun_enabled {

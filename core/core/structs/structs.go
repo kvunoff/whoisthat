@@ -72,6 +72,7 @@ type ApplicationState struct {
 	ConnectionStatus ProxyStatus         `json:"connection-status"`
 	TunStatus        bool                `json:"tun-status"`
 	HwidInfo         HwidData            `json:"hwid_info"`
+	KillSwitch       bool                `json:"kill_switch"`
 }
 
 type UpdateSubscriptionData struct {
@@ -124,6 +125,10 @@ type UpdateGroupData struct {
 	Id              int    `json:"id"`
 	Name            string `json:"name,omitzero"`
 	SubscriptionUrl string `json:"subscription_url,omitzero"`
+}
+
+type SetKillSwitchData struct {
+	Enabled bool `json:"enabled"`
 }
 
 // general types

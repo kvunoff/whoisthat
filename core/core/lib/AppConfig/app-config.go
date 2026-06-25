@@ -20,15 +20,16 @@ import (
 var tunNameRe = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_-]{0,14}$`)
 
 type AppConfig struct {
-	SocksPort     int       `json:"socks-port"`
-	HttpPort      int       `json:"http-port"`
-	CoreTCPPort   int       `json:"core-tcp-port"`
-	TestPortRange PortRange `json:"test-port-range"`
-	DnsServers    []string  `json:"dns-servers"`
-	TunName       string    `json:"tun-name"`
-	HwidEnabled   bool      `json:"hwid-enabled"`
-	Hwid          string    `json:"hwid"`
-	UserAgent     string    `json:"user-agent"`
+	SocksPort         int       `json:"socks-port"`
+	HttpPort          int       `json:"http-port"`
+	CoreTCPPort       int       `json:"core-tcp-port"`
+	TestPortRange     PortRange `json:"test-port-range"`
+	DnsServers        []string  `json:"dns-servers"`
+	TunName           string    `json:"tun-name"`
+	HwidEnabled       bool      `json:"hwid-enabled"`
+	Hwid              string    `json:"hwid"`
+	UserAgent         string    `json:"user-agent"`
+	KillSwitchEnabled bool      `json:"kill-switch-enabled"`
 }
 
 type PortRange struct {
@@ -50,7 +51,7 @@ func defaultConfig() AppConfig {
 		DnsServers:  []string{"1.1.1.1", "8.8.8.8", "2606:4700:4700::1111", "2001:4860:4860::8888"},
 		TunName:     "whoisthattun",
 		HwidEnabled: true,
-		UserAgent:   "whoisthat/v0.5.5",
+		UserAgent:   "whoisthat/v0.5.6",
 	}
 }
 
@@ -139,6 +140,11 @@ func ResetHwid() {
 
 func SetUserAgent(ua string) {
 	application_configuration.UserAgent = ua
+	SaveConfig()
+}
+
+func SetKillSwitch(enabled bool) {
+	application_configuration.KillSwitchEnabled = enabled
 	SaveConfig()
 }
 

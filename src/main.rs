@@ -304,7 +304,7 @@ async fn main() -> io::Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut term = ratatui::Terminal::new(backend)?;
 
-    let mut app = App::new(cfg.autoconnect, cfg.show_ip, cfg.log_enabled, cfg.log_level.clone(), cfg.test_method.clone(), cfg.tun_name.clone());
+    let mut app = App::new(cfg.autoconnect, cfg.show_ip, cfg.log_enabled, cfg.log_level.clone(), cfg.test_method.clone(), cfg.tun_name.clone(), cfg.kill_switch_enabled);
 
     if let Some(warning) = check_sudo_env() {
         app.msg(warning);
@@ -597,6 +597,9 @@ async fn handle_core_event(
             app.tun_name = name;
             cfg.tun_name = app.tun_name.clone();
             config::save_config(cfg);
+        }
+        CoreEvent::KillSwitchUpdated(enabled) => {
+            app.kill_switch_enabled = enabled;
         }
     }
     false
@@ -1143,7 +1146,7 @@ async fn handle_normal_input(
     // Settings tab keys
     if app.tab == ActiveTab::Settings {
         match key.code {
-            KeyCode::Char('j') | KeyCode::Down => app.settings_state.cursor_down(9),
+            KeyCode::Char('j') | KeyCode::Down => app.settings_state.cursor_down(10),
             KeyCode::Char('k') | KeyCode::Up => app.settings_state.cursor_up(),
             KeyCode::Char(' ') | KeyCode::Enter => {
                 match app.settings_state.cursor() {
@@ -1175,6 +1178,12 @@ async fn handle_normal_input(
                         app.focus = Focus::Popup;
                     }
                     6 => {
+                        app.kill_switch_enabled = !app.kill_switch_enabled;
+                        let _ = client.set_kill_switch(app.kill_switch_enabled).await;
+                        cfg.kill_switch_enabled = app.kill_switch_enabled;
+                        config::save_config(cfg);
+                    }
+                    7 => {
                         if let Some(ref hw) = app.hwid_info {
                             let _ = client.set_hwid(&SetHwidData {
                                 enabled: Some(!hw.enabled),
@@ -1182,13 +1191,13 @@ async fn handle_normal_input(
                             }).await;
                         }
                     }
-                    8 => {
+                    9 => {
                         let _ = client.set_hwid(&SetHwidData {
                             reset: true,
                             ..Default::default()
                         }).await;
                     }
-                    9 => {
+                    10 => {
                         if let Some(ref hw) = app.hwid_info {
                             app.popup = Some(Popup::EditUserAgent {
                                 input: hw.user_agent.clone(),

@@ -22,6 +22,7 @@ pub struct App {
     pub test_method: String,
     pub tun_name: String,
     pub hwid_info: Option<HwidData>,
+    pub kill_switch_enabled: bool,
     pub public_ip: String,
     pub public_ipv6: String,
 
@@ -43,7 +44,7 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(autoconnect: bool, show_ip: bool, log_enabled: bool, log_level: String, test_method: String, tun_name: String) -> Self {
+    pub fn new(autoconnect: bool, show_ip: bool, log_enabled: bool, log_level: String, test_method: String, tun_name: String, kill_switch_enabled: bool) -> Self {
         Self {
             groups: Vec::new(),
             connection_status: ProxyStatus {
@@ -60,6 +61,7 @@ impl App {
             test_method,
             tun_name,
             hwid_info: None,
+            kill_switch_enabled,
             public_ip: String::new(),
             public_ipv6: String::new(),
             tab: ActiveTab::Profiles,
@@ -210,6 +212,7 @@ impl App {
         self.groups = state.groups;
         self.connection_status = state.connection_status;
         self.tun_enabled = state.tun_status;
+        self.kill_switch_enabled = state.kill_switch;
         self.hwid_info = state.hwid_info;
         self.clamp_cursor();
     }

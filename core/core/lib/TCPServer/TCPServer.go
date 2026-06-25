@@ -275,6 +275,14 @@ func (s *Server) handleConnection(conn net.Conn, clientID string) {
 			}
 			command_handler.UpdateGroup(data)
 
+		case "set-kill-switch":
+			var data structs.SetKillSwitchData
+			if err := json.Unmarshal(raw_tcp_message.Data, &data); err != nil {
+				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
+				return
+			}
+			command_handler.SetKillSwitch(data)
+
 		case "get-routing":
 			var data structs.GetRoutingData
 			if err := json.Unmarshal(raw_tcp_message.Data, &data); err != nil {

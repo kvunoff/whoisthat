@@ -242,4 +242,12 @@ impl CoreClient {
             .send("set-hwid", data)
             .await
     }
+
+    pub async fn set_kill_switch(&self, enabled: bool) -> std::io::Result<()> {
+        self.conn
+            .lock()
+            .await
+            .send("set-kill-switch", &SetKillSwitchData { enabled })
+            .await
+    }
 }

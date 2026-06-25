@@ -71,6 +71,7 @@ func main() {
 			reason = "Received stop request"
 		}
 		logger.Info("whoisthat-core shutting down:", reason)
+		tunmode.RemoveKillSwitchBlock()
 		proxy_manager.Stop()
 		tun_manager.Stop()
 		server.Broadcast(lib.CreateJsonNotification("warn", structs.Warning{Key: "died", Content: reason}))

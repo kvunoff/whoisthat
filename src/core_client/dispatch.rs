@@ -29,6 +29,7 @@ pub enum CoreEvent {
     RoutingUpdated(RoutingConfig),
     HwidUpdated(HwidData),
     TunNameUpdated(String),
+    KillSwitchUpdated(bool),
     Disconnected,
 }
 
@@ -101,6 +102,7 @@ pub(crate) fn dispatch(msg: TcpMessage) -> CoreEvent {
         "routing-updated" => try_dispatch!(msg, "routing-updated", RoutingUpdated, |d| CoreEvent::RoutingUpdated(d.config)),
         "hwid-updated" => try_dispatch!(msg, "hwid-updated", HwidData, HwidUpdated),
         "tun-name-updated" => try_dispatch!(msg, "tun-name-updated", SetTunNameData, |d| CoreEvent::TunNameUpdated(d.tun_name)),
+        "kill-switch-updated" => try_dispatch!(msg, "kill-switch-updated", SetKillSwitchData, |d| CoreEvent::KillSwitchUpdated(d.enabled)),
         other => {
             warn!("Unknown message type: {}", other);
             CoreEvent::Error(format!("Unknown message: {}", other))

@@ -20,6 +20,7 @@ func (cmd *Cmd) GetApplicationState(data structs.GetApplicationStateData, proxy_
 		ConnectionStatus: proxy_manager.GetStatus(),
 		TunStatus:        tun_manager.IsEnabledLocked(),
 		HwidInfo:         GetHwidInfo(),
+		KillSwitch:       proxy_manager.KillSwitchEnabled(),
 	}
 
 	cmd.send("application-state", application_state)
