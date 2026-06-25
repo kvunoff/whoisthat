@@ -57,6 +57,8 @@ fn get_raw_data_from_base64(decoded_base64: &[u8]) -> Result<RawData, String> {
         allowInsecure: None,
         server_method: None,
         username: None,
+        obfs: None,
+        obfs_password: None,
     })
 }
 
@@ -105,6 +107,8 @@ fn get_raw_data_from_uri(data: &str) -> Result<RawData, String> {
         allowInsecure: get_parameter_value(&query, "allowInsecure"),
         server_method: None,
         username: None,
+        obfs: None,
+        obfs_password: None,
     })
 }
 

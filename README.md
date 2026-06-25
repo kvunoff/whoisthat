@@ -2,7 +2,7 @@
 
 A modern terminal-based VPN client. Rust TUI frontend. Go engine backed by Xray-core.
 
-**Supports**: VLESS (Reality/xHTTP/gRPC), VMess, Trojan, Shadowsocks, SOCKS5. Full TUN-mode VPN. Subscription-based profile management. HWID device identification.
+**Supports**: VLESS (Reality/xHTTP/gRPC), VMess, Trojan, Shadowsocks, SOCKS5, Hysteria2. Full TUN-mode VPN. Subscription-based profile management. HWID device identification.
 
 ![WhoisThat](whoisthat-screen.jpg)
 
@@ -109,7 +109,7 @@ Encrypted at rest with AES-256-GCM — key auto-generated on first run.
 - **Subscription support** — add groups with subscription URLs, refresh profiles, view metadata (traffic used/limit, expiry)
 - **HWID device identification** — auto-generated hardware ID sent with subscription requests (Remnawave-compatible x-hwid headers). Configurable: toggle on/off, reset, custom user-agent. Respects `x-hwid-max-devices-reached` and other HWID response headers from the subscription server.
 - **Group management** — add, rename, edit subscription URL, delete entire groups
-- **Profile import** — VLESS, VMess, Trojan, Shadowsocks, SOCKS5 URIs (paste, clipboard, or subscription refresh)
+- **Profile import** — VLESS, VMess, Trojan, Shadowsocks, SOCKS5, Hysteria2 URIs (paste, clipboard, or subscription refresh)
 - Connect / disconnect / switch profiles
 - Full system-wide TUN-mode VPN (`tun2socks` + `iptables`/`nftables`, auto-detected)
 - **Profile testing** — three methods: TCP connect, HTTP GET (SOCKS5 → Cloudflare), HTTP HEAD
@@ -164,7 +164,7 @@ Encrypted at rest with AES-256-GCM — key auto-generated on first run.
 
 1. **WhoisThat Core** is a long-running Go daemon. It manages VPN profiles (stored as JSON files under `~/.local/share/whoisthat/db/`), launches Xray-core as a subprocess, and controls the TUN device via `iproute2` + `tun2socks`.
 
-2. **Xray-core** handles all protocol-level work: VLESS/VMess/Trojan/Shadowsocks/SOCKS handshakes, Reality authentication, xHTTP/gRPC/WS/TCP transport, SOCKS5 local proxy. Its JSON config is generated on-the-fly from profile URIs by the bundled `whoisthat-parser`.
+2. **Xray-core** handles all protocol-level work: VLESS/VMess/Trojan/Shadowsocks/SOCKS/Hysteria2 handshakes, Reality authentication, xHTTP/gRPC/WS/TCP transport, SOCKS5 local proxy. Its JSON config is generated on-the-fly from profile URIs by the bundled `whoisthat-parser`.
 
 3. **TUN mode** creates a virtual network interface (configurable name, default `whoisthattun`), sets up `iptables`/`nftables` rules (DNS hijack, MASQUERADE, auto-detected at runtime), and routes all system traffic through the Xray SOCKS5 proxy via `tun2socks`.
 
@@ -332,7 +332,7 @@ Subscription metadata (`sub_*`) is populated from the `subscription-userinfo` HT
 
 | Key | Action |
 | --- | --- |
-| `a` | Import profile URI (clipboard or manual input — vless://, vmess://, trojan://, ss://, socks://) |
+| `a` | Import profile URI (clipboard or manual input — vless://, vmess://, trojan://, ss://, socks://, hysteria2://, hy2://) |
 | `x` | Delete selected profile |
 | `X` | Delete current group (with confirmation) |
 | `e` | Edit group (name + subscription URL) |
@@ -447,7 +447,7 @@ whoisthat/
 │       ├── settings.rs ← Settings screen
 │       ├── routing.rs  ← Routing rules tab + popups
 │       ├── logs.rs     ← Log viewer (live tail + auto-scroll)
-│       ├── uri.rs      ← URI detail parser (VLESS/VMess/Trojan/SS/SOCKS)
+│       ├── uri.rs      ← URI detail parser (VLESS/VMess/Trojan/SS/SOCKS/Hysteria2)
 │       └── widgets.rs  ← Shared widget helpers
 ├── install.sh          ← Universal installer script
 ├── parser/             ← URI → Xray JSON parser (Rust)
@@ -473,7 +473,6 @@ whoisthat/
 
 ## Credits
 
-Built on ideas by [Keivan-sf](https://github.com/Keivan-sf).
 Powered by [Xray-core](https://github.com/XTLS/Xray-core), [tun2socks](https://github.com/xjasonlyu/tun2socks).
 
 ---

@@ -1,7 +1,7 @@
 use crate::config_models::{
-    self, ConfigMetaData, GRPCSettings, KCPSettings, NonHeaderObject, Outbound, OutboundSettings,
-    QuicSettings, RawData, RealitySettings, StreamSettings, TCPHeader, TCPSettings, TlsSettings,
-    WsSettings, XHTTPSettings,
+    self, ConfigMetaData, GRPCSettings, HttpUpgradeSettings, KCPSettings, NonHeaderObject, Outbound,
+    OutboundSettings, QuicSettings, RawData, RealitySettings, StreamSettings, TCPHeader, TCPSettings,
+    TlsSettings, WsSettings, XHTTPSettings,
 };
 use crate::utils::{inbound_generator, parse_raw_json};
 
@@ -11,6 +11,7 @@ mod trojan;
 mod uri_identifier;
 mod vless;
 mod vmess;
+mod hysteria2;
 
 pub fn get_metadata(uri: &str) -> Result<String, String> {
     let (protocol, data, _) = get_uri_data(uri)?;
@@ -145,6 +146,13 @@ pub fn create_outbound_object(uri: &str) -> Result<config_models::Outbound, Stri
                 }),
                 _ => None,
             },
+            httpupgradeSettings: match network_type {
+                "httpupgrade" => Some(HttpUpgradeSettings {
+                    host: data.host.clone(),
+                    path: data.path.clone(),
+                }),
+                _ => None,
+            },
         },
         settings: outbound_settings,
     };
@@ -179,6 +187,11 @@ fn get_uri_data(uri: &str) -> Result<(String, RawData, OutboundSettings), String
 			let d = socks::data::get_data(uri)?;
 			let s = socks::create_outbound_settings(&d);
 			Ok((String::from("socks"), d, s))
+		}
+		Some(uri_identifier::Protocols::Hysteria2) => {
+			let d = hysteria2::data::get_data(uri)?;
+			let s = hysteria2::create_outbound_settings(&d);
+			Ok((String::from("hysteria2"), d, s))
 		}
 		Some(_) => Err("The protocol was recognized but is not supported yet".to_string()),
 		None => Err("The protocol is not supported".to_string()),

@@ -3,20 +3,25 @@ use crate::utils::{get_parameter_value, url_decode};
 use http::Uri;
 
 pub fn get_data(uri: &str) -> Result<RawData, String> {
-    let data = uri
-        .split_once("trojan://")
-        .ok_or_else(|| "Invalid trojan URI: missing 'trojan://'".to_string())?
-        .1;
+    let (_prefix, data) = if uri.starts_with("hysteria2://") {
+        uri.split_once("hysteria2://")
+    } else if uri.starts_with("hy2://") {
+        uri.split_once("hy2://")
+    } else {
+        return Err("Invalid hysteria2 URI: missing 'hysteria2://' or 'hy2://'".to_string());
+    }
+    .ok_or_else(|| "Invalid hysteria2 URI".to_string())?;
+
     let query_and_name = uri
         .split_once("?")
-        .ok_or_else(|| "Missing query in trojan URI".to_string())?
+        .ok_or_else(|| "Missing query in hysteria2 URI".to_string())?
         .1;
     let (raw_query, name) = query_and_name
         .split_once("#")
         .unwrap_or((query_and_name, ""));
-    let parsed_address = parse_trojan_address(
+    let parsed_address = parse_hysteria2_address(
         data.split_once("?")
-            .ok_or_else(|| "Missing '?' in trojan URI".to_string())?
+            .ok_or_else(|| "Missing '?' in hysteria2 URI".to_string())?
             .0,
     )?;
     let query: Vec<(&str, &str)> = querystring::querify(raw_query);
@@ -48,37 +53,38 @@ pub fn get_data(uri: &str) -> Result<RawData, String> {
         slpn: get_parameter_value(&query, "slpn"),
         spx: url_decode(get_parameter_value(&query, "spx")),
         extra: url_decode(get_parameter_value(&query, "extra")),
-        allowInsecure: get_parameter_value(&query, "allowInsecure"),
+        allowInsecure: get_parameter_value(&query, "allowInsecure")
+            .or_else(|| get_parameter_value(&query, "insecure")),
         server_method: None,
         username: None,
-        obfs: None,
-        obfs_password: None,
+        obfs: url_decode(get_parameter_value(&query, "obfs")),
+        obfs_password: url_decode(get_parameter_value(&query, "obfs-password")),
     })
 }
 
-fn parse_trojan_address(raw_data: &str) -> Result<UserAddress, String> {
+fn parse_hysteria2_address(raw_data: &str) -> Result<UserAddress, String> {
     let (uuid_raw, raw_address) = raw_data
         .split_once("@")
-        .ok_or_else(|| "Wrong trojan format, no `@` found in the address".to_string())?;
+        .ok_or_else(|| "Wrong hysteria2 format, no `@` found in the address".to_string())?;
     let uuid = String::from(uuid_raw);
     let address_wo_slash = raw_address.strip_suffix("/").unwrap_or(raw_address);
 
     let parsed: Uri = address_wo_slash
         .parse()
-        .map_err(|e| format!("Invalid trojan address URI: {}", e))?;
+        .map_err(|e| format!("Invalid hysteria2 address URI: {}", e))?;
 
     let uuid = url_decode(Some(uuid))
-        .ok_or_else(|| "Failed to URL-decode trojan password".to_string())?;
+        .ok_or_else(|| "Failed to URL-decode hysteria2 password".to_string())?;
 
     Ok(UserAddress {
         uuid,
         address: parsed
             .host()
-            .ok_or_else(|| "Missing host in trojan address".to_string())?
+            .ok_or_else(|| "Missing host in hysteria2 address".to_string())?
             .to_string(),
         port: parsed
             .port()
-            .ok_or_else(|| "Missing port in trojan address".to_string())?
+            .ok_or_else(|| "Missing port in hysteria2 address".to_string())?
             .as_u16(),
     })
 }
@@ -88,8 +94,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parses_minimal_trojan_uri() {
-        let result = get_data("trojan://mypassword@example.com:443?test=1");
+    fn parses_minimal_hysteria2_uri() {
+        let result = get_data("hysteria2://mypassword@example.com:443?test=1");
         assert!(result.is_ok());
         let data = result.unwrap();
         assert_eq!(data.uuid, Some("mypassword".to_string()));
@@ -98,16 +104,26 @@ mod tests {
     }
 
     #[test]
-    fn parses_with_remarks() {
-        let result = get_data("trojan://pw@example.com:443?test=1#MyTrojan");
+    fn parses_hy2_prefix() {
+        let result = get_data("hy2://mypassword@example.com:443?test=1");
         assert!(result.is_ok());
         let data = result.unwrap();
-        assert_eq!(data.remarks, "MyTrojan");
+        assert_eq!(data.uuid, Some("mypassword".to_string()));
+    }
+
+    #[test]
+    fn parses_with_remarks() {
+        let result = get_data("hysteria2://pw@example.com:443?test=1#MyHysteria");
+        assert!(result.is_ok());
+        let data = result.unwrap();
+        assert_eq!(data.remarks, "MyHysteria");
     }
 
     #[test]
     fn parses_with_tls_and_sni() {
-        let result = get_data("trojan://pw@example.com:443?security=tls&sni=sni.example.com&allowInsecure=true");
+        let result = get_data(
+            "hysteria2://pw@example.com:443?security=tls&sni=sni.example.com&allowInsecure=true",
+        );
         assert!(result.is_ok());
         let data = result.unwrap();
         assert_eq!(data.security, Some("tls".to_string()));
@@ -116,8 +132,28 @@ mod tests {
     }
 
     #[test]
+    fn parses_with_insecure_param() {
+        let result =
+            get_data("hysteria2://pw@example.com:443?insecure=1");
+        assert!(result.is_ok());
+        let data = result.unwrap();
+        assert_eq!(data.allowInsecure, Some("1".to_string()));
+    }
+
+    #[test]
+    fn parses_with_obfs() {
+        let result = get_data(
+            "hysteria2://pw@example.com:443?obfs=salamander&obfs-password=obfs-secret&sni=example.com",
+        );
+        assert!(result.is_ok());
+        let data = result.unwrap();
+        assert_eq!(data.obfs, Some("salamander".to_string()));
+        assert_eq!(data.obfs_password, Some("obfs-secret".to_string()));
+    }
+
+    #[test]
     fn url_decodes_password() {
-        let result = get_data("trojan://my%20password@example.com:443?test=1");
+        let result = get_data("hysteria2://my%20password@example.com:443?test=1");
         assert!(result.is_ok());
         let data = result.unwrap();
         assert_eq!(data.uuid, Some("my password".to_string()));
@@ -125,21 +161,21 @@ mod tests {
 
     #[test]
     fn missing_at_returns_error() {
-        let result = get_data("trojan://noat.example.com:443?test=1");
+        let result = get_data("hysteria2://noat.example.com:443?test=1");
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("no `@` found"));
     }
 
     #[test]
     fn missing_query_returns_error() {
-        let result = get_data("trojan://pw@example.com:443");
+        let result = get_data("hysteria2://pw@example.com:443");
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Missing query"));
     }
 
     #[test]
     fn missing_port_returns_error() {
-        let result = get_data("trojan://pw@example.com?test=1");
+        let result = get_data("hysteria2://pw@example.com?test=1");
         assert!(result.is_err());
     }
 }

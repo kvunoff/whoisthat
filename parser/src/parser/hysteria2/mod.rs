@@ -2,12 +2,21 @@ pub mod data;
 use crate::config_models::*;
 
 pub fn create_outbound_settings(data: &RawData) -> OutboundSettings {
-    return OutboundSettings::Trojan(TrojanOutboundSettings {
-        servers: vec![TrojanServerObject {
+    let obfs = match (&data.obfs, &data.obfs_password) {
+        (Some(obs_type), Some(obs_pass)) => Some(Hysteria2ObfsObject {
+            r#type: Some(obs_type.clone()),
+            password: Some(obs_pass.clone()),
+        }),
+        _ => None,
+    };
+
+    return OutboundSettings::Hysteria2(Hysteria2OutboundSettings {
+        servers: vec![Hysteria2ServerObject {
             address: data.address.clone(),
             port: data.port,
             password: data.uuid.clone(),
             level: Some(0),
+            obfs,
         }],
     });
 }
@@ -16,7 +25,7 @@ pub fn create_outbound_settings(data: &RawData) -> OutboundSettings {
 mod tests {
     use super::*;
 
-    fn sample_trojan_data() -> RawData {
+    fn sample_hysteria2_data() -> RawData {
         RawData {
             remarks: String::new(),
             uuid: Some("my-password".to_string()),
@@ -47,23 +56,40 @@ mod tests {
             vnext_security: None,
             server_method: None,
             username: None,
-            obfs: None,
-            obfs_password: None,
+            obfs: Some("salamander".to_string()),
+            obfs_password: Some("obfs-secret".to_string()),
         }
     }
 
     #[test]
-    fn creates_trojan_settings() {
-        let settings = create_outbound_settings(&sample_trojan_data());
+    fn creates_hysteria2_settings() {
+        let settings = create_outbound_settings(&sample_hysteria2_data());
         match settings {
-            OutboundSettings::Trojan(s) => {
+            OutboundSettings::Hysteria2(s) => {
                 assert_eq!(s.servers.len(), 1);
                 assert_eq!(s.servers[0].address, Some("example.com".to_string()));
                 assert_eq!(s.servers[0].port, Some(443));
                 assert_eq!(s.servers[0].password, Some("my-password".to_string()));
                 assert_eq!(s.servers[0].level, Some(0));
+                let obfs = s.servers[0].obfs.as_ref().unwrap();
+                assert_eq!(obfs.r#type, Some("salamander".to_string()));
+                assert_eq!(obfs.password, Some("obfs-secret".to_string()));
             }
-            _ => panic!("Expected Trojan settings"),
+            _ => panic!("Expected Hysteria2 settings"),
+        }
+    }
+
+    #[test]
+    fn creates_hysteria2_settings_without_obfs() {
+        let mut data = sample_hysteria2_data();
+        data.obfs = None;
+        data.obfs_password = None;
+        let settings = create_outbound_settings(&data);
+        match settings {
+            OutboundSettings::Hysteria2(s) => {
+                assert_eq!(s.servers[0].obfs, None);
+            }
+            _ => panic!("Expected Hysteria2 settings"),
         }
     }
 }

@@ -45,6 +45,8 @@ pub fn get_data(uri: &str) -> Result<RawData, String> {
         allowInsecure: None,
         vnext_security: None,
         username: None,
+        obfs: None,
+        obfs_password: None,
     })
 }
 

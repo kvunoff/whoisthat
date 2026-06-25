@@ -5,6 +5,7 @@ pub enum Protocols {
     Trojan,
     Socks,
     Http,
+    Hysteria2,
 }
 
 pub fn get_uri_protocol(uri: &str) -> Option<Protocols> {
@@ -25,6 +26,9 @@ pub fn get_uri_protocol(uri: &str) -> Option<Protocols> {
     }
     if uri.starts_with("trojan://") {
         return Some(Protocols::Trojan);
+    }
+    if uri.starts_with("hysteria2://") || uri.starts_with("hy2://") {
+        return Some(Protocols::Hysteria2);
     }
     return None;
 }
@@ -80,5 +84,19 @@ mod tests {
     fn recognize_http_protocol() {
         let protocol = get_uri_protocol("http://example.com:80").unwrap();
         assert!(matches!(protocol, Protocols::Http));
+    }
+
+    #[test]
+    fn recognize_hysteria2_protocol() {
+        let protocol =
+            get_uri_protocol("hysteria2://password@example.com:443?sni=test.com&insecure=1")
+                .unwrap();
+        assert!(matches!(protocol, Protocols::Hysteria2));
+    }
+
+    #[test]
+    fn recognize_hy2_protocol() {
+        let protocol = get_uri_protocol("hy2://password@example.com:443?sni=test.com").unwrap();
+        assert!(matches!(protocol, Protocols::Hysteria2));
     }
 }

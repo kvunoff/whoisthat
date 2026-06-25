@@ -51,6 +51,8 @@ pub fn get_data(uri: &str) -> Result<RawData, String> {
         allowInsecure: get_parameter_value(&query, "allowInsecure"),
         server_method: None,
         username: None,
+        obfs: None,
+        obfs_password: None,
     })
 }
 

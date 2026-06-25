@@ -47,6 +47,23 @@ pub struct SocksServerObject {
     pub users: Option<Vec<SocksUser>>,
 }
 
+#[allow(non_snake_case)]
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+pub struct Hysteria2ObfsObject {
+    pub r#type: Option<String>,
+    pub password: Option<String>,
+}
+
+#[allow(non_snake_case)]
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+pub struct Hysteria2ServerObject {
+    pub address: Option<String>,
+    pub port: Option<u16>,
+    pub password: Option<String>,
+    pub level: Option<u8>,
+    pub obfs: Option<Hysteria2ObfsObject>,
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct VlessOutboundSettings {
     pub vnext: Vec<VnextServerObject>,
@@ -72,6 +89,12 @@ pub struct SocksOutboundSettings {
     pub servers: Vec<SocksServerObject>,
 }
 
+#[allow(non_snake_case)]
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+pub struct Hysteria2OutboundSettings {
+    pub servers: Vec<Hysteria2ServerObject>,
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(untagged)]
 pub enum OutboundSettings {
@@ -80,6 +103,7 @@ pub enum OutboundSettings {
     Trojan(TrojanOutboundSettings),
     ShadowSocks(ShadowSocksOutboundSettings),
     Socks(SocksOutboundSettings),
+    Hysteria2(Hysteria2OutboundSettings),
 }
 
 #[derive(Serialize, Deserialize)]
@@ -157,6 +181,13 @@ pub struct WsSettings {
 
 #[allow(non_snake_case)]
 #[derive(Serialize, Deserialize)]
+pub struct HttpUpgradeSettings {
+    pub host: Option<String>,
+    pub path: Option<String>,
+}
+
+#[allow(non_snake_case)]
+#[derive(Serialize, Deserialize)]
 pub struct TlsSettings {
     pub alpn: Option<Vec<String>>,
     pub allowInsecure: bool,
@@ -184,6 +215,7 @@ pub struct StreamSettings {
     pub quicSettings: Option<QuicSettings>,
     pub kcpSettings: Option<KCPSettings>,
     pub xhttpSettings: Option<XHTTPSettings>,
+    pub httpupgradeSettings: Option<HttpUpgradeSettings>,
 }
 
 #[allow(non_snake_case)]
@@ -258,6 +290,8 @@ pub struct RawData {
     pub port: Option<u16>,
     pub server_method: Option<String>,
     pub username: Option<String>,
+    pub obfs: Option<String>,
+    pub obfs_password: Option<String>,
 }
 
 pub struct UserAddress {

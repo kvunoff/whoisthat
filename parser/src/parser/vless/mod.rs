@@ -52,6 +52,8 @@ mod tests {
             vnext_security: None,
             server_method: None,
             username: None,
+            obfs: None,
+            obfs_password: None,
         }
     }
 
