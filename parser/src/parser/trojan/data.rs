@@ -80,3 +80,64 @@ fn parse_trojan_address(raw_data: &str) -> Result<UserAddress, String> {
             .as_u16(),
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_minimal_trojan_uri() {
+        let result = get_data("trojan://mypassword@example.com:443?test=1");
+        assert!(result.is_ok());
+        let data = result.unwrap();
+        assert_eq!(data.uuid, Some("mypassword".to_string()));
+        assert_eq!(data.address, Some("example.com".to_string()));
+        assert_eq!(data.port, Some(443));
+    }
+
+    #[test]
+    fn parses_with_remarks() {
+        let result = get_data("trojan://pw@example.com:443?test=1#MyTrojan");
+        assert!(result.is_ok());
+        let data = result.unwrap();
+        assert_eq!(data.remarks, "MyTrojan");
+    }
+
+    #[test]
+    fn parses_with_tls_and_sni() {
+        let result = get_data("trojan://pw@example.com:443?security=tls&sni=sni.example.com&allowInsecure=true");
+        assert!(result.is_ok());
+        let data = result.unwrap();
+        assert_eq!(data.security, Some("tls".to_string()));
+        assert_eq!(data.sni, Some("sni.example.com".to_string()));
+        assert_eq!(data.allowInsecure, Some("true".to_string()));
+    }
+
+    #[test]
+    fn url_decodes_password() {
+        let result = get_data("trojan://my%20password@example.com:443?test=1");
+        assert!(result.is_ok());
+        let data = result.unwrap();
+        assert_eq!(data.uuid, Some("my password".to_string()));
+    }
+
+    #[test]
+    fn missing_at_returns_error() {
+        let result = get_data("trojan://noat.example.com:443?test=1");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("no `@` found"));
+    }
+
+    #[test]
+    fn missing_query_returns_error() {
+        let result = get_data("trojan://pw@example.com:443");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Missing query"));
+    }
+
+    #[test]
+    fn missing_port_returns_error() {
+        let result = get_data("trojan://pw@example.com?test=1");
+        assert!(result.is_err());
+    }
+}

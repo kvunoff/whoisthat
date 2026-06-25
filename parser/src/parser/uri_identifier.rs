@@ -57,4 +57,28 @@ mod tests {
         let protocol = get_uri_protocol("trojan://test-pw@13.50.100.84:22222?security=tls&sni=trj.rollingnext.co.uk&type=tcp#test").unwrap();
         assert!(matches!(protocol, Protocols::Trojan));
     }
+
+    #[test]
+    fn recognize_socks5_protocol() {
+        let protocol = get_uri_protocol("socks5://user:pass@example.com:1080").unwrap();
+        assert!(matches!(protocol, Protocols::Socks));
+    }
+
+    #[test]
+    fn recognize_socks4_protocol() {
+        let protocol = get_uri_protocol("socks4://example.com:1080").unwrap();
+        assert!(matches!(protocol, Protocols::Socks));
+    }
+
+    #[test]
+    fn recognize_socks_protocol() {
+        let protocol = get_uri_protocol("socks://example.com:1080").unwrap();
+        assert!(matches!(protocol, Protocols::Socks));
+    }
+
+    #[test]
+    fn recognize_http_protocol() {
+        let protocol = get_uri_protocol("http://example.com:80").unwrap();
+        assert!(matches!(protocol, Protocols::Http));
+    }
 }

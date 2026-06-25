@@ -103,3 +103,93 @@ fn parse_socks_address(raw_data: &str) -> Result<models::SocksAddress, String> {
         }),
     };
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_with_user_and_password() {
+        let result = get_data("socks5://user:pass@example.com:1080#MySocks");
+        assert!(result.is_ok());
+        let data = result.unwrap();
+        assert_eq!(data.username, Some("user".to_string()));
+        assert_eq!(data.uuid, Some("pass".to_string()));
+        assert_eq!(data.address, Some("example.com".to_string()));
+        assert_eq!(data.port, Some(1080));
+        assert_eq!(data.remarks, "MySocks");
+    }
+
+    #[test]
+    fn parses_without_userinfo() {
+        let result = get_data("socks5://example.com:1080");
+        assert!(result.is_ok());
+        let data = result.unwrap();
+        assert_eq!(data.username, None);
+        assert_eq!(data.uuid, None);
+        assert_eq!(data.address, Some("example.com".to_string()));
+        assert_eq!(data.port, Some(1080));
+    }
+
+    #[test]
+    fn parses_base64_credentials() {
+        let encoded = base64::engine::general_purpose::STANDARD
+            .encode("b64user:b64pass");
+        let uri = format!("socks5://{}@example.com:1080", encoded);
+        let result = get_data(&uri);
+        assert!(result.is_ok());
+        let data = result.unwrap();
+        assert_eq!(data.username, Some("b64user".to_string()));
+        assert_eq!(data.uuid, Some("b64pass".to_string()));
+    }
+
+    #[test]
+    fn non_base64_credentials_fall_through_to_raw() {
+        let result = get_data("socks5://rawuser:rawpass@example.com:1080");
+        assert!(result.is_ok());
+        let data = result.unwrap();
+        assert_eq!(data.username, Some("rawuser".to_string()));
+        assert_eq!(data.uuid, Some("rawpass".to_string()));
+    }
+
+    #[test]
+    fn empty_password_becomes_none() {
+        let result = get_data("socks5://user:@example.com:1080");
+        assert!(result.is_ok());
+        let data = result.unwrap();
+        assert_eq!(data.username, Some("user".to_string()));
+        assert_eq!(data.uuid, None);
+    }
+
+    #[test]
+    fn missing_port_returns_error() {
+        let result = get_data("socks5://example.com");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn stripped_trailing_slash() {
+        let result = get_data("socks5://example.com:1080/");
+        assert!(result.is_ok());
+        let data = result.unwrap();
+        assert_eq!(data.address, Some("example.com".to_string()));
+        assert_eq!(data.port, Some(1080));
+    }
+
+    #[test]
+    fn url_decodes_remarks() {
+        let result = get_data("socks5://example.com:1080#Socks%20Name");
+        assert!(result.is_ok());
+        let data = result.unwrap();
+        assert_eq!(data.remarks, "Socks Name");
+    }
+
+    #[test]
+    fn url_decodes_credentials() {
+        let result = get_data("socks5://user%20name:pass%20word@example.com:1080");
+        assert!(result.is_ok());
+        let data = result.unwrap();
+        assert_eq!(data.username, Some("user name".to_string()));
+        assert_eq!(data.uuid, Some("pass word".to_string()));
+    }
+}

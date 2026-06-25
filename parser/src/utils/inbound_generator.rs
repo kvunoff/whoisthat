@@ -65,3 +65,114 @@ pub fn generate_socks_inbound(socks_port: u16) -> config_models::Inbound {
         }),
     };
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    mod generate_socks_inbound_tests {
+        use super::*;
+
+        #[test]
+        fn sets_correct_port() {
+            let inbound = generate_socks_inbound(3090);
+            assert_eq!(inbound.port, 3090);
+        }
+
+        #[test]
+        fn has_socks_protocol() {
+            let inbound = generate_socks_inbound(3090);
+            assert_eq!(inbound.protocol, "socks");
+        }
+
+        #[test]
+        fn has_socks_tag() {
+            let inbound = generate_socks_inbound(3090);
+            assert_eq!(inbound.tag, "socks-in");
+        }
+
+        #[test]
+        fn has_sniffing_enabled() {
+            let inbound = generate_socks_inbound(3090);
+            let sniffing = inbound.sniffing.unwrap();
+            assert_eq!(sniffing.enabled, Some(true));
+            assert_eq!(sniffing.routeOnly, Some(true));
+            assert_eq!(sniffing.metadataOnly, Some(false));
+        }
+
+        #[test]
+        fn has_udp_enabled() {
+            let inbound = generate_socks_inbound(3090);
+            let settings = inbound.settings.unwrap();
+            assert!(settings.udp);
+        }
+    }
+
+    mod generate_http_inbound_tests {
+        use super::*;
+
+        #[test]
+        fn sets_correct_port() {
+            let inbound = generate_http_inbound(3091);
+            assert_eq!(inbound.port, 3091);
+        }
+
+        #[test]
+        fn has_http_protocol_and_tag() {
+            let inbound = generate_http_inbound(3091);
+            assert_eq!(inbound.protocol, "http");
+            assert_eq!(inbound.tag, "http-in");
+        }
+
+        #[test]
+        fn has_sniffing_without_udp() {
+            let inbound = generate_http_inbound(3091);
+            assert!(inbound.sniffing.is_some());
+            assert!(inbound.settings.is_none());
+        }
+    }
+
+    mod generate_inbound_config_tests {
+        use super::*;
+
+        #[test]
+        fn both_ports_returns_two_inbounds() {
+            let config = generate_inbound_config(InboundGenerationOptions {
+                socks_port: Some(3090),
+                http_port: Some(3091),
+            });
+            assert_eq!(config.len(), 2);
+            assert_eq!(config[0].protocol, "socks");
+            assert_eq!(config[1].protocol, "http");
+        }
+
+        #[test]
+        fn only_socks_returns_one() {
+            let config = generate_inbound_config(InboundGenerationOptions {
+                socks_port: Some(3090),
+                http_port: None,
+            });
+            assert_eq!(config.len(), 1);
+            assert_eq!(config[0].protocol, "socks");
+        }
+
+        #[test]
+        fn only_http_returns_one() {
+            let config = generate_inbound_config(InboundGenerationOptions {
+                socks_port: None,
+                http_port: Some(3091),
+            });
+            assert_eq!(config.len(), 1);
+            assert_eq!(config[0].protocol, "http");
+        }
+
+        #[test]
+        fn neither_returns_empty() {
+            let config = generate_inbound_config(InboundGenerationOptions {
+                socks_port: None,
+                http_port: None,
+            });
+            assert_eq!(config.len(), 0);
+        }
+    }
+}

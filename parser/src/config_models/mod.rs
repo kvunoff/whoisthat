@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct VnextUser {
     pub id: Option<String>,
     pub encryption: Option<String>,
@@ -9,20 +9,20 @@ pub struct VnextUser {
     pub security: Option<String>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct SocksUser {
     pub user: Option<String>,
     pub pass: Option<String>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct VnextServerObject {
     pub address: Option<String>,
     pub port: Option<u16>,
     pub users: Option<Vec<VnextUser>>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct TrojanServerObject {
     pub address: Option<String>,
     pub port: Option<u16>,
@@ -30,7 +30,7 @@ pub struct TrojanServerObject {
     pub level: Option<u8>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct ShadowSocksServerObject {
     pub address: Option<String>,
     pub port: Option<u16>,
@@ -39,7 +39,7 @@ pub struct ShadowSocksServerObject {
     pub method: Option<String>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct SocksServerObject {
     pub address: Option<String>,
     pub port: Option<u16>,
@@ -47,32 +47,32 @@ pub struct SocksServerObject {
     pub users: Option<Vec<SocksUser>>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct VlessOutboundSettings {
     pub vnext: Vec<VnextServerObject>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct VmessOutboundSettings {
     pub vnext: Vec<VnextServerObject>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct TrojanOutboundSettings {
     pub servers: Vec<TrojanServerObject>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct ShadowSocksOutboundSettings {
     pub servers: Vec<ShadowSocksServerObject>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct SocksOutboundSettings {
     pub servers: Vec<SocksServerObject>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(untagged)]
 pub enum OutboundSettings {
     Vless(VlessOutboundSettings),
@@ -226,7 +226,7 @@ pub struct Config {
     pub inbounds: Vec<Inbound>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 #[allow(non_snake_case)]
 pub struct RawData {
     pub remarks: String,

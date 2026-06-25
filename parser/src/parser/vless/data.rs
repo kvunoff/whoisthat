@@ -80,3 +80,130 @@ fn parse_vless_address(raw_data: &str) -> Result<UserAddress, String> {
             .as_u16(),
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_minimal_vless_uri() {
+        let result = get_data("vless://uuid123@example.com:443?test=1");
+        assert!(result.is_ok());
+        let data = result.unwrap();
+        assert_eq!(data.uuid, Some("uuid123".to_string()));
+        assert_eq!(data.address, Some("example.com".to_string()));
+        assert_eq!(data.port, Some(443));
+        assert_eq!(data.remarks, "");
+    }
+
+    #[test]
+    fn parses_with_remarks() {
+        let result = get_data("vless://uuid@example.com:443?test=1#MyVless");
+        assert!(result.is_ok());
+        let data = result.unwrap();
+        assert_eq!(data.remarks, "MyVless");
+    }
+
+    #[test]
+    fn parses_with_all_query_params() {
+        let uri = "vless://uuid@example.com:443?security=tls&sni=mysni.com&type=ws&path=/ws&host=myhost.com&fp=chrome&flow=xtls-rprx-vision&alpn=h2&allowInsecure=true&encryption=none&headerType=none&key=mykey&quicSecurity=none&mode=auto&serviceName=svc&authority=auth&seed=123&sid=sidval&pbk=pubkey&slpn=slpnval&spx=spxval&extra=extraval";
+        let result = get_data(uri);
+        assert!(result.is_ok());
+        let data = result.unwrap();
+        assert_eq!(data.security, Some("tls".to_string()));
+        assert_eq!(data.sni, Some("mysni.com".to_string()));
+        assert_eq!(data.r#type, Some("ws".to_string()));
+        assert_eq!(data.path, Some("/ws".to_string()));
+        assert_eq!(data.host, Some("myhost.com".to_string()));
+        assert_eq!(data.fp, Some("chrome".to_string()));
+        assert_eq!(data.flow, Some("xtls-rprx-vision".to_string()));
+        assert_eq!(data.alpn, Some("h2".to_string()));
+        assert_eq!(data.allowInsecure, Some("true".to_string()));
+        assert_eq!(data.encryption, Some("none".to_string()));
+        assert_eq!(data.header_type, Some("none".to_string()));
+        assert_eq!(data.key, Some("mykey".to_string()));
+        assert_eq!(data.quic_security, Some("none".to_string()));
+        assert_eq!(data.mode, Some("auto".to_string()));
+        assert_eq!(data.service_name, Some("svc".to_string()));
+        assert_eq!(data.authority, Some("auth".to_string()));
+        assert_eq!(data.seed, Some("123".to_string()));
+        assert_eq!(data.sid, Some("sidval".to_string()));
+        assert_eq!(data.pbk, Some("pubkey".to_string()));
+        assert_eq!(data.slpn, Some("slpnval".to_string()));
+        assert_eq!(data.spx, Some("spxval".to_string()));
+        assert_eq!(data.extra, Some("extraval".to_string()));
+    }
+
+    #[test]
+    fn parses_reality_config() {
+        let uri = "vless://uuid@example.com:443?security=reality&sni=google.com&pbk=pubkey&sid=shortid&fp=firefox&flow=xtls-rprx-vision#Reality";
+        let result = get_data(uri);
+        assert!(result.is_ok());
+        let data = result.unwrap();
+        assert_eq!(data.security, Some("reality".to_string()));
+        assert_eq!(data.pbk, Some("pubkey".to_string()));
+        assert_eq!(data.sid, Some("shortid".to_string()));
+        assert_eq!(data.fp, Some("firefox".to_string()));
+        assert_eq!(data.remarks, "Reality");
+    }
+
+    #[test]
+    fn url_decodes_uuid() {
+        let result = get_data("vless://my%20uuid@example.com:443?test=1");
+        assert!(result.is_ok());
+        let data = result.unwrap();
+        assert_eq!(data.uuid, Some("my uuid".to_string()));
+    }
+
+    #[test]
+    fn url_decodes_remarks() {
+        let result = get_data("vless://uuid@example.com:443?test=1#My%20Vless");
+        assert!(result.is_ok());
+        let data = result.unwrap();
+        assert_eq!(data.remarks, "My Vless");
+    }
+
+    #[test]
+    fn missing_at_returns_error() {
+        let result = get_data("vless://noat.example.com:443?test=1");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("no `@` found"));
+    }
+
+    #[test]
+    fn missing_query_returns_error() {
+        let result = get_data("vless://uuid@example.com:443");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Missing query"));
+    }
+
+    #[test]
+    fn missing_port_returns_error() {
+        let result = get_data("vless://uuid@example.com?test=1");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn encrypt_defaults_to_none_when_absent() {
+        let result = get_data("vless://uuid@example.com:443?test=1");
+        assert!(result.is_ok());
+        let data = result.unwrap();
+        assert_eq!(data.encryption, None);
+    }
+
+    #[test]
+    fn allow_insecure_with_value_1() {
+        let result = get_data("vless://uuid@example.com:443?test=1&allowInsecure=1");
+        assert!(result.is_ok());
+        let data = result.unwrap();
+        assert_eq!(data.allowInsecure, Some("1".to_string()));
+    }
+
+    #[test]
+    fn empty_query_string() {
+        let result = get_data("vless://uuid@example.com:443?");
+        assert!(result.is_ok());
+        let data = result.unwrap();
+        assert_eq!(data.uuid, Some("uuid".to_string()));
+    }
+}

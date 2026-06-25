@@ -137,3 +137,140 @@ fn parse_vmess_address(raw_data: &str) -> Result<UserAddress, String> {
             .as_u16(),
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    mod base64_format {
+        use super::*;
+
+        #[test]
+        fn parses_valid_base64_json() {
+            let uri = "vmess://eyJhZGQiOiJleGFtcGxlLmNvbSIsInBvcnQiOiI0NDMiLCJpZCI6InRlc3QtdXVpZCIsInBzIjoiTXlWTUVTUyIsIm5ldCI6InRjcCIsInRscyI6InRscyIsInNuaSI6ImV4YW1wbGUuY29tIiwidHlwZSI6Im5vbmUifQ==";
+            let result = get_data(uri);
+            assert!(result.is_ok());
+            let data = result.unwrap();
+            assert_eq!(data.address, Some("example.com".to_string()));
+            assert_eq!(data.port, Some(443));
+            assert_eq!(data.uuid, Some("test-uuid".to_string()));
+            assert_eq!(data.remarks, "MyVMESS");
+            assert_eq!(data.r#type, Some("tcp".to_string()));
+            assert_eq!(data.security, Some("tls".to_string()));
+            assert_eq!(data.sni, Some("example.com".to_string()));
+            assert_eq!(data.header_type, Some("none".to_string()));
+        }
+
+        #[test]
+        fn falls_back_to_raw_uri_on_invalid_base64() {
+            let uri = "vmess://!!!invalid-base64!!!@example.com:443?test=1#Name";
+            let result = get_data(uri);
+            assert!(result.is_ok());
+            let data = result.unwrap();
+            assert_eq!(data.uuid, Some("!!!invalid-base64!!!".to_string()));
+            assert_eq!(data.address, Some("example.com".to_string()));
+            assert_eq!(data.port, Some(443));
+            assert_eq!(data.remarks, "Name");
+        }
+
+        #[test]
+        fn falls_back_to_raw_uri_on_non_utf8_base64() {
+            let uri = "vmess://gA==@example.com:443?test=1";
+            let result = get_data(uri);
+            assert!(result.is_ok());
+            let data = result.unwrap();
+            assert_eq!(data.uuid, Some("gA==".to_string()));
+            assert_eq!(data.address, Some("example.com".to_string()));
+        }
+
+        #[test]
+        fn falls_back_to_raw_uri_on_invalid_json() {
+            let uri = "vmess://bm90LWpzb24=@example.com:443?test=1";
+            let result = get_data(uri);
+            assert!(result.is_ok());
+            let data = result.unwrap();
+            assert_eq!(data.address, Some("example.com".to_string()));
+        }
+
+        #[test]
+        fn json_with_numeric_port() {
+            let json_str = r#"{"add":"example.com","port":"443","id":"uuid","ps":"name","net":"tcp","tls":"","type":"none"}"#;
+            let uri = format!("vmess://{}", general_purpose::STANDARD.encode(json_str));
+            let result = get_data(&uri);
+            assert!(result.is_ok());
+            let data = result.unwrap();
+            assert_eq!(data.port, Some(443));
+        }
+
+        #[test]
+        fn json_with_non_numeric_port_returns_none() {
+            let json_str = r#"{"add":"example.com","port":"abc","id":"uuid","ps":"name","net":"tcp","tls":"","type":"none"}"#;
+            let uri = format!("vmess://{}", general_purpose::STANDARD.encode(json_str));
+            let result = get_data(&uri);
+            assert!(result.is_ok());
+            let data = result.unwrap();
+            assert_eq!(data.port, None);
+        }
+
+        #[test]
+        fn json_with_missing_fields() {
+            let json_str = r#"{"add":"example.com","port":"443","id":"uuid","ps":"name"}"#;
+            let uri = format!("vmess://{}", general_purpose::STANDARD.encode(json_str));
+            let result = get_data(&uri);
+            assert!(result.is_ok());
+            let data = result.unwrap();
+            assert_eq!(data.r#type, None);
+            assert_eq!(data.security, None);
+        }
+
+        #[test]
+        fn json_distinguishes_scy_from_tls() {
+            let json_str = r#"{"add":"example.com","port":"443","id":"uuid","ps":"name","tls":"tls","scy":"auto","net":"tcp","type":"none"}"#;
+            let uri = format!("vmess://{}", general_purpose::STANDARD.encode(json_str));
+            let result = get_data(&uri);
+            assert!(result.is_ok());
+            let data = result.unwrap();
+            assert_eq!(data.security, Some("tls".to_string()));
+            assert_eq!(data.vnext_security, Some("auto".to_string()));
+        }
+    }
+
+    mod raw_uri_format {
+        use super::*;
+
+        #[test]
+        fn parses_minimal_raw_uri() {
+            let result = get_data("vmess://uuid123@example.com:443?test=1");
+            assert!(result.is_ok());
+            let data = result.unwrap();
+            assert_eq!(data.uuid, Some("uuid123".to_string()));
+            assert_eq!(data.address, Some("example.com".to_string()));
+            assert_eq!(data.port, Some(443));
+        }
+
+        #[test]
+        fn raw_uri_missing_at_returns_error() {
+            let result = get_data("vmess://noat.example.com:443?test=1");
+            assert!(result.is_err());
+        }
+
+        #[test]
+        fn raw_uri_with_remarks() {
+            let result = get_data("vmess://uuid@example.com:443?test=1#Remarks%20Here");
+            assert!(result.is_ok());
+            let data = result.unwrap();
+            assert_eq!(data.remarks, "Remarks Here");
+        }
+
+        #[test]
+        fn raw_uri_with_multiple_query_params() {
+            let result = get_data("vmess://uuid@example.com:443?security=tls&sni=sni.com&type=grpc&encryption=none");
+            assert!(result.is_ok());
+            let data = result.unwrap();
+            assert_eq!(data.security, Some("tls".to_string()));
+            assert_eq!(data.sni, Some("sni.com".to_string()));
+            assert_eq!(data.r#type, Some("grpc".to_string()));
+            assert_eq!(data.encryption, Some("none".to_string()));
+        }
+    }
+}

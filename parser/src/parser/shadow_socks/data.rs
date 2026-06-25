@@ -83,3 +83,98 @@ fn parse_ss_address(raw_data: &str) -> Result<models::ShadowSocksAddress, String
             .as_u16(),
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_valid_ss_uri() {
+        let method_password = base64::engine::general_purpose::STANDARD
+            .encode("chacha20-ietf-poly1305:secretpw");
+        let uri = format!("ss://{}@example.com:8388#MySS", method_password);
+        let result = get_data(&uri);
+        assert!(result.is_ok());
+        let data = result.unwrap();
+        assert_eq!(data.server_method, Some("chacha20-ietf-poly1305".to_string()));
+        assert_eq!(data.uuid, Some("secretpw".to_string()));
+        assert_eq!(data.address, Some("example.com".to_string()));
+        assert_eq!(data.port, Some(8388));
+        assert_eq!(data.remarks, "MySS");
+        assert_eq!(data.r#type, Some("tcp".to_string()));
+        assert_eq!(data.header_type, Some("none".to_string()));
+    }
+
+    #[test]
+    fn parses_without_remarks() {
+        let method_password = base64::engine::general_purpose::STANDARD
+            .encode("aes-256-gcm:password");
+        let uri = format!("ss://{}@example.com:8388", method_password);
+        let result = get_data(&uri);
+        assert!(result.is_ok());
+        let data = result.unwrap();
+        assert_eq!(data.remarks, "");
+    }
+
+    #[test]
+    fn invalid_base64_returns_error() {
+        let result = get_data("ss://!!!invalid!!!@example.com:8388");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("not valid base64"));
+    }
+
+    #[test]
+    fn no_colon_in_decoded_returns_error() {
+        let method_password = base64::engine::general_purpose::STANDARD
+            .encode("no-colon-here");
+        let uri = format!("ss://{}@example.com:8388", method_password);
+        let result = get_data(&uri);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("No `:` found"));
+    }
+
+    #[test]
+    fn missing_at_returns_error() {
+        let method_password = base64::engine::general_purpose::STANDARD
+            .encode("method:pass");
+        let uri = format!("ss://{}-no-at", method_password);
+        let result = get_data(&uri);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("no `@` found"));
+    }
+
+    #[test]
+    fn sip002_query_params_are_silently_ignored() {
+        let method_password = base64::engine::general_purpose::STANDARD
+            .encode("method:pass");
+        let uri = format!("ss://{}@example.com:8388?plugin=obfs-local;obfs=http#Name", method_password);
+        let result = get_data(&uri);
+        assert!(result.is_ok());
+        let data = result.unwrap();
+        assert_eq!(data.remarks, "Name");
+        assert_eq!(data.address, Some("example.com".to_string()));
+    }
+
+    #[test]
+    fn empty_password_allowed() {
+        let method_password = base64::engine::general_purpose::STANDARD
+            .encode("method:");
+        let uri = format!("ss://{}@example.com:8388", method_password);
+        let result = get_data(&uri);
+        assert!(result.is_ok());
+        let data = result.unwrap();
+        assert_eq!(data.server_method, Some("method".to_string()));
+        assert_eq!(data.uuid, Some("".to_string()));
+    }
+
+    #[test]
+    fn url_encodes_remarks() {
+        let method_password = base64::engine::general_purpose::STANDARD
+            .encode("method:pass");
+        let uri = format!("ss://{}@example.com:8388#SS%20Name", method_password);
+        let result = get_data(&uri);
+        assert!(result.is_ok());
+        let data = result.unwrap();
+        assert_eq!(data.remarks, "SS Name");
+    }
+}
