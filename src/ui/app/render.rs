@@ -129,7 +129,9 @@ impl App {
                 render_settings(
                     f,
                     area,
-                    self.autoconnect,
+                    self.autoconnect_enabled,
+                    &self.autostart_mode,
+                    self.systemd_enabled,
                     self.show_ip,
                     self.log_enabled,
                     &self.log_level,

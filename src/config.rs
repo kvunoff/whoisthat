@@ -27,6 +27,8 @@ pub struct AppConfig {
     pub tun_name: String,
     #[serde(default)]
     pub kill_switch_enabled: bool,
+    #[serde(default)]
+    pub autoconnect_migrated: bool,
 }
 
 fn default_core_tcp_port() -> u16 {
@@ -63,6 +65,7 @@ impl Default for AppConfig {
             test_method: default_test_method(),
             tun_name: default_tun_name(),
             kill_switch_enabled: false,
+            autoconnect_migrated: false,
         }
     }
 }

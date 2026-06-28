@@ -73,6 +73,7 @@ type ApplicationState struct {
 	TunStatus        bool                `json:"tun-status"`
 	HwidInfo         HwidData            `json:"hwid_info"`
 	KillSwitch       bool                `json:"kill_switch"`
+	Autoconnect      AutoconnectInfo     `json:"autoconnect"`
 }
 
 type UpdateSubscriptionData struct {
@@ -129,6 +130,18 @@ type UpdateGroupData struct {
 
 type SetKillSwitchData struct {
 	Enabled bool `json:"enabled"`
+}
+
+type SetAutoconnectData struct {
+	Enabled   bool   `json:"enabled"`
+	GroupId   int    `json:"group_id"`
+	ProfileId int    `json:"profile_id"`
+	Mode      string `json:"mode"`
+}
+
+type AutoconnectInfo struct {
+	Enabled   bool   `json:"enabled"`
+	Mode      string `json:"mode"`
 }
 
 // general types

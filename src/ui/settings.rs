@@ -45,6 +45,8 @@ pub fn render_settings(
     f: &mut Frame,
     area: Rect,
     autoconnect: bool,
+    autostart_mode: &str,
+    systemd_enabled: bool,
     show_ip: bool,
     log_enabled: bool,
     log_level: &str,
@@ -74,18 +76,20 @@ pub fn render_settings(
     let hwid_val = hwid.map(|h| h.hwid.as_str()).unwrap_or("");
     let hwid_ua = hwid.map(|h| h.user_agent.as_str()).unwrap_or("");
 
-    let items_data: [(&str, &str, bool, bool); 11] = [
-        ("Autoconnect",     if autoconnect { "on" } else { "off" }, true,  false),
-        ("Show IP",         if show_ip     { "on" } else { "off" }, true,  false),
-        ("TUI log",         if log_enabled { "on" } else { "off" }, true,  false),
-        ("Log level",       log_level,                               false, false),
-        ("Test method",     test_method,                             false, false),
-        ("TUN name",        tun_name,                                false, false),
-        ("Kill Switch",     if kill_switch_enabled { "on" } else { "off" }, true, false),
-        ("HWID: Enabled",   if hwid_enabled { "on" } else { "off" }, true,  false),
-        ("HWID",            hwid_val,                                false, false),
-        ("Reset HWID",      "\u{23ce}",                              false, true),
-        ("UA",              hwid_ua,                                 false, false),
+    let items_data: [(&str, &str, bool, bool); 13] = [
+        ("Autoconnect",       if autoconnect { "on" } else { "off" }, true,  false),
+        ("Autostart mode",    autostart_mode,                                    false, false),
+        ("Systemd autostart", if systemd_enabled { "on" } else { "off" },       true,  false),
+        ("Show IP",           if show_ip     { "on" } else { "off" }, true,  false),
+        ("TUI log",           if log_enabled { "on" } else { "off" }, true,  false),
+        ("Log level",         log_level,                               false, false),
+        ("Test method",       test_method,                             false, false),
+        ("TUN name",          tun_name,                                false, false),
+        ("Kill Switch",       if kill_switch_enabled { "on" } else { "off" }, true, false),
+        ("HWID: Enabled",     if hwid_enabled { "on" } else { "off" }, true,  false),
+        ("HWID",              hwid_val,                                false, false),
+        ("Reset HWID",        "\u{23ce}",                              false, true),
+        ("UA",                hwid_ua,                                 false, false),
     ];
 
     let items: Vec<ListItem> = items_data

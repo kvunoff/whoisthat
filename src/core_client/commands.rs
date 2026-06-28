@@ -250,4 +250,26 @@ impl CoreClient {
             .send("set-kill-switch", &SetKillSwitchData { enabled })
             .await
     }
+
+    pub async fn set_autoconnect(
+        &self,
+        enabled: bool,
+        group_id: i32,
+        profile_id: i32,
+        mode: &str,
+    ) -> std::io::Result<()> {
+        self.conn
+            .lock()
+            .await
+            .send(
+                "set-autoconnect",
+                &SetAutoconnectData {
+                    enabled,
+                    group_id,
+                    profile_id,
+                    mode: mode.to_string(),
+                },
+            )
+            .await
+    }
 }

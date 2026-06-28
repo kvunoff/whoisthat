@@ -191,6 +191,157 @@ fn ensure_core_caps(core_path: &str) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// systemd user service management
+// ---------------------------------------------------------------------------
+
+const SYSTEMD_SERVICE_NAME: &str = "whoisthat-core.service";
+
+fn systemd_service_path() -> std::path::PathBuf {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
+    std::path::PathBuf::from(home)
+        .join(".config")
+        .join("systemd")
+        .join("user")
+        .join(SYSTEMD_SERVICE_NAME)
+}
+
+fn systemd_is_enabled() -> bool {
+    Command::new("systemctl")
+        .arg("--user")
+        .arg("is-enabled")
+        .arg(SYSTEMD_SERVICE_NAME)
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+fn linger_is_enabled() -> bool {
+    let user = std::env::var("USER").unwrap_or_default();
+    if user.is_empty() {
+        return false;
+    }
+    Command::new("loginctl")
+        .arg("show-user")
+        .arg(&user)
+        .arg("--property=Linger")
+        .output()
+        .map(|o| {
+            let s = String::from_utf8_lossy(&o.stdout);
+            s.contains("Linger=yes")
+        })
+        .unwrap_or(false)
+}
+
+fn generate_unit_file(core_path: &str, log_level: &str) -> String {
+    format!(
+        "[Unit]\n\
+         Description=WhoisThat VPN Core\n\
+         After=network-online.target\n\
+         Wants=network-online.target\n\
+         \n\
+         [Service]\n\
+         Type=simple\n\
+         ExecStart={core} \n\
+         Environment=WHOISTHAT_LOG_LEVEL={log_level}\n\
+         Restart=on-failure\n\
+         RestartSec=5\n\
+         \n\
+         [Install]\n\
+         WantedBy=default.target\n",
+        core = core_path,
+        log_level = log_level,
+    )
+}
+
+fn enable_linger_via_pkexec() -> bool {
+    let user = std::env::var("USER").unwrap_or_default();
+    if user.is_empty() {
+        return false;
+    }
+    Command::new("pkexec")
+        .arg("loginctl")
+        .arg("enable-linger")
+        .arg(&user)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+fn setup_systemd_service(core_path: &str, log_level: &str) -> Result<(), String> {
+    let core = std::path::absolute(core_path)
+        .map_err(|e| format!("cannot resolve core path: {e}"))?;
+    let core_str = core.to_string_lossy().to_string();
+
+    let unit = generate_unit_file(&core_str, log_level);
+    let service_path = systemd_service_path();
+    if let Some(parent) = service_path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("cannot create systemd dir: {e}"))?;
+    }
+    std::fs::write(&service_path, &unit)
+        .map_err(|e| format!("cannot write service file: {e}"))?;
+
+    let status = Command::new("systemctl")
+        .arg("--user")
+        .arg("daemon-reload")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map_err(|e| format!("daemon-reload failed: {e}"))?;
+    if !status.success() {
+        return Err("systemctl --user daemon-reload failed".into());
+    }
+
+    let status = Command::new("systemctl")
+        .arg("--user")
+        .arg("enable")
+        .arg(SYSTEMD_SERVICE_NAME)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map_err(|e| format!("enable failed: {e}"))?;
+    if !status.success() {
+        return Err("systemctl --user enable failed".into());
+    }
+
+    if !linger_is_enabled() {
+        if !enable_linger_via_pkexec() {
+            return Err("Could not enable lingering. Run manually: sudo loginctl enable-linger $USER".into());
+        }
+    }
+
+    Ok(())
+}
+
+fn teardown_systemd_service() -> Result<(), String> {
+    let _ = Command::new("systemctl")
+        .arg("--user")
+        .arg("disable")
+        .arg(SYSTEMD_SERVICE_NAME)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+
+    let service_path = systemd_service_path();
+    let _ = std::fs::remove_file(&service_path);
+
+    let status = Command::new("systemctl")
+        .arg("--user")
+        .arg("daemon-reload")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map_err(|e| format!("daemon-reload failed: {e}"))?;
+    if !status.success() {
+        return Err("systemctl --user daemon-reload failed".into());
+    }
+
+    Ok(())
+}
+
 fn fetch_public_ip() -> Option<String> {
     let addr = "api.ipify.org:80"
         .to_socket_addrs()
@@ -304,7 +455,8 @@ async fn main() -> io::Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut term = ratatui::Terminal::new(backend)?;
 
-    let mut app = App::new(cfg.autoconnect, cfg.show_ip, cfg.log_enabled, cfg.log_level.clone(), cfg.test_method.clone(), cfg.tun_name.clone(), cfg.kill_switch_enabled);
+    let mut app = App::new(cfg.show_ip, cfg.log_enabled, cfg.log_level.clone(), cfg.test_method.clone(), cfg.tun_name.clone(), cfg.kill_switch_enabled);
+    app.systemd_enabled = systemd_is_enabled();
 
     if let Some(warning) = check_sudo_env() {
         app.msg(warning);
@@ -366,8 +518,9 @@ async fn main() -> io::Result<()> {
         });
     }
 
-    // Autoconnect after first app state arrives
-    let do_autoconnect = cfg.autoconnect && cfg.last_profile_id != 0;
+    // Autoconnect after first app state arrives (only for pre-migration config;
+    // post-migration the core handles boot-autoconnect itself)
+    let do_autoconnect = cfg.autoconnect && cfg.last_profile_id != 0 && !cfg.autoconnect_migrated;
 
     let res = run_loop(
         &mut term,
@@ -458,9 +611,16 @@ async fn handle_core_event(
     match ev {
         CoreEvent::ApplicationState(s) => {
             let was_connected = s.connection_status.connection == "connected";
+            let already_migrated = app.autoconnect_enabled;
             app.apply_state(s);
             if *first_state {
                 *first_state = false;
+                // One-time migration: push old TUI-side autoconnect settings to core
+                if !cfg.autoconnect_migrated && cfg.autoconnect && cfg.last_profile_id != 0 && !already_migrated {
+                    let _ = client.set_autoconnect(true, cfg.last_group_id, cfg.last_profile_id, "proxy").await;
+                    cfg.autoconnect_migrated = true;
+                    config::save_config(cfg);
+                }
                 if *do_autoconnect && !was_connected {
                     *do_autoconnect = false;
                     let gid = cfg.last_group_id;
@@ -468,6 +628,22 @@ async fn handle_core_event(
                     if gid != 0 || pid != 0 {
                         let _ = client.connect(gid, pid).await;
                         app.msg("Autoconnecting...");
+                    }
+                }
+                // Diagnose TUN autostart failure: autoconnect=tun, connected, but TUN is off
+                if app.autoconnect_enabled
+                    && app.autostart_mode == "tun"
+                    && app.is_connected()
+                    && !app.tun_enabled
+                {
+                    let core_path = find_core_binary();
+                    if !has_cap_net(std::path::Path::new(&core_path)) {
+                        app.msg(format!(
+                            "TUN autostart failed: core binary missing capabilities. Fix: sudo setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep {}",
+                            std::path::absolute(&core_path).unwrap_or_else(|_| core_path.into()).display()
+                        ));
+                    } else {
+                        app.msg("TUN autostart failed. Check core.log for details.");
                     }
                 }
             }
@@ -491,12 +667,15 @@ async fn handle_core_event(
                     }
                 });
             }
-            // Save last connected profile
+            // Save last connected profile and update core's autoconnect target
             if app.is_connected() {
                 if let Some(ref p) = app.connection_status.profile {
                     cfg.last_group_id = p.group_id;
                     cfg.last_profile_id = p.id;
                     config::save_config(cfg);
+                    if app.autoconnect_enabled {
+                        let _ = client.set_autoconnect(true, p.group_id, p.id, &app.autostart_mode).await;
+                    }
                 }
             }
         }
@@ -600,6 +779,10 @@ async fn handle_core_event(
         }
         CoreEvent::KillSwitchUpdated(enabled) => {
             app.kill_switch_enabled = enabled;
+        }
+        CoreEvent::AutoconnectUpdated(info) => {
+            app.autoconnect_enabled = info.enabled;
+            app.autostart_mode = info.mode;
         }
     }
     false
@@ -1146,16 +1329,44 @@ async fn handle_normal_input(
     // Settings tab keys
     if app.tab == ActiveTab::Settings {
         match key.code {
-            KeyCode::Char('j') | KeyCode::Down => app.settings_state.cursor_down(10),
+            KeyCode::Char('j') | KeyCode::Down => app.settings_state.cursor_down(12),
             KeyCode::Char('k') | KeyCode::Up => app.settings_state.cursor_up(),
             KeyCode::Char(' ') | KeyCode::Enter => {
                 match app.settings_state.cursor() {
                     0 => {
-                        app.autoconnect = !app.autoconnect;
-                        cfg.autoconnect = app.autoconnect;
-                        config::save_config(cfg);
+                        let new_val = !app.autoconnect_enabled;
+                        let _ = client.set_autoconnect(new_val, cfg.last_group_id, cfg.last_profile_id, &app.autostart_mode).await;
                     }
-                    1 => {
+                    2 => {
+                        if app.systemd_enabled {
+                            app.msg("Disabling systemd autostart...");
+                            let result = tokio::task::spawn_blocking(teardown_systemd_service).await;
+                            match result {
+                                Ok(Ok(())) => {
+                                    app.systemd_enabled = false;
+                                    app.msg("Systemd autostart disabled");
+                                }
+                                Ok(Err(e)) => app.msg(format!("Error: {}", e)),
+                                Err(e) => app.msg(format!("Error: {}", e)),
+                            }
+                        } else {
+                            app.msg("Enabling systemd autostart...");
+                            let core_path = find_core_binary();
+                            let log_level = cfg.log_level.clone();
+                            let result = tokio::task::spawn_blocking(move || {
+                                setup_systemd_service(&core_path, &log_level)
+                            }).await;
+                            match result {
+                                Ok(Ok(())) => {
+                                    app.systemd_enabled = true;
+                                    app.msg("Systemd autostart enabled");
+                                }
+                                Ok(Err(e)) => app.msg(format!("Error: {}", e)),
+                                Err(e) => app.msg(format!("Error: {}", e)),
+                            }
+                        }
+                    }
+                    3 => {
                         app.show_ip = !app.show_ip;
                         cfg.show_ip = app.show_ip;
                         if !app.show_ip {
@@ -1164,26 +1375,26 @@ async fn handle_normal_input(
                         }
                         config::save_config(cfg);
                     }
-                    2 => {
+                    4 => {
                         app.log_enabled = !app.log_enabled;
                         cfg.log_enabled = app.log_enabled;
                         config::save_config(cfg);
                         configure_logger(logger, cfg.log_enabled, &cfg.log_level);
                     }
-                    5 => {
+                    7 => {
                         app.popup = Some(Popup::EditTunName {
                             input: app.tun_name.clone(),
                             cursor: app.tun_name.len(),
                         });
                         app.focus = Focus::Popup;
                     }
-                    6 => {
+                    8 => {
                         app.kill_switch_enabled = !app.kill_switch_enabled;
                         let _ = client.set_kill_switch(app.kill_switch_enabled).await;
                         cfg.kill_switch_enabled = app.kill_switch_enabled;
                         config::save_config(cfg);
                     }
-                    7 => {
+                    9 => {
                         if let Some(ref hw) = app.hwid_info {
                             let _ = client.set_hwid(&SetHwidData {
                                 enabled: Some(!hw.enabled),
@@ -1191,13 +1402,13 @@ async fn handle_normal_input(
                             }).await;
                         }
                     }
-                    9 => {
+                    11 => {
                         let _ = client.set_hwid(&SetHwidData {
                             reset: true,
                             ..Default::default()
                         }).await;
                     }
-                    10 => {
+                    12 => {
                         if let Some(ref hw) = app.hwid_info {
                             app.popup = Some(Popup::EditUserAgent {
                                 input: hw.user_agent.clone(),
@@ -1210,7 +1421,14 @@ async fn handle_normal_input(
                 }
             }
             KeyCode::Char('l') | KeyCode::Right => {
-                if app.settings_state.cursor() == 3 {
+                if app.settings_state.cursor() == 1 {
+                    let modes = ["proxy", "tun"];
+                    let current = modes.iter().position(|m| *m == app.autostart_mode.as_str()).unwrap_or(0);
+                    let next = (current + 1) % modes.len();
+                    let new_mode = modes[next].to_string();
+                    let _ = client.set_autoconnect(app.autoconnect_enabled, cfg.last_group_id, cfg.last_profile_id, &new_mode).await;
+                }
+                if app.settings_state.cursor() == 5 {
                     let levels = ["error", "warn", "info", "debug", "trace"];
                     let current = levels.iter().position(|l| *l == app.log_level.as_str()).unwrap_or(1);
                     let next = (current + 1) % levels.len();
@@ -1219,7 +1437,7 @@ async fn handle_normal_input(
                     config::save_config(cfg);
                     configure_logger(logger, cfg.log_enabled, &cfg.log_level);
                 }
-                if app.settings_state.cursor() == 4 {
+                if app.settings_state.cursor() == 6 {
                     let methods = ["tcp", "http-get", "http-head"];
                     let current = methods.iter().position(|m| *m == app.test_method.as_str()).unwrap_or(1);
                     let next = (current + 1) % methods.len();
@@ -1229,7 +1447,14 @@ async fn handle_normal_input(
                 }
             }
             KeyCode::Char('h') | KeyCode::Left => {
-                if app.settings_state.cursor() == 3 {
+                if app.settings_state.cursor() == 1 {
+                    let modes = ["proxy", "tun"];
+                    let current = modes.iter().position(|m| *m == app.autostart_mode.as_str()).unwrap_or(0);
+                    let prev = if current == 0 { modes.len() - 1 } else { current - 1 };
+                    let new_mode = modes[prev].to_string();
+                    let _ = client.set_autoconnect(app.autoconnect_enabled, cfg.last_group_id, cfg.last_profile_id, &new_mode).await;
+                }
+                if app.settings_state.cursor() == 5 {
                     let levels = ["error", "warn", "info", "debug", "trace"];
                     let current = levels.iter().position(|l| *l == app.log_level.as_str()).unwrap_or(1);
                     let prev = if current == 0 { levels.len() - 1 } else { current - 1 };
@@ -1238,7 +1463,7 @@ async fn handle_normal_input(
                     config::save_config(cfg);
                     configure_logger(logger, cfg.log_enabled, &cfg.log_level);
                 }
-                if app.settings_state.cursor() == 4 {
+                if app.settings_state.cursor() == 6 {
                     let methods = ["tcp", "http-get", "http-head"];
                     let current = methods.iter().position(|m| *m == app.test_method.as_str()).unwrap_or(1);
                     let prev = if current == 0 { methods.len() - 1 } else { current - 1 };

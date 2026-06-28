@@ -15,7 +15,6 @@ pub struct App {
     pub connection_status: ProxyStatus,
     pub tun_enabled: bool,
     pub last_msg: Option<String>,
-    pub autoconnect: bool,
     pub show_ip: bool,
     pub log_enabled: bool,
     pub log_level: String,
@@ -23,6 +22,9 @@ pub struct App {
     pub tun_name: String,
     pub hwid_info: Option<HwidData>,
     pub kill_switch_enabled: bool,
+    pub autoconnect_enabled: bool,
+    pub autostart_mode: String,
+    pub systemd_enabled: bool,
     pub public_ip: String,
     pub public_ipv6: String,
 
@@ -44,7 +46,7 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(autoconnect: bool, show_ip: bool, log_enabled: bool, log_level: String, test_method: String, tun_name: String, kill_switch_enabled: bool) -> Self {
+    pub fn new(show_ip: bool, log_enabled: bool, log_level: String, test_method: String, tun_name: String, kill_switch_enabled: bool) -> Self {
         Self {
             groups: Vec::new(),
             connection_status: ProxyStatus {
@@ -54,7 +56,6 @@ impl App {
             },
             tun_enabled: false,
             last_msg: None,
-            autoconnect,
             show_ip,
             log_enabled,
             log_level,
@@ -62,6 +63,9 @@ impl App {
             tun_name,
             hwid_info: None,
             kill_switch_enabled,
+            autoconnect_enabled: false,
+            autostart_mode: "proxy".to_string(),
+            systemd_enabled: false,
             public_ip: String::new(),
             public_ipv6: String::new(),
             tab: ActiveTab::Profiles,
@@ -213,6 +217,8 @@ impl App {
         self.connection_status = state.connection_status;
         self.tun_enabled = state.tun_status;
         self.kill_switch_enabled = state.kill_switch;
+        self.autoconnect_enabled = state.autoconnect.enabled;
+        self.autostart_mode = state.autoconnect.mode;
         self.hwid_info = state.hwid_info;
         self.clamp_cursor();
     }

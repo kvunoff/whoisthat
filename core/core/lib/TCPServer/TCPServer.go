@@ -283,6 +283,14 @@ func (s *Server) handleConnection(conn net.Conn, clientID string) {
 			}
 			command_handler.SetKillSwitch(data)
 
+		case "set-autoconnect":
+			var data structs.SetAutoconnectData
+			if err := json.Unmarshal(raw_tcp_message.Data, &data); err != nil {
+				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
+				return
+			}
+			command_handler.SetAutoconnect(data)
+
 		case "get-routing":
 			var data structs.GetRoutingData
 			if err := json.Unmarshal(raw_tcp_message.Data, &data); err != nil {

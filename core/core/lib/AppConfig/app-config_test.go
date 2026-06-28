@@ -106,3 +106,34 @@ func TestSanitizeDnsServersFallsBackToDefaults(t *testing.T) {
 		}
 	}
 }
+
+func TestDefaultConfigAutoconnect(t *testing.T) {
+	cfg := defaultConfig()
+	if cfg.AutoconnectEnabled {
+		t.Error("AutoconnectEnabled should default to false")
+	}
+	if cfg.AutoconnectMode != "proxy" {
+		t.Errorf("AutoconnectMode = %q, want \"proxy\"", cfg.AutoconnectMode)
+	}
+	if cfg.AutoconnectGroupId != 0 || cfg.AutoconnectProfileId != 0 {
+		t.Error("AutoconnectGroupId/ProfileId should default to 0")
+	}
+}
+
+func TestSanitizeAutoconnectMode(t *testing.T) {
+	tests := []struct {
+		in, want string
+	}{
+		{"proxy", "proxy"},
+		{"tun", "tun"},
+		{"", "proxy"},
+		{"foo", "proxy"},
+		{"PROXY", "proxy"},
+	}
+	for _, tt := range tests {
+		got := sanitizeAutoconnectMode(tt.in)
+		if got != tt.want {
+			t.Errorf("sanitizeAutoconnectMode(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}

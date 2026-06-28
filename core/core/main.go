@@ -2,6 +2,7 @@ package main
 
 import (
 	"whoisthat-core/db"
+	cmd "whoisthat-core/commands"
 	"whoisthat-core/lib"
 	"whoisthat-core/lib/AppConfig"
 	"whoisthat-core/lib/TCPServer"
@@ -18,6 +19,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"syscall"
+	"time"
 )
 
 func main() {
@@ -60,6 +62,9 @@ func main() {
 
 	server := TCPServer.NewServer(&database, &proxy_manager, &tun_manager, stop_sig)
 	server.Start()
+
+	go bootAutoconnect(&database, &proxy_manager, &tun_manager, server)
+
 	go func() {
 		sigs := make(chan os.Signal, 1)
 		signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
@@ -78,4 +83,73 @@ func main() {
 		os.Exit(0)
 	}()
 	select {}
+}
+
+func bootAutoconnect(database *db.DB, proxy_manager *proxy.ProxyManager, tun_manager *tunmode.TunModeManager, server *TCPServer.Server) {
+	cfg := appconfig.GetConfig()
+	if !cfg.AutoconnectEnabled || cfg.AutoconnectProfileId == 0 {
+		return
+	}
+
+	time.Sleep(5 * time.Second)
+
+	command_handler := cmd.Cmd{DB: database, Broadcast: server.Broadcast}
+	connectData := structs.ConnectData{
+		Profile: structs.ProfileID{
+			Id:      cfg.AutoconnectProfileId,
+			GroupId: cfg.AutoconnectGroupId,
+		},
+	}
+
+	connected := false
+	for attempt := 0; attempt < 3; attempt++ {
+		logger.Infof("boot-autoconnect: connect attempt %d (gid=%d pid=%d)", attempt+1, cfg.AutoconnectGroupId, cfg.AutoconnectProfileId)
+		command_handler.Connect(connectData, proxy_manager, tun_manager)
+		status := proxy_manager.GetStatus()
+		if status.Connection == "connected" {
+			logger.Info("boot-autoconnect: connected")
+			connected = true
+			break
+		}
+		logger.Warnf("boot-autoconnect: connect attempt %d failed, retrying in 5s", attempt+1)
+		time.Sleep(5 * time.Second)
+	}
+
+	if !connected {
+		logger.Warn("boot-autoconnect: all connect attempts failed")
+		return
+	}
+
+	if cfg.AutoconnectMode != "tun" {
+		return
+	}
+
+	if !utils.CanTun() {
+		logger.Warn("boot-autoconnect: TUN mode was requested but the core binary lacks network capabilities.")
+		logger.Warn("boot-autoconnect: this usually happens after rebuilding the core binary (inode changes, caps lost).")
+		logger.Warnf("boot-autoconnect: fix: sudo setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep %s", os.Args[0])
+		return
+	}
+
+	profile, err := database.GetProfile(cfg.AutoconnectGroupId, cfg.AutoconnectProfileId)
+	if err != nil {
+		logger.Warn("boot-autoconnect: failed to get profile for tun:", err)
+		return
+	}
+
+	for attempt := 0; attempt < 5; attempt++ {
+		if tun_manager.IsEnabledLocked() {
+			logger.Info("boot-autoconnect: tun mode enabled")
+			return
+		}
+		logger.Infof("boot-autoconnect: tun attempt %d", attempt+1)
+		command_handler.EnableTunForProfile(profile, tun_manager)
+		if tun_manager.IsEnabledLocked() {
+			logger.Info("boot-autoconnect: tun mode enabled")
+			return
+		}
+		logger.Warnf("boot-autoconnect: tun attempt %d failed, retrying in 5s", attempt+1)
+		time.Sleep(5 * time.Second)
+	}
+	logger.Warn("boot-autoconnect: all tun attempts failed")
 }

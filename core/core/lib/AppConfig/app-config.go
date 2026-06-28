@@ -20,16 +20,20 @@ import (
 var tunNameRe = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_-]{0,14}$`)
 
 type AppConfig struct {
-	SocksPort         int       `json:"socks-port"`
-	HttpPort          int       `json:"http-port"`
-	CoreTCPPort       int       `json:"core-tcp-port"`
-	TestPortRange     PortRange `json:"test-port-range"`
-	DnsServers        []string  `json:"dns-servers"`
-	TunName           string    `json:"tun-name"`
-	HwidEnabled       bool      `json:"hwid-enabled"`
-	Hwid              string    `json:"hwid"`
-	UserAgent         string    `json:"user-agent"`
-	KillSwitchEnabled bool      `json:"kill-switch-enabled"`
+	SocksPort             int       `json:"socks-port"`
+	HttpPort              int       `json:"http-port"`
+	CoreTCPPort           int       `json:"core-tcp-port"`
+	TestPortRange         PortRange `json:"test-port-range"`
+	DnsServers            []string  `json:"dns-servers"`
+	TunName               string    `json:"tun-name"`
+	HwidEnabled           bool      `json:"hwid-enabled"`
+	Hwid                  string    `json:"hwid"`
+	UserAgent             string    `json:"user-agent"`
+	KillSwitchEnabled     bool      `json:"kill-switch-enabled"`
+	AutoconnectEnabled    bool      `json:"autoconnect-enabled"`
+	AutoconnectGroupId    int       `json:"autoconnect-group-id"`
+	AutoconnectProfileId  int       `json:"autoconnect-profile-id"`
+	AutoconnectMode       string    `json:"autoconnect-mode"`
 }
 
 type PortRange struct {
@@ -48,10 +52,11 @@ func defaultConfig() AppConfig {
 			Start: 3095,
 			End:   30120,
 		},
-		DnsServers:  []string{"1.1.1.1", "8.8.8.8", "2606:4700:4700::1111", "2001:4860:4860::8888"},
-		TunName:     "whoisthattun",
-		HwidEnabled: true,
-		UserAgent:   "whoisthat/v0.6.0",
+		DnsServers:      []string{"1.1.1.1", "8.8.8.8", "2606:4700:4700::1111", "2001:4860:4860::8888"},
+		TunName:         "whoisthattun",
+		HwidEnabled:     true,
+		UserAgent:       "whoisthat/v0.7.0",
+		AutoconnectMode: "proxy",
 	}
 }
 
@@ -69,6 +74,7 @@ func LoadConfig() {
 	}
 	config.DnsServers = sanitizeDnsServers(config.DnsServers)
 	config.TunName = sanitizeTunName(config.TunName)
+	config.AutoconnectMode = sanitizeAutoconnectMode(config.AutoconnectMode)
 	application_configuration = config
 }
 
@@ -145,6 +151,25 @@ func SetUserAgent(ua string) {
 
 func SetKillSwitch(enabled bool) {
 	application_configuration.KillSwitchEnabled = enabled
+	SaveConfig()
+}
+
+func sanitizeAutoconnectMode(mode string) string {
+	if mode != "proxy" && mode != "tun" {
+		if mode != "" {
+			logger.Warnf("config: invalid autoconnect mode %q, using proxy", mode)
+		}
+		return "proxy"
+	}
+	return mode
+}
+
+func SetAutoconnect(enabled bool, groupId, profileId int, mode string) {
+	mode = sanitizeAutoconnectMode(mode)
+	application_configuration.AutoconnectEnabled = enabled
+	application_configuration.AutoconnectGroupId = groupId
+	application_configuration.AutoconnectProfileId = profileId
+	application_configuration.AutoconnectMode = mode
 	SaveConfig()
 }
 

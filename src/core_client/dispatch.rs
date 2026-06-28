@@ -30,6 +30,7 @@ pub enum CoreEvent {
     HwidUpdated(HwidData),
     TunNameUpdated(String),
     KillSwitchUpdated(bool),
+    AutoconnectUpdated(AutoconnectInfo),
     Disconnected,
 }
 
@@ -103,6 +104,7 @@ pub(crate) fn dispatch(msg: TcpMessage) -> CoreEvent {
         "hwid-updated" => try_dispatch!(msg, "hwid-updated", HwidData, HwidUpdated),
         "tun-name-updated" => try_dispatch!(msg, "tun-name-updated", SetTunNameData, |d| CoreEvent::TunNameUpdated(d.tun_name)),
         "kill-switch-updated" => try_dispatch!(msg, "kill-switch-updated", SetKillSwitchData, |d| CoreEvent::KillSwitchUpdated(d.enabled)),
+        "autoconnect-updated" => try_dispatch!(msg, "autoconnect-updated", AutoconnectInfo, AutoconnectUpdated),
         other => {
             warn!("Unknown message type: {}", other);
             CoreEvent::Error(format!("Unknown message: {}", other))
@@ -315,6 +317,19 @@ mod tests {
             assert_eq!(name, "mytun0");
         } else {
             panic!("expected TunNameUpdated");
+        }
+    }
+
+    #[test]
+    fn test_dispatch_autoconnect_updated() {
+        let event = dispatch(make_msg("autoconnect-updated", json!({
+            "enabled": true, "mode": "tun"
+        })));
+        if let CoreEvent::AutoconnectUpdated(info) = event {
+            assert!(info.enabled);
+            assert_eq!(info.mode, "tun");
+        } else {
+            panic!("expected AutoconnectUpdated");
         }
     }
 }

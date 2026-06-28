@@ -78,6 +78,8 @@ pub struct ApplicationState {
     pub hwid_info: Option<HwidData>,
     #[serde(rename = "kill_switch", default)]
     pub kill_switch: bool,
+    #[serde(default)]
+    pub autoconnect: AutoconnectInfo,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -307,4 +309,24 @@ pub struct RoutingUpdated {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SetKillSwitchData {
     pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SetAutoconnectData {
+    pub enabled: bool,
+    pub group_id: i32,
+    pub profile_id: i32,
+    pub mode: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct AutoconnectInfo {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_autoconnect_mode")]
+    pub mode: String,
+}
+
+fn default_autoconnect_mode() -> String {
+    "proxy".into()
 }

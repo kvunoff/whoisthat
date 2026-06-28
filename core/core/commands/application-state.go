@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"whoisthat-core/lib/logger"
+	appconfig "whoisthat-core/lib/AppConfig"
 	proxy "whoisthat-core/lib/proxy/mainproxy"
 	tunmode "whoisthat-core/lib/proxy/tun"
 	"whoisthat-core/structs"
@@ -21,6 +22,10 @@ func (cmd *Cmd) GetApplicationState(data structs.GetApplicationStateData, proxy_
 		TunStatus:        tun_manager.IsEnabledLocked(),
 		HwidInfo:         GetHwidInfo(),
 		KillSwitch:       proxy_manager.KillSwitchEnabled(),
+		Autoconnect: structs.AutoconnectInfo{
+			Enabled: appconfig.GetConfig().AutoconnectEnabled,
+			Mode:    appconfig.GetConfig().AutoconnectMode,
+		},
 	}
 
 	cmd.send("application-state", application_state)

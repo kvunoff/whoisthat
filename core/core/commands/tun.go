@@ -36,6 +36,15 @@ func (cmd *Cmd) EnableTun(data structs.EnableTunData, proxy_manager *proxy.Proxy
 	cmd.enableTun(status.Profile, tun_manager)
 }
 
+func (cmd *Cmd) EnableTunForProfile(profile structs.Profile, tun_manager *tunmode.TunModeManager) {
+	ConnectionMutex.Lock()
+	defer ConnectionMutex.Unlock()
+	if tun_manager.IsEnabledLocked() {
+		return
+	}
+	cmd.enableTun(profile, tun_manager)
+}
+
 func pickDns(dnsServers []string) (dns4, dns6 string) {
 	for _, s := range dnsServers {
 		ip := net.ParseIP(s)
