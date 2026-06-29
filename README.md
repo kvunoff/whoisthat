@@ -8,6 +8,22 @@ A modern terminal-based VPN client. Rust TUI frontend. Go engine backed by Xray-
 
 ---
 
+## Table of Contents
+
+- [Installation](#installation) — quick install, AUR, manual build, configuration
+- [Features](#features)
+- [Architecture](#architecture) — how it works, routing rules, HWID
+- [TCP API Protocol](#tcp-api-protocol) — wire format, commands, notifications, structures
+- [Usage](#usage) — keybindings, settings, TUN mode, systemd, subscriptions
+- [Troubleshooting](#troubleshooting)
+- [Testing](#testing)
+- [Development](#development) — dev loop, logs, debugging, CI
+- [File Structure](#file-structure)
+- [Credits](#credits)
+- [License](#license)
+
+---
+
 ## Installation
 
 ### Quick install (any Linux distribution)
