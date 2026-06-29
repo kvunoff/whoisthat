@@ -32,6 +32,7 @@ pub struct App {
     pub focus: Focus,
     pub cursor: usize,
     pub tree_scroll: usize,
+    pub details_scroll: usize,
     pub popup: Option<Popup>,
     pub help_scroll: usize,
 
@@ -41,6 +42,9 @@ pub struct App {
     pub routing: RoutingConfig,
     pub routing_cursor: usize,
     pub routing_popup: Option<RoutingPopup>,
+    pub search_query: Option<String>,
+    pub search_input: String,
+    pub search_mode: bool,
 
     uri_cache: RefCell<Option<(i32, i32, ParsedUri)>>,
 }
@@ -72,6 +76,7 @@ impl App {
             focus: Focus::LeftPanel,
             cursor: 0,
             tree_scroll: 0,
+            details_scroll: 0,
             popup: None,
             help_scroll: 0,
             settings_state: SettingsState::new(),
@@ -85,6 +90,9 @@ impl App {
             routing: RoutingConfig::default(),
             routing_cursor: 0,
             routing_popup: None,
+            search_query: None,
+            search_input: String::new(),
+            search_mode: false,
             uri_cache: RefCell::new(None),
         }
     }
@@ -92,31 +100,73 @@ impl App {
     // --- tree helpers ---
 
     fn tree_len(&self) -> usize {
-        let mut n = 0;
-        for g in &self.groups {
-            n += 1;
-            n += g.profiles.len();
+        match &self.search_query {
+            None => {
+                let mut n = 0;
+                for g in &self.groups {
+                    n += 1;
+                    n += g.profiles.len();
+                }
+                n
+            }
+            Some(q) => {
+                let ql = q.to_lowercase();
+                let mut n = 0;
+                for g in &self.groups {
+                    for p in &g.profiles {
+                        if self.profile_matches(&ql, p) {
+                            n += 1;
+                        }
+                    }
+                }
+                n
+            }
         }
-        n
+    }
+
+    pub(super) fn profile_matches(&self, query: &str, p: &Profile) -> bool {
+        p.name.to_lowercase().contains(query)
+            || p.protocol.to_lowercase().contains(query)
+            || p.address.to_lowercase().contains(query)
+            || p.host.to_lowercase().contains(query)
     }
 
     pub(super) fn tree_node_at(&self, cursor: usize) -> Option<TreeNode> {
-        let mut pos = 0;
-        for (gi, g) in self.groups.iter().enumerate() {
-            if pos == cursor {
-                return Some(TreeNode::Group(gi));
+        match &self.search_query {
+            None => {
+                let mut pos = 0;
+                for (gi, g) in self.groups.iter().enumerate() {
+                    if pos == cursor {
+                        return Some(TreeNode::Group(gi));
+                    }
+                    pos += 1;
+                    let plen = g.profiles.len();
+                    if cursor < pos + plen {
+                        return Some(TreeNode::Profile(gi, cursor - pos));
+                    }
+                    pos += plen;
+                }
+                None
             }
-            pos += 1;
-            let plen = g.profiles.len();
-            if cursor < pos + plen {
-                return Some(TreeNode::Profile(gi, cursor - pos));
+            Some(q) => {
+                let ql = q.to_lowercase();
+                let mut pos = 0;
+                for (gi, g) in self.groups.iter().enumerate() {
+                    for (pi, p) in g.profiles.iter().enumerate() {
+                        if self.profile_matches(&ql, p) {
+                            if pos == cursor {
+                                return Some(TreeNode::Profile(gi, pi));
+                            }
+                            pos += 1;
+                        }
+                    }
+                }
+                None
             }
-            pos += plen;
         }
-        None
     }
 
-    fn clamp_cursor(&mut self) {
+    pub fn clamp_cursor(&mut self) {
         let len = self.tree_len();
         if len == 0 {
             self.cursor = 0;
@@ -170,28 +220,94 @@ impl App {
             return;
         }
         self.cursor += 1;
+        self.details_scroll = 0;
     }
 
     pub fn cursor_up(&mut self) {
         if self.cursor > 0 {
             self.cursor -= 1;
+            self.details_scroll = 0;
         }
     }
 
     pub fn cursor_top(&mut self) {
         self.cursor = 0;
         self.tree_scroll = 0;
+        self.details_scroll = 0;
     }
 
     pub fn cursor_bottom(&mut self) {
         let len = self.tree_len();
         if len > 0 {
             self.cursor = len - 1;
+            self.details_scroll = 0;
         }
     }
 
     pub fn clear_msg(&mut self) {
         self.last_msg = None;
+    }
+
+    pub fn details_scroll_down(&mut self, total: usize, visible: usize) {
+        if total > visible {
+            self.details_scroll = (self.details_scroll + 1).min(total - visible);
+        }
+    }
+
+    pub fn details_scroll_up(&mut self) {
+        self.details_scroll = self.details_scroll.saturating_sub(1);
+    }
+
+    pub fn details_scroll_top(&mut self) {
+        self.details_scroll = 0;
+    }
+
+    pub fn details_scroll_bottom(&mut self, total: usize, visible: usize) {
+        if total > visible {
+            self.details_scroll = total - visible;
+        }
+    }
+
+    pub fn details_line_count(&self) -> usize {
+        match self.tree_node_at(self.cursor) {
+            Some(TreeNode::Group(gi)) => {
+                let g = &self.groups[gi];
+                let mut n = 4;
+                if !g.group.subscription_url.is_empty() {
+                    n += 4;
+                }
+                if self.connected_group_name() == Some(g.group.name.as_str()) {
+                    n += 2;
+                }
+                n
+            }
+            Some(TreeNode::Profile(_, _)) => {
+                let p = match self.selected_profile() {
+                    Some(p) => p,
+                    None => return 1,
+                };
+                let mut n = 22;
+                if p.uri.starts_with("ss://") && crate::ui::uri::parse_ss_method(&p.uri).is_some() {
+                    n += 1;
+                }
+                if self.is_connected() {
+                    if let Some((gid, pid)) = self.connected_id() {
+                        if gid == p.group_id && pid == p.id {
+                            n += 1;
+                        }
+                    }
+                }
+                if p.test_result != 0 {
+                    n += 1;
+                }
+                n
+            }
+            None => 1,
+        }
+    }
+
+    pub fn details_visible(&self) -> usize {
+        30
     }
 
     pub fn cached_uri_params(&self, p: &Profile) -> ParsedUri {

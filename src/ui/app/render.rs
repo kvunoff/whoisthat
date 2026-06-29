@@ -9,7 +9,7 @@ use super::state::App;
 use super::types::*;
 use crate::ui::logs::render_logs;
 use crate::ui::routing::{render_routing_popup, render_routing_tab};
-use crate::ui::settings::render_settings;
+use crate::ui::settings::{render_settings, SettingsValues};
 use crate::ui::theme::*;
 
 impl App {
@@ -88,32 +88,53 @@ impl App {
             Span::styled(" P:", s_faint()),
             Span::styled(format!("↑{}", format_bytes(ts.proxy_up)), s_success()),
             Span::styled(format!(" ↓{}", format_bytes(ts.proxy_down)), s_success()),
+            Span::styled("  D:", s_faint()),
+            Span::styled(format!("↑{}", format_bytes(ts.direct_up)), s_dim()),
+            Span::styled(format!(" ↓{}", format_bytes(ts.direct_down)), s_dim()),
         ]);
         f.render_widget(Paragraph::new(stats_line), rows[1]);
     }
 
     fn tab_spans(&self) -> Vec<Span<'_>> {
-        let entries = [
-            ('a', " add", ActiveTab::Profiles),
-            ('u', " sub", ActiveTab::Profiles),
+        let tabs: &[(char, &str, ActiveTab)] = &[
+            ('1', " profiles", ActiveTab::Profiles),
             ('r', " route", ActiveTab::Routing),
             ('l', " logs", ActiveTab::Logs),
             ('s', " settings", ActiveTab::Settings),
-            ('v', " tun", ActiveTab::Profiles),
-            ('h', " help", ActiveTab::Profiles),
-            ('q', " detach", ActiveTab::Profiles),
-            ('Q', " quit", ActiveTab::Profiles),
+        ];
+
+        let actions: &[(char, &str)] = &[
+            ('a', " add"),
+            ('u', " sub"),
+            ('v', " tun"),
+            ('h', " help"),
+            ('q', " detach"),
+            ('Q', " quit"),
         ];
 
         let mut result = vec![Span::raw(" ")];
 
-        for (i, (key, label, _tab)) in entries.iter().enumerate() {
-            result.push(Span::styled(format!("[{}]", key), s_accent()));
-            result.push(Span::styled(label.to_string(), s_dim()));
-            if i < entries.len() - 1 {
-                result.push(Span::raw("・"));
+        for (i, (key, label, tab)) in tabs.iter().enumerate() {
+            let is_active = self.tab == *tab;
+            let key_style = if is_active { s_accent().add_modifier(Modifier::BOLD) } else { s_faint() };
+            let label_style = if is_active { s_accent().add_modifier(Modifier::BOLD) } else { s_faint() };
+            result.push(Span::styled(format!("[{}]", key), key_style));
+            result.push(Span::styled(*label, label_style));
+            if i < tabs.len() - 1 {
+                result.push(Span::styled(" ", s_faint()));
             }
         }
+
+        result.push(Span::styled("  │ ", s_faint()));
+
+        for (i, (key, label)) in actions.iter().enumerate() {
+            result.push(Span::styled(format!("[{}]", key), s_faint()));
+            result.push(Span::styled(*label, s_faint()));
+            if i < actions.len() - 1 {
+                result.push(Span::raw(" "));
+            }
+        }
+
         result
     }
 
@@ -126,19 +147,22 @@ impl App {
             }
             ActiveTab::Settings => {
                 let focused = self.focus == Focus::LeftPanel;
+                let values = SettingsValues {
+                    autoconnect: self.autoconnect_enabled,
+                    autostart_mode: &self.autostart_mode,
+                    systemd_enabled: self.systemd_enabled,
+                    show_ip: self.show_ip,
+                    log_enabled: self.log_enabled,
+                    log_level: &self.log_level,
+                    test_method: &self.test_method,
+                    tun_name: &self.tun_name,
+                    kill_switch_enabled: self.kill_switch_enabled,
+                    hwid: self.hwid_info.as_ref(),
+                };
                 render_settings(
                     f,
                     area,
-                    self.autoconnect_enabled,
-                    &self.autostart_mode,
-                    self.systemd_enabled,
-                    self.show_ip,
-                    self.log_enabled,
-                    &self.log_level,
-                    &self.test_method,
-                    &self.tun_name,
-                    self.kill_switch_enabled,
-                    self.hwid_info.as_ref(),
+                    &values,
                     &mut self.settings_state,
                     focused,
                 );

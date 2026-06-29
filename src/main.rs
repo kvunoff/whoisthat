@@ -1090,7 +1090,6 @@ fn handle_routing_form(
     field: &mut usize,
     key: event::KeyEvent,
 ) -> bool {
-    // We use repop only to reconstruct the popup; the actual save is in the caller.
     match key.code {
         KeyCode::Esc => { return false; }
         KeyCode::Tab => {
@@ -1102,15 +1101,29 @@ fn handle_routing_form(
                 *field += 1;
                 *cursor = if *field == 1 { value.len() } else { 0 };
             } else {
-                return true; // save
+                return true;
+            }
+        }
+        KeyCode::Left => {
+            if *field == 0 {
+                *match_type = if *match_type == 0 { 5 } else { *match_type - 1 };
+            } else if *field == 1 {
+                *cursor = cursor.saturating_sub(1);
+            } else if *field == 2 {
+                *outbound = if *outbound == 0 { 2 } else { *outbound - 1 };
+            }
+        }
+        KeyCode::Right => {
+            if *field == 0 {
+                *match_type = (*match_type + 1) % 6;
+            } else if *field == 1 && *cursor < value.len() {
+                *cursor += 1;
+            } else if *field == 2 {
+                *outbound = (*outbound + 1) % 3;
             }
         }
         KeyCode::Char(c) => {
-            if *field == 0 {
-                *match_type = (*match_type + 1) % 6;
-            } else if *field == 2 {
-                *outbound = (*outbound + 1) % 3;
-            } else {
+            if *field == 1 {
                 if c == 'v' && matches!(key.modifiers, crossterm::event::KeyModifiers::CONTROL) {
                     if let Some(clip) = read_clipboard() {
                         *value = clip;
@@ -1135,16 +1148,6 @@ fn handle_routing_form(
         KeyCode::Delete => {
             if *field == 1 && *cursor < value.len() {
                 value.remove(*cursor);
-            }
-        }
-        KeyCode::Left => {
-            if *field == 1 {
-                *cursor = if *cursor > 0 { *cursor - 1 } else { 0 };
-            }
-        }
-        KeyCode::Right => {
-            if *field == 1 && *cursor < value.len() {
-                *cursor += 1;
             }
         }
         KeyCode::Home => {
@@ -1329,13 +1332,20 @@ async fn handle_normal_input(
     // Settings tab keys
     if app.tab == ActiveTab::Settings {
         match key.code {
-            KeyCode::Char('j') | KeyCode::Down => app.settings_state.cursor_down(12),
+            KeyCode::Char('j') | KeyCode::Down => app.settings_state.cursor_down(),
             KeyCode::Char('k') | KeyCode::Up => app.settings_state.cursor_up(),
             KeyCode::Char(' ') | KeyCode::Enter => {
                 match app.settings_state.cursor() {
                     0 => {
                         let new_val = !app.autoconnect_enabled;
                         let _ = client.set_autoconnect(new_val, cfg.last_group_id, cfg.last_profile_id, &app.autostart_mode).await;
+                    }
+                    1 => {
+                        let modes = ["proxy", "tun"];
+                        let current = modes.iter().position(|m| *m == app.autostart_mode.as_str()).unwrap_or(0);
+                        let next = (current + 1) % modes.len();
+                        let new_mode = modes[next].to_string();
+                        let _ = client.set_autoconnect(app.autoconnect_enabled, cfg.last_group_id, cfg.last_profile_id, &new_mode).await;
                     }
                     2 => {
                         if app.systemd_enabled {
@@ -1381,17 +1391,34 @@ async fn handle_normal_input(
                         config::save_config(cfg);
                         configure_logger(logger, cfg.log_enabled, &cfg.log_level);
                     }
-                    7 => {
+                    5 => {
+                        let levels = ["error", "warn", "info", "debug", "trace"];
+                        let current = levels.iter().position(|l| *l == app.log_level.as_str()).unwrap_or(1);
+                        let next = (current + 1) % levels.len();
+                        app.log_level = levels[next].to_string();
+                        cfg.log_level = app.log_level.clone();
+                        config::save_config(cfg);
+                        configure_logger(logger, cfg.log_enabled, &cfg.log_level);
+                    }
+                    6 => {
                         app.popup = Some(Popup::EditTunName {
                             input: app.tun_name.clone(),
                             cursor: app.tun_name.len(),
                         });
                         app.focus = Focus::Popup;
                     }
-                    8 => {
+                    7 => {
                         app.kill_switch_enabled = !app.kill_switch_enabled;
                         let _ = client.set_kill_switch(app.kill_switch_enabled).await;
                         cfg.kill_switch_enabled = app.kill_switch_enabled;
+                        config::save_config(cfg);
+                    }
+                    8 => {
+                        let methods = ["tcp", "http-get", "http-head"];
+                        let current = methods.iter().position(|m| *m == app.test_method.as_str()).unwrap_or(1);
+                        let next = (current + 1) % methods.len();
+                        app.test_method = methods[next].to_string();
+                        cfg.test_method = app.test_method.clone();
                         config::save_config(cfg);
                     }
                     9 => {
@@ -1402,6 +1429,7 @@ async fn handle_normal_input(
                             }).await;
                         }
                     }
+                    10 => {}
                     11 => {
                         let _ = client.set_hwid(&SetHwidData {
                             reset: true,
@@ -1420,58 +1448,6 @@ async fn handle_normal_input(
                     _ => {}
                 }
             }
-            KeyCode::Char('l') | KeyCode::Right => {
-                if app.settings_state.cursor() == 1 {
-                    let modes = ["proxy", "tun"];
-                    let current = modes.iter().position(|m| *m == app.autostart_mode.as_str()).unwrap_or(0);
-                    let next = (current + 1) % modes.len();
-                    let new_mode = modes[next].to_string();
-                    let _ = client.set_autoconnect(app.autoconnect_enabled, cfg.last_group_id, cfg.last_profile_id, &new_mode).await;
-                }
-                if app.settings_state.cursor() == 5 {
-                    let levels = ["error", "warn", "info", "debug", "trace"];
-                    let current = levels.iter().position(|l| *l == app.log_level.as_str()).unwrap_or(1);
-                    let next = (current + 1) % levels.len();
-                    app.log_level = levels[next].to_string();
-                    cfg.log_level = app.log_level.clone();
-                    config::save_config(cfg);
-                    configure_logger(logger, cfg.log_enabled, &cfg.log_level);
-                }
-                if app.settings_state.cursor() == 6 {
-                    let methods = ["tcp", "http-get", "http-head"];
-                    let current = methods.iter().position(|m| *m == app.test_method.as_str()).unwrap_or(1);
-                    let next = (current + 1) % methods.len();
-                    app.test_method = methods[next].to_string();
-                    cfg.test_method = app.test_method.clone();
-                    config::save_config(cfg);
-                }
-            }
-            KeyCode::Char('h') | KeyCode::Left => {
-                if app.settings_state.cursor() == 1 {
-                    let modes = ["proxy", "tun"];
-                    let current = modes.iter().position(|m| *m == app.autostart_mode.as_str()).unwrap_or(0);
-                    let prev = if current == 0 { modes.len() - 1 } else { current - 1 };
-                    let new_mode = modes[prev].to_string();
-                    let _ = client.set_autoconnect(app.autoconnect_enabled, cfg.last_group_id, cfg.last_profile_id, &new_mode).await;
-                }
-                if app.settings_state.cursor() == 5 {
-                    let levels = ["error", "warn", "info", "debug", "trace"];
-                    let current = levels.iter().position(|l| *l == app.log_level.as_str()).unwrap_or(1);
-                    let prev = if current == 0 { levels.len() - 1 } else { current - 1 };
-                    app.log_level = levels[prev].to_string();
-                    cfg.log_level = app.log_level.clone();
-                    config::save_config(cfg);
-                    configure_logger(logger, cfg.log_enabled, &cfg.log_level);
-                }
-                if app.settings_state.cursor() == 6 {
-                    let methods = ["tcp", "http-get", "http-head"];
-                    let current = methods.iter().position(|m| *m == app.test_method.as_str()).unwrap_or(1);
-                    let prev = if current == 0 { methods.len() - 1 } else { current - 1 };
-                    app.test_method = methods[prev].to_string();
-                    cfg.test_method = app.test_method.clone();
-                    config::save_config(cfg);
-                }
-            }
             _ => {}
         }
         return false;
@@ -1484,6 +1460,10 @@ async fn handle_normal_input(
             KeyCode::Char('k') | KeyCode::Up => app.logs_state.scroll_up(),
             KeyCode::Char('g') => app.logs_state.scroll_top(),
             KeyCode::Char('G') => app.logs_state.scroll_bottom(),
+            KeyCode::Char('f') | KeyCode::Char('F') => {
+                app.logs_state.cycle_filter();
+                app.msg(format!("Log filter: {}", app.logs_state.filter.label()));
+            }
             _ => {}
         }
         return false;
@@ -1500,11 +1480,69 @@ async fn handle_normal_input(
     }
 
     match app.focus {
-        Focus::LeftPanel => match key.code {
+        Focus::LeftPanel => {
+            if app.search_mode {
+                match key.code {
+                    KeyCode::Esc => {
+                        app.search_mode = false;
+                        app.search_query = None;
+                        app.search_input.clear();
+                        app.cursor = 0;
+                        app.clamp_cursor();
+                    }
+                    KeyCode::Enter => {
+                        app.search_mode = false;
+                        if app.search_input.is_empty() {
+                            app.search_query = None;
+                            app.cursor = 0;
+                            app.clamp_cursor();
+                        }
+                    }
+                    KeyCode::Char('j') | KeyCode::Down => {
+                        app.cursor_down();
+                    }
+                    KeyCode::Char('k') | KeyCode::Up => {
+                        app.cursor_up();
+                    }
+                    KeyCode::Char('g') => app.cursor_top(),
+                    KeyCode::Char('G') => app.cursor_bottom(),
+                    KeyCode::Char(c) => {
+                        let mut cur = app.search_input.len();
+                        edit_text_field(&mut app.search_input, &mut cur, key);
+                        app.search_query = Some(app.search_input.clone());
+                        app.cursor = 0;
+                    }
+                    KeyCode::Backspace => {
+                        let mut cur = app.search_input.len();
+                        edit_text_field(&mut app.search_input, &mut cur, key);
+                        app.search_query = Some(app.search_input.clone());
+                        app.cursor = 0;
+                    }
+                    _ => {}
+                }
+                return false;
+            }
+            match key.code {
             KeyCode::Char('j') | KeyCode::Down => app.cursor_down(),
             KeyCode::Char('k') | KeyCode::Up => app.cursor_up(),
             KeyCode::Char('g') => app.cursor_top(),
             KeyCode::Char('G') => app.cursor_bottom(),
+            KeyCode::Char('/') => {
+                app.search_mode = true;
+                app.search_input.clear();
+                app.search_query = Some(String::new());
+                app.cursor = 0;
+                return false;
+            }
+            KeyCode::Esc => {
+                if app.search_query.is_some() {
+                    app.search_query = None;
+                    app.search_input.clear();
+                    app.cursor = 0;
+                    app.clamp_cursor();
+                    return false;
+                }
+            }
             KeyCode::Char('c') | KeyCode::Enter => {
                 if let Some(p) = app.selected_profile() {
                     let _ = client.connect(p.group_id, p.id).await;
@@ -1590,6 +1628,7 @@ async fn handle_normal_input(
                 }
             }
             _ => {}
+        }
         },
         Focus::RightPanel => match key.code {
             KeyCode::Char('c') | KeyCode::Enter => {
@@ -1602,8 +1641,18 @@ async fn handle_normal_input(
                 let _ = client.disconnect().await;
                 app.msg("Disconnecting...");
             }
-            KeyCode::Char('j') | KeyCode::Down => app.cursor_down(),
-            KeyCode::Char('k') | KeyCode::Up => app.cursor_up(),
+            KeyCode::Char('j') | KeyCode::Down => {
+                app.details_scroll_down(app.details_line_count(), app.details_visible());
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                app.details_scroll_up();
+            }
+            KeyCode::Char('g') => {
+                app.details_scroll_top();
+            }
+            KeyCode::Char('G') => {
+                app.details_scroll_bottom(app.details_line_count(), app.details_visible());
+            }
             KeyCode::Char('t') => {
                 let method = app.test_method.clone();
                 let list = build_test_list(app, false);

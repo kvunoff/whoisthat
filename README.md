@@ -30,7 +30,7 @@ yay -S whoisthat
 
 ### Manual build
 
-Prerequisites: **Rust** 1.80+, **Go** 1.24+, **git**, **curl**, a C compiler.
+Prerequisites: **Rust** 1.80+, **Go** 1.25+, **git**, **curl**, a C compiler.
 
 ```bash
 git clone https://github.com/kvunoff/whoisthat.git
@@ -87,7 +87,12 @@ kill_switch_enabled = false
   "tun-name": "whoisthattun",
   "hwid-enabled": true,
   "hwid": "1fb1e0141ab3e35a",
-  "user-agent": "whoisthat/v0.4.0"
+  "user-agent": "whoisthat/v0.7.0",
+  "kill-switch-enabled": false,
+  "autoconnect-enabled": false,
+  "autoconnect-group-id": 0,
+  "autoconnect-profile-id": 0,
+  "autoconnect-mode": "proxy"
 }
 ```
 
@@ -114,13 +119,14 @@ Encrypted at rest with AES-256-GCM — key auto-generated on first run.
 - Full system-wide TUN-mode VPN (`tun2socks` + `iptables`/`nftables`, auto-detected)
 - **Profile testing** — three methods: TCP connect, HTTP GET (SOCKS5 → Cloudflare), HTTP HEAD
 - **Scan-all testing** — `t` scans all profiles across all groups with dedup; `T` tests only focused profile/subscription
-- **Custom routing rules** — domain, IP, protocol, port → proxy/direct/block (`r` tab). `direct` outbound works correctly in TUN mode via SO_MARK + fwmark routing (no root required).
+- **Custom routing rules** — domain, IP, protocol, port, geoip, geosite → proxy/direct/block (`r` tab). `direct` outbound works correctly in TUN mode via SO_MARK + fwmark routing (no root required). Use ←/→ to cycle type/outbound in the form.
 - **Kill-switch** — When enabled, blocks all non-VPN traffic if the connection drops. Uses a dedicated firewall table (`whoisthat_ks`) independent of TUN rules. Works in both SOCKS and TUN modes. Toggle in Settings.
 - Real-time connection status with uplink/downlink traffic stats
 - **Log viewer** — live tail from core log, auto-scroll, [WARN]/[ERRO] highlighting
 - **Configurable** — DNS servers, proxy ports, log level, test method, HWID, user-agent via settings and config files
 - **Detach/reattach** — `q` leaves VPN running in background, reopen TUI to reattach
-- Autoconnect on startup
+- **Boot autostart** — autoconnect on startup with configurable mode (proxy or TUN); optional systemd user service for starting VPN at boot (before login via lingering)
+- **Profile search** — `/` to filter profiles by name, protocol, address, or host
 - Public IP display (auto-refreshed every 30s and on connect/disconnect/TUN-toggle)
 - Dark color scheme (Tokyo Night inspired)
 - Keyboard-driven — mouse is optional
@@ -199,7 +205,7 @@ When subscription updates are fetched, the core sends HTTP headers identifying t
 | `x-device-os` | `Linux` | `runtime.GOOS` |
 | `x-ver-os` | `6.12.0-arch1-1` | `uname -r` |
 | `x-device-model` | `Arch Linux` | `/etc/os-release` PRETTY_NAME |
-| `user-agent` | `whoisthat/v0.4.0` | User-configurable (Settings) |
+| `user-agent` | `whoisthat/v0.7.0` | User-configurable (Settings) |
 
 Response headers (`x-hwid-max-devices-reached`, `x-hwid-not-supported`, `x-hwid-limit`) are inspected and trigger warnings when device limits are reached.
 
@@ -244,12 +250,13 @@ Both client→core commands and core→client notifications use the same framing
 | `update-routing` | `{"config":{...}}` | `routing-updated` |
 | `die` | `{}` | (stops core) |
 | `set-kill-switch` | `{"enabled":bool}` | `kill-switch-updated` |
+| `set-autoconnect` | `{"enabled":bool,"group_id":int,"profile_id":int,"mode":"proxy"\|"tun"}` | `autoconnect-updated` |
 
 ### Notifications (Core → All Clients)
 
 | Message | Data |
 | --- | --- |
-| `application-state` | Full state: groups, profiles, connection status, TUN status, HWID info |
+| `application-state` | Full state: groups, profiles, connection status, TUN status, HWID info, kill switch, autoconnect |
 | `status-changed` | `{"connection":"connected"\|"disconnected","profile":{...}}` |
 | `profiles-added` | `{"profiles":[...]}` |
 | `profiles-deleted` | `{"deleted-profiles":[...]}` |
@@ -266,6 +273,7 @@ Both client→core commands and core→client notifications use the same framing
 | `routing-updated` | `{"config":{...}}` |
 | `warn` | `{"key":"str","content":"str"}` |
 | `kill-switch-updated` | `{"enabled":bool}` |
+| `autoconnect-updated` | `{"enabled":bool,"mode":"proxy"\|"tun"}` |
 
 ### Profile structure
 
@@ -316,7 +324,8 @@ Subscription metadata (`sub_*`) is populated from the `subscription-userinfo` HT
 | `g` | Jump to top |
 | `G` | Jump to bottom |
 | `Tab` | Switch focus (list ↔ details panel) |
-| `h` / `?` | Show help |
+| `/` | Search / filter profiles (type to filter, Esc to clear) |
+| `h` / `?` | Show help (context-aware) |
 
 ### Connection
 
@@ -344,10 +353,10 @@ Subscription metadata (`sub_*`) is populated from the `subscription-userinfo` HT
 
 | Key | Action |
 | --- | --- |
-| `l` | Logs view (live tail with auto-scroll) |
-| `r` | Routing rules (domain/IP/protocol/port → proxy/direct/block) |
+| `l` | Logs view (live tail with auto-scroll, `f` to filter by level) |
+| `r` | Routing rules (domain/IP/protocol/port/geoip/geosite → proxy/direct/block) |
 | `s` | Settings |
-| `Esc` / `1` | Back to Profiles |
+| `1` / `Esc` | Back to Profiles |
 | `q` | Detach TUI (VPN stays connected in background) |
 | `Q` / `Ctrl+C` | Full quit (stop VPN + exit) |
 
@@ -355,7 +364,9 @@ Subscription metadata (`sub_*`) is populated from the `subscription-userinfo` HT
 
 | Setting | Values | Description |
 | --- | --- | --- |
-| Autoconnect | on/off | Auto-connect to last used profile on startup |
+| Autoconnect | on/off | Auto-connect to last used profile on startup (core handles boot autostart) |
+| Autostart mode | proxy/tun | VPN mode for boot autostart (proxy = SOCKS5, tun = full system VPN) |
+| Systemd autostart | on/off | Start VPN core at boot via systemd user service (auto-enables linger) |
 | Show IP | on/off | Display public IP in top bar |
 | TUI log | on/off | Enable Rust TUI debug log (`~/.local/share/whoisthat/tui.log`) |
 | Log level | error/warn/info/debug/trace | Minimum log level for TUI and core |
@@ -365,9 +376,9 @@ Subscription metadata (`sub_*`) is populated from the `subscription-userinfo` HT
 | HWID: Enabled | on/off | Send HWID headers with subscription requests |
 | HWID | 1fb1e0141ab3e35a | Device identifier (read-only, auto-generated) |
 | Reset HWID | ⏎ | Generate a new random HWID |
-| UA | whoisthat/v0.4.0 | User-Agent header (editable — press Enter to modify) |
+| User-Agent | whoisthat/v0.7.0 | User-Agent header (editable — press Enter to modify) |
 
-Navigate with `j`/`k`, toggle booleans with `Space`/`Enter`, cycle values with `h`/`l`. Scrolls automatically as items overflow.
+Navigate with `j`/`k`, press `Enter`/`Space` to toggle, cycle values, open edit popups, or execute actions.
 
 ### TUN Mode
 
@@ -409,8 +420,9 @@ cargo test
 
 Covers:
 
-- **Message dispatch** (`src/core_client/dispatch.rs`) — all notification message types (17), unknown type handling, malformed JSON
+- **Message dispatch** (`src/core_client/dispatch.rs`) — all notification message types (19), unknown type handling, malformed JSON
 - **Routing form logic** (`src/ui/routing.rs`) — `form_to_rule` / `rule_to_form` for all 6 match types and 3 outbounds, round-trip consistency
+- **Settings layout** (`src/ui/settings.rs`) — grouped layout, cursor navigation skipping headers, clamping
 - **Text editor** (`src/main.rs`) — `edit_text_field`: insert, backspace, delete, cursor movement, Home/End boundary conditions
 
 ### Go
@@ -434,7 +446,7 @@ Covers:
 whoisthat/
 ├── Cargo.toml          ← Rust project manifest
 ├── src/                ← Rust TUI source
-│   ├── main.rs         ← Entry point, event loop, autoconnect
+│   ├── main.rs         ← Entry point, event loop, autoconnect, systemd setup
 │   ├── config.rs       ← Config loader (~/.config/whoisthat/config.toml)
 │   ├── core_client/    ← TCP client for the Go core
 │   │   ├── protocol.rs ← All serde types mirroring Go structs
@@ -442,13 +454,12 @@ whoisthat/
 │   │   ├── dispatch.rs ← Read loop → typed event channel
 │   │   └── commands.rs ← High-level async send functions
 │   └── ui/             ← ratatui components
-│       ├── app.rs      ← Main app state + rendering
+│       ├── app/        ← Main app state + rendering (mod, types, state, render, tree, details, popups, helpers)
 │       ├── theme.rs    ← Color palette (Tokyo Night)
 │       ├── settings.rs ← Settings screen
 │       ├── routing.rs  ← Routing rules tab + popups
-│       ├── logs.rs     ← Log viewer (live tail + auto-scroll)
+│       ├── logs.rs     ← Log viewer (live tail + auto-scroll + level filter)
 │       ├── uri.rs      ← URI detail parser (VLESS/VMess/Trojan/SS/SOCKS/Hysteria2)
-│       └── widgets.rs  ← Shared widget helpers
 ├── install.sh          ← Universal installer script
 ├── parser/             ← URI → Xray JSON parser (Rust)
 │   ├── Cargo.toml

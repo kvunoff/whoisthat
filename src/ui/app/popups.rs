@@ -171,7 +171,7 @@ impl App {
     }
 
     fn render_help_popup(&self, f: &mut Frame, area: Rect) {
-        let pa = centered_rect(52, 60, area);
+        let pa = centered_rect(52, 70, area);
         f.render_widget(Clear, pa);
 
         let block = Block::default()
@@ -184,30 +184,70 @@ impl App {
         let inner = block.inner(pa);
         f.render_widget(block, pa);
 
-        let help: &[(&str, &str)] = &[
-            ("j / ↓", "Move cursor down"),
-            ("k / ↑", "Move cursor up"),
-            ("g", "Jump to top"),
-            ("G", "Jump to bottom"),
-            ("c / Enter", "Connect to profile"),
-            ("d", "Disconnect"),
-            ("t", "Test profile latency"),
-            ("a", "Import profile"),
-            ("x", "Delete selected profile"),
-            ("X", "Delete current group"),
-            ("u", "Update subscription"),
-            ("e", "Edit group"),
-            ("U", "Add new group"),
-            ("v", "Toggle TUN mode"),
-            ("Tab", "Switch focus (list ↔ details)"),
+        let global: &[(&str, &str)] = &[
+            ("1/Esc", "Profiles tab"),
             ("l", "Logs tab"),
             ("r", "Routing tab"),
             ("s", "Settings tab"),
-            ("1", "Profiles tab"),
-            ("h / ?", "This help"),
-            ("q", "Detach TUI (VPN stays on)"),
-            ("Q / Ctrl+C", "Quit + stop VPN"),
+            ("Tab", "Switch focus"),
+            ("h/?", "This help"),
+            ("q", "Detach (VPN stays on)"),
+            ("Q/C-c", "Quit + stop VPN"),
         ];
+
+        let profiles: &[(&str, &str)] = &[
+            ("j/k", "Navigate cursor"),
+            ("g/G", "Top / bottom"),
+            ("c/Enter", "Connect to profile"),
+            ("d", "Disconnect"),
+            ("t/T", "Test latency / test group"),
+            ("a", "Import profile URI"),
+            ("x/X", "Delete profile / group"),
+            ("u", "Update subscription"),
+            ("e/U", "Edit group / add group"),
+            ("v", "Toggle TUN mode"),
+            ("/", "Search / filter profiles"),
+        ];
+
+        let routing: &[(&str, &str)] = &[
+            ("j/k", "Navigate rules"),
+            ("a", "Add rule"),
+            ("e", "Edit rule"),
+            ("x", "Delete rule"),
+            ("Space", "Toggle rule enabled"),
+            ("←/→", "Cycle type/outbound in form"),
+        ];
+
+        let settings: &[(&str, &str)] = &[
+            ("j/k", "Navigate settings"),
+            ("Enter/Space", "Toggle / cycle / edit / execute"),
+        ];
+
+        let logs: &[(&str, &str)] = &[
+            ("j/k", "Scroll up/down"),
+            ("g/G", "Top / bottom"),
+            ("f", "Cycle log level filter"),
+        ];
+
+        let (tab_name, tab_help): (&str, &[(&str, &str)]) = match self.tab {
+            ActiveTab::Profiles => ("Profiles", profiles),
+            ActiveTab::Routing => ("Routing", routing),
+            ActiveTab::Settings => ("Settings", settings),
+            ActiveTab::Logs => ("Logs", logs),
+        };
+
+        let sections: [(&str, &[(&str, &str)]); 2] = [
+            ("Global", global),
+            (tab_name, tab_help),
+        ];
+
+        let mut help: Vec<(&str, &str, bool)> = Vec::new();
+        for (name, entries) in &sections {
+            help.push((name, "", true));
+            for (k, d) in *entries {
+                help.push((k, d, false));
+            }
+        }
 
         let slot_rows = inner.height.saturating_sub(1) as usize;
         let has_more = self.help_scroll + slot_rows < help.len();
@@ -223,18 +263,25 @@ impl App {
 
         let mut y = inner.y + 1;
         for i in self.help_scroll..end {
-            let (key, desc) = &help[i];
+            let (key, desc, is_header) = &help[i];
             if y >= inner.y + inner.height {
                 break;
             }
-            let line = Line::from(vec![
-                Span::styled(format!(" {:>10} ", key), s_accent()),
-                Span::styled(*desc, s_dim()),
-            ]);
-            f.render_widget(
-                Paragraph::new(line),
-                Rect::new(inner.x + 1, y, inner.width.saturating_sub(2), 1),
-            );
+            if *is_header {
+                f.render_widget(
+                    Paragraph::new(Span::styled(format!(" {} ", key), s_accent())),
+                    Rect::new(inner.x + 1, y, inner.width.saturating_sub(2), 1),
+                );
+            } else {
+                let line = Line::from(vec![
+                    Span::styled(format!(" {:>12} ", key), s_accent()),
+                    Span::styled(*desc, s_dim()),
+                ]);
+                f.render_widget(
+                    Paragraph::new(line),
+                    Rect::new(inner.x + 1, y, inner.width.saturating_sub(2), 1),
+                );
+            }
             y += 1;
         }
 

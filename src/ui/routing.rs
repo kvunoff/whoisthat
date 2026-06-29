@@ -2,7 +2,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Layout, Rect},
     style::Style,
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Paragraph},
+    widgets::{Block, BorderType, Borders, Cell, Paragraph, Row, Table, TableState},
     Frame,
 };
 
@@ -35,25 +35,39 @@ pub enum RoutingPopup {
     },
 }
 
-fn rule_match_label(rule: &RoutingRule) -> String {
-    if !rule.domain.is_empty() {
-        if rule.domain.starts_with("geosite:") {
-            format!("geosite: {}", &rule.domain[8..])
-        } else {
-            format!("domain: {}", rule.domain)
-        }
+fn rule_type_label(rule: &RoutingRule) -> &'static str {
+    if rule.domain.starts_with("geosite:") {
+        "geosite"
+    } else if !rule.domain.is_empty() {
+        "domain"
+    } else if rule.ip.starts_with("geoip:") {
+        "geoip"
     } else if !rule.ip.is_empty() {
-        if rule.ip.starts_with("geoip:") {
-            format!("geoip: {}", &rule.ip[6..])
-        } else {
-            format!("ip: {}", rule.ip)
-        }
+        "ip"
     } else if !rule.protocol.is_empty() {
-        format!("protocol: {}", rule.protocol)
+        "protocol"
     } else if !rule.port.is_empty() {
-        format!("port: {}", rule.port)
+        "port"
     } else {
-        "(empty)".into()
+        ""
+    }
+}
+
+fn rule_value(rule: &RoutingRule) -> &str {
+    if rule.domain.starts_with("geosite:") {
+        &rule.domain[8..]
+    } else if !rule.domain.is_empty() {
+        &rule.domain
+    } else if rule.ip.starts_with("geoip:") {
+        &rule.ip[6..]
+    } else if !rule.ip.is_empty() {
+        &rule.ip
+    } else if !rule.protocol.is_empty() {
+        &rule.protocol
+    } else if !rule.port.is_empty() {
+        &rule.port
+    } else {
+        ""
     }
 }
 
@@ -136,39 +150,68 @@ pub fn render_routing_tab(
             list_area,
         );
     } else {
-        let mut lines: Vec<Line> = Vec::new();
-        for (i, rule) in config.rules.iter().enumerate() {
-            let is_cursor = i == cursor && focused;
-            let ls = if is_cursor { s_text() } else { s_dim() };
-            let marker = if is_cursor && focused { "›" } else { " " };
+        let header = Row::new(vec![
+            Cell::from(Span::styled("On", s_faint())),
+            Cell::from(Span::styled("Type", s_faint())),
+            Cell::from(Span::styled("Value", s_faint())),
+            Cell::from(Span::raw("")),
+            Cell::from(Span::styled("Outbound", s_faint())),
+        ])
+        .height(1)
+        .bottom_margin(0);
 
-            let on_off = if rule.enabled {
-                Span::styled(" ● ", s_success())
-            } else {
-                Span::styled(" ○ ", s_disconnected())
-            };
+        let rows: Vec<Row> = config
+            .rules
+            .iter()
+            .enumerate()
+            .map(|(i, rule)| {
+                let is_cursor = i == cursor && focused;
+                let on_style = if rule.enabled { s_success() } else { s_disconnected() };
+                let on_span = Span::styled(if rule.enabled { "●" } else { "○" }, on_style);
 
-            let match_label = rule_match_label(rule);
-            let outbound = rule_outbound_label(rule);
-            let arrow = Span::styled(" → ", s_faint());
-            let ob_style = match outbound {
-                "direct" => s_success(),
-                "block" => s_error(),
-                _ => s_accent(),
-            };
+                let type_str = rule_type_label(rule);
+                let type_style = if is_cursor { s_text() } else { s_dim() };
 
-            lines.push(Line::from(vec![
-                Span::raw(format!(" {} ", marker)),
-                on_off,
-                Span::styled(match_label, ls),
-                arrow,
-                Span::styled(outbound, ob_style),
-            ]));
-        }
-        f.render_widget(Paragraph::new(lines).style(s_bg()), list_area);
+                let value_str = rule_value(rule);
+                let value_style = if is_cursor { s_text() } else { s_dim() };
+
+                let outbound = rule_outbound_label(rule);
+                let ob_style = match outbound {
+                    "direct" => s_success(),
+                    "block" => s_error(),
+                    _ => s_accent(),
+                };
+
+                Row::new(vec![
+                    Cell::from(on_span),
+                    Cell::from(Span::styled(type_str, type_style)),
+                    Cell::from(Span::styled(value_str, value_style)),
+                    Cell::from(Span::styled("→", s_faint())),
+                    Cell::from(Span::styled(outbound, ob_style)),
+                ])
+            })
+            .collect();
+
+        let table = Table::new(
+            rows,
+            [
+                Constraint::Length(4),
+                Constraint::Length(10),
+                Constraint::Min(10),
+                Constraint::Length(3),
+                Constraint::Length(10),
+            ],
+        )
+        .header(header)
+        .row_highlight_style(Style::default().bg(SURFACE))
+        .highlight_symbol("> ");
+
+        let mut ts = TableState::default();
+        ts.select(Some(cursor));
+        f.render_stateful_widget(table, list_area, &mut ts);
     }
 
-    let hint = " a add  |  e edit  |  x delete  |  Space toggle  |  j/k navigate ";
+    let hint = " a add  │  e edit  │  x delete  │  Space toggle  │  j/k navigate ";
     f.render_widget(
         Paragraph::new(hint)
             .style(s_faint())
@@ -239,38 +282,53 @@ fn render_rule_form(
     let w = inner.width.saturating_sub(2);
     let mut y = inner.y;
 
-    let type_label = format!("Type: {}  (Tab to change)", TYPE_LABELS[match_type]);
-    f.render_widget(Paragraph::new(type_label).style(f0), Rect::new(inner.x + 1, y, w, 1));
+    let type_line = Line::from(vec![
+        Span::styled("Type: ", f0),
+        Span::styled("◄ ", if field == 0 { s_faint() } else { s_faint() }),
+        Span::styled(TYPE_LABELS[match_type], if field == 0 { s_accent() } else { inactive }),
+        Span::styled(" ►", if field == 0 { s_faint() } else { s_faint() }),
+    ]);
+    f.render_widget(Paragraph::new(type_line), Rect::new(inner.x + 1, y, w, 1));
     y += 2;
 
     let value_label = match match_type {
-        0 => "Domain:  (e.g. geosite:category-ads, example.com)",
-        1 => "IP:  (e.g. geoip:private, 10.0.0.0/8, fc00::/7)",
-        2 => "Protocol:  (e.g. http, tls, bittorrent)",
-        3 => "Port:  (e.g. 443, 8000-9000)",
-        4 => "GeoIP:  (e.g. geoip:ru, geoip:cn, geoip:private)",
-        5 => "GeoSite:  (e.g. geosite:youtube, geosite:netflix)",
+        0 => "Domain (e.g. example.com)",
+        1 => "IP (e.g. 10.0.0.0/8)",
+        2 => "Protocol (e.g. http, tls)",
+        3 => "Port (e.g. 443, 8000-9000)",
+        4 => "GeoIP (e.g. geoip:ru)",
+        5 => "GeoSite (e.g. geosite:youtube)",
         _ => "",
     };
     f.render_widget(Paragraph::new(value_label).style(f1), Rect::new(inner.x + 1, y, w, 1));
     y += 1;
-    let val = if value.is_empty() { match match_type { 0 => "geosite:...", 1 => "geoip:...", 2 => "http", 3 => "443", 4 => "geoip:ru", 5 => "geosite:youtube", _ => "" } } else { value };
+    let val_display = if value.is_empty() {
+        match match_type {
+            0 => "geosite:...", 1 => "geoip:...", 2 => "http", 3 => "443",
+            4 => "geoip:ru", 5 => "geosite:youtube", _ => ""
+        }
+    } else { value };
     f.render_widget(
-        Paragraph::new(val)
+        Paragraph::new(val_display)
             .block(Block::default().borders(Borders::ALL).border_style(f1))
             .style(s_text()),
         Rect::new(inner.x + 1, y, w, 3),
     );
     y += 4;
 
-    let ob_label = format!("Outbound: {}  (Tab to change)", OUTBOUND_LABELS[outbound]);
-    f.render_widget(Paragraph::new(ob_label).style(f2), Rect::new(inner.x + 1, y, w, 1));
+    let ob_line = Line::from(vec![
+        Span::styled("Outbound: ", f2),
+        Span::styled("◄ ", if field == 2 { s_faint() } else { s_faint() }),
+        Span::styled(OUTBOUND_LABELS[outbound], if field == 2 { s_accent() } else { inactive }),
+        Span::styled(" ►", if field == 2 { s_faint() } else { s_faint() }),
+    ]);
+    f.render_widget(Paragraph::new(ob_line), Rect::new(inner.x + 1, y, w, 1));
     y += 2;
 
     let hint = match field {
-        0 => " Tab switch field  |  Enter next ",
-        1 => " Tab switch field  |  Enter next ",
-        2 => " Tab switch field  |  Enter save  |  Esc cancel ",
+        0 => " ← / → change type  │  Tab next field  │  Esc cancel ",
+        1 => " type to edit  │  ← / → move cursor  │  Tab next  │  Esc cancel ",
+        2 => " ← / → change outbound  │  Enter save  │  Esc cancel ",
         _ => "",
     };
     f.render_widget(

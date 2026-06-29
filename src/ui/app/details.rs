@@ -107,11 +107,25 @@ impl App {
 
         let y_start = inner.y + 1;
         let w = inner.width.saturating_sub(2);
-        for (i, line) in rows.iter().enumerate() {
-            let y = y_start + i as u16;
+        let total = rows.len();
+        let visible = inner.height as usize;
+        let scroll = self.details_scroll.min(total.saturating_sub(visible));
+        let overflow = total > visible;
+
+        for (i, line) in rows.iter().enumerate().skip(scroll).take(visible) {
+            let y = y_start + (i - scroll) as u16;
             if y < inner.y + inner.height {
                 f.render_widget(Paragraph::new(line.clone()), Rect::new(inner.x + 1, y, w, 1));
             }
+        }
+
+        if overflow && scroll + visible < total {
+            f.render_widget(
+                Paragraph::new(format!(" ↓ {} more ", total - scroll - visible))
+                    .style(s_faint())
+                    .alignment(ratatui::layout::Alignment::Right),
+                Rect::new(inner.x, inner.y + inner.height - 1, inner.width, 1),
+            );
         }
     }
 
@@ -213,11 +227,25 @@ impl App {
 
         let y_start = inner.y;
         let w = inner.width.saturating_sub(2);
-        for (i, line) in rows.iter().enumerate() {
-            let y = y_start + i as u16;
+        let total = rows.len();
+        let visible = inner.height as usize;
+        let scroll = self.details_scroll.min(total.saturating_sub(visible));
+        let overflow = total > visible;
+
+        for (i, line) in rows.iter().enumerate().skip(scroll).take(visible) {
+            let y = y_start + (i - scroll) as u16;
             if y < inner.y + inner.height {
                 f.render_widget(Paragraph::new(line.clone()), Rect::new(inner.x + 1, y, w, 1));
             }
+        }
+
+        if overflow && scroll + visible < total {
+            f.render_widget(
+                Paragraph::new(format!(" ↓ {} more ", total - scroll - visible))
+                    .style(s_faint())
+                    .alignment(ratatui::layout::Alignment::Right),
+                Rect::new(inner.x, inner.y + inner.height - 1, inner.width, 1),
+            );
         }
     }
 }
