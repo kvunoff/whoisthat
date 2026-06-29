@@ -2,7 +2,7 @@
 
 A modern terminal-based VPN client. Rust TUI frontend. Go engine backed by Xray-core.
 
-**Supports**: VLESS (Reality/xHTTP/gRPC), VMess, Trojan, Shadowsocks, SOCKS5, Hysteria2. Full TUN-mode VPN. Subscription-based profile management. HWID device identification.
+**Supports**: VLESS (Reality/xHTTP/gRPC), VMess, Trojan, Shadowsocks, SOCKS5, Hysteria2. Full TUN-mode VPN. Subscription-based profile management. HWID device identification. Optional systemd user service for boot autostart.
 
 ![WhoisThat](whoisthat-screen.jpg)
 
@@ -87,7 +87,7 @@ kill_switch_enabled = false
   "tun-name": "whoisthattun",
   "hwid-enabled": true,
   "hwid": "1fb1e0141ab3e35a",
-  "user-agent": "whoisthat/v0.7.0",
+  "user-agent": "whoisthat/v0.7.2",
   "kill-switch-enabled": false,
   "autoconnect-enabled": false,
   "autoconnect-group-id": 0,
@@ -205,7 +205,7 @@ When subscription updates are fetched, the core sends HTTP headers identifying t
 | `x-device-os` | `Linux` | `runtime.GOOS` |
 | `x-ver-os` | `6.12.0-arch1-1` | `uname -r` |
 | `x-device-model` | `Arch Linux` | `/etc/os-release` PRETTY_NAME |
-| `user-agent` | `whoisthat/v0.7.0` | User-configurable (Settings) |
+| `user-agent` | `whoisthat/v0.7.2` | User-configurable (Settings) |
 
 Response headers (`x-hwid-max-devices-reached`, `x-hwid-not-supported`, `x-hwid-limit`) are inspected and trigger warnings when device limits are reached.
 
@@ -376,7 +376,7 @@ Subscription metadata (`sub_*`) is populated from the `subscription-userinfo` HT
 | HWID: Enabled | on/off | Send HWID headers with subscription requests |
 | HWID | 1fb1e0141ab3e35a | Device identifier (read-only, auto-generated) |
 | Reset HWID | ⏎ | Generate a new random HWID |
-| User-Agent | whoisthat/v0.7.0 | User-Agent header (editable — press Enter to modify) |
+| User-Agent | whoisthat/v0.7.2 | User-Agent header (editable — press Enter to modify) |
 
 Navigate with `j`/`k`, press `Enter`/`Space` to toggle, cycle values, open edit popups, or execute actions.
 
@@ -397,6 +397,68 @@ TUN mode creates a virtual interface (configurable in Settings, default `whoisth
 For debugging or manual setup: `sudo setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep /path/to/whoisthat-core`.
 
 **Capability detection** (`v` key before enabling TUN) creates a real test TUN device (`wt-capcheck`) and tears it down — a true functional check, not just a UID test. This means capabilities mode works correctly even when the binary has `+ep` but the user is not root.
+
+### Systemd Integration
+
+WhoisThat Core can run as a **systemd user service**, starting the VPN engine at boot — before you log in — via [lingering](https://wiki.archlinux.org/title/Systemd/User#Automatic_start-up_of_systemd_user_instances). Toggle it from **Settings → Systemd autostart** or manage it manually from the shell.
+
+**Unit file:** `~/.config/systemd/user/whoisthat-core.service`
+
+```ini
+[Unit]
+Description=WhoisThat VPN Core
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/path/to/whoisthat-core
+Environment=WHOISTHAT_LOG_LEVEL=warn
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+```
+
+The TUI generates this unit automatically when you enable the setting (it resolves the absolute path to `whoisthat-core` and substitutes the current log level). It also enables lingering via `pkexec loginctl enable-linger $USER` so the user service starts at boot.
+
+**Service control:**
+
+```bash
+systemctl --user status  whoisthat-core   # current status
+systemctl --user start   whoisthat-core   # start now
+systemctl --user stop    whoisthat-core   # stop now
+systemctl --user restart whoisthat-core   # restart
+systemctl --user disable whoisthat-core   # remove from boot
+```
+
+**Logs:**
+
+```bash
+# Live tail of the core's stdout/stderr (captured by journald)
+journalctl --user -u whoisthat-core -f
+
+# Last 200 lines
+journalctl --user -u whoisthat-core -n 200
+
+# Today's logs only
+journalctl --user -u whoisthat-core --since today
+```
+
+The core also writes its own rotating log to `~/.config/whoisthat/core.log` (20 MB rotation, one backup) regardless of the systemd setting. The journal captures the subprocess-prefixed output; the file log contains the daemon's own structured lines.
+
+**Linger check / enable:**
+
+```bash
+loginctl show-user $USER --property=Linger   # → Linger=yes/no
+sudo loginctl enable-linger  $USER            # allow user services at boot
+sudo loginctl disable-linger $USER           # revoke
+```
+
+**Detach vs systemd:** `q` in the TUI detaches but the core keeps running *for this session*. The systemd service is for boot autostart — they're orthogonal. You can detach the TUI, reattach later, and the systemd service continues independently across reboots.
+
+**After rebuilding the core:** the unit's `ExecStart=` points at a binary with a new inode. `systemctl --user restart whoisthat-core` is enough — no `daemon-reload` needed unless you edit the unit file by hand. The TUI runs `daemon-reload` automatically when toggling the setting.
 
 ### Subscription Workflow
 
