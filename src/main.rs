@@ -821,6 +821,7 @@ async fn handle_input(
 
                 if key.code == KeyCode::Char('q')
                     && app.popup.is_none()
+                    && !app.search_mode
                     && !matches!(key.modifiers, crossterm::event::KeyModifiers::CONTROL)
                 {
                     return true;
@@ -830,6 +831,7 @@ async fn handle_input(
                     || (key.code == KeyCode::Char('c')
                         && key.modifiers == crossterm::event::KeyModifiers::CONTROL))
                     && app.popup.is_none()
+                    && !app.search_mode
                 {
                     let _ = client.die().await;
                     return true;
@@ -1211,6 +1213,44 @@ async fn handle_normal_input(
 ) -> bool {
     app.clear_msg();
 
+    if app.search_mode && app.focus == Focus::LeftPanel && app.tab == ActiveTab::Profiles {
+        match key.code {
+            KeyCode::Esc => {
+                app.search_mode = false;
+                app.search_query = None;
+                app.search_input.clear();
+                app.cursor = 0;
+                app.clamp_cursor();
+            }
+            KeyCode::Enter => {
+                app.search_mode = false;
+                if app.search_input.is_empty() {
+                    app.search_query = None;
+                    app.cursor = 0;
+                    app.clamp_cursor();
+                }
+            }
+            KeyCode::Char('j') | KeyCode::Down => app.cursor_down(),
+            KeyCode::Char('k') | KeyCode::Up => app.cursor_up(),
+            KeyCode::Char('g') => app.cursor_top(),
+            KeyCode::Char('G') => app.cursor_bottom(),
+            KeyCode::Char(c) => {
+                let mut cur = app.search_input.len();
+                edit_text_field(&mut app.search_input, &mut cur, key);
+                app.search_query = Some(app.search_input.clone());
+                app.cursor = 0;
+            }
+            KeyCode::Backspace => {
+                let mut cur = app.search_input.len();
+                edit_text_field(&mut app.search_input, &mut cur, key);
+                app.search_query = Some(app.search_input.clone());
+                app.cursor = 0;
+            }
+            _ => {}
+        }
+        return false;
+    }
+
     // Routing tab keys (before global handlers so 'a' etc. are intercepted)
     if app.tab == ActiveTab::Routing {
         if app.routing_popup.is_some() {
@@ -1479,50 +1519,9 @@ async fn handle_normal_input(
         return false;
     }
 
-    match app.focus {
-        Focus::LeftPanel => {
-            if app.search_mode {
+match app.focus {
+            Focus::LeftPanel => {
                 match key.code {
-                    KeyCode::Esc => {
-                        app.search_mode = false;
-                        app.search_query = None;
-                        app.search_input.clear();
-                        app.cursor = 0;
-                        app.clamp_cursor();
-                    }
-                    KeyCode::Enter => {
-                        app.search_mode = false;
-                        if app.search_input.is_empty() {
-                            app.search_query = None;
-                            app.cursor = 0;
-                            app.clamp_cursor();
-                        }
-                    }
-                    KeyCode::Char('j') | KeyCode::Down => {
-                        app.cursor_down();
-                    }
-                    KeyCode::Char('k') | KeyCode::Up => {
-                        app.cursor_up();
-                    }
-                    KeyCode::Char('g') => app.cursor_top(),
-                    KeyCode::Char('G') => app.cursor_bottom(),
-                    KeyCode::Char(c) => {
-                        let mut cur = app.search_input.len();
-                        edit_text_field(&mut app.search_input, &mut cur, key);
-                        app.search_query = Some(app.search_input.clone());
-                        app.cursor = 0;
-                    }
-                    KeyCode::Backspace => {
-                        let mut cur = app.search_input.len();
-                        edit_text_field(&mut app.search_input, &mut cur, key);
-                        app.search_query = Some(app.search_input.clone());
-                        app.cursor = 0;
-                    }
-                    _ => {}
-                }
-                return false;
-            }
-            match key.code {
             KeyCode::Char('j') | KeyCode::Down => app.cursor_down(),
             KeyCode::Char('k') | KeyCode::Up => app.cursor_up(),
             KeyCode::Char('g') => app.cursor_top(),
