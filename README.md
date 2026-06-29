@@ -71,7 +71,7 @@ show_ip = true
 log_enabled = false
 log_level = "warn"
 test_method = "http-get"
-tun_name = "whoisthattun"
+tun_name = "whoisthattun"                  # mirrors core's `tun-name` — kept in sync by the TUI
 kill_switch_enabled = false
 ```
 
@@ -120,7 +120,7 @@ Encrypted at rest with AES-256-GCM — key auto-generated on first run.
 - **Profile testing** — three methods: TCP connect, HTTP GET (SOCKS5 → Cloudflare), HTTP HEAD
 - **Scan-all testing** — `t` scans all profiles across all groups with dedup; `T` tests only focused profile/subscription
 - **Custom routing rules** — domain, IP, protocol, port, geoip, geosite → proxy/direct/block (`r` tab). `direct` outbound works correctly in TUN mode via SO_MARK + fwmark routing (no root required). Use ←/→ to cycle type/outbound in the form.
-- **Kill-switch** — When enabled, blocks all non-VPN traffic if the connection drops. Uses a dedicated firewall table (`whoisthat_ks`) independent of TUN rules. Works in both SOCKS and TUN modes. Toggle in Settings.
+- **Kill-switch** — When enabled, blocks all non-VPN traffic if the connection drops. Uses a dedicated firewall table (`whoisthat_ks`, `whoisthat_ks_v6`) entirely independent of TUN rules — safe to combine with any routing setup. Works in both SOCKS and TUN modes. Toggle in Settings.
 - Real-time connection status with uplink/downlink traffic stats
 - **Log viewer** — live tail from core log, auto-scroll, [WARN]/[ERRO] highlighting
 - **Configurable** — DNS servers, proxy ports, log level, test method, HWID, user-agent via settings and config files
@@ -178,7 +178,30 @@ Encrypted at rest with AES-256-GCM — key auto-generated on first run.
 
 ### Routing rules
 
-Custom routing rules (domain, IP, protocol, port) can redirect traffic to `proxy`, `direct`, or `block` outbounds. Rules are stored in `~/.local/share/whoisthat/db/routing.json` and injected into xray's JSON config on every connect.
+Custom routing rules can redirect traffic to `proxy`, `direct`, or `block` outbounds. Six match types are supported:
+
+| Type | Stored as | Example |
+| -------- | ---------- | -------- |
+| `domain` | `rule.domain` | `example.com` |
+| `ip` | `rule.ip` | `1.2.3.4` or `10.0.0.0/8` |
+| `protocol` | `rule.protocol` | `bittorrent` |
+| `port` | `rule.port` | `443` |
+| `geoip` | `rule.ip` prefixed `geoip:` | `geoip:private` |
+| `geosite` | `rule.domain` prefixed `geosite:` | `geosite:category-ads` |
+
+Rules are stored in `~/.local/share/whoisthat/db/routing.json` and injected into xray's JSON config on every connect (DNS-bypass rule first, then user rules in order, disabled rules skipped).
+
+**Default rule:** private IP ranges → direct, hardcoded as CIDR (not `geoip:private`) so it works even when geo files aren't available.
+
+**GeoIP / GeoSite support** — `geoip.dat` and `geosite.dat` are auto-downloaded from [v2fly GitHub releases](https://github.com/v2fly/domain-list-community/releases) on first startup to `~/.config/whoisthat/geo/`. The download pipeline:
+
+1. If a valid `geoip.dat` (≥10 MB) already exists locally → skip download
+2. Fall back to system paths (`/usr/share/xray`, etc.) → copy if found
+3. Otherwise download from v2fly with retry (3 attempts, exponential backoff)
+4. **Verify** by running xray with a `geoip:private` test rule — broken files trigger re-download
+5. If all downloads fail → `XRAY_LOCATION_ASSET` is not set; xray uses bundled geo data (if any) or ignores geo rules
+
+The verification pass adds ~5s to first startup. Set `XRAY_LOCATION_ASSET` manually to point xray at a custom asset directory.
 
 **Proxy mode (SOCKS5):**
 
@@ -335,7 +358,7 @@ Subscription metadata (`sub_*`) is populated from the `subscription-userinfo` HT
 | `d` | Disconnect |
 | `t` | Test all profiles (starts from cursor, top-to-bottom, dedup) |
 | `T` | Test focused profile or subscription group only |
-| `v` | Toggle TUN mode (auto-setup via pkexec on first run) |
+| `v` | Toggle TUN mode (checks caps first; on first run offers one-time `pkexec setcap` setup, then enables TUN) |
 
 ### Profiles & Groups
 
@@ -470,6 +493,26 @@ sudo loginctl disable-linger $USER           # revoke
 
 ---
 
+## Troubleshooting
+
+| Symptom | Likely cause | Fix |
+| --------- | ------------- | ----- |
+| `TUN mode needs network capabilities on core binary` popup | Missing caps on `whoisthat-core` (new inode after `go build`, fresh clone, new machine) | `sudo setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep ./core/core/whoisthat-core` (or accept the `pkexec` prompt the TUI offers) |
+| TUN toggle says "Checking root…" then nothing | Core has caps but kernel/distro blocks ambient set — rare on hardened kernels | Run `whoisthat-core` directly: `./core/core/whoisthat-core` and check `~/.config/whoisthat/core.log`; verify `CanTun()` tests a real TUN device `wt-capcheck` |
+| `Failed to connect to core: Connection refused` on startup | Port 4897 occupied by a stale core, or core crashed | `ss -tlnp \| grep 4897` to find the culprit; kill it, or `pkill -f whoisthat-core` |
+| TUI detaches but VPN drops when I close terminal | Ran with `q` (detach) — core keeps living, but was originally launched as foreground child of the shell | Use **Settings → Systemd autostart** so the core runs as a user service, independent of any terminal |
+| Profile test shows `err` | Server down, wrong creds, or firewall blocking the test port range | Check `~/.config/whoisthat/core.log` for the test config and dialer error; verify outbound on the `test-port-range` (config.json) is open |
+| Routing rule doesn't trigger | Disabled in the rules list, or geo files missing | Press `Space` to enable; for `geoip`/`geosite` rules check `~/.config/whoisthat/geo/*.dat` exists and is ≥10 MB; re-trigger download by removing the files and restarting |
+| Kill-switch left dangling rules after exit | `Q` full-quit killed the core before it could clean up firewall rules | `rm` the `whoisthat_ks*` tables manually: `nft delete table whoisthat_ks 2>/dev/null; nft delete table ip6 whoisthat_ks_v6 2>/dev/null` (or reclaim via core restart) |
+| Settings toggle shows "Could not enable lingering" | `pkexec loginctl enable-linger $USER` failed or was cancelled | Run in a terminal: `sudo loginctl enable-linger $USER` then retry the toggle in the TUI |
+| `whoisthat-screen.jpg` doesn't exist in build artifact | Image is checked into the repo but not in `target/` — only used by the README on GitHub | Ignore — it's display-only, not a runtime asset |
+| Logs pane is empty | No core log file, or log level filtering hides everything | Press `f` in the Logs tab to cycle the level filter; or raise log level in Settings |
+| `Cannot decrypt DB file` style errors in core log | Key file `~/.local/share/whoisthat/db/.key` was moved or deleted, but encrypted files remain | Keep the `.key` file — it's the AES-256-GCM master key, no fallback. If unsalvageable: stop core, delete `~/.local/share/whoisthat/db/`, restart to generate fresh key + empty DB |
+
+**If you hit something not listed here:** `tail -f ~/.config/whoisthat/core.log whoisthat.log` and reproduce. Both logs are the first place to look — not the source code.
+
+---
+
 ## Testing
 
 The project has unit tests for both the Rust TUI and the Go core. No external dependencies or network access required — all tests run in milliseconds.
@@ -502,13 +545,93 @@ Covers:
 
 ---
 
+## Development
+
+### Local dev loop
+
+No install step needed during development — `cargo run` plus a `go build` in `core/core/` is enough. The TUI auto-spawns `whoisthat-core` from `./core/core/whoisthat-core`, then `whoisthat-core` on `PATH`, then `/usr/local/bin/whoisthat-core`.
+
+```bash
+# Build core (must be first — TUI spawns this binary)
+cd core/core && go build -o whoisthat-core && cd ../..
+
+# Build parser (used by core at runtime)
+cd parser && cargo build --release && cd ..
+
+# Run TUI
+cargo run
+```
+
+**Gotcha:** every `go build` creates a new binary inode, so file capabilities (`setcap`) are **lost after rebuild**. The TUI detects this at startup and offers a one-time `pkexec setcap` — or re-run manually:
+
+```bash
+sudo setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep ./core/core/whoisthat-core
+```
+
+### Log files
+
+| File | Produced by | When | Default level |
+| -------- | ------------- | ----- | --------------- |
+| `whoisthat.log` (CWD) | Rust TUI | Always (file only, never to screen) | `warn` |
+| `~/.config/whoisthat/core.log` | Go core | Always, lumberjack rotation 20 MB + 1 backup | `warn` |
+| `/tmp/whoisthat-core.log` | Go core | Fallback if config dir is unwritable | `warn` |
+| `~/.local/share/whoisthat/tui.log` | Rust TUI | When "TUI log" setting is enabled in Settings | configured level |
+
+Enable verbose logs at runtime via env var (overrides config):
+
+```bash
+WHOISTHAT_LOG_LEVEL=debug cargo run
+```
+
+Or toggle from **Settings → TUI log** + **Log level** — both apply to the TUI and are forwarded to the spawned core.
+
+### Inspecting the core daemon manually
+
+The core listens on `127.0.0.1:4897`. Anything that speaks the length-prefixed JSON protocol can talk to it. During development it's often useful to:
+
+```bash
+# Check if the core is up
+ss -tlnp | grep 4897
+
+# Tail the core's rotating log
+tail -f ~/.config/whoisthat/core.log
+
+# Inspect encrypted DB files (decryption requires the core; files are AES-256-GCM)
+ls -la ~/.local/share/whoisthat/db/
+```
+
+### Debugging routing / TUN rules at runtime
+
+```bash
+ip route show table 100                       # dedicated-UID / fwmark bypass table
+ip rule show | grep 1                         # fwmark rule
+nft list table 2> /dev/null || iptables -L -n # active firewall rules
+ip link show whoisthattun                     # the TUN interface
+```
+
+### Continuous Integration (AUR autoupdate)
+
+File: `.github/workflows/aur-publish.yml` — triggers on every `v*` tag push.
+
+1. Parse the version from the tag
+2. Clone the live AUR repo
+3. Compute `pkgrel` (increment if `pkgver` matches latest AUR, otherwise reset to 1)
+4. Regenerate the `PKGBUILD` and `.SRCINFO` **in CI** (the files in the repo are reference-only)
+5. Push to AUR using the `AUR_SSH_KEY` secret
+
+So `pkgrel` in `pkg/aur/PKGBUILD` is reference-only — never hand-bump it for releases. See `UPDATE.md` for the full release procedure.
+
+---
+
 ## File Structure
 
 ```text
 whoisthat/
-├── Cargo.toml          ← Rust project manifest
+├── Cargo.toml          ← Rust project manifest (TUI)
+├── README.md / AGENTS.md / UPDATE.md
+├── install.sh          ← Universal installer / updater
 ├── src/                ← Rust TUI source
-│   ├── main.rs         ← Entry point, event loop, autoconnect, systemd setup
+│   ├── main.rs         ← Entry point, event loop, autoconnect, systemd setup, caps
 │   ├── config.rs       ← Config loader (~/.config/whoisthat/config.toml)
 │   ├── core_client/    ← TCP client for the Go core
 │   │   ├── protocol.rs ← All serde types mirroring Go structs
@@ -522,24 +645,28 @@ whoisthat/
 │       ├── routing.rs  ← Routing rules tab + popups
 │       ├── logs.rs     ← Log viewer (live tail + auto-scroll + level filter)
 │       ├── uri.rs      ← URI detail parser (VLESS/VMess/Trojan/SS/SOCKS/Hysteria2)
-├── install.sh          ← Universal installer script
-├── parser/             ← URI → Xray JSON parser (Rust)
+├── parser/             ← whoisthat-parser — URI → Xray JSON (standalone Rust binary)
 │   ├── Cargo.toml
 │   └── src/
 ├── core/               ← WhoisThat Core (Go VPN engine)
 │   └── core/
-│       ├── main.go     ← Daemon entry point
-│       ├── commands/   ← TCP command handlers
-│       ├── db/         ← JSON file-based profile DB
-│       ├── lib/        ← Core libraries
-│       │   ├── logger/     ← Structured logger ([INFO]/[WARN]/[ERRO])
-│       │   ├── TCPServer/  ← TCP server + dispatcher
-│       │   ├── AppConfig/  ← Core configuration
-│       │   ├── PortPool/   ← Dynamic port allocator
-│       │   └── proxy/      ← Xray wrapper, TUN manager, tun2socks
-│       ├── structs/    ← Shared data types
-│       └── utils/      ← Binary detection, DNS resolution, capabilities
-└── .gitignore
+│       ├── main.go     ← Daemon entry point; RaiseAmbientCaps() before everything
+│       ├── go.mod
+│       ├── commands/   ← TCP command handlers (connect, test, groups, subscription, ...)
+│       ├── structs/    ← Shared data types (mirror of src/core_client/protocol.rs)
+│       ├── db/         ← JSON file-based profile DB + readEncryptedJSON / MigrateToEncrypted
+│       ├── utils/      ← caps.go (RaiseAmbientCaps, CanTun), user.go (UIDs)
+│       └── lib/        ← Core libraries
+│           ├── logger/      ← Structured logger (lumberjack rotation, 20 MB)
+│           ├── TCPServer/  ← TCP server + dispatcher (length-prefixed JSON)
+│           ├── AppConfig/  ← Core configuration, defaults, HWID gen
+│           ├── PortPool/   ← Dynamic port allocator for test/profile instances
+│           ├── crypto/     ← AES-256-GCM encrypt/decrypt for DB files
+│           ├── geo/        ← Auto-download + verify geoip.dat / geosite.dat from v2fly
+│           └── proxy/      ← mainproxy (connect/stop/status), xray wrapper, TUN manager + scripts, routing
+├── pkg/aur/            ← AUR packaging (PKGBUILD + .SRCINFO)
+└── .github/workflows/
+    └── aur-publish.yml ← Tag-triggered CI: pushes updated PKGBUILD to AUR
 ```
 
 ---
