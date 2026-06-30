@@ -61,6 +61,59 @@ func (p *ProxyManager) Init() {
 var exitWatcherDone chan struct{}
 var exitWatcherMu sync.Mutex
 
+// retireExitWatcher signals the active exit-watcher goroutine to stop and
+// clears the package-global reference. Idempotent and nil-safe.
+func (p *ProxyManager) retireExitWatcher() {
+	exitWatcherMu.Lock()
+	if exitWatcherDone != nil {
+		close(exitWatcherDone)
+		exitWatcherDone = nil
+	}
+	exitWatcherMu.Unlock()
+}
+
+// startExitWatcher registers a fresh done channel for this Connect cycle and
+// spawns the watcher goroutine. The previous watcher (if any) must already
+// have been retired by the caller.
+func (p *ProxyManager) startExitWatcher() chan struct{} {
+	done := make(chan struct{})
+	exitWatcherMu.Lock()
+	exitWatcherDone = done
+	exitWatcherMu.Unlock()
+	go p.watchExit(done)
+	return done
+}
+
+// watchExit is the Exited-watcher goroutine body. On xray exit it flips the
+// status to disconnected and emits a non-blocking StatusChanged update (the
+// channel is buffered at 8; if full we drop rather than deadlock the daemon).
+// It returns when done is closed (retire) or Exited is closed.
+func (p *ProxyManager) watchExit(done chan struct{}) {
+	for {
+		select {
+		case <-done:
+			return
+		case _, ok := <-p.xray_core.Exited:
+			if !ok {
+				return
+			}
+			p.mu.Lock()
+			p.status = structs.ProxyStatus{
+				Connection: "disconnected",
+			}
+			p.mu.Unlock()
+			// Non-blocking send: StatusChanged is buffered (8) and the
+			// server's handleStatusChange drains it; if it's somehow
+			// full we'd rather drop than deadlock the daemon.
+			select {
+			case p.StatusChanged <- p.status:
+			default:
+				logger.Warn("StatusChanged full; dropping disconnected event")
+			}
+		}
+	}
+}
+
 func (p *ProxyManager) Connect(profile structs.Profile) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -72,12 +125,7 @@ func (p *ProxyManager) Connect(profile structs.Profile) error {
 	// Stop the previous Exited-watcher goroutine before swapping xray_core
 	// out from under it. Without this, every Connect leaked one goroutine,
 	// and all of them raced on the swapped field reading the latest Exited.
-	exitWatcherMu.Lock()
-	if exitWatcherDone != nil {
-		close(exitWatcherDone)
-		exitWatcherDone = nil
-	}
-	exitWatcherMu.Unlock()
+	p.retireExitWatcher()
 
 	p.xray_core = xray.XrayCore{
 		Exited: make(chan error),
@@ -144,36 +192,7 @@ func (p *ProxyManager) Connect(profile structs.Profile) error {
 
 	// Spawn a single Exited-watcher for this xray_core instance. The done
 	// channel lets the next Connect (or Stop) retire it cleanly.
-	done := make(chan struct{})
-	exitWatcherMu.Lock()
-	exitWatcherDone = done
-	exitWatcherMu.Unlock()
-
-	go func() {
-		for {
-			select {
-			case <-done:
-				return
-			case _, ok := <-p.xray_core.Exited:
-				if !ok {
-					return
-				}
-				p.mu.Lock()
-				p.status = structs.ProxyStatus{
-					Connection: "disconnected",
-				}
-				p.mu.Unlock()
-				// Non-blocking send: StatusChanged is buffered (8) and the
-				// server's handleStatusChange drains it; if it's somehow
-				// full we'd rather drop than deadlock the daemon.
-				select {
-				case p.StatusChanged <- p.status:
-				default:
-					logger.Warn("StatusChanged full; dropping disconnected event")
-				}
-			}
-		}
-	}()
+	p.startExitWatcher()
 
 	return nil
 }
@@ -183,12 +202,7 @@ func (p *ProxyManager) Stop() {
 	defer p.mu.Unlock()
 	logger.Info("disconnecting")
 	// Retire the Exited-watcher goroutine.
-	exitWatcherMu.Lock()
-	if exitWatcherDone != nil {
-		close(exitWatcherDone)
-		exitWatcherDone = nil
-	}
-	exitWatcherMu.Unlock()
+	p.retireExitWatcher()
 	if p.statsCancel != nil {
 		close(p.statsCancel)
 		p.statsCancel = nil
