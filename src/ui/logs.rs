@@ -149,7 +149,8 @@ impl LogsState {
                     }
                 }
                 if self.lines.len() == 1
-                    && (self.lines[0] == "(log file not found)" || self.lines[0] == "(log file empty)")
+                    && (self.lines[0] == "(log file not found)"
+                        || self.lines[0] == "(log file empty)")
                 {
                     self.lines.clear();
                 }
@@ -273,9 +274,7 @@ pub fn render_logs(f: &mut Frame, area: Rect, state: &LogsState, focused: bool) 
         .iter()
         .skip(scroll)
         .take(vis)
-        .map(|l| {
-            ListItem::new(Line::from(Span::styled(l.as_str(), line_style(l))))
-        })
+        .map(|l| ListItem::new(Line::from(Span::styled(l.as_str(), line_style(l)))))
         .collect();
 
     f.render_widget(List::new(items).style(s_bg()), inner);

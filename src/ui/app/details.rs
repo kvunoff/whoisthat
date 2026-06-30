@@ -40,10 +40,7 @@ impl App {
             }
             Some(TreeNode::Profile(_, _)) => {
                 let Some(p) = self.selected_profile() else {
-                    f.render_widget(
-                        Paragraph::new("No profile selected.").style(s_dim()),
-                        inner,
-                    );
+                    f.render_widget(Paragraph::new("No profile selected.").style(s_dim()), inner);
                     return;
                 };
                 self.render_profile_details(f, p, inner);
@@ -60,8 +57,7 @@ impl App {
     }
 
     fn render_group_details(&self, f: &mut Frame, g: &GroupWithProfiles, area: Rect) {
-        let block = Block::default()
-            .style(s_bg());
+        let block = Block::default().style(s_bg());
         let inner = block.inner(area);
         f.render_widget(block, area);
 
@@ -102,7 +98,10 @@ impl App {
 
         if connected {
             rows.push(Line::from(""));
-            rows.push(Line::from(Span::styled("● Connected to this group", s_success())));
+            rows.push(Line::from(Span::styled(
+                "● Connected to this group",
+                s_success(),
+            )));
         }
 
         let y_start = inner.y + 1;
@@ -115,7 +114,10 @@ impl App {
         for (i, line) in rows.iter().enumerate().skip(scroll).take(visible) {
             let y = y_start + (i - scroll) as u16;
             if y < inner.y + inner.height {
-                f.render_widget(Paragraph::new(line.clone()), Rect::new(inner.x + 1, y, w, 1));
+                f.render_widget(
+                    Paragraph::new(line.clone()),
+                    Rect::new(inner.x + 1, y, w, 1),
+                );
             }
         }
 
@@ -130,16 +132,22 @@ impl App {
     }
 
     fn render_profile_details(&self, f: &mut Frame, p: &Profile, area: Rect) {
-        let block = Block::default()
-            .style(s_bg());
+        let block = Block::default().style(s_bg());
         let inner = block.inner(area);
         f.render_widget(block, area);
 
         let uri_params = self.cached_uri_params(p);
-        let group_name = self.current_group().map(|g| g.group.name.as_str()).unwrap_or("?");
+        let group_name = self
+            .current_group()
+            .map(|g| g.group.name.as_str())
+            .unwrap_or("?");
 
         let name = if p.name.is_empty() {
-            if p.address.is_empty() { "Unknown".to_string() } else { p.address.clone() }
+            if p.address.is_empty() {
+                "Unknown".to_string()
+            } else {
+                p.address.clone()
+            }
         } else {
             p.name.clone()
         };
@@ -150,20 +158,44 @@ impl App {
             .unwrap_or(false);
 
         let protocol = if p.protocol.is_empty() {
-            if uri_params.protocol.is_empty() { "—".into() }
-            else { uri_params.protocol.to_uppercase() }
+            if uri_params.protocol.is_empty() {
+                "—".into()
+            } else {
+                uri_params.protocol.to_uppercase()
+            }
         } else {
             p.protocol.to_uppercase()
         };
 
-        let port = if !uri_params.port.is_empty() { &uri_params.port } else { "—" };
+        let port = if !uri_params.port.is_empty() {
+            &uri_params.port
+        } else {
+            "—"
+        };
 
-        let sni = if !uri_params.sni.is_empty() { &uri_params.sni }
-            else if !p.host.is_empty() { &p.host } else { "—" };
+        let sni = if !uri_params.sni.is_empty() {
+            &uri_params.sni
+        } else if !p.host.is_empty() {
+            &p.host
+        } else {
+            "—"
+        };
 
-        let transport = if !uri_params.transport.is_empty() { &uri_params.transport } else { "tcp" };
-        let security = if !uri_params.security.is_empty() { &uri_params.security } else { "none" };
-        let flow = if !uri_params.flow.is_empty() { &uri_params.flow } else { "—" };
+        let transport = if !uri_params.transport.is_empty() {
+            &uri_params.transport
+        } else {
+            "tcp"
+        };
+        let security = if !uri_params.security.is_empty() {
+            &uri_params.security
+        } else {
+            "none"
+        };
+        let flow = if !uri_params.flow.is_empty() {
+            &uri_params.flow
+        } else {
+            "—"
+        };
 
         let mut rows: Vec<Line> = Vec::new();
 
@@ -181,7 +213,14 @@ impl App {
         rows.push(Line::from(""));
 
         rows.push(section_header("Connection"));
-        rows.push(kv_row("Address", if p.address.is_empty() { "—" } else { &p.address }));
+        rows.push(kv_row(
+            "Address",
+            if p.address.is_empty() {
+                "—"
+            } else {
+                &p.address
+            },
+        ));
         rows.push(kv_row("Port", port));
         rows.push(kv_row("SNI", sni));
         rows.push(kv_row("Transport", transport));
@@ -235,7 +274,10 @@ impl App {
         for (i, line) in rows.iter().enumerate().skip(scroll).take(visible) {
             let y = y_start + (i - scroll) as u16;
             if y < inner.y + inner.height {
-                f.render_widget(Paragraph::new(line.clone()), Rect::new(inner.x + 1, y, w, 1));
+                f.render_widget(
+                    Paragraph::new(line.clone()),
+                    Rect::new(inner.x + 1, y, w, 1),
+                );
             }
         }
 

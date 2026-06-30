@@ -54,9 +54,8 @@ impl CoreConnection {
         let mut payload = vec![0u8; len as usize];
         self.stream.read_exact(&mut payload).await?;
 
-        let msg: TcpMessage = serde_json::from_slice(&payload).map_err(|e| {
-            std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string())
-        })?;
+        let msg: TcpMessage = serde_json::from_slice(&payload)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
 
         Ok(msg)
     }

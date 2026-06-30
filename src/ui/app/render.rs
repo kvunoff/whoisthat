@@ -55,8 +55,16 @@ impl App {
             Span::styled(format!(" {} {} ", icon, status_text), icon_style),
         ];
         if self.show_ip {
-            let ip4 = if self.public_ip.is_empty() { "..." } else { &self.public_ip };
-            let ip6 = if self.public_ipv6.is_empty() { "..." } else { &self.public_ipv6 };
+            let ip4 = if self.public_ip.is_empty() {
+                "..."
+            } else {
+                &self.public_ip
+            };
+            let ip6 = if self.public_ipv6.is_empty() {
+                "..."
+            } else {
+                &self.public_ipv6
+            };
             status_spans.push(Span::styled("│ ", s_faint()));
             status_spans.push(Span::styled(format!("{} {}", ip4, ip6), s_dim()));
         }
@@ -75,11 +83,7 @@ impl App {
         let inner = block.inner(area);
         f.render_widget(block, area);
 
-        let rows = Layout::vertical([
-            Constraint::Length(1),
-            Constraint::Length(1),
-        ])
-        .split(inner);
+        let rows = Layout::vertical([Constraint::Length(1), Constraint::Length(1)]).split(inner);
 
         f.render_widget(Paragraph::new(status_line), rows[0]);
 
@@ -116,8 +120,16 @@ impl App {
 
         for (i, (key, label, tab)) in tabs.iter().enumerate() {
             let is_active = self.tab == *tab;
-            let key_style = if is_active { s_accent().add_modifier(Modifier::BOLD) } else { s_faint() };
-            let label_style = if is_active { s_accent().add_modifier(Modifier::BOLD) } else { s_faint() };
+            let key_style = if is_active {
+                s_accent().add_modifier(Modifier::BOLD)
+            } else {
+                s_faint()
+            };
+            let label_style = if is_active {
+                s_accent().add_modifier(Modifier::BOLD)
+            } else {
+                s_faint()
+            };
             result.push(Span::styled(format!("[{}]", key), key_style));
             result.push(Span::styled(*label, label_style));
             if i < tabs.len() - 1 {
@@ -159,13 +171,7 @@ impl App {
                     kill_switch_enabled: self.kill_switch_enabled,
                     hwid: self.hwid_info.as_ref(),
                 };
-                render_settings(
-                    f,
-                    area,
-                    &values,
-                    &mut self.settings_state,
-                    focused,
-                );
+                render_settings(f, area, &values, &mut self.settings_state, focused);
             }
             ActiveTab::Routing => {
                 let focused = self.focus == Focus::LeftPanel;
@@ -175,11 +181,8 @@ impl App {
     }
 
     pub(super) fn render_profiles_view(&mut self, f: &mut Frame, area: Rect) {
-        let h = Layout::horizontal([
-            Constraint::Percentage(55),
-            Constraint::Percentage(45),
-        ])
-        .split(area);
+        let h = Layout::horizontal([Constraint::Percentage(55), Constraint::Percentage(45)])
+            .split(area);
 
         self.render_tree(f, h[0]);
         self.render_details(f, h[1]);
@@ -227,18 +230,14 @@ impl App {
         let gap = 3;
 
         let msg = self.last_msg.as_deref().unwrap_or("");
-        let max_right = inner_w
-            .saturating_sub(left_w + tun_w + uptime_w + gap + gap);
+        let max_right = inner_w.saturating_sub(left_w + tun_w + uptime_w + gap + gap);
         let right = if msg.is_empty() {
             Span::raw("")
         } else if msg.len() <= max_right {
             Span::styled(msg, s_dim())
         } else if max_right > 2 {
             let truncated: String = msg.chars().take(max_right.saturating_sub(2)).collect();
-            Span::styled(
-                format!("{}…", truncated),
-                s_dim(),
-            )
+            Span::styled(format!("{}…", truncated), s_dim())
         } else {
             Span::raw("")
         };

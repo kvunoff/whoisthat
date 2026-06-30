@@ -38,13 +38,10 @@ impl App {
 
         if self.search_query.is_some() {
             let search_area = if self.search_mode {
-                let chunks = Layout::vertical([
-                    Constraint::Min(0),
-                    Constraint::Length(1),
-                ]).split(inner);
+                let chunks =
+                    Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).split(inner);
                 f.render_widget(
-                    Paragraph::new(format!("/{}█", self.search_input))
-                        .style(s_accent()),
+                    Paragraph::new(format!("/{}█", self.search_input)).style(s_accent()),
                     chunks[1],
                 );
                 chunks[0]
@@ -59,7 +56,11 @@ impl App {
 
     fn render_search_results(&mut self, f: &mut Frame, inner: Rect, left_focus: bool) {
         let (gid, pid) = self.connected_id().unwrap_or((-1, -1));
-        let ql = self.search_query.as_ref().map(|q| q.to_lowercase()).unwrap_or_default();
+        let ql = self
+            .search_query
+            .as_ref()
+            .map(|q| q.to_lowercase())
+            .unwrap_or_default();
 
         let mut items: Vec<ListItem> = Vec::new();
         let mut cursor_pos_in_list = 0;
@@ -81,18 +82,30 @@ impl App {
                     Span::styled("  ", s_dim())
                 };
                 let name = if p.name.is_empty() {
-                    if p.address.is_empty() { "Unknown" } else { &p.address }
+                    if p.address.is_empty() {
+                        "Unknown"
+                    } else {
+                        &p.address
+                    }
                 } else {
                     &p.name
                 };
-                let proto = if p.protocol.is_empty() { "—" } else { &p.protocol };
+                let proto = if p.protocol.is_empty() {
+                    "—"
+                } else {
+                    &p.protocol
+                };
                 let test = match p.test_result {
                     -2 => Span::styled(" ...", s_dim()),
                     -1 => Span::styled(" err", s_error()),
                     0 => Span::styled("", s_dim()),
                     ms => Span::styled(format!(" {}ms", ms), s_success()),
                 };
-                let style = if pos - 1 == self.cursor && left_focus { s_text() } else { s_dim() };
+                let style = if pos - 1 == self.cursor && left_focus {
+                    s_text()
+                } else {
+                    s_dim()
+                };
                 items.push(ListItem::new(Line::from(vec![
                     conn_mark,
                     Span::styled(name, style),
@@ -104,9 +117,12 @@ impl App {
 
         if items.is_empty() {
             f.render_widget(
-                Paragraph::new(format!("No matches for \"{}\"", self.search_query.as_deref().unwrap_or("")))
-                    .style(s_dim())
-                    .alignment(Alignment::Center),
+                Paragraph::new(format!(
+                    "No matches for \"{}\"",
+                    self.search_query.as_deref().unwrap_or("")
+                ))
+                .style(s_dim())
+                .alignment(Alignment::Center),
                 inner,
             );
             return;
@@ -123,7 +139,9 @@ impl App {
             .with_selected(Some(cursor_pos_in_list))
             .with_offset(self.tree_scroll);
 
-        let list = List::new(items).highlight_style(Style::default()).scroll_padding(5);
+        let list = List::new(items)
+            .highlight_style(Style::default())
+            .scroll_padding(5);
         f.render_stateful_widget(list, inner, &mut list_state);
     }
 
@@ -153,7 +171,10 @@ impl App {
             };
             items.push(ListItem::new(Line::from(vec![
                 Span::styled(format!("▸{}{}", marker, conn_mark), group_style),
-                Span::styled(format!(" {} ({})", g.group.name, g.profiles.len()), s_text()),
+                Span::styled(
+                    format!(" {} ({})", g.group.name, g.profiles.len()),
+                    s_text(),
+                ),
             ])));
 
             for (_pi, p) in g.profiles.iter().enumerate() {
@@ -168,11 +189,19 @@ impl App {
                     Span::styled("  ", s_dim())
                 };
                 let name = if p.name.is_empty() {
-                    if p.address.is_empty() { "Unknown" } else { &p.address }
+                    if p.address.is_empty() {
+                        "Unknown"
+                    } else {
+                        &p.address
+                    }
                 } else {
                     &p.name
                 };
-                let proto = if p.protocol.is_empty() { "—" } else { &p.protocol };
+                let proto = if p.protocol.is_empty() {
+                    "—"
+                } else {
+                    &p.protocol
+                };
                 let test = match p.test_result {
                     -2 => Span::styled(" ...", s_dim()),
                     -1 => Span::styled(" err", s_error()),

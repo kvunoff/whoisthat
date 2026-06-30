@@ -1,10 +1,10 @@
-mod types;
-mod helpers;
-mod state;
-mod render;
-mod tree;
 mod details;
+mod helpers;
 mod popups;
+mod render;
+mod state;
+mod tree;
+mod types;
 
-pub use types::{ActiveTab, Focus, Popup};
 pub use state::App;
+pub use types::{ActiveTab, Focus, Popup};

@@ -50,6 +50,7 @@ func (x *XrayCore) Start(stdinPipe []byte) error {
 		cmd.Stderr = xrayLog
 		logger.Infof("xray stderr -> %s", xrayLog.Name())
 	} else {
+		xrayLog = nil
 		cmd.Stderr = nil
 	}
 
@@ -96,6 +97,9 @@ func (x *XrayCore) Start(stdinPipe []byte) error {
 	go func() {
 		err := cmd.Wait()
 		logger.Infof("xray stopped (pid=%d)", cmd.Process.Pid)
+		if xrayLog != nil {
+			_ = os.Remove(xrayLog.Name())
+		}
 		x.mu.Lock()
 		defer x.mu.Unlock()
 		if ctx.Err() == nil {

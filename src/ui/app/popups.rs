@@ -12,14 +12,54 @@ use crate::ui::theme::*;
 impl App {
     pub(super) fn render_popup(&self, f: &mut Frame, popup: &Popup, area: Rect) {
         match popup {
-            Popup::Import { input, .. } => self.render_text_popup(f, " Import Profile URI ", "Paste or type URI (vless:// vmess:// trojan:// ss:// socks://):", input, area),
-            Popup::EditUserAgent { input, .. } => self.render_text_popup(f, " Edit User-Agent ", "Enter custom User-Agent:", input, area),
-            Popup::EditTunName { input, .. } => self.render_text_popup(f, " Edit TUN Name ", "Enter TUN interface name (1-15 chars, letters/digits/underscore/dash):", input, area),
-            Popup::ConfirmDelete { name, .. } => self.render_confirm_popup(f, "profile", name, area),
-            Popup::ConfirmDeleteGroup { name, .. } => self.render_confirm_popup(f, "group", name, area),
-            Popup::EditSubscription { name, url, cursor, field, .. } => self.render_group_form(f, "Edit Group", name, url, *cursor, *field, area),
+            Popup::Import { input, .. } => self.render_text_popup(
+                f,
+                " Import Profile URI ",
+                "Paste or type URI (vless:// vmess:// trojan:// ss:// socks://):",
+                input,
+                area,
+            ),
+            Popup::EditUserAgent { input, .. } => self.render_text_popup(
+                f,
+                " Edit User-Agent ",
+                "Enter custom User-Agent:",
+                input,
+                area,
+            ),
+            Popup::EditTunName { input, .. } => self.render_text_popup(
+                f,
+                " Edit TUN Name ",
+                "Enter TUN interface name (1-15 chars, letters/digits/underscore/dash):",
+                input,
+                area,
+            ),
+            Popup::EditProfileName { input, .. } => self.render_text_popup(
+                f,
+                " Rename Profile ",
+                "Enter new profile name:",
+                input,
+                area,
+            ),
+            Popup::ConfirmDelete { name, .. } => {
+                self.render_confirm_popup(f, "profile", name, area)
+            }
+            Popup::ConfirmDeleteGroup { name, .. } => {
+                self.render_confirm_popup(f, "group", name, area)
+            }
+            Popup::EditSubscription {
+                name,
+                url,
+                cursor,
+                field,
+                ..
+            } => self.render_group_form(f, "Edit Group", name, url, *cursor, *field, area),
             Popup::Help => self.render_help_popup(f, area),
-            Popup::AddGroup { name, url, cursor, field } => self.render_group_form(f, "Add Group", name, url, *cursor, *field, area),
+            Popup::AddGroup {
+                name,
+                url,
+                cursor,
+                field,
+            } => self.render_group_form(f, "Add Group", name, url, *cursor, *field, area),
         }
     }
 
@@ -65,17 +105,28 @@ impl App {
         );
     }
 
-    fn render_group_form(&self, f: &mut Frame, title: &str, name: &str, url: &str, _cursor: usize, field: usize, area: Rect) {
+    fn render_group_form(
+        &self,
+        f: &mut Frame,
+        title: &str,
+        name: &str,
+        url: &str,
+        _cursor: usize,
+        field: usize,
+        area: Rect,
+    ) {
         let v = Layout::vertical([
             Constraint::Fill(1),
             Constraint::Length(14),
             Constraint::Fill(1),
-        ]).split(area);
+        ])
+        .split(area);
         let h = Layout::horizontal([
             Constraint::Percentage(15),
             Constraint::Percentage(70),
             Constraint::Percentage(15),
-        ]).split(v[1]);
+        ])
+        .split(v[1]);
         let pa = h[1];
         f.render_widget(Clear, pa);
 
@@ -103,30 +154,47 @@ impl App {
         let w = inner.width.saturating_sub(2);
         let mut y = inner.y;
 
-        f.render_widget(Paragraph::new("Name:").style(field0_style), Rect::new(inner.x + 1, y, w, 1));
+        f.render_widget(
+            Paragraph::new("Name:").style(field0_style),
+            Rect::new(inner.x + 1, y, w, 1),
+        );
         y += 1;
         let name_display = if name.is_empty() { "My Group" } else { name };
         f.render_widget(
             Paragraph::new(name_display)
-                .block(Block::default().borders(Borders::ALL).border_style(field0_style))
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .border_style(field0_style),
+                )
                 .style(s_text()),
             Rect::new(inner.x + 1, y, w, 3),
         );
         y += 4;
 
-        f.render_widget(Paragraph::new("Subscription URL:").style(field1_style), Rect::new(inner.x + 1, y, w, 1));
+        f.render_widget(
+            Paragraph::new("Subscription URL:").style(field1_style),
+            Rect::new(inner.x + 1, y, w, 1),
+        );
         y += 1;
         let url_display = if url.is_empty() { "https://..." } else { url };
         f.render_widget(
             Paragraph::new(url_display)
-                .block(Block::default().borders(Borders::ALL).border_style(field1_style))
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .border_style(field1_style),
+                )
                 .style(s_text()),
             Rect::new(inner.x + 1, y, w, 3),
         );
         y += 4;
 
-        let hint = if field == 0 { " Tab to switch field | Enter next | Esc cancel " }
-            else { " Tab to switch field | Enter save | Esc cancel " };
+        let hint = if field == 0 {
+            " Tab to switch field | Enter next | Esc cancel "
+        } else {
+            " Tab to switch field | Enter save | Esc cancel "
+        };
         f.render_widget(
             Paragraph::new(hint)
                 .style(s_dim())
@@ -151,8 +219,7 @@ impl App {
 
         let msg = format!("Delete {} \"{}\"?\nThis cannot be undone.", kind, name);
         let chunks =
-            Layout::vertical([Constraint::Percentage(50), Constraint::Percentage(50)])
-                .split(inner);
+            Layout::vertical([Constraint::Percentage(50), Constraint::Percentage(50)]).split(inner);
 
         f.render_widget(
             Paragraph::new(msg)
@@ -204,7 +271,7 @@ impl App {
             ("a", "Import profile URI"),
             ("x/X", "Delete profile / group"),
             ("u", "Update subscription"),
-            ("e/U", "Edit group / add group"),
+            ("e/U", "Edit group/profile / add group"),
             ("v", "Toggle TUN mode"),
             ("/", "Search / filter profiles"),
         ];
@@ -236,10 +303,7 @@ impl App {
             ActiveTab::Logs => ("Logs", logs),
         };
 
-        let sections: [(&str, &[(&str, &str)]); 2] = [
-            ("Global", global),
-            (tab_name, tab_help),
-        ];
+        let sections: [(&str, &[(&str, &str)]); 2] = [("Global", global), (tab_name, tab_help)];
 
         let mut help: Vec<(&str, &str, bool)> = Vec::new();
         for (name, entries) in &sections {
@@ -251,7 +315,11 @@ impl App {
 
         let slot_rows = inner.height.saturating_sub(1) as usize;
         let has_more = self.help_scroll + slot_rows < help.len();
-        let visible = if has_more { slot_rows.saturating_sub(1) } else { slot_rows };
+        let visible = if has_more {
+            slot_rows.saturating_sub(1)
+        } else {
+            slot_rows
+        };
         let end = (self.help_scroll + visible).min(help.len());
 
         f.render_widget(
@@ -287,7 +355,9 @@ impl App {
 
         if has_more && y < inner.y + inner.height {
             f.render_widget(
-                Paragraph::new(" …").style(s_faint()).alignment(Alignment::Center),
+                Paragraph::new(" …")
+                    .style(s_faint())
+                    .alignment(Alignment::Center),
                 Rect::new(inner.x, y, inner.width, 1),
             );
         }

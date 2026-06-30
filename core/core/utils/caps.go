@@ -53,8 +53,13 @@ func CanTun() bool {
 
 	script := `
 TUN_NAME="wt-capcheck"
+# Self-clean any stale probe device from a previous failed run
+ip tuntap del mode tun dev "$TUN_NAME" 2>/dev/null || true
+# Ensure cleanup even if something fails mid-script
+trap 'ip tuntap del mode tun dev "$TUN_NAME" 2>/dev/null' EXIT
 ip tuntap add mode tun dev "$TUN_NAME" || exit 1
 ip tuntap del mode tun dev "$TUN_NAME" 2>/dev/null
+trap - EXIT
 `
 	go func() {
 		defer stdin.Close()

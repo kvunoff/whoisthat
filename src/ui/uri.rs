@@ -16,10 +16,18 @@ pub fn parse_uri(uri: &str) -> ParsedUri {
     let mut params = ParsedUri::default();
 
     let without_scheme = uri.strip_prefix("vless://").unwrap_or(uri);
-    let without_scheme = without_scheme.strip_prefix("vmess://").unwrap_or(without_scheme);
-    let without_scheme = without_scheme.strip_prefix("trojan://").unwrap_or(without_scheme);
-    let without_scheme = without_scheme.strip_prefix("ss://").unwrap_or(without_scheme);
-    let without_scheme = without_scheme.strip_prefix("socks://").unwrap_or(without_scheme);
+    let without_scheme = without_scheme
+        .strip_prefix("vmess://")
+        .unwrap_or(without_scheme);
+    let without_scheme = without_scheme
+        .strip_prefix("trojan://")
+        .unwrap_or(without_scheme);
+    let without_scheme = without_scheme
+        .strip_prefix("ss://")
+        .unwrap_or(without_scheme);
+    let without_scheme = without_scheme
+        .strip_prefix("socks://")
+        .unwrap_or(without_scheme);
 
     let (rest, fragment) = match without_scheme.rsplit_once('#') {
         Some((r, f)) => (r, f),
@@ -39,10 +47,12 @@ pub fn parse_uri(uri: &str) -> ParsedUri {
         .collect();
 
     params.sni = query.get("sni").map(|s| s.to_string()).unwrap_or_default();
-    params.transport = query
-        .get("type")
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| query.get("network").map(|s| s.to_string()).unwrap_or_default());
+    params.transport = query.get("type").map(|s| s.to_string()).unwrap_or_else(|| {
+        query
+            .get("network")
+            .map(|s| s.to_string())
+            .unwrap_or_default()
+    });
     params.security = query
         .get("security")
         .map(|s| s.to_string())
@@ -62,11 +72,11 @@ pub fn parse_uri(uri: &str) -> ParsedUri {
         String::new()
     };
 
-	let authority = if let Some(pos) = before_query.rfind('@') {
-		before_query[pos + 1..].to_string()
-	} else {
-		before_query.to_string()
-	};
+    let authority = if let Some(pos) = before_query.rfind('@') {
+        before_query[pos + 1..].to_string()
+    } else {
+        before_query.to_string()
+    };
 
     if let Some((host_part, port_part)) = authority.rsplit_once(':') {
         if !host_part.is_empty() && port_part.chars().all(|c| c.is_ascii_digit()) {
@@ -89,11 +99,8 @@ pub fn parse_ss_method(uri: &str) -> Option<String> {
     let without_fragment = without_scheme.split('#').next()?;
     let without_query = without_fragment.split('?').next()?;
     let userinfo = without_query.split('@').next()?;
-    let decoded = base64::Engine::decode(
-        &base64::engine::general_purpose::STANDARD,
-        userinfo,
-    )
-    .ok()?;
+    let decoded =
+        base64::Engine::decode(&base64::engine::general_purpose::STANDARD, userinfo).ok()?;
     let decoded_str = String::from_utf8(decoded).ok()?;
     decoded_str.split(':').next().map(|s| s.to_string())
 }
@@ -131,10 +138,9 @@ fn urlencoding(s: &str) -> String {
     let mut i = 0;
     while i < bytes.len() {
         if bytes[i] == b'%' && i + 2 < bytes.len() {
-            if let Ok(decoded) = u8::from_str_radix(
-                &String::from_utf8_lossy(&bytes[i + 1..i + 3]),
-                16,
-            ) {
+            if let Ok(decoded) =
+                u8::from_str_radix(&String::from_utf8_lossy(&bytes[i + 1..i + 3]), 16)
+            {
                 out.push(decoded as char);
                 i += 3;
                 continue;

@@ -31,28 +31,70 @@ pub enum SettingsRow {
 pub fn settings_layout() -> Vec<SettingsRow> {
     vec![
         SettingsRow::Header("Startup"),
-        SettingsRow::Item { label: "Autoconnect", kind: SettingsKind::Toggle },
-        SettingsRow::Item { label: "Autostart mode", kind: SettingsKind::Cycle },
-        SettingsRow::Item { label: "Systemd autostart", kind: SettingsKind::Toggle },
+        SettingsRow::Item {
+            label: "Autoconnect",
+            kind: SettingsKind::Toggle,
+        },
+        SettingsRow::Item {
+            label: "Autostart mode",
+            kind: SettingsKind::Cycle,
+        },
+        SettingsRow::Item {
+            label: "Systemd autostart",
+            kind: SettingsKind::Toggle,
+        },
         SettingsRow::Header("Display"),
-        SettingsRow::Item { label: "Show IP", kind: SettingsKind::Toggle },
-        SettingsRow::Item { label: "TUI log", kind: SettingsKind::Toggle },
-        SettingsRow::Item { label: "Log level", kind: SettingsKind::Cycle },
+        SettingsRow::Item {
+            label: "Show IP",
+            kind: SettingsKind::Toggle,
+        },
+        SettingsRow::Item {
+            label: "TUI log",
+            kind: SettingsKind::Toggle,
+        },
+        SettingsRow::Item {
+            label: "Log level",
+            kind: SettingsKind::Cycle,
+        },
         SettingsRow::Header("Network"),
-        SettingsRow::Item { label: "TUN name", kind: SettingsKind::Editable },
-        SettingsRow::Item { label: "Kill Switch", kind: SettingsKind::Toggle },
+        SettingsRow::Item {
+            label: "TUN name",
+            kind: SettingsKind::Editable,
+        },
+        SettingsRow::Item {
+            label: "Kill Switch",
+            kind: SettingsKind::Toggle,
+        },
         SettingsRow::Header("Diagnostics"),
-        SettingsRow::Item { label: "Test method", kind: SettingsKind::Cycle },
+        SettingsRow::Item {
+            label: "Test method",
+            kind: SettingsKind::Cycle,
+        },
         SettingsRow::Header("Hardware"),
-        SettingsRow::Item { label: "HWID: Enabled", kind: SettingsKind::Toggle },
-        SettingsRow::Item { label: "HWID", kind: SettingsKind::Display },
-        SettingsRow::Item { label: "Reset HWID", kind: SettingsKind::Action },
-        SettingsRow::Item { label: "User-Agent", kind: SettingsKind::Editable },
+        SettingsRow::Item {
+            label: "HWID: Enabled",
+            kind: SettingsKind::Toggle,
+        },
+        SettingsRow::Item {
+            label: "HWID",
+            kind: SettingsKind::Display,
+        },
+        SettingsRow::Item {
+            label: "Reset HWID",
+            kind: SettingsKind::Action,
+        },
+        SettingsRow::Item {
+            label: "User-Agent",
+            kind: SettingsKind::Editable,
+        },
     ]
 }
 
 pub fn item_count() -> usize {
-    settings_layout().iter().filter(|r| matches!(r, SettingsRow::Item { .. })).count()
+    settings_layout()
+        .iter()
+        .filter(|r| matches!(r, SettingsRow::Item { .. }))
+        .count()
 }
 
 pub struct SettingsValues<'a> {
@@ -143,16 +185,40 @@ pub fn render_settings(
     let hwid_ua = values.hwid.map(|h| h.user_agent.as_str()).unwrap_or("");
 
     let item_values: [String; 13] = [
-        if values.autoconnect { "● on".into() } else { "○ off".into() },
+        if values.autoconnect {
+            "● on".into()
+        } else {
+            "○ off".into()
+        },
         values.autostart_mode.to_string(),
-        if values.systemd_enabled { "● on".into() } else { "○ off".into() },
-        if values.show_ip { "● on".into() } else { "○ off".into() },
-        if values.log_enabled { "● on".into() } else { "○ off".into() },
+        if values.systemd_enabled {
+            "● on".into()
+        } else {
+            "○ off".into()
+        },
+        if values.show_ip {
+            "● on".into()
+        } else {
+            "○ off".into()
+        },
+        if values.log_enabled {
+            "● on".into()
+        } else {
+            "○ off".into()
+        },
         values.log_level.to_string(),
         values.tun_name.to_string(),
-        if values.kill_switch_enabled { "● on".into() } else { "○ off".into() },
+        if values.kill_switch_enabled {
+            "● on".into()
+        } else {
+            "○ off".into()
+        },
         values.test_method.to_string(),
-        if hwid_enabled { "● on".into() } else { "○ off".into() },
+        if hwid_enabled {
+            "● on".into()
+        } else {
+            "○ off".into()
+        },
         hwid_val.to_string(),
         "⏎".into(),
         hwid_ua.to_string(),
@@ -166,17 +232,20 @@ pub fn render_settings(
         .iter()
         .enumerate()
         .map(|(flat_i, row)| match row {
-            SettingsRow::Header(title) => {
-                ListItem::new(Line::from(vec![
-                    Span::styled(format!(" {} ", title), s_accent()),
-                ]))
-            }
+            SettingsRow::Header(title) => ListItem::new(Line::from(vec![Span::styled(
+                format!(" {} ", title),
+                s_accent(),
+            )])),
             SettingsRow::Item { label, kind } => {
                 let val = &item_values[value_idx];
                 let is_selected = flat_i == selected_flat && focused;
                 let val_style = match kind {
                     SettingsKind::Toggle => {
-                        if val.starts_with("●") { s_success() } else { s_disconnected() }
+                        if val.starts_with("●") {
+                            s_success()
+                        } else {
+                            s_disconnected()
+                        }
                     }
                     SettingsKind::Cycle => s_accent(),
                     SettingsKind::Editable => s_text(),
@@ -225,11 +294,17 @@ mod tests {
     #[test]
     fn test_settings_layout_has_headers() {
         let layout = settings_layout();
-        let headers: Vec<&str> = layout.iter().filter_map(|r| match r {
-            SettingsRow::Header(t) => Some(*t),
-            _ => None,
-        }).collect();
-        assert_eq!(headers, vec!["Startup", "Display", "Network", "Diagnostics", "Hardware"]);
+        let headers: Vec<&str> = layout
+            .iter()
+            .filter_map(|r| match r {
+                SettingsRow::Header(t) => Some(*t),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            headers,
+            vec!["Startup", "Display", "Network", "Diagnostics", "Hardware"]
+        );
     }
 
     #[test]

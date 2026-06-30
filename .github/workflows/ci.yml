@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  rust:
+    name: Rust (fmt + clippy + test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: rustfmt check
+        run: cargo fmt --all --check
+      - name: clippy
+        run: cargo clippy --all-targets --no-deps
+      - name: Build parser
+        working-directory: parser
+        run: cargo build --release
+      - name: Test
+        run: cargo test
+
+  go:
+    name: Go (vet + test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+      - name: vet
+        working-directory: core/core
+        run: go vet ./...
+      - name: Build
+        working-directory: core/core
+        run: go build ./...
+      - name: Test
+        working-directory: core/core
+        run: go test ./lib/crypto/... ./lib/AppConfig/... ./db/...

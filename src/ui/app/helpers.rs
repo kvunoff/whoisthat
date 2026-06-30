@@ -15,10 +15,7 @@ pub fn kv_row(key: &str, val: impl Into<String>) -> Line<'static> {
 }
 
 pub fn kv_row_span<'a>(key: &str, val: Span<'a>) -> Line<'a> {
-    Line::from(vec![
-        Span::styled(format!("{:>10}  ", key), s_faint()),
-        val,
-    ])
+    Line::from(vec![Span::styled(format!("{:>10}  ", key), s_faint()), val])
 }
 
 pub fn format_bytes(bytes: i64) -> String {
@@ -62,7 +59,9 @@ pub fn format_relative(unix_ts: i64) -> String {
 
 pub fn format_expiry(unix_ts: i64) -> String {
     let dt = chrono::DateTime::from_timestamp(unix_ts, 0);
-    let Some(dt) = dt else { return "—".to_string() };
+    let Some(dt) = dt else {
+        return "—".to_string();
+    };
     let now = chrono::Utc::now();
     let days = (dt - now).num_days();
     if days < 0 {

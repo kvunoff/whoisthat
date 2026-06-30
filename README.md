@@ -383,7 +383,7 @@ Subscription metadata (`sub_*`) is populated from the `subscription-userinfo` HT
 | `a` | Import profile URI (clipboard or manual input — vless://, vmess://, trojan://, ss://, socks://, hysteria2://, hy2://) |
 | `x` | Delete selected profile |
 | `X` | Delete current group (with confirmation) |
-| `e` | Edit group (name + subscription URL) |
+| `e` | Edit group (name + subscription URL) **or** rename selected profile |
 | `U` | Add new group (name + subscription URL) |
 | `u` | Update subscription (refresh profiles from URL) |
 | `Ctrl+V` | Paste from clipboard in input popups |

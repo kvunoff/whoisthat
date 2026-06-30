@@ -15,6 +15,10 @@ impl CoreClient {
         }
     }
 
+    pub async fn replace_conn(&self, new_conn: CoreConnection) {
+        *self.conn.lock().await = new_conn;
+    }
+
     pub fn clone_ref(&self) -> Self {
         Self {
             conn: self.conn.clone(),
@@ -80,7 +84,12 @@ impl CoreClient {
             .await
     }
 
-    pub async fn test_profile(&self, group_id: i32, profile_id: i32, method: &str) -> std::io::Result<()> {
+    pub async fn test_profile(
+        &self,
+        group_id: i32,
+        profile_id: i32,
+        method: &str,
+    ) -> std::io::Result<()> {
         self.conn
             .lock()
             .await
@@ -117,18 +126,17 @@ impl CoreClient {
         self.conn
             .lock()
             .await
-            .send("set-tun-name", &SetTunNameData {
-                tun_name: name.to_string(),
-            })
+            .send(
+                "set-tun-name",
+                &SetTunNameData {
+                    tun_name: name.to_string(),
+                },
+            )
             .await
     }
 
     pub async fn is_root(&self) -> std::io::Result<()> {
-        self.conn
-            .lock()
-            .await
-            .send("is-root", &IsRootData {})
-            .await
+        self.conn.lock().await.send("is-root", &IsRootData {}).await
     }
 
     pub async fn rename_profile(
@@ -154,21 +162,14 @@ impl CoreClient {
     }
 
     pub async fn die(&self) -> std::io::Result<()> {
-        self.conn
-            .lock()
-            .await
-            .send("die", &DieData {})
-            .await
+        self.conn.lock().await.send("die", &DieData {}).await
     }
 
     pub async fn update_subscription(&self, group_id: i32) -> std::io::Result<()> {
         self.conn
             .lock()
             .await
-            .send(
-                "update-subscription",
-                &UpdateSubscriptionData { group_id },
-            )
+            .send("update-subscription", &UpdateSubscriptionData { group_id })
             .await
     }
 
@@ -236,11 +237,7 @@ impl CoreClient {
     }
 
     pub async fn set_hwid(&self, data: &SetHwidData) -> std::io::Result<()> {
-        self.conn
-            .lock()
-            .await
-            .send("set-hwid", data)
-            .await
+        self.conn.lock().await.send("set-hwid", data).await
     }
 
     pub async fn set_kill_switch(&self, enabled: bool) -> std::io::Result<()> {

@@ -84,7 +84,10 @@ pub fn data_dir() -> PathBuf {
         .map(|d| d.data_local_dir().to_path_buf())
         .unwrap_or_else(|| {
             let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
-            PathBuf::from(home).join(".local").join("share").join("whoisthat")
+            PathBuf::from(home)
+                .join(".local")
+                .join("share")
+                .join("whoisthat")
         })
 }
 

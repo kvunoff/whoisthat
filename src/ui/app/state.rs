@@ -50,7 +50,14 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(show_ip: bool, log_enabled: bool, log_level: String, test_method: String, tun_name: String, kill_switch_enabled: bool) -> Self {
+    pub fn new(
+        show_ip: bool,
+        log_enabled: bool,
+        log_level: String,
+        test_method: String,
+        tun_name: String,
+        kill_switch_enabled: bool,
+    ) -> Self {
         Self {
             groups: Vec::new(),
             connection_status: ProxyStatus {

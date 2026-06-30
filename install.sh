@@ -24,7 +24,7 @@ set -euo pipefail
 
 # --- constants ---------------------------------------------------------------
 BUILD_DIR="/tmp/whoisthat-build"          # temporary build directory
-GO_VERSION="1.24.4"                       # minimum Go version (bump when go.mod changes)
+GO_VERSION="1.25.0"                       # minimum Go version (bump when go.mod changes)
 XRAY_VERSION="v1.8.23"                    # pinned Xray-core release
 TUN2SOCKS_VERSION="v2.5.2"               # pinned tun2socks release
 

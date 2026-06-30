@@ -72,7 +72,11 @@ fn rule_value(rule: &RoutingRule) -> &str {
 }
 
 fn rule_outbound_label(rule: &RoutingRule) -> &str {
-    if rule.outbound_tag.is_empty() { "proxy" } else { &rule.outbound_tag }
+    if rule.outbound_tag.is_empty() {
+        "proxy"
+    } else {
+        &rule.outbound_tag
+    }
 }
 
 pub fn rule_to_form(rule: &RoutingRule) -> (usize, String, usize) {
@@ -132,11 +136,7 @@ pub fn render_routing_tab(
         .border_style(Style::default().fg(border_color))
         .style(s_bg());
 
-    let v = Layout::vertical([
-        Constraint::Min(0),
-        Constraint::Length(2),
-    ])
-    .split(block.inner(area));
+    let v = Layout::vertical([Constraint::Min(0), Constraint::Length(2)]).split(block.inner(area));
     f.render_widget(block, area);
 
     let list_area = v[0];
@@ -166,7 +166,11 @@ pub fn render_routing_tab(
             .enumerate()
             .map(|(i, rule)| {
                 let is_cursor = i == cursor && focused;
-                let on_style = if rule.enabled { s_success() } else { s_disconnected() };
+                let on_style = if rule.enabled {
+                    s_success()
+                } else {
+                    s_disconnected()
+                };
                 let on_span = Span::styled(if rule.enabled { "●" } else { "○" }, on_style);
 
                 let type_str = rule_type_label(rule);
@@ -220,17 +224,44 @@ pub fn render_routing_tab(
     );
 }
 
-pub fn render_routing_popup(
-    f: &mut Frame,
-    popup: &RoutingPopup,
-    area: Rect,
-) {
+pub fn render_routing_popup(f: &mut Frame, popup: &RoutingPopup, area: Rect) {
     match popup {
-        RoutingPopup::Add { match_type, value, outbound, cursor, field } => {
-            render_rule_form(f, "Add Rule", *match_type, value, *outbound, *cursor, *field, area);
+        RoutingPopup::Add {
+            match_type,
+            value,
+            outbound,
+            cursor,
+            field,
+        } => {
+            render_rule_form(
+                f,
+                "Add Rule",
+                *match_type,
+                value,
+                *outbound,
+                *cursor,
+                *field,
+                area,
+            );
         }
-        RoutingPopup::Edit { match_type, value, outbound, cursor, field, .. } => {
-            render_rule_form(f, "Edit Rule", *match_type, value, *outbound, *cursor, *field, area);
+        RoutingPopup::Edit {
+            match_type,
+            value,
+            outbound,
+            cursor,
+            field,
+            ..
+        } => {
+            render_rule_form(
+                f,
+                "Edit Rule",
+                *match_type,
+                value,
+                *outbound,
+                *cursor,
+                *field,
+                area,
+            );
         }
         RoutingPopup::ConfirmDelete { .. } => {
             render_routing_confirm(f, area);
@@ -285,7 +316,10 @@ fn render_rule_form(
     let type_line = Line::from(vec![
         Span::styled("Type: ", f0),
         Span::styled("◄ ", if field == 0 { s_faint() } else { s_faint() }),
-        Span::styled(TYPE_LABELS[match_type], if field == 0 { s_accent() } else { inactive }),
+        Span::styled(
+            TYPE_LABELS[match_type],
+            if field == 0 { s_accent() } else { inactive },
+        ),
         Span::styled(" ►", if field == 0 { s_faint() } else { s_faint() }),
     ]);
     f.render_widget(Paragraph::new(type_line), Rect::new(inner.x + 1, y, w, 1));
@@ -300,14 +334,24 @@ fn render_rule_form(
         5 => "GeoSite (e.g. geosite:youtube)",
         _ => "",
     };
-    f.render_widget(Paragraph::new(value_label).style(f1), Rect::new(inner.x + 1, y, w, 1));
+    f.render_widget(
+        Paragraph::new(value_label).style(f1),
+        Rect::new(inner.x + 1, y, w, 1),
+    );
     y += 1;
     let val_display = if value.is_empty() {
         match match_type {
-            0 => "geosite:...", 1 => "geoip:...", 2 => "http", 3 => "443",
-            4 => "geoip:ru", 5 => "geosite:youtube", _ => ""
+            0 => "geosite:...",
+            1 => "geoip:...",
+            2 => "http",
+            3 => "443",
+            4 => "geoip:ru",
+            5 => "geosite:youtube",
+            _ => "",
         }
-    } else { value };
+    } else {
+        value
+    };
     f.render_widget(
         Paragraph::new(val_display)
             .block(Block::default().borders(Borders::ALL).border_style(f1))
@@ -319,7 +363,10 @@ fn render_rule_form(
     let ob_line = Line::from(vec![
         Span::styled("Outbound: ", f2),
         Span::styled("◄ ", if field == 2 { s_faint() } else { s_faint() }),
-        Span::styled(OUTBOUND_LABELS[outbound], if field == 2 { s_accent() } else { inactive }),
+        Span::styled(
+            OUTBOUND_LABELS[outbound],
+            if field == 2 { s_accent() } else { inactive },
+        ),
         Span::styled(" ►", if field == 2 { s_faint() } else { s_faint() }),
     ]);
     f.render_widget(Paragraph::new(ob_line), Rect::new(inner.x + 1, y, w, 1));
@@ -497,11 +544,8 @@ fn render_routing_confirm(f: &mut Frame, area: Rect) {
     let inner = block.inner(pa);
     f.render_widget(block, pa);
 
-    let chunks = Layout::vertical([
-        Constraint::Percentage(50),
-        Constraint::Percentage(50),
-    ])
-    .split(inner);
+    let chunks =
+        Layout::vertical([Constraint::Percentage(50), Constraint::Percentage(50)]).split(inner);
 
     f.render_widget(
         Paragraph::new("Delete this rule?\nThis cannot be undone.")

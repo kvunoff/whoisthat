@@ -12,9 +12,7 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use crossterm::{
-    event::{
-        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind,
-    },
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -22,9 +20,9 @@ use log::{LevelFilter, Log, Metadata, Record};
 use ratatui::backend::{Backend, CrosstermBackend};
 use tokio::sync::mpsc;
 
-use core_client::{CoreClient, CoreConnection, CoreEvent};
 use core_client::protocol::DieData;
 use core_client::protocol::SetHwidData;
+use core_client::{CoreClient, CoreConnection, CoreEvent};
 use ui::app::{ActiveTab, Focus, Popup};
 use ui::routing::{form_to_rule, RoutingPopup};
 use ui::App;
@@ -157,7 +155,9 @@ fn has_cap_net(path: &std::path::Path) -> bool {
 }
 
 fn ensure_core_caps(core_path: &str) {
-    let core = std::path::absolute(core_path).unwrap_or_else(|_| core_path.into());
+    let core = std::fs::canonicalize(core_path)
+        .or_else(|_| std::path::absolute(core_path))
+        .unwrap_or_else(|_| core_path.into());
 
     if has_cap_net(&core) {
         return;
@@ -186,8 +186,21 @@ fn ensure_core_caps(core_path: &str) {
         .status();
 
     match s {
-        Ok(s) if s.success() => eprintln!("whoisthat: capabilities set. TUN mode ready."),
-        _ => eprintln!("whoisthat: failed. Run: sudo setcap {} {}", caps, core.display()),
+        Ok(s) if s.success() => {
+            if has_cap_net(&core) {
+                eprintln!(
+                    "whoisthat: capabilities verified on {}. TUN mode ready.",
+                    core.display()
+                );
+            } else {
+                eprintln!("whoisthat: pkexec reported success but caps missing on {}. Run: sudo setcap {} {}", core.display(), caps, core.display());
+            }
+        }
+        _ => eprintln!(
+            "whoisthat: failed. Run: sudo setcap {} {}",
+            caps,
+            core.display()
+        ),
     }
 }
 
@@ -271,18 +284,16 @@ fn enable_linger_via_pkexec() -> bool {
 }
 
 fn setup_systemd_service(core_path: &str, log_level: &str) -> Result<(), String> {
-    let core = std::path::absolute(core_path)
-        .map_err(|e| format!("cannot resolve core path: {e}"))?;
+    let core =
+        std::path::absolute(core_path).map_err(|e| format!("cannot resolve core path: {e}"))?;
     let core_str = core.to_string_lossy().to_string();
 
     let unit = generate_unit_file(&core_str, log_level);
     let service_path = systemd_service_path();
     if let Some(parent) = service_path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| format!("cannot create systemd dir: {e}"))?;
+        std::fs::create_dir_all(parent).map_err(|e| format!("cannot create systemd dir: {e}"))?;
     }
-    std::fs::write(&service_path, &unit)
-        .map_err(|e| format!("cannot write service file: {e}"))?;
+    std::fs::write(&service_path, &unit).map_err(|e| format!("cannot write service file: {e}"))?;
 
     let status = Command::new("systemctl")
         .arg("--user")
@@ -309,7 +320,10 @@ fn setup_systemd_service(core_path: &str, log_level: &str) -> Result<(), String>
 
     if !linger_is_enabled() {
         if !enable_linger_via_pkexec() {
-            return Err("Could not enable lingering. Run manually: sudo loginctl enable-linger $USER".into());
+            return Err(
+                "Could not enable lingering. Run manually: sudo loginctl enable-linger $USER"
+                    .into(),
+            );
         }
     }
 
@@ -349,27 +363,36 @@ fn fetch_public_ip() -> Option<String> {
         .find(|a| a.is_ipv4())?;
     let mut stream = TcpStream::connect_timeout(&addr, Duration::from_secs(5)).ok()?;
     stream.set_read_timeout(Some(Duration::from_secs(5))).ok()?;
-    stream.write_all(b"GET / HTTP/1.0\r\nHost: api.ipify.org\r\nConnection: close\r\n\r\n").ok()?;
+    stream
+        .write_all(b"GET / HTTP/1.0\r\nHost: api.ipify.org\r\nConnection: close\r\n\r\n")
+        .ok()?;
     let mut buf = String::new();
     stream.read_to_string(&mut buf).ok()?;
     let body = buf.split("\r\n\r\n").nth(1)?;
     let ip = body.trim();
-    if ip.is_empty() { None } else { Some(ip.to_string()) }
+    if ip.is_empty() {
+        None
+    } else {
+        Some(ip.to_string())
+    }
 }
 
 fn fetch_public_ipv6() -> Option<String> {
-    let addr = "api6.ipify.org:80"
-        .to_socket_addrs()
-        .ok()?
-        .next()?;
+    let addr = "api6.ipify.org:80".to_socket_addrs().ok()?.next()?;
     let mut stream = TcpStream::connect_timeout(&addr, Duration::from_secs(5)).ok()?;
     stream.set_read_timeout(Some(Duration::from_secs(5))).ok()?;
-    stream.write_all(b"GET / HTTP/1.0\r\nHost: api6.ipify.org\r\nConnection: close\r\n\r\n").ok()?;
+    stream
+        .write_all(b"GET / HTTP/1.0\r\nHost: api6.ipify.org\r\nConnection: close\r\n\r\n")
+        .ok()?;
     let mut buf = String::new();
     stream.read_to_string(&mut buf).ok()?;
     let body = buf.split("\r\n\r\n").nth(1)?;
     let ip = body.trim();
-    if ip.is_empty() { None } else { Some(ip.to_string()) }
+    if ip.is_empty() {
+        None
+    } else {
+        Some(ip.to_string())
+    }
 }
 
 fn check_sudo_env() -> Option<&'static str> {
@@ -445,7 +468,13 @@ async fn main() -> io::Result<()> {
     let client = CoreClient::new(conn);
 
     let read_conn = CoreConnection::connect(&cfg.core_host, cfg.core_tcp_port).await?;
-    let mut core_rx = core_client::spawn_read_loop(read_conn);
+    let mut core_rx = core_client::spawn_read_loop(
+        read_conn,
+        client.clone_ref(),
+        cfg.core_host.clone(),
+        cfg.core_tcp_port,
+        cfg.log_level.clone(),
+    );
     client.get_application_state().await?;
     let _ = client.get_routing().await;
 
@@ -455,7 +484,14 @@ async fn main() -> io::Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut term = ratatui::Terminal::new(backend)?;
 
-    let mut app = App::new(cfg.show_ip, cfg.log_enabled, cfg.log_level.clone(), cfg.test_method.clone(), cfg.tun_name.clone(), cfg.kill_switch_enabled);
+    let mut app = App::new(
+        cfg.show_ip,
+        cfg.log_enabled,
+        cfg.log_level.clone(),
+        cfg.test_method.clone(),
+        cfg.tun_name.clone(),
+        cfg.kill_switch_enabled,
+    );
     app.systemd_enabled = systemd_is_enabled();
 
     if let Some(warning) = check_sudo_env() {
@@ -494,10 +530,16 @@ async fn main() -> io::Result<()> {
         let ip_tx = input_tx.clone();
         tokio::spawn(async move {
             loop {
-                if let Some(ip) = tokio::task::spawn_blocking(fetch_public_ip).await.unwrap_or(None) {
+                if let Some(ip) = tokio::task::spawn_blocking(fetch_public_ip)
+                    .await
+                    .unwrap_or(None)
+                {
                     let _ = ip_tx.send(AppEvent::PublicIp(ip));
                 }
-                if let Some(ip) = tokio::task::spawn_blocking(fetch_public_ipv6).await.unwrap_or(None) {
+                if let Some(ip) = tokio::task::spawn_blocking(fetch_public_ipv6)
+                    .await
+                    .unwrap_or(None)
+                {
                     let _ = ip_tx.send(AppEvent::PublicIpv6(ip));
                 }
                 tokio::time::sleep(Duration::from_secs(30)).await;
@@ -509,10 +551,16 @@ async fn main() -> io::Result<()> {
     {
         let ip_tx = input_tx.clone();
         tokio::spawn(async move {
-            if let Some(ip) = tokio::task::spawn_blocking(fetch_public_ip).await.unwrap_or(None) {
+            if let Some(ip) = tokio::task::spawn_blocking(fetch_public_ip)
+                .await
+                .unwrap_or(None)
+            {
                 let _ = ip_tx.send(AppEvent::PublicIp(ip));
             }
-            if let Some(ip) = tokio::task::spawn_blocking(fetch_public_ipv6).await.unwrap_or(None) {
+            if let Some(ip) = tokio::task::spawn_blocking(fetch_public_ipv6)
+                .await
+                .unwrap_or(None)
+            {
                 let _ = ip_tx.send(AppEvent::PublicIpv6(ip));
             }
         });
@@ -616,8 +664,14 @@ async fn handle_core_event(
             if *first_state {
                 *first_state = false;
                 // One-time migration: push old TUI-side autoconnect settings to core
-                if !cfg.autoconnect_migrated && cfg.autoconnect && cfg.last_profile_id != 0 && !already_migrated {
-                    let _ = client.set_autoconnect(true, cfg.last_group_id, cfg.last_profile_id, "proxy").await;
+                if !cfg.autoconnect_migrated
+                    && cfg.autoconnect
+                    && cfg.last_profile_id != 0
+                    && !already_migrated
+                {
+                    let _ = client
+                        .set_autoconnect(true, cfg.last_group_id, cfg.last_profile_id, "proxy")
+                        .await;
                     cfg.autoconnect_migrated = true;
                     config::save_config(cfg);
                 }
@@ -651,18 +705,28 @@ async fn handle_core_event(
 
         CoreEvent::StatusChanged(s) => {
             let was = app.is_connected();
-            log::info!("StatusChanged: connected={}, connected_at={}, profile={:?}", 
-                s.connection, s.connected_at, s.profile.as_ref().map(|p| (p.id, p.group_id)));
+            log::info!(
+                "StatusChanged: connected={}, connected_at={}, profile={:?}",
+                s.connection,
+                s.connected_at,
+                s.profile.as_ref().map(|p| (p.id, p.group_id))
+            );
             app.connection_status = s;
             if was != app.is_connected() {
                 app.clear_msg();
                 let tx = ip_tx.clone();
                 tokio::spawn(async move {
                     tokio::time::sleep(Duration::from_secs(1)).await;
-                    if let Some(ip) = tokio::task::spawn_blocking(fetch_public_ip).await.unwrap_or(None) {
+                    if let Some(ip) = tokio::task::spawn_blocking(fetch_public_ip)
+                        .await
+                        .unwrap_or(None)
+                    {
                         let _ = tx.send(AppEvent::PublicIp(ip));
                     }
-                    if let Some(ip) = tokio::task::spawn_blocking(fetch_public_ipv6).await.unwrap_or(None) {
+                    if let Some(ip) = tokio::task::spawn_blocking(fetch_public_ipv6)
+                        .await
+                        .unwrap_or(None)
+                    {
                         let _ = tx.send(AppEvent::PublicIpv6(ip));
                     }
                 });
@@ -674,7 +738,9 @@ async fn handle_core_event(
                     cfg.last_profile_id = p.id;
                     config::save_config(cfg);
                     if app.autoconnect_enabled {
-                        let _ = client.set_autoconnect(true, p.group_id, p.id, &app.autostart_mode).await;
+                        let _ = client
+                            .set_autoconnect(true, p.group_id, p.id, &app.autostart_mode)
+                            .await;
                     }
                 }
             }
@@ -701,18 +767,20 @@ async fn handle_core_event(
 
         CoreEvent::TunStatusChanged(e) => {
             app.tun_enabled = e;
-            app.msg(if e {
-                "Warning: TUN mode active"
-            } else {
-                "Ok"
-            });
+            app.msg(if e { "Warning: TUN mode active" } else { "Ok" });
             let tx = ip_tx.clone();
             tokio::spawn(async move {
                 tokio::time::sleep(Duration::from_secs(1)).await;
-                if let Some(ip) = tokio::task::spawn_blocking(fetch_public_ip).await.unwrap_or(None) {
+                if let Some(ip) = tokio::task::spawn_blocking(fetch_public_ip)
+                    .await
+                    .unwrap_or(None)
+                {
                     let _ = tx.send(AppEvent::PublicIp(ip));
                 }
-                if let Some(ip) = tokio::task::spawn_blocking(fetch_public_ipv6).await.unwrap_or(None) {
+                if let Some(ip) = tokio::task::spawn_blocking(fetch_public_ipv6)
+                    .await
+                    .unwrap_or(None)
+                {
                     let _ = tx.send(AppEvent::PublicIpv6(ip));
                 }
             });
@@ -740,7 +808,14 @@ async fn handle_core_event(
         }
 
         CoreEvent::Disconnected => {
-            app.msg("Error: Core disconnected. Press q to quit.");
+            app.msg("Error: Core disconnected and recovery failed. Press q to quit.");
+        }
+
+        CoreEvent::Reconnected => {
+            log::info!("Core reconnected; re-syncing state");
+            app.msg("Core reconnected. Re-syncing state...");
+            let _ = client.get_application_state().await;
+            let _ = client.get_routing().await;
         }
         CoreEvent::SubscriptionUpdated { group, profiles } => {
             app.apply_subscription_updated(group, profiles);
@@ -853,11 +928,7 @@ async fn handle_input(
     false
 }
 
-async fn handle_popup_input(
-    app: &mut App,
-    client: &CoreClient,
-    key: event::KeyEvent,
-) -> bool {
+async fn handle_popup_input(app: &mut App, client: &CoreClient, key: event::KeyEvent) -> bool {
     match app.popup.take() {
         Some(Popup::Help) => match key.code {
             KeyCode::Char('j') | KeyCode::Down => {
@@ -873,7 +944,10 @@ async fn handle_popup_input(
                 app.focus = Focus::LeftPanel;
             }
         },
-        Some(Popup::Import { mut input, mut cursor }) => match key.code {
+        Some(Popup::Import {
+            mut input,
+            mut cursor,
+        }) => match key.code {
             KeyCode::Esc => {
                 app.popup = None;
                 app.focus = Focus::LeftPanel;
@@ -895,7 +969,10 @@ async fn handle_popup_input(
                 app.popup = Some(Popup::Import { input, cursor });
             }
         },
-        Some(Popup::EditUserAgent { mut input, mut cursor }) => match key.code {
+        Some(Popup::EditUserAgent {
+            mut input,
+            mut cursor,
+        }) => match key.code {
             KeyCode::Esc => {
                 app.popup = None;
                 app.focus = Focus::LeftPanel;
@@ -903,10 +980,12 @@ async fn handle_popup_input(
             KeyCode::Enter => {
                 let ua = input.trim().to_string();
                 if !ua.is_empty() {
-                    let _ = client.set_hwid(&SetHwidData {
-                        user_agent: Some(ua),
-                        ..Default::default()
-                    }).await;
+                    let _ = client
+                        .set_hwid(&SetHwidData {
+                            user_agent: Some(ua),
+                            ..Default::default()
+                        })
+                        .await;
                 }
                 app.popup = None;
                 app.focus = Focus::LeftPanel;
@@ -916,7 +995,10 @@ async fn handle_popup_input(
                 app.popup = Some(Popup::EditUserAgent { input, cursor });
             }
         },
-        Some(Popup::EditTunName { mut input, mut cursor }) => match key.code {
+        Some(Popup::EditTunName {
+            mut input,
+            mut cursor,
+        }) => match key.code {
             KeyCode::Esc => {
                 app.popup = None;
                 app.focus = Focus::LeftPanel;
@@ -933,6 +1015,35 @@ async fn handle_popup_input(
             _ => {
                 edit_text_field(&mut input, &mut cursor, key);
                 app.popup = Some(Popup::EditTunName { input, cursor });
+            }
+        },
+        Some(Popup::EditProfileName {
+            mut input,
+            mut cursor,
+            group_id,
+            profile_id,
+        }) => match key.code {
+            KeyCode::Esc => {
+                app.popup = None;
+                app.focus = Focus::LeftPanel;
+            }
+            KeyCode::Enter => {
+                let name = input.trim().to_string();
+                if !name.is_empty() {
+                    let _ = client.rename_profile(group_id, profile_id, &name).await;
+                    app.msg("Renaming...");
+                }
+                app.popup = None;
+                app.focus = Focus::LeftPanel;
+            }
+            _ => {
+                edit_text_field(&mut input, &mut cursor, key);
+                app.popup = Some(Popup::EditProfileName {
+                    input,
+                    cursor,
+                    group_id,
+                    profile_id,
+                });
             }
         },
         Some(Popup::ConfirmDelete { gid, pid, .. }) => match key.code {
@@ -975,10 +1086,15 @@ async fn handle_popup_input(
                 return false;
             }
         },
-        Some(Popup::EditSubscription { mut name, mut url, group_id, mut cursor, mut field }) => {
-            let consumed = handle_two_field_popup(
-                &mut name, &mut url, &mut cursor, &mut field, key,
-            );
+        Some(Popup::EditSubscription {
+            mut name,
+            mut url,
+            group_id,
+            mut cursor,
+            mut field,
+        }) => {
+            let consumed =
+                handle_two_field_popup(&mut name, &mut url, &mut cursor, &mut field, key);
             if consumed {
                 let _ = client.update_group(group_id, &name, &url).await;
                 app.msg("Updating group...");
@@ -987,13 +1103,23 @@ async fn handle_popup_input(
                 app.popup = None;
                 app.focus = Focus::LeftPanel;
             } else {
-                app.popup = Some(Popup::EditSubscription { name, url, group_id, cursor, field });
+                app.popup = Some(Popup::EditSubscription {
+                    name,
+                    url,
+                    group_id,
+                    cursor,
+                    field,
+                });
             }
         }
-        Some(Popup::AddGroup { mut name, mut url, mut cursor, mut field }) => {
-            let consumed = handle_two_field_popup(
-                &mut name, &mut url, &mut cursor, &mut field, key,
-            );
+        Some(Popup::AddGroup {
+            mut name,
+            mut url,
+            mut cursor,
+            mut field,
+        }) => {
+            let consumed =
+                handle_two_field_popup(&mut name, &mut url, &mut cursor, &mut field, key);
             if consumed {
                 let _ = client.add_group(&name, &url).await;
                 app.msg("Adding group...");
@@ -1002,7 +1128,12 @@ async fn handle_popup_input(
                 app.popup = None;
                 app.focus = Focus::LeftPanel;
             } else {
-                app.popup = Some(Popup::AddGroup { name, url, cursor, field });
+                app.popup = Some(Popup::AddGroup {
+                    name,
+                    url,
+                    cursor,
+                    field,
+                });
             }
         }
         None => {}
@@ -1010,11 +1141,7 @@ async fn handle_popup_input(
     false
 }
 
-async fn handle_routing_popup_input(
-    app: &mut App,
-    client: &CoreClient,
-    key: event::KeyEvent,
-) {
+async fn handle_routing_popup_input(app: &mut App, client: &CoreClient, key: event::KeyEvent) {
     match app.routing_popup.take() {
         Some(RoutingPopup::ConfirmDelete { index }) => match key.code {
             KeyCode::Enter => {
@@ -1029,24 +1156,66 @@ async fn handle_routing_popup_input(
                 app.routing_popup = Some(RoutingPopup::ConfirmDelete { index });
             }
         },
-        Some(RoutingPopup::Add { mut match_type, mut value, mut outbound, mut cursor, mut field }) => {
-            let save = handle_routing_form(app, &mut match_type, &mut value, &mut outbound, &mut cursor, &mut field, key);
+        Some(RoutingPopup::Add {
+            mut match_type,
+            mut value,
+            mut outbound,
+            mut cursor,
+            mut field,
+        }) => {
+            let save = handle_routing_form(
+                app,
+                &mut match_type,
+                &mut value,
+                &mut outbound,
+                &mut cursor,
+                &mut field,
+                key,
+            );
             if save {
                 let rule = form_to_rule(match_type, &value, outbound);
                 app.routing.rules.push(rule);
                 let _ = client.update_routing(&app.routing).await;
             } else {
-                app.routing_popup = Some(RoutingPopup::Add { match_type, value, outbound, cursor, field });
+                app.routing_popup = Some(RoutingPopup::Add {
+                    match_type,
+                    value,
+                    outbound,
+                    cursor,
+                    field,
+                });
             }
         }
-        Some(RoutingPopup::Edit { index, mut match_type, mut value, mut outbound, mut cursor, mut field }) => {
-            let save = handle_routing_form(app, &mut match_type, &mut value, &mut outbound, &mut cursor, &mut field, key);
+        Some(RoutingPopup::Edit {
+            index,
+            mut match_type,
+            mut value,
+            mut outbound,
+            mut cursor,
+            mut field,
+        }) => {
+            let save = handle_routing_form(
+                app,
+                &mut match_type,
+                &mut value,
+                &mut outbound,
+                &mut cursor,
+                &mut field,
+                key,
+            );
             if save {
                 let rule = form_to_rule(match_type, &value, outbound);
                 app.routing.rules[index] = rule;
                 let _ = client.update_routing(&app.routing).await;
             } else {
-                app.routing_popup = Some(RoutingPopup::Edit { index, match_type, value, outbound, cursor, field });
+                app.routing_popup = Some(RoutingPopup::Edit {
+                    index,
+                    match_type,
+                    value,
+                    outbound,
+                    cursor,
+                    field,
+                });
             }
         }
         None => {}
@@ -1063,7 +1232,11 @@ fn handle_two_field_popup(
     match key.code {
         KeyCode::Tab => {
             *field = if *field == 0 { 1 } else { 0 };
-            *cursor = if *field == 0 { field0.len() } else { field1.len() };
+            *cursor = if *field == 0 {
+                field0.len()
+            } else {
+                field1.len()
+            };
             false
         }
         KeyCode::Enter => {
@@ -1093,7 +1266,9 @@ fn handle_routing_form(
     key: event::KeyEvent,
 ) -> bool {
     match key.code {
-        KeyCode::Esc => { return false; }
+        KeyCode::Esc => {
+            return false;
+        }
         KeyCode::Tab => {
             *field = (*field + 1) % 3;
             *cursor = if *field == 1 { value.len() } else { 0 };
@@ -1153,10 +1328,14 @@ fn handle_routing_form(
             }
         }
         KeyCode::Home => {
-            if *field == 1 { *cursor = 0; }
+            if *field == 1 {
+                *cursor = 0;
+            }
         }
         KeyCode::End => {
-            if *field == 1 { *cursor = value.len(); }
+            if *field == 1 {
+                *cursor = value.len();
+            }
         }
         _ => {}
     }
@@ -1374,120 +1553,146 @@ async fn handle_normal_input(
         match key.code {
             KeyCode::Char('j') | KeyCode::Down => app.settings_state.cursor_down(),
             KeyCode::Char('k') | KeyCode::Up => app.settings_state.cursor_up(),
-            KeyCode::Char(' ') | KeyCode::Enter => {
-                match app.settings_state.cursor() {
-                    0 => {
-                        let new_val = !app.autoconnect_enabled;
-                        let _ = client.set_autoconnect(new_val, cfg.last_group_id, cfg.last_profile_id, &app.autostart_mode).await;
-                    }
-                    1 => {
-                        let modes = ["proxy", "tun"];
-                        let current = modes.iter().position(|m| *m == app.autostart_mode.as_str()).unwrap_or(0);
-                        let next = (current + 1) % modes.len();
-                        let new_mode = modes[next].to_string();
-                        let _ = client.set_autoconnect(app.autoconnect_enabled, cfg.last_group_id, cfg.last_profile_id, &new_mode).await;
-                    }
-                    2 => {
-                        if app.systemd_enabled {
-                            app.msg("Disabling systemd autostart...");
-                            let result = tokio::task::spawn_blocking(teardown_systemd_service).await;
-                            match result {
-                                Ok(Ok(())) => {
-                                    app.systemd_enabled = false;
-                                    app.msg("Systemd autostart disabled");
-                                }
-                                Ok(Err(e)) => app.msg(format!("Error: {}", e)),
-                                Err(e) => app.msg(format!("Error: {}", e)),
+            KeyCode::Char(' ') | KeyCode::Enter => match app.settings_state.cursor() {
+                0 => {
+                    let new_val = !app.autoconnect_enabled;
+                    let _ = client
+                        .set_autoconnect(
+                            new_val,
+                            cfg.last_group_id,
+                            cfg.last_profile_id,
+                            &app.autostart_mode,
+                        )
+                        .await;
+                }
+                1 => {
+                    let modes = ["proxy", "tun"];
+                    let current = modes
+                        .iter()
+                        .position(|m| *m == app.autostart_mode.as_str())
+                        .unwrap_or(0);
+                    let next = (current + 1) % modes.len();
+                    let new_mode = modes[next].to_string();
+                    let _ = client
+                        .set_autoconnect(
+                            app.autoconnect_enabled,
+                            cfg.last_group_id,
+                            cfg.last_profile_id,
+                            &new_mode,
+                        )
+                        .await;
+                }
+                2 => {
+                    if app.systemd_enabled {
+                        app.msg("Disabling systemd autostart...");
+                        let result = tokio::task::spawn_blocking(teardown_systemd_service).await;
+                        match result {
+                            Ok(Ok(())) => {
+                                app.systemd_enabled = false;
+                                app.msg("Systemd autostart disabled");
                             }
-                        } else {
-                            app.msg("Enabling systemd autostart...");
-                            let core_path = find_core_binary();
-                            let log_level = cfg.log_level.clone();
-                            let result = tokio::task::spawn_blocking(move || {
-                                setup_systemd_service(&core_path, &log_level)
-                            }).await;
-                            match result {
-                                Ok(Ok(())) => {
-                                    app.systemd_enabled = true;
-                                    app.msg("Systemd autostart enabled");
-                                }
-                                Ok(Err(e)) => app.msg(format!("Error: {}", e)),
-                                Err(e) => app.msg(format!("Error: {}", e)),
+                            Ok(Err(e)) => app.msg(format!("Error: {}", e)),
+                            Err(e) => app.msg(format!("Error: {}", e)),
+                        }
+                    } else {
+                        app.msg("Enabling systemd autostart...");
+                        let core_path = find_core_binary();
+                        let log_level = cfg.log_level.clone();
+                        let result = tokio::task::spawn_blocking(move || {
+                            setup_systemd_service(&core_path, &log_level)
+                        })
+                        .await;
+                        match result {
+                            Ok(Ok(())) => {
+                                app.systemd_enabled = true;
+                                app.msg("Systemd autostart enabled");
                             }
+                            Ok(Err(e)) => app.msg(format!("Error: {}", e)),
+                            Err(e) => app.msg(format!("Error: {}", e)),
                         }
                     }
-                    3 => {
-                        app.show_ip = !app.show_ip;
-                        cfg.show_ip = app.show_ip;
-                        if !app.show_ip {
-                            app.public_ip = String::new();
-                            app.public_ipv6 = String::new();
-                        }
-                        config::save_config(cfg);
+                }
+                3 => {
+                    app.show_ip = !app.show_ip;
+                    cfg.show_ip = app.show_ip;
+                    if !app.show_ip {
+                        app.public_ip = String::new();
+                        app.public_ipv6 = String::new();
                     }
-                    4 => {
-                        app.log_enabled = !app.log_enabled;
-                        cfg.log_enabled = app.log_enabled;
-                        config::save_config(cfg);
-                        configure_logger(logger, cfg.log_enabled, &cfg.log_level);
+                    config::save_config(cfg);
+                }
+                4 => {
+                    app.log_enabled = !app.log_enabled;
+                    cfg.log_enabled = app.log_enabled;
+                    config::save_config(cfg);
+                    configure_logger(logger, cfg.log_enabled, &cfg.log_level);
+                }
+                5 => {
+                    let levels = ["error", "warn", "info", "debug", "trace"];
+                    let current = levels
+                        .iter()
+                        .position(|l| *l == app.log_level.as_str())
+                        .unwrap_or(1);
+                    let next = (current + 1) % levels.len();
+                    app.log_level = levels[next].to_string();
+                    cfg.log_level = app.log_level.clone();
+                    config::save_config(cfg);
+                    configure_logger(logger, cfg.log_enabled, &cfg.log_level);
+                }
+                6 => {
+                    app.popup = Some(Popup::EditTunName {
+                        input: app.tun_name.clone(),
+                        cursor: app.tun_name.len(),
+                    });
+                    app.focus = Focus::Popup;
+                }
+                7 => {
+                    app.kill_switch_enabled = !app.kill_switch_enabled;
+                    let _ = client.set_kill_switch(app.kill_switch_enabled).await;
+                    cfg.kill_switch_enabled = app.kill_switch_enabled;
+                    config::save_config(cfg);
+                }
+                8 => {
+                    let methods = ["tcp", "http-get", "http-head"];
+                    let current = methods
+                        .iter()
+                        .position(|m| *m == app.test_method.as_str())
+                        .unwrap_or(1);
+                    let next = (current + 1) % methods.len();
+                    app.test_method = methods[next].to_string();
+                    cfg.test_method = app.test_method.clone();
+                    config::save_config(cfg);
+                }
+                9 => {
+                    if let Some(ref hw) = app.hwid_info {
+                        let _ = client
+                            .set_hwid(&SetHwidData {
+                                enabled: Some(!hw.enabled),
+                                ..Default::default()
+                            })
+                            .await;
                     }
-                    5 => {
-                        let levels = ["error", "warn", "info", "debug", "trace"];
-                        let current = levels.iter().position(|l| *l == app.log_level.as_str()).unwrap_or(1);
-                        let next = (current + 1) % levels.len();
-                        app.log_level = levels[next].to_string();
-                        cfg.log_level = app.log_level.clone();
-                        config::save_config(cfg);
-                        configure_logger(logger, cfg.log_enabled, &cfg.log_level);
-                    }
-                    6 => {
-                        app.popup = Some(Popup::EditTunName {
-                            input: app.tun_name.clone(),
-                            cursor: app.tun_name.len(),
+                }
+                10 => {}
+                11 => {
+                    let _ = client
+                        .set_hwid(&SetHwidData {
+                            reset: true,
+                            ..Default::default()
+                        })
+                        .await;
+                }
+                12 => {
+                    if let Some(ref hw) = app.hwid_info {
+                        app.popup = Some(Popup::EditUserAgent {
+                            input: hw.user_agent.clone(),
+                            cursor: hw.user_agent.len(),
                         });
                         app.focus = Focus::Popup;
                     }
-                    7 => {
-                        app.kill_switch_enabled = !app.kill_switch_enabled;
-                        let _ = client.set_kill_switch(app.kill_switch_enabled).await;
-                        cfg.kill_switch_enabled = app.kill_switch_enabled;
-                        config::save_config(cfg);
-                    }
-                    8 => {
-                        let methods = ["tcp", "http-get", "http-head"];
-                        let current = methods.iter().position(|m| *m == app.test_method.as_str()).unwrap_or(1);
-                        let next = (current + 1) % methods.len();
-                        app.test_method = methods[next].to_string();
-                        cfg.test_method = app.test_method.clone();
-                        config::save_config(cfg);
-                    }
-                    9 => {
-                        if let Some(ref hw) = app.hwid_info {
-                            let _ = client.set_hwid(&SetHwidData {
-                                enabled: Some(!hw.enabled),
-                                ..Default::default()
-                            }).await;
-                        }
-                    }
-                    10 => {}
-                    11 => {
-                        let _ = client.set_hwid(&SetHwidData {
-                            reset: true,
-                            ..Default::default()
-                        }).await;
-                    }
-                    12 => {
-                        if let Some(ref hw) = app.hwid_info {
-                            app.popup = Some(Popup::EditUserAgent {
-                                input: hw.user_agent.clone(),
-                                cursor: hw.user_agent.len(),
-                            });
-                            app.focus = Focus::Popup;
-                        }
-                    }
-                    _ => {}
                 }
-            }
+                _ => {}
+            },
             _ => {}
         }
         return false;
@@ -1519,9 +1724,8 @@ async fn handle_normal_input(
         return false;
     }
 
-match app.focus {
-            Focus::LeftPanel => {
-                match key.code {
+    match app.focus {
+        Focus::LeftPanel => match key.code {
             KeyCode::Char('j') | KeyCode::Down => app.cursor_down(),
             KeyCode::Char('k') | KeyCode::Up => app.cursor_up(),
             KeyCode::Char('g') => app.cursor_top(),
@@ -1561,13 +1765,23 @@ match app.focus {
                 }
             }
             KeyCode::Char('e') => {
-                if let Some(g) = app.current_group() {
-                    app.popup = Some(Popup::EditSubscription {
-                        name: g.group.name.clone(),
-                        url: g.group.subscription_url.clone(),
-                        group_id: g.group.id,
-                        cursor: g.group.subscription_url.len(),
-                        field: 1,
+                if app.on_group() {
+                    if let Some(g) = app.current_group() {
+                        app.popup = Some(Popup::EditSubscription {
+                            name: g.group.name.clone(),
+                            url: g.group.subscription_url.clone(),
+                            group_id: g.group.id,
+                            cursor: g.group.subscription_url.len(),
+                            field: 1,
+                        });
+                        app.focus = Focus::Popup;
+                    }
+                } else if let Some(p) = app.selected_profile() {
+                    app.popup = Some(Popup::EditProfileName {
+                        input: p.name.clone(),
+                        cursor: p.name.len(),
+                        group_id: p.group_id,
+                        profile_id: p.id,
                     });
                     app.focus = Focus::Popup;
                 }
@@ -1627,7 +1841,6 @@ match app.focus {
                 }
             }
             _ => {}
-        }
         },
         Focus::RightPanel => match key.code {
             KeyCode::Char('c') | KeyCode::Enter => {
@@ -1682,8 +1895,8 @@ fn read_clipboard() -> Option<String> {
 
 fn edit_text_field(s: &mut String, cursor: &mut usize, key: event::KeyEvent) -> bool {
     match key.code {
-        KeyCode::Char(c) if c == 'v'
-            && matches!(key.modifiers, crossterm::event::KeyModifiers::CONTROL) =>
+        KeyCode::Char(c)
+            if c == 'v' && matches!(key.modifiers, crossterm::event::KeyModifiers::CONTROL) =>
         {
             if let Some(clip) = read_clipboard() {
                 *s = clip;
