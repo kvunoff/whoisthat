@@ -1,15 +1,15 @@
 package mainproxy
 
 import (
-	"whoisthat-core/lib"
-	"whoisthat-core/lib/proxy/xray"
-	"whoisthat-core/structs"
 	"fmt"
 	"net"
 	"net/http"
 	"regexp"
 	"strconv"
 	"time"
+	"whoisthat-core/lib"
+	"whoisthat-core/lib/proxy/xray"
+	"whoisthat-core/structs"
 
 	goproxy "golang.org/x/net/proxy"
 )

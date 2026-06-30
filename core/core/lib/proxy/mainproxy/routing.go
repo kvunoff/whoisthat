@@ -2,10 +2,10 @@ package mainproxy
 
 import (
 	"encoding/json"
-	appconfig "whoisthat-core/lib/AppConfig"
-	"whoisthat-core/db"
-	"whoisthat-core/lib/logger"
 	"strings"
+	"whoisthat-core/db"
+	appconfig "whoisthat-core/lib/AppConfig"
+	"whoisthat-core/lib/logger"
 )
 
 func injectRoutingConfig(configJSON []byte, database *db.DB) ([]byte, error) {

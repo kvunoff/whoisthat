@@ -1,8 +1,8 @@
 package cmd
 
 import (
-	"whoisthat-core/lib/logger"
 	appconfig "whoisthat-core/lib/AppConfig"
+	"whoisthat-core/lib/logger"
 	proxy "whoisthat-core/lib/proxy/mainproxy"
 	tunmode "whoisthat-core/lib/proxy/tun"
 	"whoisthat-core/structs"

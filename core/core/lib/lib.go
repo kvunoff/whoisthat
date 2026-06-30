@@ -1,9 +1,6 @@
 package lib
 
 import (
-	"whoisthat-core/db"
-	"whoisthat-core/structs"
-	"whoisthat-core/utils"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -11,6 +8,9 @@ import (
 	"os/exec"
 	"strings"
 	"unicode/utf8"
+	"whoisthat-core/db"
+	"whoisthat-core/structs"
+	"whoisthat-core/utils"
 )
 
 type profileMetaData struct {

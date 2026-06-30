@@ -1,11 +1,6 @@
 package cmd
 
 import (
-	"whoisthat-core/lib"
-	appconfig "whoisthat-core/lib/AppConfig"
-	"whoisthat-core/lib/logger"
-	proxy "whoisthat-core/lib/proxy/mainproxy"
-	"whoisthat-core/structs"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,6 +8,11 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"whoisthat-core/lib"
+	appconfig "whoisthat-core/lib/AppConfig"
+	"whoisthat-core/lib/logger"
+	proxy "whoisthat-core/lib/proxy/mainproxy"
+	"whoisthat-core/structs"
 )
 
 var subscription_mutex = sync.Mutex{}
@@ -65,7 +65,24 @@ func (cmd *Cmd) UpdateSubscription(data structs.UpdateSubscriptionData, proxy_ma
 
 }
 
+// maxSubBytes caps how much we'll read from a subscription endpoint. A
+// legit subscription is a few hundred KB of base64 URIs; 16 MB is way
+// beyond any reasonable subscription and protects the core from OOM via
+// a hostile/misconfigured server.
+const maxSubBytes = 16 * 1024 * 1024
+
+// subClient is a dedicated HTTP client with a sane timeout so a hung or
+// slow subscription server can't leak a goroutine forever.
+var subClient = &http.Client{Timeout: 30 * time.Second}
+
 func fetchSubscription(group structs.Group) (string, *http.Response, error) {
+	// Reject non-http(s) schemes to avoid protocol-smuggling surprises
+	// (e.g. file:// reads from local disk).
+	if !strings.HasPrefix(group.SubscriptionUrl, "http://") &&
+		!strings.HasPrefix(group.SubscriptionUrl, "https://") {
+		return "", nil, fmt.Errorf("invalid subscription URL scheme")
+	}
+
 	req, err := http.NewRequest("GET", group.SubscriptionUrl, nil)
 	if err != nil {
 		return "", nil, err
@@ -80,7 +97,7 @@ func fetchSubscription(group structs.Group) (string, *http.Response, error) {
 	}
 	req.Header.Set("user-agent", cfg.UserAgent)
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := subClient.Do(req)
 	if err != nil {
 		return "", nil, err
 	}
@@ -90,7 +107,9 @@ func fetchSubscription(group structs.Group) (string, *http.Response, error) {
 		return "", nil, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
 
-	bodyBytes, err := io.ReadAll(resp.Body)
+	// LimitReader caps the body so a hostile server can't OOM the core
+	// with a multi-GB response.
+	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, maxSubBytes))
 	if err != nil {
 		return "", nil, err
 	}

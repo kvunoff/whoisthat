@@ -2,10 +2,10 @@ package utils
 
 import (
 	"fmt"
-	"whoisthat-core/lib/logger"
 	"net"
 	"sort"
 	"time"
+	"whoisthat-core/lib/logger"
 
 	"github.com/miekg/dns"
 )

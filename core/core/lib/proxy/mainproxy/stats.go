@@ -3,11 +3,11 @@ package mainproxy
 import (
 	"encoding/json"
 	"fmt"
-	"whoisthat-core/structs"
 	"os/exec"
 	"regexp"
 	"strconv"
 	"time"
+	"whoisthat-core/structs"
 )
 
 func injectStatsConfig(configJSON []byte) ([]byte, error) {

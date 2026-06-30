@@ -1,8 +1,16 @@
 package main
 
 import (
-	"whoisthat-core/db"
+	"fmt"
+	lumberjack "gopkg.in/natefinch/lumberjack.v2"
+	"log"
+	"os"
+	"os/signal"
+	"path/filepath"
+	"syscall"
+	"time"
 	cmd "whoisthat-core/commands"
+	"whoisthat-core/db"
 	"whoisthat-core/lib"
 	"whoisthat-core/lib/AppConfig"
 	"whoisthat-core/lib/TCPServer"
@@ -12,14 +20,6 @@ import (
 	tunmode "whoisthat-core/lib/proxy/tun"
 	"whoisthat-core/structs"
 	"whoisthat-core/utils"
-	"fmt"
-	lumberjack "gopkg.in/natefinch/lumberjack.v2"
-	"log"
-	"os"
-	"os/signal"
-	"path/filepath"
-	"syscall"
-	"time"
 )
 
 func main() {

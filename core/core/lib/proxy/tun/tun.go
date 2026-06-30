@@ -1,13 +1,13 @@
 package tunmode
 
 import (
-	appconfig "whoisthat-core/lib/AppConfig"
-	"whoisthat-core/lib/logger"
-	"whoisthat-core/utils"
 	"errors"
 	"fmt"
 	"os/exec"
 	"sync"
+	appconfig "whoisthat-core/lib/AppConfig"
+	"whoisthat-core/lib/logger"
+	"whoisthat-core/utils"
 )
 
 type TunModeManager struct {

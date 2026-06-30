@@ -1,17 +1,13 @@
 package db
 
 import (
-	"whoisthat-core/lib/logger"
-	"whoisthat-core/structs"
 	"fmt"
 	"os"
-	"syscall"
+	"whoisthat-core/lib/logger"
+	"whoisthat-core/structs"
 )
 
 func (db *DB) RenameProfile(profile structs.ProfileID, name string) (structs.Profile, error) {
-	oldUmask := syscall.Umask(0)
-	defer syscall.Umask(oldUmask)
-
 	db.mu.Lock()
 	defer db.mu.Unlock()
 
@@ -28,9 +24,6 @@ func (db *DB) RenameProfile(profile structs.ProfileID, name string) (structs.Pro
 }
 
 func (db *DB) UpdateProfile(profile structs.Profile) error {
-	oldUmask := syscall.Umask(0)
-	defer syscall.Umask(oldUmask)
-
 	db.mu.Lock()
 	defer db.mu.Unlock()
 	return db.updateProfile(profile)
@@ -93,9 +86,6 @@ func (db *DB) getProfile(group_id int, id int) (structs.Profile, error) {
 }
 
 func (db *DB) addProfile(data structs.DBAddProfileData) (structs.Profile, error) {
-	oldUmask := syscall.Umask(0)
-	defer syscall.Umask(oldUmask)
-
 	var profile_added structs.Profile
 	group_data, err := db.loadGroupConfig(data.GroupId)
 	if err != nil {

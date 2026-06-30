@@ -2,7 +2,6 @@ package utils
 
 import (
 	"fmt"
-	"whoisthat-core/lib/logger"
 	"os"
 	osuser "os/user"
 	"strconv"
@@ -36,7 +35,8 @@ func GetHomeDir() (string, error) {
 
 	user, err := osuser.LookupId(strconv.Itoa(uid))
 	if err != nil {
-		logger.Fatal("failed to get user from uid")
+		// Don't Fatal: a missing/odd UID mapping shouldn't kill a running
+		// daemon mid-session. Surface the error to the caller.
 		return "", fmt.Errorf("failed to get user from uid %d: %w", uid, err)
 	}
 	return user.HomeDir, nil

@@ -1,10 +1,10 @@
 package lib
 
 import (
-	"whoisthat-core/utils"
 	"fmt"
 	"os/exec"
 	"strconv"
+	"whoisthat-core/utils"
 )
 
 func ParseUri(uri string, socksport int, httpport int) ([]byte, error) {

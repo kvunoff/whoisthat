@@ -1,25 +1,22 @@
 package db
 
 import (
+	"os"
+	"path/filepath"
 	"whoisthat-core/lib/logger"
 	"whoisthat-core/structs"
 	"whoisthat-core/utils"
-	"os"
-	"path/filepath"
-	"syscall"
 )
 
 func (db *DB) Initialize() {
-	oldUmask := syscall.Umask(0)
-	defer syscall.Umask(oldUmask)
 	homeDir, err := utils.GetHomeDir()
 	if err != nil {
 		logger.Fatal("cannot get user home directory")
 	}
 	var db_path = filepath.Join(homeDir, ".local", "share", "whoisthat", "db")
 	db.Path = db_path
-	if err := os.MkdirAll(db_path, 0777); err != nil {
-		logger.Fatal("failed to create database directory "+db_path+": "+err.Error())
+	if err := os.MkdirAll(db_path, 0700); err != nil {
+		logger.Fatal("failed to create database directory " + db_path + ": " + err.Error())
 	}
 	db.loadOrCreateKey()
 	db.ensureDBConfigExistance()

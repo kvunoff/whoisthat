@@ -84,7 +84,9 @@ func TestWriteEncryptedFileIsNotPlainJSON(t *testing.T) {
 	raw, _ := os.ReadFile(path)
 	// The file must be a ciphertext wrapper, not plain JSON with the secret
 	if json.Valid(raw) {
-		var wrapper struct{ Ciphertext string `json:"ciphertext"` }
+		var wrapper struct {
+			Ciphertext string `json:"ciphertext"`
+		}
 		_ = json.Unmarshal(raw, &wrapper)
 		if wrapper.Ciphertext == "" {
 			t.Error("expected ciphertext wrapper, got plain JSON")

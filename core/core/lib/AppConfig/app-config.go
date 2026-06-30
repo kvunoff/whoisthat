@@ -1,8 +1,6 @@
 package appconfig
 
 import (
-	"whoisthat-core/lib/logger"
-	"whoisthat-core/utils"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -15,25 +13,27 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"whoisthat-core/lib/logger"
+	"whoisthat-core/utils"
 )
 
 var tunNameRe = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_-]{0,14}$`)
 
 type AppConfig struct {
-	SocksPort             int       `json:"socks-port"`
-	HttpPort              int       `json:"http-port"`
-	CoreTCPPort           int       `json:"core-tcp-port"`
-	TestPortRange         PortRange `json:"test-port-range"`
-	DnsServers            []string  `json:"dns-servers"`
-	TunName               string    `json:"tun-name"`
-	HwidEnabled           bool      `json:"hwid-enabled"`
-	Hwid                  string    `json:"hwid"`
-	UserAgent             string    `json:"user-agent"`
-	KillSwitchEnabled     bool      `json:"kill-switch-enabled"`
-	AutoconnectEnabled    bool      `json:"autoconnect-enabled"`
-	AutoconnectGroupId    int       `json:"autoconnect-group-id"`
-	AutoconnectProfileId  int       `json:"autoconnect-profile-id"`
-	AutoconnectMode       string    `json:"autoconnect-mode"`
+	SocksPort            int       `json:"socks-port"`
+	HttpPort             int       `json:"http-port"`
+	CoreTCPPort          int       `json:"core-tcp-port"`
+	TestPortRange        PortRange `json:"test-port-range"`
+	DnsServers           []string  `json:"dns-servers"`
+	TunName              string    `json:"tun-name"`
+	HwidEnabled          bool      `json:"hwid-enabled"`
+	Hwid                 string    `json:"hwid"`
+	UserAgent            string    `json:"user-agent"`
+	KillSwitchEnabled    bool      `json:"kill-switch-enabled"`
+	AutoconnectEnabled   bool      `json:"autoconnect-enabled"`
+	AutoconnectGroupId   int       `json:"autoconnect-group-id"`
+	AutoconnectProfileId int       `json:"autoconnect-profile-id"`
+	AutoconnectMode      string    `json:"autoconnect-mode"`
 }
 
 type PortRange struct {

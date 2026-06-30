@@ -1,9 +1,6 @@
 package xray
 
 import (
-	"whoisthat-core/lib/geo"
-	"whoisthat-core/lib/logger"
-	"whoisthat-core/utils"
 	"context"
 	"fmt"
 	"os"
@@ -11,6 +8,9 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	"whoisthat-core/lib/geo"
+	"whoisthat-core/lib/logger"
+	"whoisthat-core/utils"
 )
 
 type XrayCore struct {

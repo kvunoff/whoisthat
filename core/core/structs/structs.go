@@ -140,8 +140,8 @@ type SetAutoconnectData struct {
 }
 
 type AutoconnectInfo struct {
-	Enabled   bool   `json:"enabled"`
-	Mode      string `json:"mode"`
+	Enabled bool   `json:"enabled"`
+	Mode    string `json:"mode"`
 }
 
 // general types
@@ -207,9 +207,9 @@ type TunStatus struct {
 }
 
 type TrafficStats struct {
-	ProxyUp   int64 `json:"proxy_up"`
-	ProxyDown int64 `json:"proxy_down"`
-	DirectUp  int64 `json:"direct_up"`
+	ProxyUp    int64 `json:"proxy_up"`
+	ProxyDown  int64 `json:"proxy_down"`
+	DirectUp   int64 `json:"direct_up"`
 	DirectDown int64 `json:"direct_down"`
 }
 

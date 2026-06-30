@@ -1,13 +1,12 @@
 package db
 
 import (
-	"whoisthat-core/lib/logger"
-	"whoisthat-core/structs"
 	"fmt"
 	"os"
 	"strconv"
 	"strings"
-	"syscall"
+	"whoisthat-core/lib/logger"
+	"whoisthat-core/structs"
 )
 
 func (db *DB) UpdateGroupAndProfiles(group_id int, profiles []structs.DBAddProfileData, keep_profile_id int) ([]structs.Profile, error) {
@@ -73,8 +72,6 @@ func (db *DB) UpdateGroupAndProfiles(group_id int, profiles []structs.DBAddProfi
 }
 
 func (db *DB) updateGroup(group structs.Group) error {
-	oldUmask := syscall.Umask(0)
-	defer syscall.Umask(oldUmask)
 	group_config_path := db.GetGroupConfigFilePath(group.Id)
 	if err := db.writeEncryptedJSON(group_config_path, group); err != nil {
 		return fmt.Errorf("failed to write %s: %w", group_config_path, err)
@@ -171,9 +168,6 @@ func (db *DB) deleteGroup(id int) error {
 }
 
 func (db *DB) AddGroup(name string, subscription_url string) (structs.GroupAdded, error) {
-	oldUmask := syscall.Umask(0)
-	defer syscall.Umask(oldUmask)
-
 	var group_added structs.GroupAdded
 	db.mu.Lock()
 	defer db.mu.Unlock()
@@ -195,7 +189,7 @@ func (db *DB) AddGroup(name string, subscription_url string) (structs.GroupAdded
 		return group_added, err
 	}
 
-	err = os.MkdirAll(group_dir_path, 0777)
+	err = os.MkdirAll(group_dir_path, 0700)
 	if err != nil {
 		return group_added, err
 	}
@@ -255,12 +249,12 @@ func (db *DB) loadGroupConfig(id int) (structs.Group, error) {
 }
 
 func (db *DB) saveGroupConfig(group structs.Group) error {
-	oldUmask := syscall.Umask(0)
-	defer syscall.Umask(oldUmask)
-
 	group_conf_file := db.GetGroupConfigFilePath(group.Id)
 	if err := db.writeEncryptedJSON(group_conf_file, group); err != nil {
-		logger.Fatal("failed to write to group config " + group_conf_file + ": " + err.Error())
+		// Don't Fatal: a transient write error shouldn't kill the running VPN.
+		// Surface the error to the caller so it can propagate up to the TUI.
+		logger.Errorf("failed to write group config %s: %v", group_conf_file, err)
+		return fmt.Errorf("failed to write group config %s: %w", group_conf_file, err)
 	}
 	return nil
 }

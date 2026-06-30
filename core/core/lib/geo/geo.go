@@ -1,7 +1,6 @@
 package geo
 
 import (
-	"whoisthat-core/lib/logger"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -13,21 +12,27 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+	"whoisthat-core/lib/logger"
 )
 
 const (
-	minGeoIPSize   = 10 * 1024 * 1024
-	minGeoSiteSize = 1 * 1024 * 1024
+	minGeoIPSize    = 10 * 1024 * 1024
+	minGeoSiteSize  = 1 * 1024 * 1024
 	downloadTimeout = 60 * time.Second
 	verifyTimeout   = 5 * time.Second
 )
 
+// geoIPURLs / geoSiteURLs are pinned to specific release tags rather than
+// /latest/download/ so a compromise of the v2fly release page can't silently
+// swap a malicious geoip.dat onto every install. Bump the pinned tag when
+// upgrading; the xray-test verification in verifyGeoIP is a second line of
+// defense, not a primary one.
 var geoIPURLs = []string{
-	"https://github.com/v2fly/geoip/releases/latest/download/geoip.dat",
+	"https://github.com/v2fly/geoip/releases/download/v20240922/geoip.dat",
 }
 
 var geoSiteURLs = []string{
-	"https://github.com/v2fly/domain-list-community/releases/latest/download/dlc.dat",
+	"https://github.com/v2fly/domain-list-community/releases/download/v20240922/dlc.dat",
 }
 
 var systemAssetDirs = []string{
@@ -237,8 +242,11 @@ func download(url, dest string, minSize int64) error {
 func verifyGeoIP(path string) bool {
 	xrayBin, err := exec.LookPath("xray")
 	if err != nil {
+		// Without xray we cannot run the verification test at all. Returning
+		// true here would silently bless any file (including a malicious one).
+		// Fail closed: the caller falls back to "no geo rules" mode.
 		logger.Warnf("geo: cannot verify geoip.dat: xray not found: %v", err)
-		return true
+		return false
 	}
 
 	cfg := map[string]interface{}{
@@ -268,13 +276,13 @@ func verifyGeoIP(path string) bool {
 
 	if err := cmd.Run(); err != nil {
 		if ctx.Err() != nil {
-			logger.Infof("geo: xray verification timed out (geoip.dat OK)")
-			return true
+			// Verification timed out — inconclusive, NOT a pass. A slow-to-fail
+			// malformed file shouldn't slip through because of a 5s budget.
+			logger.Warnf("geo: xray verification timed out after %s — treating as failure", verifyTimeout)
+			return false
 		}
 		logger.Warnf("geo: xray verification failed: %v", err)
 		return false
 	}
 	return true
 }
-
-

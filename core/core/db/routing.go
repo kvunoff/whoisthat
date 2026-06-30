@@ -1,11 +1,10 @@
 package db
 
 import (
-	"whoisthat-core/lib/logger"
-	"whoisthat-core/structs"
 	"os"
 	"path/filepath"
-	"syscall"
+	"whoisthat-core/lib/logger"
+	"whoisthat-core/structs"
 )
 
 func (db *DB) GetRoutingFilePath() string {
@@ -31,9 +30,6 @@ func (db *DB) LoadRouting() (structs.RoutingConfig, error) {
 }
 
 func (db *DB) SaveRouting(cfg structs.RoutingConfig) error {
-	oldUmask := syscall.Umask(0)
-	defer syscall.Umask(oldUmask)
-
 	db.mu.Lock()
 	defer db.mu.Unlock()
 

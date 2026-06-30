@@ -2,6 +2,12 @@ package TCPServer
 
 import (
 	"bufio"
+	"encoding/binary"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net"
+	"sync"
 	cmd "whoisthat-core/commands"
 	"whoisthat-core/db"
 	appconfig "whoisthat-core/lib/AppConfig"
@@ -9,16 +15,10 @@ import (
 	proxy "whoisthat-core/lib/proxy/mainproxy"
 	tunmode "whoisthat-core/lib/proxy/tun"
 	"whoisthat-core/structs"
-	"encoding/binary"
-	"encoding/json"
-	"fmt"
-	"io"
-	"net"
-	"sync"
 )
 
 type Server struct {
-	clients       map[string]net.Conn
+	clients       map[string]*clientConn
 	DB            *db.DB
 	mutex         sync.Mutex
 	proxy_manager *proxy.ProxyManager
@@ -26,10 +26,56 @@ type Server struct {
 	stop_sig      chan<- bool
 }
 
+// clientConn wraps a net.Conn with its own dedicated outbound goroutine fed
+// by a buffered channel. This decouples Broadcast from slow/stuck clients:
+// Broadcast just enqueues non-blockingly under the mutex and returns; the
+// per-client goroutine does the actual blocking Write. A client whose recv
+// buffer fills (e.g. the TUI's command connection that never reads) no
+// longer stalls the whole server.
+type clientConn struct {
+	conn    net.Conn
+	out     chan []byte
+	closed  bool
+	closeMu sync.Mutex
+}
+
+func newClientConn(conn net.Conn) *clientConn {
+	c := &clientConn{
+		conn: conn,
+		out:  make(chan []byte, 64),
+	}
+	go c.writeLoop()
+	return c
+}
+
+func (c *clientConn) writeLoop() {
+	for msg := range c.out {
+		length := make([]byte, 4)
+		binary.BigEndian.PutUint32(length, uint32(len(msg)))
+		if _, err := c.conn.Write(length); err != nil {
+			c.shutdown()
+			return
+		}
+		if _, err := c.conn.Write(msg); err != nil {
+			c.shutdown()
+			return
+		}
+	}
+}
+
+func (c *clientConn) shutdown() {
+	c.closeMu.Lock()
+	defer c.closeMu.Unlock()
+	if !c.closed {
+		c.closed = true
+		c.conn.Close()
+	}
+}
+
 func NewServer(database *db.DB, proxy_manager *proxy.ProxyManager, tun_manager *tunmode.TunModeManager, stop_sig chan<- bool) *Server {
 	return &Server{
 		DB:            database,
-		clients:       make(map[string]net.Conn),
+		clients:       make(map[string]*clientConn),
 		proxy_manager: proxy_manager,
 		tun_manager:   tun_manager,
 		stop_sig:      stop_sig,
@@ -64,11 +110,12 @@ func (s *Server) Start() {
 				logger.Warn("failed to accept connection:", err)
 				continue
 			}
+			cc := newClientConn(conn)
 			s.mutex.Lock()
 			clientID := conn.RemoteAddr().String()
-			s.clients[clientID] = conn
+			s.clients[clientID] = cc
 			s.mutex.Unlock()
-			go s.handleConnection(conn, clientID)
+			go s.handleConnection(cc, clientID)
 		}
 	}
 
@@ -78,33 +125,35 @@ func (s *Server) Start() {
 	}
 }
 
+// Broadcast enqueues msg onto every client's outbound channel non-blockingly.
+// A client whose channel is full (slow reader) is dropped — its goroutine
+// will close the connection on the next failed write. We never block inside
+// the server mutex, so a stuck client can't deadlock the rest of the system.
 func (s *Server) Broadcast(msg []byte) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
-	for _, conn := range s.clients {
-
-		length := make([]byte, 4)
-		binary.BigEndian.PutUint32(length, uint32(len(msg)))
-
-		_, err := conn.Write(length)
-		if err != nil {
-			conn.Close()
-			continue
-		}
-		_, err = conn.Write(msg)
-		if err != nil {
-			conn.Close()
-			continue
+	for id, cc := range s.clients {
+		select {
+		case cc.out <- msg:
+		default:
+			// Client is too far behind — drop it. The writeLoop will detect
+			// the closed channel / failed write and tear down the conn.
+			logger.Warnf("dropping slow client %s (outbound queue full)", id)
+			cc.shutdown()
+			delete(s.clients, id)
 		}
 	}
 }
 
-func (s *Server) handleConnection(conn net.Conn, clientID string) {
+func (s *Server) handleConnection(cc *clientConn, clientID string) {
+	conn := cc.conn
 	defer func() {
-		conn.Close()
+		cc.shutdown()
 		s.mutex.Lock()
-		delete(s.clients, clientID)
+		if cur, ok := s.clients[clientID]; ok && cur == cc {
+			delete(s.clients, clientID)
+		}
 		s.mutex.Unlock()
 	}()
 

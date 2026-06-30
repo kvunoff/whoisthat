@@ -3,9 +3,9 @@ package portpool
 import (
 	"errors"
 	"fmt"
-	"whoisthat-core/lib/logger"
 	"net"
 	"sync"
+	"whoisthat-core/lib/logger"
 )
 
 type PortPool struct {

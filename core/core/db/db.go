@@ -1,16 +1,15 @@
 package db
 
 import (
-	"whoisthat-core/lib/crypto"
-	"whoisthat-core/lib/logger"
-	"whoisthat-core/structs"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
 	"sync"
-	"syscall"
+	"whoisthat-core/lib/crypto"
+	"whoisthat-core/lib/logger"
+	"whoisthat-core/structs"
 )
 
 type DB struct {
@@ -20,9 +19,6 @@ type DB struct {
 }
 
 func (db *DB) saveDBConfig(db_config structs.DBConfig) error {
-	oldUmask := syscall.Umask(0)
-	defer syscall.Umask(oldUmask)
-
 	return db.writeEncryptedJSON(db.GetDBConfigFile(), db_config)
 }
 
@@ -96,7 +92,7 @@ func (db *DB) writeEncryptedJSON(path string, data any) error {
 		return err
 	}
 
-	return os.WriteFile(path, wrapperJSON, 0666)
+	return os.WriteFile(path, wrapperJSON, 0600)
 }
 
 func (db *DB) GetDBConfigFile() string {
@@ -151,7 +147,7 @@ func (db *DB) migrateFileToEncrypted(path string) {
 		logger.Warnf("migration: failed to marshal wrapper for %s: %v", path, err)
 		return
 	}
-	if err := os.WriteFile(path, wrapperJSON, 0666); err != nil {
+	if err := os.WriteFile(path, wrapperJSON, 0600); err != nil {
 		logger.Warnf("migration: failed to write %s: %v", path, err)
 	}
 }

@@ -1,15 +1,15 @@
 package cmd
 
 import (
-	appconfig "whoisthat-core/lib/AppConfig"
-	proxy "whoisthat-core/lib/proxy/mainproxy"
-	"whoisthat-core/lib/logger"
-	"whoisthat-core/lib/proxy/tun"
-	"whoisthat-core/structs"
-	"whoisthat-core/utils"
 	"errors"
 	"fmt"
 	"net"
+	appconfig "whoisthat-core/lib/AppConfig"
+	"whoisthat-core/lib/logger"
+	proxy "whoisthat-core/lib/proxy/mainproxy"
+	"whoisthat-core/lib/proxy/tun"
+	"whoisthat-core/structs"
+	"whoisthat-core/utils"
 )
 
 func (cmd *Cmd) DisableTun(data structs.DisableTunData, tun_manager *tunmode.TunModeManager) {
