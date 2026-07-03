@@ -22,6 +22,13 @@ type XrayCore struct {
 	Exited         chan error
 }
 
+// ExitedCh returns the channel used to report subprocess termination. Lets
+// mainproxy treat both xray.XrayCore and hysteria.HysteriaCore through a
+// common interface.
+func (x *XrayCore) ExitedCh() chan error {
+	return x.Exited
+}
+
 func (x *XrayCore) Start(stdinPipe []byte) error {
 	x.mu.Lock()
 	defer x.mu.Unlock()
@@ -97,8 +104,14 @@ func (x *XrayCore) Start(stdinPipe []byte) error {
 	go func() {
 		err := cmd.Wait()
 		logger.Infof("xray stopped (pid=%d)", cmd.Process.Pid)
-		if xrayLog != nil {
+		// Keep the stderr log when the process exited with an error so
+		// failures are diagnosable (e.g. hysteria2 protocol fed to xray
+		// by mistake — its config-rejection error lives in this log).
+		// Clean exit (err == nil and ctx not cancelled) frees the temp log.
+		if xrayLog != nil && err == nil && ctx.Err() == nil {
 			_ = os.Remove(xrayLog.Name())
+		} else if xrayLog != nil {
+			logger.Warnf("xray exited with error; stderr retained at %s (err=%v)", xrayLog.Name(), err)
 		}
 		x.mu.Lock()
 		defer x.mu.Unlock()

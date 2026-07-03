@@ -9,15 +9,15 @@ import (
 )
 
 // newTestProxyManager builds a ProxyManager wired only with the channels the
-// exit-watcher touches. xray_core is a bare struct with a fresh Exited channel
-// — Start (which execs the real xray binary) is never called. This isolates
-// the watcher/retire/StatusChanged plumbing from the xray subprocess.
+// exit-watcher touches. core is a bare xray.XrayCore with a fresh Exited
+// channel — Start (which execs the real xray binary) is never called. This
+// isolates the watcher/retire/StatusChanged plumbing from the xray subprocess.
 func newTestProxyManager() *ProxyManager {
 	return &ProxyManager{
 		status:        structs.ProxyStatus{Connection: "disconnected"},
 		StatusChanged: make(chan structs.ProxyStatus, 8),
 		StatsChanged:  make(chan structs.TrafficStats, 8),
-		xray_core:     xray.XrayCore{Exited: make(chan error)},
+		core:          &xray.XrayCore{Exited: make(chan error)},
 	}
 }
 
@@ -46,7 +46,7 @@ func TestWatchExit_HappyPath(t *testing.T) {
 	p := newTestProxyManager()
 	done := p.startExitWatcher()
 
-	p.xray_core.Exited <- nil
+	p.core.ExitedCh() <- nil
 
 	select {
 	case s := <-p.StatusChanged:
@@ -69,7 +69,7 @@ func TestWatchExit_ChannelClosed(t *testing.T) {
 	p := newTestProxyManager()
 	done := p.startExitWatcher()
 
-	close(p.xray_core.Exited)
+	close(p.core.ExitedCh())
 
 	if got := drainStatus(t, p.StatusChanged, 1, 200*time.Millisecond); len(got) != 0 {
 		t.Fatalf("expected no status on closed Exited, got %d", len(got))
@@ -92,7 +92,7 @@ func TestWatchExit_NonBlockingDrop(t *testing.T) {
 
 	doneSend := make(chan struct{})
 	go func() {
-		p.xray_core.Exited <- nil // would block a non-buffered/non-selecting watcher
+		p.core.ExitedCh() <- nil // would block a non-buffered/non-selecting watcher
 		close(doneSend)
 	}()
 
@@ -150,7 +150,7 @@ func TestRetireExitWatcher_StopsWatching(t *testing.T) {
 	// and return, so the subsequent Exited close races against nobody.
 	time.Sleep(50 * time.Millisecond)
 
-	close(p.xray_core.Exited)
+	close(p.core.ExitedCh())
 
 	if got := drainStatus(t, p.StatusChanged, 1, 200*time.Millisecond); len(got) != 0 {
 		t.Fatalf("expected no status after retire, got %d", len(got))
@@ -173,7 +173,7 @@ func TestExitWatcher_ConcurrentStartRetire(t *testing.T) {
 				p := newTestProxyManager()
 				p.startExitWatcher()
 				// Race an Exited send against retire; both are valid timing.
-				go func(p *ProxyManager) { p.xray_core.Exited <- nil }(p)
+				go func(p *ProxyManager) { p.core.ExitedCh() <- nil }(p)
 				p.retireExitWatcher()
 				drainStatus(t, p.StatusChanged, 1, 50*time.Millisecond)
 			}

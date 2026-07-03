@@ -19,6 +19,13 @@ func GetXrayBin() (string, error) {
 	return GetBinPath("xray")
 }
 
+// GetHysteriaBin locates the official hysteria2 client binary
+// (github.com/apernet/hysteria2). Used by the hysteria2 subprocess manager
+// instead of xray-core, which does not implement the hysteria2 protocol.
+func GetHysteriaBin() (string, error) {
+	return GetBinPath("hysteria")
+}
+
 func GetHomeDir() (string, error) {
 	uid := os.Getuid()
 	if uid == 0 {

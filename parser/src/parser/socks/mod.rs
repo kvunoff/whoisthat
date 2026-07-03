@@ -56,6 +56,9 @@ mod tests {
             server_method: None,
             obfs: None,
             obfs_password: None,
+            up: None,
+            down: None,
+            ports: None,
         }
     }
 

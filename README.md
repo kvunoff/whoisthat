@@ -186,7 +186,9 @@ Encrypted at rest with AES-256-GCM — key auto-generated on first run.
 
 1. **WhoisThat Core** is a long-running Go daemon. It manages VPN profiles (stored as JSON files under `~/.local/share/whoisthat/db/`), launches Xray-core as a subprocess, and controls the TUN device via `iproute2` + `tun2socks`.
 
-2. **Xray-core** handles all protocol-level work: VLESS/VMess/Trojan/Shadowsocks/SOCKS/Hysteria2 handshakes, Reality authentication, xHTTP/gRPC/WS/TCP transport, SOCKS5 local proxy. Its JSON config is generated on-the-fly from profile URIs by the bundled `whoisthat-parser`.
+2. **Protocol subprocesses.** The core spawns one of two subprocesses per profile:
+   - **Xray-core** — VLESS (incl. Reality/xTLS Vision), VMess, Trojan (incl. reality/WS/gRPC), Shadowsocks, SOCKS5. xray-core JSON config is generated on-the-fly from the profile URI by the bundled `whoisthat-parser`. xray-core does **not** implement the Hysteria2 protocol.
+   - **Hysteria2 client** (apernet/hysteria2, optional — installed separately by `install.sh`) — spawned only for `hysteria2://` / `hy2://` profiles. The parser emits a YAML config (server, auth, TLS, obfs/salamander, bandwidth, port-hopping) which is fed via stdin to `hysteria run -c -`. xray's stats/routing/DNS injection does not apply.
 
 3. **TUN mode** creates a virtual network interface (configurable name, default `whoisthattun`), sets up `iptables`/`nftables` rules (DNS hijack, MASQUERADE, auto-detected at runtime), and routes all system traffic through the Xray SOCKS5 proxy via `tun2socks`.
 

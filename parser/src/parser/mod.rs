@@ -50,22 +50,69 @@ pub fn create_config(
     Ok(config)
 }
 
+// Emits a YAML config understood by the official hysteria2 client
+// (apernet/hysteria2). Only valid for `hysteria2://` / `hy2://` URIs; for
+// any other protocol this returns an error so callers can fall back to the
+// xray JSON path.
+pub fn create_hysteria2_client_yaml(
+    uri: &str,
+    socks_port: u16,
+    http_port: Option<u16>,
+) -> Result<String, String> {
+    let protocol = uri_identifier::get_uri_protocol(uri);
+    if !matches!(protocol, Some(uri_identifier::Protocols::Hysteria2)) {
+        return Err(format!(
+            "URI is not a hysteria2/hy2 link (this command only handles hysteria2)"
+        ));
+    }
+    let data = hysteria2::data::get_data(uri)?;
+    hysteria2::create_client_yaml(&data, socks_port, http_port)
+}
+
 pub fn create_outbound_object(uri: &str) -> Result<config_models::Outbound, String> {
     let (name, data, outbound_settings) = get_uri_data(uri)?;
 
-    let network_type = data.r#type.as_deref().unwrap_or("");
+    // network defaults to "tcp" when absent (xray's default transport).
+    // Explicitly setting it helps protocols like vless+reality+vision that
+    // expect a TCP transport.
+    let network_type = data.r#type.as_deref().unwrap_or("tcp");
+
+    // Trojan is TLS-by-default in xray-core: a URI without an explicit
+    // `security=` parameter must still produce tlsSettings, otherwise xray
+    // falls back to plaintext trojan which the server rejects.
+    // An explicit `security=none` (or any non-tls value) is still respected.
+    let effective_security = if name == "trojan" {
+        data.security
+            .clone()
+            .or_else(|| Some(String::from("tls")))
+    } else {
+        data.security.clone()
+    };
+
     let allow_insecure = data.allowInsecure == Some(String::from("true"))
         || data.allowInsecure == Some(String::from("1"));
+
+    // ALPN in URIs is frequently comma-separated (e.g. "h2,http/1.1").
+    // Split on commas and drop empty segments so we emit ["h2","http/1.1"]
+    // instead of ["h2,http/1.1"] (which breaks ALPN negotiation).
+    let split_alpn = |alpn: &Option<String>| -> Option<Vec<String>> {
+        alpn.as_ref().map(|a| {
+            a.split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect::<Vec<_>>()
+        })
+    };
 
     let outbound = Outbound {
         protocol: name,
         tag: String::from("proxy"),
         streamSettings: StreamSettings {
-            network: data.r#type.clone(),
-            security: data.security.clone(),
-            tlsSettings: match data.security.as_deref() {
+            network: Some(network_type.to_string()),
+            security: effective_security.clone(),
+            tlsSettings: match effective_security.as_deref() {
                 Some("tls") => Some(TlsSettings {
-                    alpn: data.alpn.map(|alpn| vec![alpn]),
+                    alpn: split_alpn(&data.alpn),
                     rejectUnknownSni: None,
                     enableSessionResumption: None,
                     minVersion: None,
@@ -79,7 +126,7 @@ pub fn create_outbound_object(uri: &str) -> Result<config_models::Outbound, Stri
                 }),
                 _ => None,
             },
-            realitySettings: match data.security.as_deref() {
+            realitySettings: match effective_security.as_deref() {
                 Some("reality") => Some(RealitySettings {
                     publicKey: data.pbk,
                     serverName: data.sni.clone(),
@@ -109,7 +156,10 @@ pub fn create_outbound_object(uri: &str) -> Result<config_models::Outbound, Stri
             grpcSettings: match network_type {
                 "grpc" => Some(GRPCSettings {
                     authority: data.authority,
-                    multiMode: Some(false),
+                    // gRPC "multiMode" can be toggled via the URI param `mode=multi`
+                    // (matches the convention used by other clients). Defaults to
+                    // false to preserve historical behaviour.
+                    multiMode: Some(data.mode.as_deref() == Some("multi")),
                     serviceName: data.service_name,
                 }),
                 _ => None,
@@ -459,6 +509,134 @@ mod tests {
             let outbound = result.unwrap();
             let kcp = outbound.streamSettings.kcpSettings.unwrap();
             assert_eq!(kcp.seed, Some("myseed".to_string()));
+        }
+
+        #[test]
+        fn splits_alpn_csv() {
+            let result = create_outbound_object(
+                "vless://uuid@example.com:443?security=tls&sni=sni.com&alpn=h2,http/1.1",
+            );
+            assert!(result.is_ok());
+            let outbound = result.unwrap();
+            let tls = outbound.streamSettings.tlsSettings.unwrap();
+            assert_eq!(tls.alpn, Some(vec!["h2".to_string(), "http/1.1".to_string()]));
+        }
+
+        #[test]
+        fn filters_empty_alpn_segments() {
+            let result = create_outbound_object(
+                "vless://uuid@example.com:443?security=tls&sni=sni.com&alpn=h2,,http/1.1,",
+            );
+            assert!(result.is_ok());
+            let tls = result.unwrap().streamSettings.tlsSettings.unwrap();
+            assert_eq!(tls.alpn, Some(vec!["h2".to_string(), "http/1.1".to_string()]));
+        }
+
+        #[test]
+        fn network_defaults_to_tcp_when_absent() {
+            let result = create_outbound_object("vless://uuid@example.com:443?test=1");
+            assert!(result.is_ok());
+            let outbound = result.unwrap();
+            assert_eq!(outbound.streamSettings.network, Some("tcp".to_string()));
+        }
+
+        #[test]
+        fn network_defaults_to_tcp_for_trojan() {
+            let result = create_outbound_object("trojan://pw@example.com:443?test=1");
+            assert!(result.is_ok());
+            let outbound = result.unwrap();
+            assert_eq!(outbound.streamSettings.network, Some("tcp".to_string()));
+        }
+
+        #[test]
+        fn trojan_defaults_to_tls_when_security_absent() {
+            let result = create_outbound_object("trojan://pw@example.com:443?sni=sni.com");
+            assert!(result.is_ok());
+            let outbound = result.unwrap();
+            assert_eq!(outbound.streamSettings.security, Some("tls".to_string()));
+            assert!(outbound.streamSettings.tlsSettings.is_some());
+            let tls = outbound.streamSettings.tlsSettings.unwrap();
+            assert_eq!(tls.serverName, Some("sni.com".to_string()));
+        }
+
+        #[test]
+        fn trojan_respects_explicit_security_none() {
+            let result = create_outbound_object("trojan://pw@example.com:443?security=none");
+            assert!(result.is_ok());
+            let outbound = result.unwrap();
+            assert_eq!(outbound.streamSettings.security, Some("none".to_string()));
+            assert!(outbound.streamSettings.tlsSettings.is_none());
+        }
+
+        #[test]
+        fn trojan_with_ws_and_tls() {
+            let result = create_outbound_object(
+                "trojan://pw@example.com:443?type=ws&host=ws.example.com&path=/ws&security=tls&sni=sni.com",
+            );
+            assert!(result.is_ok());
+            let outbound = result.unwrap();
+            assert_eq!(outbound.streamSettings.network, Some("ws".to_string()));
+            assert_eq!(outbound.streamSettings.security, Some("tls".to_string()));
+            let ws = outbound.streamSettings.wsSettings.unwrap();
+            assert_eq!(ws.Host, Some("ws.example.com".to_string()));
+            assert_eq!(ws.path, Some("/ws".to_string()));
+        }
+
+        #[test]
+        fn trojan_with_grpc() {
+            let result = create_outbound_object(
+                "trojan://pw@example.com:443?type=grpc&serviceName=svc&authority=auth",
+            );
+            assert!(result.is_ok());
+            let outbound = result.unwrap();
+            assert_eq!(outbound.streamSettings.network, Some("grpc".to_string()));
+            let grpc = outbound.streamSettings.grpcSettings.unwrap();
+            assert_eq!(grpc.serviceName, Some("svc".to_string()));
+            assert_eq!(grpc.authority, Some("auth".to_string()));
+        }
+
+        #[test]
+        fn trojan_with_reality() {
+            let result = create_outbound_object(
+                "trojan://pw@example.com:443?security=reality&sni=google.com&pbk=pubkey&sid=sid&fp=firefox",
+            );
+            assert!(result.is_ok());
+            let outbound = result.unwrap();
+            assert_eq!(outbound.streamSettings.security, Some("reality".to_string()));
+            let reality = outbound.streamSettings.realitySettings.unwrap();
+            assert_eq!(reality.publicKey, Some("pubkey".to_string()));
+            assert_eq!(reality.shortId, Some("sid".to_string()));
+            assert_eq!(reality.serverName, Some("google.com".to_string()));
+        }
+
+        #[test]
+        fn grpc_multimode_via_mode_param() {
+            let result = create_outbound_object(
+                "vless://uuid@example.com:443?type=grpc&serviceName=svc&mode=multi",
+            );
+            assert!(result.is_ok());
+            let grpc = result.unwrap().streamSettings.grpcSettings.unwrap();
+            assert_eq!(grpc.multiMode, Some(true));
+        }
+
+        #[test]
+        fn grpc_multimode_default_false() {
+            let result = create_outbound_object(
+                "vless://uuid@example.com:443?type=grpc&serviceName=svc",
+            );
+            assert!(result.is_ok());
+            let grpc = result.unwrap().streamSettings.grpcSettings.unwrap();
+            assert_eq!(grpc.multiMode, Some(false));
+        }
+
+        #[test]
+        fn vless_reality_uses_tcp_network_by_default() {
+            let result = create_outbound_object(
+                "vless://uuid@example.com:443?security=reality&sni=google.com&pbk=pubkey&sid=sid&flow=xtls-rprx-vision",
+            );
+            assert!(result.is_ok());
+            let outbound = result.unwrap();
+            assert_eq!(outbound.streamSettings.network, Some("tcp".to_string()));
         }
     }
 }

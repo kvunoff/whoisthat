@@ -292,6 +292,12 @@ pub struct RawData {
     pub username: Option<String>,
     pub obfs: Option<String>,
     pub obfs_password: Option<String>,
+    // Hysteria2-specific fields (only populated for hysteria2:// URIs):
+    //  - `up` / `down`: bandwidth hints like "100 mbps"
+    //  - `ports`: UDP port hopping range like "20000-30000"
+    pub up: Option<String>,
+    pub down: Option<String>,
+    pub ports: Option<String>,
 }
 
 pub struct UserAddress {

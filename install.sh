@@ -27,6 +27,7 @@ BUILD_DIR="/tmp/whoisthat-build"          # temporary build directory
 GO_VERSION="1.25.0"                       # minimum Go version (bump when go.mod changes)
 XRAY_VERSION="v1.8.23"                    # pinned Xray-core release
 TUN2SOCKS_VERSION="v2.5.2"               # pinned tun2socks release
+HYSTERIA_VERSION="v2.7.5"                 # pinned hysteria2 client release
 
 # --- terminal colors ---------------------------------------------------------
 RED='\033[0;31m'
@@ -59,7 +60,7 @@ detect_distro() {
 
 # --- install system-level build tools ----------------------------------------
 install_system_deps() {
-    step "Step 1/7: System prerequisites"
+    step "Step 1/8: System prerequisites"
 
     # Only the C compiler + git + curl come from the distro repo.
     # Go and Rust are installed separately via official channels.
@@ -96,7 +97,7 @@ install_system_deps() {
 # --- install Go from the official tarball (go.dev) ---------------------------
 #     Distro repos ship ancient versions. We need 1.24+ for omitzero.
 install_go() {
-    step "Step 2/7: Install Go ${GO_VERSION} (official tarball)"
+    step "Step 2/8: Install Go ${GO_VERSION} (official tarball)"
 
     if ! command -v curl &>/dev/null; then
         err "curl is required to download Go. It should have been installed in step 1."
@@ -147,7 +148,7 @@ install_go() {
 
 # --- install Rust via rustup (official installer) ----------------------------
 install_rust() {
-    step "Step 3/7: Install Rust (rustup.rs)"
+    step "Step 3/8: Install Rust (rustup.rs)"
 
     if command -v rustc &>/dev/null; then
         local rust_ver
@@ -185,7 +186,7 @@ ensure_sudo() {
 #     Clones the latest tagged release (stable), not the main branch.
 #     Verifies that each build step produced the expected binary.
 build_whoisthat() {
-    step "Step 4/7: Build WhoisThat"
+    step "Step 4/8: Build WhoisThat"
 
     rm -rf "$BUILD_DIR"
 
@@ -238,7 +239,7 @@ build_whoisthat() {
 
 # --- install binaries to /usr/local/bin --------------------------------------
 install_binaries() {
-    step "Step 5/7: Install binaries to /usr/local/bin"
+    step "Step 5/8: Install binaries to /usr/local/bin"
 
     cd "$BUILD_DIR"
 
@@ -256,7 +257,7 @@ install_binaries() {
 
 # --- install Xray-core (pinned version for reproducibility) ------------------
 install_xray() {
-    step "Step 6/7: Install Xray-core ${XRAY_VERSION}"
+    step "Step 6/8: Install Xray-core ${XRAY_VERSION}"
 
     if command -v xray &>/dev/null; then
         info "xray already installed: $(xray version 2>&1 | head -1)"
@@ -284,7 +285,7 @@ install_xray() {
 
 # --- install tun2socks (optional, for TUN mode only) -------------------------
 install_tun2socks() {
-    step "Step 7/7: Install tun2socks (optional — TUN mode only)"
+    step "Step 7/8: Install tun2socks (optional — TUN mode only)"
 
     if command -v tun2socks &>/dev/null; then
         info "tun2socks already installed"
@@ -312,6 +313,43 @@ install_tun2socks() {
     else
         warn "tun2socks not found — build may have failed."
         warn "Try manually: go install github.com/xjasonlyu/tun2socks/v2@${TUN2SOCKS_VERSION}"
+    fi
+}
+
+# --- install hysteria2 (optional, for hysteria2:// subscriptions) -------------
+install_hysteria2() {
+    step "Step 8/8: Install hysteria2 client (optional — hysteria2:// profiles)"
+
+    if command -v hysteria &>/dev/null; then
+        info "hysteria already installed: $(hysteria version 2>&1 | head -1)"
+        return
+    fi
+
+    # xray-core does NOT implement the hysteria2 protocol. Subscriptions
+    # containing hysteria2:// / hy2:// URIs need the official hysteria2 client
+    # binary from apernet/hysteria2. Without it, connect attempts fail silently.
+    read -rp "    Install hysteria2 ${HYSTERIA_VERSION}? [y/N] " answer
+    if [[ ! "$answer" =~ ^[Yy]$ ]]; then
+        info "Skipping hysteria2"
+        warn "hysteria2:// / hy2:// profiles will not work without the hysteria binary."
+        warn "Install manually: go install github.com/apernet/hysteria2/v2@${HYSTERIA_VERSION}"
+        return
+    fi
+
+    info "Installing hysteria2 via go install..."
+    go install "github.com/apernet/hysteria2/v2@${HYSTERIA_VERSION}"
+
+    local gobin="${GOPATH:-$HOME/go}/bin"
+    if [ -f "$gobin/hysteria" ]; then
+        sudo install -Dm755 "$gobin/hysteria" /usr/local/bin/hysteria
+        info "hysteria2 installed: $(hysteria version 2>&1 | head -1)"
+    elif [ -f "$HOME/go/bin/hysteria" ]; then
+        sudo install -Dm755 "$HOME/go/bin/hysteria" /usr/local/bin/hysteria
+        info "hysteria2 installed"
+    else
+        warn "hysteria2 binary not found in GOPATH."
+        warn "Install manually: go install github.com/apernet/hysteria2/v2@${HYSTERIA_VERSION}"
+        warn "Then copy: sudo install -Dm755 ~/go/bin/hysteria /usr/local/bin/hysteria"
     fi
 }
 
@@ -384,6 +422,7 @@ main() {
     install_binaries
     install_xray
     install_tun2socks
+    install_hysteria2
     print_final_message
 }
 

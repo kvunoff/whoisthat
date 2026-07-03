@@ -59,6 +59,13 @@ pub fn get_data(uri: &str) -> Result<RawData, String> {
         username: None,
         obfs: url_decode(get_parameter_value(&query, "obfs")),
         obfs_password: url_decode(get_parameter_value(&query, "obfs-password")),
+        up: url_decode(get_parameter_value(&query, "up")),
+        down: url_decode(get_parameter_value(&query, "down")),
+        // Some hysteria2 URIs advertise the multi-port range via `mport`,
+        // others via `ports`. Accept either.
+        ports: url_decode(
+            get_parameter_value(&query, "ports").or_else(|| get_parameter_value(&query, "mport")),
+        ),
     })
 }
 

@@ -10,6 +10,7 @@ import (
 	appconfig "whoisthat-core/lib/AppConfig"
 	portpool "whoisthat-core/lib/PortPool"
 	"whoisthat-core/lib/logger"
+	"whoisthat-core/lib/proxy/hysteria"
 	"whoisthat-core/lib/proxy/xray"
 	"whoisthat-core/structs"
 )
@@ -19,10 +20,20 @@ import (
 // getStatus -> status
 // test -> limit to 5 concurrent tests, but simple return interface
 
+// coreProc is the union of methods mainproxy uses to drive either xray-core
+// (vless/vmess/trojan/ss/socks) or the official hysteria2 client subprocess.
+// Both xray.XrayCore and hysteria.HysteriaCore satisfy this interface.
+type coreProc interface {
+	Start(stdinConfig []byte) error
+	Stop()
+	IsRunning() bool
+	ExitedCh() chan error
+}
+
 type ProxyManager struct {
 	status            structs.ProxyStatus
 	mu                sync.Mutex
-	xray_core         xray.XrayCore
+	core              coreProc
 	StatusChanged     chan structs.ProxyStatus
 	StatsChanged      chan structs.TrafficStats
 	testChannel       chan TestRequest
@@ -48,15 +59,15 @@ func (p *ProxyManager) Init() {
 	go p.listenForTests(test_channel)
 	p.testChannel = test_channel
 	p.TestResultChannel = make(chan TestResult)
-	p.xray_core = xray.XrayCore{
+	p.core = &xray.XrayCore{
 		Exited: make(chan error),
 	}
 	test_port_range := appconfig.GetConfig().TestPortRange
 	p.portPool = portpool.CreatePortPool(test_port_range.Start, test_port_range.End)
 }
 
-// exitWatcher tracks the single goroutine reading p.xray_core.Exited so we
-// can stop it before swapping xray_core on the next Connect (previously it
+// exitWatcher tracks the single goroutine reading p.core.ExitedCh() so we
+// can stop it before swapping core on the next Connect (previously it
 // leaked one goroutine per connect, all racing on the swapped field).
 var exitWatcherDone chan struct{}
 var exitWatcherMu sync.Mutex
@@ -93,7 +104,7 @@ func (p *ProxyManager) watchExit(done chan struct{}) {
 		select {
 		case <-done:
 			return
-		case _, ok := <-p.xray_core.Exited:
+		case _, ok := <-p.core.ExitedCh():
 			if !ok {
 				return
 			}
@@ -114,22 +125,24 @@ func (p *ProxyManager) watchExit(done chan struct{}) {
 	}
 }
 
+// isHysteriaProtocol reports whether the profile's protocol must run via the
+// official hysteria2 binary instead of xray-core.
+func isHysteriaProtocol(protocol string) bool {
+	return protocol == "hysteria2" || protocol == "hy2"
+}
+
 func (p *ProxyManager) Connect(profile structs.Profile) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if p.xray_core.IsRunning() {
-		p.xray_core.Stop()
+	if p.core.IsRunning() {
+		p.core.Stop()
 	}
 
-	// Stop the previous Exited-watcher goroutine before swapping xray_core
+	// Stop the previous Exited-watcher goroutine before swapping core
 	// out from under it. Without this, every Connect leaked one goroutine,
 	// and all of them raced on the swapped field reading the latest Exited.
 	p.retireExitWatcher()
-
-	p.xray_core = xray.XrayCore{
-		Exited: make(chan error),
-	}
 
 	if p.status.Connection == "connected" {
 		p.status = structs.ProxyStatus{
@@ -142,30 +155,47 @@ func (p *ProxyManager) Connect(profile structs.Profile) error {
 	}
 
 	app_config := appconfig.GetConfig()
-	xray_config, err := lib.ParseUri(profile.Uri, app_config.SocksPort, app_config.HttpPort)
-	if err != nil {
-		return err
-	}
 
-	// Inject stats tracking config (policy + stats counters)
-	xray_config, err = injectStatsConfig(xray_config)
-	if err != nil {
-		logger.Warnf("failed to inject stats config: %v", err)
-	}
-
-	// Inject routing rules + direct/block outbounds
-	if p.DB != nil {
-		prevOutboundsCount := countOutbounds(xray_config)
-		xray_config, err = injectRoutingConfig(xray_config, p.DB)
+	if isHysteriaProtocol(profile.Protocol) {
+		// Hysteria2 is NOT supported by xray-core; the official hysteria2
+		// client is spawned with a YAML config produced by the parser. xray
+		// JSON-injection (stats/routing) does not apply — hysteria2 has no
+		// equivalent of xray's `outbounds`/`routing`/`stats` blocks.
+		yaml_config, err := lib.ParseUriHysteria(profile.Uri, app_config.SocksPort, app_config.HttpPort)
 		if err != nil {
-			logger.Warnf("failed to inject routing config: %v", err)
+			return err
 		}
-		afterOutboundsCount := countOutbounds(xray_config)
-		logger.Infof("routing: outbounds %d → %d", prevOutboundsCount, afterOutboundsCount)
-	}
+		p.core = &hysteria.HysteriaCore{Exited: make(chan error)}
+		if err := p.core.Start(yaml_config); err != nil {
+			return err
+		}
+	} else {
+		xray_config, err := lib.ParseUri(profile.Uri, app_config.SocksPort, app_config.HttpPort)
+		if err != nil {
+			return err
+		}
 
-	if err := p.xray_core.Start(xray_config); err != nil {
-		return err
+		// Inject stats tracking config (policy + stats counters)
+		xray_config, err = injectStatsConfig(xray_config)
+		if err != nil {
+			logger.Warnf("failed to inject stats config: %v", err)
+		}
+
+		// Inject routing rules + direct/block outbounds
+		if p.DB != nil {
+			prevOutboundsCount := countOutbounds(xray_config)
+			xray_config, err = injectRoutingConfig(xray_config, p.DB)
+			if err != nil {
+				logger.Warnf("failed to inject routing config: %v", err)
+			}
+			afterOutboundsCount := countOutbounds(xray_config)
+			logger.Infof("routing: outbounds %d → %d", prevOutboundsCount, afterOutboundsCount)
+		}
+
+		p.core = &xray.XrayCore{Exited: make(chan error)}
+		if err := p.core.Start(xray_config); err != nil {
+			return err
+		}
 	}
 
 	p.proxyIPs = resolveProfileIPs(profile.Address)
@@ -190,7 +220,7 @@ func (p *ProxyManager) Connect(profile structs.Profile) error {
 	default:
 	}
 
-	// Spawn a single Exited-watcher for this xray_core instance. The done
+	// Spawn a single Exited-watcher for this core instance. The done
 	// channel lets the next Connect (or Stop) retire it cleanly.
 	p.startExitWatcher()
 
@@ -207,7 +237,7 @@ func (p *ProxyManager) Stop() {
 		close(p.statsCancel)
 		p.statsCancel = nil
 	}
-	p.xray_core.Stop()
+	p.core.Stop()
 	p.status = structs.ProxyStatus{
 		Connection: "disconnected",
 	}
