@@ -133,8 +133,11 @@ Encrypted at rest with AES-256-GCM — key auto-generated on first run.
 - **Profile import** — VLESS, VMess, Trojan, Shadowsocks, SOCKS5, Hysteria2 URIs (paste, clipboard, or subscription refresh)
 - Connect / disconnect / switch profiles
 - Full system-wide TUN-mode VPN (`tun2socks` + `iptables`/`nftables`, auto-detected)
-- **Profile testing** — three methods: TCP connect, HTTP GET (SOCKS5 → Cloudflare), HTTP HEAD
-- **Scan-all testing** — `t` scans all profiles across all groups with dedup; `T` tests only focused profile/subscription
+- **Profile testing** — three methods: TCP connect (fast prefilter), HTTP GET, HTTP HEAD via SOCKS5. Multi-sample (default 3) with median latency, jitter, and packet-loss %.
+- **Per-protocol dispatch** — xray protocols (vless/vmess/trojan/ss/socks/http) spawn a mini xray; hysteria2 profiles spawn the official `hysteria` client. No more "everything goes to xray and fails for hy2".
+- **Test progress** — pending profiles show `…` immediately; in-flight batches broadcast tested/total progress. `C` cancels in-flight tests gracefully (epoch counter; no orphan subprocesses).
+- **Scan-all testing** — `t` scans all profiles across all groups with dedup; `T` tests only focused profile/subscription. Group-focused tests use the single `test-group` TCP command for efficiency.
+- **Auto-test on subscription refresh** — profiles are tested automatically after `u` so you see live latencies immediately. Toggle in Settings → Diagnostics.
 - **Custom routing rules** — domain, IP, protocol, port, geoip, geosite → proxy/direct/block (`r` tab). `direct` outbound works correctly in TUN mode via SO_MARK + fwmark routing (no root required). Use ←/→ to cycle type/outbound in the form.
 - **Kill-switch** — When enabled, blocks all non-VPN traffic if the connection drops. Uses a dedicated firewall table (`whoisthat_ks`, `whoisthat_ks_v6`) entirely independent of TUN rules — safe to combine with any routing setup. Works in both SOCKS and TUN modes. Toggle in Settings.
 - Real-time connection status with uplink/downlink traffic stats
@@ -332,7 +335,7 @@ Both client→core commands and core→client notifications use the same framing
 }
 ```
 
-`test-result`: `>0` = latency in ms, `-1` = failed, `-2` = testing, `0` = untested.
+`test-result`: `>0` = median latency in ms across N samples, `-1` = failed, `-2` = testing in flight, `0` = untested. Each profile also carries optional `tested_at` (unix ts the last successful test completed), `loss-pct` (percentage of samples that failed), and `jitter-ms` (max − min latency of successful samples).
 
 ### Group structure
 
@@ -411,7 +414,12 @@ Subscription metadata (`sub_*`) is populated from the `subscription-userinfo` HT
 | Show IP | on/off | Display public IP in top bar |
 | TUI log | on/off | Enable Rust TUI debug log (`~/.local/share/whoisthat/tui.log`) |
 | Log level | error/warn/info/debug/trace | Minimum log level for TUI and core |
-| Test method | tcp/http-get/http-head | Latency test method (tcp = direct dial, http = via SOCKS5 proxy) |
+| Test method | tcp/http-get/http-head | Latency test method (tcp = direct dial prefilter, http = via SOCKS5 proxy, multi-sample) |
+| Test samples | 1/3/5/10 | How many HTTP round-trips per profile test (median is reported) |
+| Test concurrency | 4/8/16/32/64 | Max simultaneous in-flight test subprocesses |
+| Test timeout | 3s/5s/10s/15s | Per-sample HTTP timeout |
+| Test endpoint | cloudflare/gstatic/bing | Target URL for SOCKS5-routed HTTP tests (cycles to fallback on failure) |
+| Auto-test on refresh | on/off | Automatically test profiles after a successful `u` subscription refresh |
 | TUN name | editable text | TUN interface name (1-15 chars, letters/digits/underscore/dash, default `whoisthattun`) |
 | Kill Switch | on/off | Block all non-VPN traffic on connection drop (dedicated firewall table, works in both SOCKS and TUN modes) |
 | HWID: Enabled | on/off | Send HWID headers with subscription requests |

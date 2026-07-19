@@ -101,6 +101,48 @@ impl CoreClient {
                         group_id,
                     },
                     method: method.to_string(),
+                    sample_count: 0,
+                },
+            )
+            .await
+    }
+
+    pub async fn test_group(
+        &self,
+        group_id: i32,
+        method: &str,
+        sample_count: i32,
+    ) -> std::io::Result<()> {
+        self.conn
+            .lock()
+            .await
+            .send(
+                "test-group",
+                &TestGroupData {
+                    group_id,
+                    method: method.to_string(),
+                    sample_count,
+                },
+            )
+            .await
+    }
+
+    pub async fn cancel_tests(&self) -> std::io::Result<()> {
+        self.conn
+            .lock()
+            .await
+            .send("cancel-tests", &CancelTestsData {})
+            .await
+    }
+
+    pub async fn set_test_config(&self, config: &TestConfig) -> std::io::Result<()> {
+        self.conn
+            .lock()
+            .await
+            .send(
+                "set-test-config",
+                &SetTestConfigData {
+                    config: config.clone(),
                 },
             )
             .await

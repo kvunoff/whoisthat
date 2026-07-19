@@ -22,6 +22,7 @@ use tokio::sync::mpsc;
 
 use core_client::protocol::DieData;
 use core_client::protocol::SetHwidData;
+use core_client::protocol::TestConfig;
 use core_client::{CoreClient, CoreConnection, CoreEvent};
 use ui::app::{ActiveTab, Focus, Popup};
 use ui::routing::{form_to_rule, RoutingPopup};
@@ -491,6 +492,13 @@ async fn main() -> io::Result<()> {
         cfg.test_method.clone(),
         cfg.tun_name.clone(),
         cfg.kill_switch_enabled,
+        TestConfig {
+            concurrency: cfg.test_concurrency,
+            timeout_seconds: cfg.test_timeout_seconds,
+            samples_per_test: cfg.test_samples,
+            test_endpoint: cfg.test_endpoint.clone(),
+            auto_test_on_subscribe: cfg.auto_test_on_subscribe,
+        },
     );
     app.systemd_enabled = systemd_is_enabled();
 
@@ -858,6 +866,19 @@ async fn handle_core_event(
         CoreEvent::AutoconnectUpdated(info) => {
             app.autoconnect_enabled = info.enabled;
             app.autostart_mode = info.mode;
+        }
+        CoreEvent::TestProgress(p) => {
+            if p.total == 0 || p.tested >= p.total {
+                app.test_progress = None;
+                if p.total > 0 {
+                    app.msg(format!("Tested {} profiles", p.total));
+                }
+            } else {
+                app.test_progress = Some(p);
+            }
+        }
+        CoreEvent::TestConfigUpdated(c) => {
+            app.test_config = c;
         }
     }
     false
@@ -1383,6 +1404,56 @@ fn build_test_list(app: &ui::App, focused_only: bool) -> Vec<(i32, i32)> {
     list
 }
 
+/// Dispatch a test batch for the given (group_id, profile_id) list.
+/// Immediately marks every profile `pending` so the tree shows `…` for
+/// the ones that haven't replied yet, then sends the per-profile test
+/// commands. The existing `apply_profile_updated` path overwrites the
+/// placeholder as each result arrives.
+async fn run_test_batch(app: &mut ui::App, client: &CoreClient, list: &[(i32, i32)]) {
+    for (gid, pid) in list {
+        app.mark_pending(*gid, *pid);
+    }
+    let method = app.test_method.clone();
+    let samples = app.test_config.samples_per_test;
+
+    // Fast path: when every entry belongs to a single group, use the
+    // `test-group` command — one TCP round-trip and per-result progress
+    // broadcasts. Otherwise fall back to per-profile `test-profile`.
+    let mut single_group = None;
+    for (gid, _) in list {
+        if *gid != list[0].0 {
+            single_group = None;
+            break;
+        }
+        single_group = Some(*gid);
+    }
+    if let Some(gid) = single_group {
+        let _ = client.test_group(gid, &method, samples).await;
+    } else {
+        for (gid, pid) in list {
+            let _ = client.test_profile(*gid, *pid, &method).await;
+        }
+    }
+    app.msg(format!("Testing {} profiles...", list.len()));
+}
+
+/// Persist the current test_config to the TUI's config.toml AND push it
+/// to the running core via the `set-test-config` command so the change
+/// takes effect immediately without a core restart.
+async fn persist_and_sync_test_config(
+    app: &ui::App,
+    cfg: &mut config::AppConfig,
+    client: &CoreClient,
+) {
+    cfg.test_concurrency = app.test_config.concurrency;
+    cfg.test_timeout_seconds = app.test_config.timeout_seconds;
+    cfg.test_samples = app.test_config.samples_per_test;
+    cfg.test_endpoint = app.test_config.test_endpoint.clone();
+    cfg.auto_test_on_subscribe = app.test_config.auto_test_on_subscribe;
+    config::save_config(cfg);
+    let _ = client.set_test_config(&app.test_config).await;
+}
+
 async fn handle_normal_input(
     app: &mut App,
     client: &CoreClient,
@@ -1664,6 +1735,60 @@ async fn handle_normal_input(
                     config::save_config(cfg);
                 }
                 9 => {
+                    let opts = [1, 3, 5, 10];
+                    let cur = opts
+                        .iter()
+                        .position(|&v| v == app.test_config.samples_per_test)
+                        .unwrap_or(1);
+                    let next = opts[(cur + 1) % opts.len()];
+                    app.test_config.samples_per_test = next;
+                    cfg.test_samples = next;
+                    persist_and_sync_test_config(app, cfg, client).await;
+                }
+                10 => {
+                    let opts = [4, 8, 16, 32, 64];
+                    let cur = opts
+                        .iter()
+                        .position(|&v| v == app.test_config.concurrency)
+                        .unwrap_or(2);
+                    let next = opts[(cur + 1) % opts.len()];
+                    app.test_config.concurrency = next;
+                    cfg.test_concurrency = next;
+                    persist_and_sync_test_config(app, cfg, client).await;
+                }
+                11 => {
+                    let opts = [3, 5, 10, 15];
+                    let cur = opts
+                        .iter()
+                        .position(|&v| v == app.test_config.timeout_seconds)
+                        .unwrap_or(1);
+                    let next = opts[(cur + 1) % opts.len()];
+                    app.test_config.timeout_seconds = next;
+                    cfg.test_timeout_seconds = next;
+                    persist_and_sync_test_config(app, cfg, client).await;
+                }
+                12 => {
+                    let opts = [
+                        ("cloudflare", "https://cp.cloudflare.com/generate_204"),
+                        ("gstatic", "https://www.gstatic.com/generate_204"),
+                        ("bing", "https://www.bing.com/"),
+                    ];
+                    let cur = opts
+                        .iter()
+                        .position(|(_, url)| *url == app.test_config.test_endpoint)
+                        .unwrap_or(0);
+                    let next = opts[(cur + 1) % opts.len()];
+                    app.test_config.test_endpoint = next.1.to_string();
+                    cfg.test_endpoint = next.1.to_string();
+                    persist_and_sync_test_config(app, cfg, client).await;
+                }
+                13 => {
+                    app.test_config.auto_test_on_subscribe =
+                        !app.test_config.auto_test_on_subscribe;
+                    cfg.auto_test_on_subscribe = app.test_config.auto_test_on_subscribe;
+                    persist_and_sync_test_config(app, cfg, client).await;
+                }
+                14 => {
                     if let Some(ref hw) = app.hwid_info {
                         let _ = client
                             .set_hwid(&SetHwidData {
@@ -1673,8 +1798,8 @@ async fn handle_normal_input(
                             .await;
                     }
                 }
-                10 => {}
-                11 => {
+                15 => {}
+                16 => {
                     let _ = client
                         .set_hwid(&SetHwidData {
                             reset: true,
@@ -1682,7 +1807,7 @@ async fn handle_normal_input(
                         })
                         .await;
                 }
-                12 => {
+                17 => {
                     if let Some(ref hw) = app.hwid_info {
                         app.popup = Some(Popup::EditUserAgent {
                             input: hw.user_agent.clone(),
@@ -1797,20 +1922,17 @@ async fn handle_normal_input(
                 app.focus = Focus::Popup;
             }
             KeyCode::Char('t') => {
-                let method = app.test_method.clone();
                 let list = build_test_list(app, false);
-                for (gid, pid) in &list {
-                    let _ = client.test_profile(*gid, *pid, &method).await;
-                }
-                app.msg(format!("Testing {} profiles...", list.len()));
+                run_test_batch(app, client, &list).await;
             }
             KeyCode::Char('T') => {
-                let method = app.test_method.clone();
                 let list = build_test_list(app, true);
-                for (gid, pid) in &list {
-                    let _ = client.test_profile(*gid, *pid, &method).await;
-                }
-                app.msg(format!("Testing {} profiles...", list.len()));
+                run_test_batch(app, client, &list).await;
+            }
+            KeyCode::Char('C') => {
+                let _ = client.cancel_tests().await;
+                app.test_progress = None;
+                app.msg("Cancelling in-flight tests...");
             }
             KeyCode::Char('x') => {
                 if let Some(p) = app.selected_profile() {
@@ -1866,20 +1988,12 @@ async fn handle_normal_input(
                 app.details_scroll_bottom(app.details_line_count(), app.details_visible());
             }
             KeyCode::Char('t') => {
-                let method = app.test_method.clone();
                 let list = build_test_list(app, false);
-                for (gid, pid) in &list {
-                    let _ = client.test_profile(*gid, *pid, &method).await;
-                }
-                app.msg(format!("Testing {} profiles...", list.len()));
+                run_test_batch(app, client, &list).await;
             }
             KeyCode::Char('T') => {
-                let method = app.test_method.clone();
                 let list = build_test_list(app, true);
-                for (gid, pid) in &list {
-                    let _ = client.test_profile(*gid, *pid, &method).await;
-                }
-                app.msg(format!("Testing {} profiles...", list.len()));
+                run_test_batch(app, client, &list).await;
             }
             _ => {}
         },

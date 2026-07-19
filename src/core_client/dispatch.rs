@@ -33,6 +33,8 @@ pub enum CoreEvent {
     TunNameUpdated(String),
     KillSwitchUpdated(bool),
     AutoconnectUpdated(AutoconnectInfo),
+    TestProgress(TestProgress),
+    TestConfigUpdated(TestConfig),
     Reconnected,
     Disconnected,
 }
@@ -259,6 +261,14 @@ pub(crate) fn dispatch(msg: TcpMessage) -> CoreEvent {
             AutoconnectInfo,
             AutoconnectUpdated
         ),
+        "test-progress" => {
+            try_dispatch!(msg, "test-progress", TestProgress, TestProgress)
+        }
+        "test-config-updated" => {
+            try_dispatch!(msg, "test-config-updated", TestConfigUpdated, |d| {
+                CoreEvent::TestConfigUpdated(d.config)
+            })
+        }
         other => {
             warn!("Unknown message type: {}", other);
             CoreEvent::Error(format!("Unknown message: {}", other))
@@ -529,6 +539,68 @@ mod tests {
             assert_eq!(info.mode, "tun");
         } else {
             panic!("expected AutoconnectUpdated");
+        }
+    }
+
+    #[test]
+    fn test_dispatch_test_progress() {
+        let event = dispatch(make_msg(
+            "test-progress",
+            json!({ "group_id": 5, "tested": 12, "total": 30 }),
+        ));
+        if let CoreEvent::TestProgress(p) = event {
+            assert_eq!(p.group_id, 5);
+            assert_eq!(p.tested, 12);
+            assert_eq!(p.total, 30);
+        } else {
+            panic!("expected TestProgress");
+        }
+    }
+
+    #[test]
+    fn test_dispatch_test_config_updated() {
+        let event = dispatch(make_msg(
+            "test-config-updated",
+            json!({
+                "config": {
+                    "concurrency": 16,
+                    "timeout_seconds": 5,
+                    "samples_per_test": 3,
+                    "test_endpoint": "https://example.com/204",
+                    "auto_test_on_subscribe": true
+                }
+            }),
+        ));
+        if let CoreEvent::TestConfigUpdated(c) = event {
+            assert_eq!(c.concurrency, 16);
+            assert_eq!(c.samples_per_test, 3);
+            assert!(c.auto_test_on_subscribe);
+        } else {
+            panic!("expected TestConfigUpdated");
+        }
+    }
+
+    #[test]
+    fn test_dispatch_profile_updated_rich_fields() {
+        let event = dispatch(make_msg(
+            "profile-updated",
+            json!({
+                "profile": {
+                    "id": 5, "group_id": 2,
+                    "test-result": 120,
+                    "tested_at": 1700000000,
+                    "loss-pct": 0,
+                    "jitter-ms": 8
+                }
+            }),
+        ));
+        if let CoreEvent::ProfileUpdated(p) = event {
+            assert_eq!(p.test_result, 120);
+            assert_eq!(p.tested_at, 1700000000);
+            assert_eq!(p.jitter_ms, 8);
+            assert_eq!(p.loss_pct, 0);
+        } else {
+            panic!("expected ProfileUpdated");
         }
     }
 }

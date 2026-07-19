@@ -42,12 +42,28 @@ type ProxyManager struct {
 	statsCancel       chan struct{}
 	DB                *db.DB
 	proxyIPs          []string
+
+	// Per-group batch progress tracker. SeedTestProgress initializes a
+	// group's (tested, total) tuple; IncrementTestProgress atomically
+	// bumps the tested count and returns the new value plus the total.
+	// When tested == total the entry is cleared. The TCPServer broadcasts
+	// a `test-progress` notification for each increment so the TUI can
+	// render "Testing 12/30…".
+	progressMu     sync.Mutex
+	progressGroups map[int32]*struct {
+		tested int64
+		total  int
+	}
 }
 
 func (p *ProxyManager) Init() {
 	p.status = structs.ProxyStatus{
 		Connection: "disconnected",
 	}
+	p.progressGroups = map[int32]*struct {
+		tested int64
+		total  int
+	}{}
 	// Buffered so a transient send from xray-core's Exited watcher doesn't
 	// block forever if the server's handleStatusChange goroutine is parked
 	// inside a Broadcast. Combined with the per-client outbound goroutines
@@ -58,7 +74,10 @@ func (p *ProxyManager) Init() {
 	test_channel := make(chan TestRequest)
 	go p.listenForTests(test_channel)
 	p.testChannel = test_channel
-	p.TestResultChannel = make(chan TestResult)
+	// Buffered so test goroutines never block on a slow DB writer in the
+	// TCPServer's handleTestResults loop. Capacity matches a full
+	// subscription burst (~30 profiles × 3 samples broadcast stagger).
+	p.TestResultChannel = make(chan TestResult, 32)
 	p.core = &xray.XrayCore{
 		Exited: make(chan error),
 	}

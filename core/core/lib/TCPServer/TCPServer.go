@@ -252,6 +252,30 @@ func (s *Server) handleConnection(cc *clientConn, clientID string) {
 			}
 			go command_handler.TestProfile(data, s.proxy_manager)
 
+		case "test-group":
+			var data structs.TestGroupData
+			if err := json.Unmarshal(raw_tcp_message.Data, &data); err != nil {
+				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
+				return
+			}
+			go command_handler.TestGroup(data, s.proxy_manager)
+
+		case "cancel-tests":
+			var data structs.CancelTestsData
+			if err := json.Unmarshal(raw_tcp_message.Data, &data); err != nil {
+				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
+				return
+			}
+			command_handler.CancelTests(data, s.proxy_manager)
+
+		case "set-test-config":
+			var data structs.SetTestConfigData
+			if err := json.Unmarshal(raw_tcp_message.Data, &data); err != nil {
+				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
+				return
+			}
+			command_handler.SetTestConfig(data, s.proxy_manager)
+
 		case "get-application-state":
 			var data structs.GetApplicationStateData
 			if err := json.Unmarshal(raw_tcp_message.Data, &data); err != nil {

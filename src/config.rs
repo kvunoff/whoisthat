@@ -29,6 +29,16 @@ pub struct AppConfig {
     pub kill_switch_enabled: bool,
     #[serde(default)]
     pub autoconnect_migrated: bool,
+    #[serde(default = "default_test_concurrency")]
+    pub test_concurrency: i32,
+    #[serde(default = "default_test_timeout_seconds")]
+    pub test_timeout_seconds: i32,
+    #[serde(default = "default_test_samples")]
+    pub test_samples: i32,
+    #[serde(default = "default_test_endpoint")]
+    pub test_endpoint: String,
+    #[serde(default = "default_true")]
+    pub auto_test_on_subscribe: bool,
 }
 
 fn default_core_tcp_port() -> u16 {
@@ -49,6 +59,18 @@ fn default_test_method() -> String {
 fn default_tun_name() -> String {
     "whoisthattun".into()
 }
+fn default_test_concurrency() -> i32 {
+    16
+}
+fn default_test_timeout_seconds() -> i32 {
+    5
+}
+fn default_test_samples() -> i32 {
+    3
+}
+fn default_test_endpoint() -> String {
+    "https://cp.cloudflare.com/generate_204".into()
+}
 
 impl Default for AppConfig {
     fn default() -> Self {
@@ -66,6 +88,11 @@ impl Default for AppConfig {
             tun_name: default_tun_name(),
             kill_switch_enabled: false,
             autoconnect_migrated: false,
+            test_concurrency: default_test_concurrency(),
+            test_timeout_seconds: default_test_timeout_seconds(),
+            test_samples: default_test_samples(),
+            test_endpoint: default_test_endpoint(),
+            auto_test_on_subscribe: true,
         }
     }
 }

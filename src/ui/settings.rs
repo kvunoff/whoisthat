@@ -70,6 +70,26 @@ pub fn settings_layout() -> Vec<SettingsRow> {
             label: "Test method",
             kind: SettingsKind::Cycle,
         },
+        SettingsRow::Item {
+            label: "Test samples",
+            kind: SettingsKind::Cycle,
+        },
+        SettingsRow::Item {
+            label: "Test concurrency",
+            kind: SettingsKind::Cycle,
+        },
+        SettingsRow::Item {
+            label: "Test timeout",
+            kind: SettingsKind::Cycle,
+        },
+        SettingsRow::Item {
+            label: "Test endpoint",
+            kind: SettingsKind::Cycle,
+        },
+        SettingsRow::Item {
+            label: "Auto-test on refresh",
+            kind: SettingsKind::Toggle,
+        },
         SettingsRow::Header("Hardware"),
         SettingsRow::Item {
             label: "HWID: Enabled",
@@ -105,6 +125,11 @@ pub struct SettingsValues<'a> {
     pub log_enabled: bool,
     pub log_level: &'a str,
     pub test_method: &'a str,
+    pub test_samples: &'a str,
+    pub test_concurrency: &'a str,
+    pub test_timeout: &'a str,
+    pub test_endpoint: &'a str,
+    pub auto_test_on_subscribe: bool,
     pub tun_name: &'a str,
     pub kill_switch_enabled: bool,
     pub hwid: Option<&'a HwidData>,
@@ -184,7 +209,7 @@ pub fn render_settings(
     let hwid_val = values.hwid.map(|h| h.hwid.as_str()).unwrap_or("");
     let hwid_ua = values.hwid.map(|h| h.user_agent.as_str()).unwrap_or("");
 
-    let item_values: [String; 13] = [
+    let item_values: [String; 18] = [
         if values.autoconnect {
             "● on".into()
         } else {
@@ -214,6 +239,15 @@ pub fn render_settings(
             "○ off".into()
         },
         values.test_method.to_string(),
+        values.test_samples.to_string(),
+        values.test_concurrency.to_string(),
+        values.test_timeout.to_string(),
+        values.test_endpoint.to_string(),
+        if values.auto_test_on_subscribe {
+            "● on".into()
+        } else {
+            "○ off".into()
+        },
         if hwid_enabled {
             "● on".into()
         } else {
@@ -288,7 +322,7 @@ mod tests {
 
     #[test]
     fn test_settings_layout_item_count() {
-        assert_eq!(item_count(), 13);
+        assert_eq!(item_count(), 18);
     }
 
     #[test]

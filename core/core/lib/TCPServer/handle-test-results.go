@@ -13,16 +13,27 @@ func (s *Server) handleTestResults() {
 			continue
 		}
 		if result.Success {
-			logger.Infof("test %s: %dms (%s://%s)",
+			logger.Infof("test %s: %dms (±%dms jitter, %d%% loss) (%s://%s)",
 				result.Profile.Name, result.Profile.TestResult,
+				result.Profile.JitterMs, result.Profile.LossPct,
 				result.Profile.Protocol, result.Profile.Address)
 		} else {
-			logger.Warnf("test %s: failed (%s://%s)",
-				result.Profile.Name, result.Profile.Protocol, result.Profile.Address)
+			logger.Warnf("test %s: failed after %d sample(s), %d%% loss (%s://%s)",
+				result.Profile.Name, result.SampleCount, result.Profile.LossPct,
+				result.Profile.Protocol, result.Profile.Address)
 		}
 		profile_updated := structs.ProfileUpdated{
 			Profile: result.Profile,
 		}
 		s.Broadcast(lib.CreateJsonNotification("profile-updated", profile_updated))
+
+		// Track progress for the profile's group, if a batch is active.
+		if n, total, ok := s.proxy_manager.IncrementTestProgress(result.Profile.GroupId); ok {
+			s.Broadcast(lib.CreateJsonNotification("test-progress", structs.TestProgress{
+				GroupId: result.Profile.GroupId,
+				Tested:  n,
+				Total:   total,
+			}))
+		}
 	}
 }

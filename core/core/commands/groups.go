@@ -63,6 +63,16 @@ func (cmd *Cmd) UpdateSubscription(data structs.UpdateSubscriptionData, proxy_ma
 	logger.Infof("subscription %s: %d profiles", group.Name, len(profiles))
 	cmd.send("subscription-updated", structs.SubscriptionUpdated{GroupId: data.GroupId, Group: group, Profiles: profiles})
 
+	// Auto-test the freshly-imported profiles so users see live latencies
+	// immediately after `u`. Skip if disabled in core config; skip if
+	// the subscription is large (>50 profiles) to avoid port-pool
+	// exhaustion on slow machines.
+	ac := appconfig.GetConfig()
+	if ac.TestConfig.AutoTestOnSub && len(profiles) > 0 && len(profiles) <= 50 {
+		method := "http-get"
+		total := proxy_manager.TestGroup(profiles, method, 0)
+		proxy_manager.SeedTestProgress(data.GroupId, total)
+	}
 }
 
 // maxSubBytes caps how much we'll read from a subscription endpoint. A

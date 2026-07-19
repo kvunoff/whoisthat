@@ -57,8 +57,39 @@ type ConnectData struct {
 type DisconnectData struct{}
 
 type TestProfileData struct {
-	Profile ProfileID `json:"profile"`
-	Method  string    `json:"method"`
+	Profile     ProfileID `json:"profile"`
+	Method      string    `json:"method"`
+	SampleCount int       `json:"sample_count,omitzero"`
+}
+
+type TestGroupData struct {
+	GroupId     int    `json:"group_id"`
+	Method      string `json:"method"`
+	SampleCount int    `json:"sample_count,omitzero"`
+}
+
+type CancelTestsData struct{}
+
+type TestConfig struct {
+	Concurrency    int    `json:"concurrency"`
+	TimeoutSeconds int    `json:"timeout_seconds"`
+	SamplesPerTest int    `json:"samples_per_test"`
+	TestEndpoint   string `json:"test_endpoint"`
+	AutoTestOnSub  bool   `json:"auto_test_on_subscribe"`
+}
+
+type SetTestConfigData struct {
+	Config TestConfig `json:"config"`
+}
+
+type TestConfigUpdated struct {
+	Config TestConfig `json:"config"`
+}
+
+type TestProgress struct {
+	GroupId int `json:"group_id,omitzero"`
+	Tested  int `json:"tested"`
+	Total   int `json:"total"`
 }
 
 type ProfileUpdated struct {
@@ -176,6 +207,9 @@ type Profile struct {
 	Address    string `json:"address,omitzero"`
 	Host       string `json:"host,omitzero"`
 	TestResult int    `json:"test-result"`
+	TestedAt   int64  `json:"tested_at,omitzero"`
+	LossPct    int    `json:"loss-pct,omitzero"`
+	JitterMs   int    `json:"jitter-ms,omitzero"`
 }
 
 type ProfileID struct {

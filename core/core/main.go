@@ -57,6 +57,17 @@ func main() {
 	proxy_manager := proxy.ProxyManager{}
 	proxy_manager.DB = &database
 	proxy_manager.Init()
+	// Seed the live test config from the persisted AppConfig so user
+	// customizations (samples/concurrency/endpoint/timeout) made in the
+	// TUI's Settings tab survive core restarts.
+	ac := appconfig.GetConfig()
+	proxy_manager.SetTestConfig(structs.TestConfig{
+		Concurrency:    ac.TestConfig.Concurrency,
+		TimeoutSeconds: ac.TestConfig.TimeoutSeconds,
+		SamplesPerTest: ac.TestConfig.SamplesPerTest,
+		TestEndpoint:   ac.TestConfig.TestEndpoint,
+		AutoTestOnSub:  ac.TestConfig.AutoTestOnSub,
+	})
 	tun_manager := tunmode.TunModeManager{}
 	tun_manager.Init()
 

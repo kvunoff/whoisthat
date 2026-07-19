@@ -159,6 +159,16 @@ impl App {
             }
             ActiveTab::Settings => {
                 let focused = self.focus == Focus::LeftPanel;
+                let test_samples = format!("{}", self.test_config.samples_per_test);
+                let test_conc = format!("{}", self.test_config.concurrency);
+                let test_timeout = format!("{}s", self.test_config.timeout_seconds);
+                let endpoint_short = match self.test_config.test_endpoint.as_str() {
+                    "https://cp.cloudflare.com/generate_204" => "cloudflare",
+                    "https://www.gstatic.com/generate_204" => "gstatic",
+                    "https://www.bing.com/" => "bing",
+                    other => other,
+                }
+                .to_string();
                 let values = SettingsValues {
                     autoconnect: self.autoconnect_enabled,
                     autostart_mode: &self.autostart_mode,
@@ -167,6 +177,11 @@ impl App {
                     log_enabled: self.log_enabled,
                     log_level: &self.log_level,
                     test_method: &self.test_method,
+                    test_samples: &test_samples,
+                    test_concurrency: &test_conc,
+                    test_timeout: &test_timeout,
+                    test_endpoint: &endpoint_short,
+                    auto_test_on_subscribe: self.test_config.auto_test_on_subscribe,
                     tun_name: &self.tun_name,
                     kill_switch_enabled: self.kill_switch_enabled,
                     hwid: self.hwid_info.as_ref(),

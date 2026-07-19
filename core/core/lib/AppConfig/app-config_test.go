@@ -137,3 +137,64 @@ func TestSanitizeAutoconnectMode(t *testing.T) {
 		}
 	}
 }
+
+func TestDefaultConfigTestConfig(t *testing.T) {
+	cfg := defaultConfig()
+	tc := cfg.TestConfig
+	if tc.Concurrency != 16 {
+		t.Errorf("TestConfig.Concurrency = %d, want 16", tc.Concurrency)
+	}
+	if tc.TimeoutSeconds != 5 {
+		t.Errorf("TestConfig.TimeoutSeconds = %d, want 5", tc.TimeoutSeconds)
+	}
+	if tc.SamplesPerTest != 3 {
+		t.Errorf("TestConfig.SamplesPerTest = %d, want 3", tc.SamplesPerTest)
+	}
+	if tc.TestEndpoint == "" {
+		t.Error("TestConfig.TestEndpoint must not be empty")
+	}
+	if !tc.AutoTestOnSub {
+		t.Error("TestConfig.AutoTestOnSub should default to true")
+	}
+}
+
+func TestSanitizeTestConfigFallsBackOnInvalid(t *testing.T) {
+	// Plant known-good defaults first.
+	application_configuration.TestConfig = defaultConfig().TestConfig
+	got := sanitizeTestConfig(TestConfig{
+		Concurrency:    0,
+		TimeoutSeconds: 0,
+		SamplesPerTest: 0,
+		TestEndpoint:   "",
+		AutoTestOnSub:  false,
+	})
+	if got.Concurrency != 16 {
+		t.Errorf("Concurrency fallback = %d, want 16", got.Concurrency)
+	}
+	if got.TimeoutSeconds != 5 {
+		t.Errorf("TimeoutSeconds fallback = %d, want 5", got.TimeoutSeconds)
+	}
+	if got.SamplesPerTest != 3 {
+		t.Errorf("SamplesPerTest fallback = %d, want 3", got.SamplesPerTest)
+	}
+	if got.TestEndpoint == "" {
+		t.Error("TestEndpoint fallback should preserve default URL")
+	}
+}
+
+func TestSanitizeTestConfigRejectsNonHttpEndpoint(t *testing.T) {
+	application_configuration.TestConfig = defaultConfig().TestConfig
+	got := sanitizeTestConfig(TestConfig{
+		Concurrency:    8,
+		TimeoutSeconds: 10,
+		SamplesPerTest: 1,
+		TestEndpoint:   "file:///etc/passwd", // non-http scheme, must be rejected
+		AutoTestOnSub:  true,
+	})
+	if got.TestEndpoint == "file:///etc/passwd" {
+		t.Error("non-http(s) endpoint must be rejected and fall back to default")
+	}
+	if got.Concurrency != 8 {
+		t.Errorf("Concurrency should have been accepted: got %d", got.Concurrency)
+	}
+}

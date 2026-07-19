@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"whoisthat-core/structs"
 )
 
 func newTestDB(t *testing.T) *DB {
@@ -153,5 +154,82 @@ func TestLoadOrCreateKeyReusesExistingKey(t *testing.T) {
 		if key1[i] != db2.key[i] {
 			t.Fatal("second loadOrCreateKey() loaded a different key than the first")
 		}
+	}
+}
+
+// TestProfileRoundTripWithTestMetadata verifies the new Profile fields
+// (TestedAt, LossPct, JitterMs) survive an encrypted write+read cycle.
+// Backward-compat: older rows written without these fields decode cleanly
+// into zero values.
+func TestProfileRoundTripWithTestMetadata(t *testing.T) {
+	db := newTestDB(t)
+
+	original := structs.Profile{
+		Id:         42,
+		GroupId:    1,
+		NanoID:     "abc123",
+		Name:       "test",
+		Protocol:   "vless",
+		Uri:        "vless://example.com",
+		Address:    "example.com",
+		Host:       "example.com",
+		TestResult: 120,
+		TestedAt:   1700000000,
+		LossPct:    33,
+		JitterMs:   12,
+	}
+
+	if err := os.MkdirAll(db.GetGroupDirPath(1), 0700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	path := db.GetProfileFilePath(1, 42)
+	if err := db.writeEncryptedJSON(path, original); err != nil {
+		t.Fatalf("writeEncryptedJSON: %v", err)
+	}
+
+	var got structs.Profile
+	if err := db.readEncryptedJSON(path, &got); err != nil {
+		t.Fatalf("readEncryptedJSON: %v", err)
+	}
+	if got.TestResult != 120 {
+		t.Errorf("TestResult = %d, want 120", got.TestResult)
+	}
+	if got.TestedAt != 1700000000 {
+		t.Errorf("TestedAt = %d, want 1700000000", got.TestedAt)
+	}
+	if got.LossPct != 33 {
+		t.Errorf("LossPct = %d, want 33", got.LossPct)
+	}
+	if got.JitterMs != 12 {
+		t.Errorf("JitterMs = %d, want 12", got.JitterMs)
+	}
+}
+
+// TestProfileDecodeLegacyRowWithoutTestMetadata verifies the new fields
+// default cleanly to zero when reading a JSON payload written by an
+// older build that didn't know about TestedAt/LossPct/JitterMs.
+func TestProfileDecodeLegacyRowWithoutTestMetadata(t *testing.T) {
+	db := newTestDB(t)
+	// Hand-written legacy payload (omitzero fields absent).
+	legacy := `{"id":42,"group_id":1,"name":"old","protocol":"vmess","uri":"vmess://","test-result":80}`
+	if err := os.MkdirAll(db.GetGroupDirPath(1), 0700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	path := db.GetProfileFilePath(1, 42)
+	// Write plaintext (pre-encryption migration path) to simulate legacy.
+	if err := os.WriteFile(path, []byte(legacy), 0600); err != nil {
+		t.Fatalf("write legacy: %v", err)
+	}
+
+	var got structs.Profile
+	if err := db.readEncryptedJSON(path, &got); err != nil {
+		t.Fatalf("readEncryptedJSON: %v", err)
+	}
+	if got.TestResult != 80 {
+		t.Errorf("TestResult = %d, want 80", got.TestResult)
+	}
+	if got.TestedAt != 0 || got.LossPct != 0 || got.JitterMs != 0 {
+		t.Errorf("expected zero rich metadata for legacy row, got TestedAt=%d LossPct=%d JitterMs=%d",
+			got.TestedAt, got.LossPct, got.JitterMs)
 	}
 }

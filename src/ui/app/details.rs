@@ -258,9 +258,22 @@ impl App {
             }
         }
         if p.test_result > 0 {
-            rows.push(kv_row("Latency", &format!("{} ms", p.test_result)));
+            let latency = format!("{} ms", p.test_result);
+            rows.push(kv_row("Latency", &latency));
+            if p.jitter_ms > 0 {
+                rows.push(kv_row("Jitter", &format!("±{} ms", p.jitter_ms)));
+            }
+            if p.loss_pct > 0 {
+                rows.push(kv_row("Loss", &format!("{}%", p.loss_pct)));
+            }
         } else if p.test_result == -2 {
             rows.push(kv_row("Latency", "testing..."));
+        } else if p.test_result == -1 {
+            rows.push(kv_row("Latency", "failed"));
+        }
+        if p.tested_at > 0 {
+            let ago = format_relative(p.tested_at);
+            rows.push(kv_row("Last test", &ago));
         }
         rows.push(kv_row("TUN", if self.tun_enabled { "on" } else { "off" }));
 

@@ -46,6 +46,9 @@ pub struct App {
     pub search_input: String,
     pub search_mode: bool,
 
+    pub test_progress: Option<TestProgress>,
+    pub test_config: TestConfig,
+
     uri_cache: RefCell<Option<(i32, i32, ParsedUri)>>,
 }
 
@@ -57,6 +60,7 @@ impl App {
         test_method: String,
         tun_name: String,
         kill_switch_enabled: bool,
+        test_config: TestConfig,
     ) -> Self {
         Self {
             groups: Vec::new(),
@@ -100,6 +104,8 @@ impl App {
             search_query: None,
             search_input: String::new(),
             search_mode: false,
+            test_progress: None,
+            test_config,
             uri_cache: RefCell::new(None),
         }
     }
@@ -304,7 +310,18 @@ impl App {
                         }
                     }
                 }
-                if p.test_result != 0 {
+                if p.test_result > 0 {
+                    n += 1;
+                    if p.jitter_ms > 0 {
+                        n += 1;
+                    }
+                    if p.loss_pct > 0 {
+                        n += 1;
+                    }
+                } else if p.test_result == -2 || p.test_result == -1 {
+                    n += 1;
+                }
+                if p.tested_at > 0 {
                     n += 1;
                 }
                 n
@@ -386,6 +403,17 @@ impl App {
         }
     }
 
+    /// Mark a profile as "test in flight" so the tree immediately shows
+    /// `…` instead of the stale last-known value. Cleared when the real
+    /// `profile-updated` arrives via `apply_profile_updated`.
+    pub fn mark_pending(&mut self, group_id: i32, profile_id: i32) {
+        if let Some(g) = self.groups.iter_mut().find(|g| g.group.id == group_id) {
+            if let Some(p) = g.profiles.iter_mut().find(|pr| pr.id == profile_id) {
+                p.test_result = -2;
+            }
+        }
+    }
+
     pub fn apply_group_added(&mut self, g: Group) {
         self.groups.push(GroupWithProfiles {
             group: g,
@@ -402,5 +430,71 @@ impl App {
         if let Some(existing) = self.groups.iter_mut().find(|gw| gw.group.id == g.id) {
             existing.group = g.clone();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_app_with_profile() -> App {
+        let test_cfg = TestConfig {
+            concurrency: 16,
+            timeout_seconds: 5,
+            samples_per_test: 3,
+            test_endpoint: "https://cp.cloudflare.com/generate_204".to_string(),
+            auto_test_on_subscribe: true,
+        };
+        let mut app = App::new(
+            true,
+            false,
+            "warn".to_string(),
+            "http-get".to_string(),
+            "whoisthattun".to_string(),
+            false,
+            test_cfg,
+        );
+        app.groups = vec![GroupWithProfiles {
+            group: Group {
+                id: 1,
+                ..Default::default()
+            },
+            profiles: vec![Profile {
+                id: 7,
+                group_id: 1,
+                test_result: 100,
+                tested_at: 12345,
+                ..Default::default()
+            }],
+        }];
+        app
+    }
+
+    #[test]
+    fn test_mark_pending_flips_test_result_to_negative_two() {
+        let mut app = make_app_with_profile();
+        assert_eq!(app.groups[0].profiles[0].test_result, 100);
+        app.mark_pending(1, 7);
+        assert_eq!(app.groups[0].profiles[0].test_result, -2);
+    }
+
+    #[test]
+    fn test_mark_pending_unknown_profile_is_noop() {
+        let mut app = make_app_with_profile();
+        app.mark_pending(1, 999);
+        app.mark_pending(999, 7);
+        assert_eq!(app.groups[0].profiles[0].test_result, 100);
+    }
+
+    #[test]
+    fn test_apply_profile_updated_overwrites_pending_marker() {
+        let mut app = make_app_with_profile();
+        app.mark_pending(1, 7);
+        let mut fresh = app.groups[0].profiles[0].clone();
+        fresh.test_result = 42;
+        fresh.tested_at = 99999;
+        app.apply_profile_updated(&fresh);
+        assert_eq!(app.groups[0].profiles[0].test_result, 42);
+        assert_eq!(app.groups[0].profiles[0].tested_at, 99999);
     }
 }

@@ -3,5 +3,6 @@ target/
 .vscode/
 *.log
 AGENTS.md
-whoisthat-core
+ARCHITECTURE.md
 UPDATE.md
+whoisthat-core

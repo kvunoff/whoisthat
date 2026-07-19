@@ -20,20 +20,29 @@ import (
 var tunNameRe = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_-]{0,14}$`)
 
 type AppConfig struct {
-	SocksPort            int       `json:"socks-port"`
-	HttpPort             int       `json:"http-port"`
-	CoreTCPPort          int       `json:"core-tcp-port"`
-	TestPortRange        PortRange `json:"test-port-range"`
-	DnsServers           []string  `json:"dns-servers"`
-	TunName              string    `json:"tun-name"`
-	HwidEnabled          bool      `json:"hwid-enabled"`
-	Hwid                 string    `json:"hwid"`
-	UserAgent            string    `json:"user-agent"`
-	KillSwitchEnabled    bool      `json:"kill-switch-enabled"`
-	AutoconnectEnabled   bool      `json:"autoconnect-enabled"`
-	AutoconnectGroupId   int       `json:"autoconnect-group-id"`
-	AutoconnectProfileId int       `json:"autoconnect-profile-id"`
-	AutoconnectMode      string    `json:"autoconnect-mode"`
+	SocksPort            int        `json:"socks-port"`
+	HttpPort             int        `json:"http-port"`
+	CoreTCPPort          int        `json:"core-tcp-port"`
+	TestPortRange        PortRange  `json:"test-port-range"`
+	DnsServers           []string   `json:"dns-servers"`
+	TunName              string     `json:"tun-name"`
+	HwidEnabled          bool       `json:"hwid-enabled"`
+	Hwid                 string     `json:"hwid"`
+	UserAgent            string     `json:"user-agent"`
+	KillSwitchEnabled    bool       `json:"kill-switch-enabled"`
+	AutoconnectEnabled   bool       `json:"autoconnect-enabled"`
+	AutoconnectGroupId   int        `json:"autoconnect-group-id"`
+	AutoconnectProfileId int        `json:"autoconnect-profile-id"`
+	AutoconnectMode      string     `json:"autoconnect-mode"`
+	TestConfig           TestConfig `json:"test-config"`
+}
+
+type TestConfig struct {
+	Concurrency    int    `json:"concurrency"`
+	TimeoutSeconds int    `json:"timeout-seconds"`
+	SamplesPerTest int    `json:"samples-per-test"`
+	TestEndpoint   string `json:"test-endpoint"`
+	AutoTestOnSub  bool   `json:"auto-test-on-subscribe"`
 }
 
 type PortRange struct {
@@ -55,9 +64,42 @@ func defaultConfig() AppConfig {
 		DnsServers:      []string{"1.1.1.1", "8.8.8.8", "2606:4700:4700::1111", "2001:4860:4860::8888"},
 		TunName:         "whoisthattun",
 		HwidEnabled:     true,
-		UserAgent:       "whoisthat/v0.8.1",
+		UserAgent:       "whoisthat/v0.8.2",
 		AutoconnectMode: "proxy",
+		TestConfig: TestConfig{
+			Concurrency:    16,
+			TimeoutSeconds: 5,
+			SamplesPerTest: 3,
+			TestEndpoint:   "https://cp.cloudflare.com/generate_204",
+			AutoTestOnSub:  true,
+		},
 	}
+}
+
+func SetTestConfig(cfg TestConfig) {
+	t := sanitizeTestConfig(cfg)
+	application_configuration.TestConfig = t
+	SaveConfig()
+}
+
+func sanitizeTestConfig(cfg TestConfig) TestConfig {
+	if cfg.Concurrency < 1 {
+		cfg.Concurrency = application_configuration.TestConfig.Concurrency
+	}
+	if cfg.TimeoutSeconds < 1 {
+		cfg.TimeoutSeconds = application_configuration.TestConfig.TimeoutSeconds
+	}
+	if cfg.SamplesPerTest < 1 {
+		cfg.SamplesPerTest = application_configuration.TestConfig.SamplesPerTest
+	}
+	if cfg.TestEndpoint == "" {
+		cfg.TestEndpoint = application_configuration.TestConfig.TestEndpoint
+	}
+	if !strings.HasPrefix(cfg.TestEndpoint, "http://") &&
+		!strings.HasPrefix(cfg.TestEndpoint, "https://") {
+		cfg.TestEndpoint = application_configuration.TestConfig.TestEndpoint
+	}
+	return cfg
 }
 
 func GetConfig() AppConfig {
@@ -75,6 +117,7 @@ func LoadConfig() {
 	config.DnsServers = sanitizeDnsServers(config.DnsServers)
 	config.TunName = sanitizeTunName(config.TunName)
 	config.AutoconnectMode = sanitizeAutoconnectMode(config.AutoconnectMode)
+	config.TestConfig = sanitizeTestConfig(config.TestConfig)
 	application_configuration = config
 }
 

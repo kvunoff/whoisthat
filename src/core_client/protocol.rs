@@ -6,7 +6,7 @@ pub struct TcpMessage {
     pub data: serde_json::Value,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Profile {
     pub id: i32,
     pub group_id: i32,
@@ -22,6 +22,12 @@ pub struct Profile {
     pub host: String,
     #[serde(rename = "test-result", default)]
     pub test_result: i32,
+    #[serde(rename = "tested_at", default)]
+    pub tested_at: i64,
+    #[serde(rename = "loss-pct", default)]
+    pub loss_pct: i32,
+    #[serde(rename = "jitter-ms", default)]
+    pub jitter_ms: i32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -134,6 +140,46 @@ pub struct UpdateSubscriptionData {
 pub struct TestProfileData {
     pub profile: ProfileID,
     pub method: String,
+    #[serde(default)]
+    pub sample_count: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TestGroupData {
+    pub group_id: i32,
+    pub method: String,
+    #[serde(default)]
+    pub sample_count: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CancelTestsData {}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct TestConfig {
+    pub concurrency: i32,
+    pub timeout_seconds: i32,
+    pub samples_per_test: i32,
+    pub test_endpoint: String,
+    pub auto_test_on_subscribe: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SetTestConfigData {
+    pub config: TestConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TestConfigUpdated {
+    pub config: TestConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct TestProgress {
+    #[serde(default)]
+    pub group_id: i32,
+    pub tested: i32,
+    pub total: i32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
