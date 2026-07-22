@@ -84,6 +84,8 @@ pub struct ApplicationState {
     pub hwid_info: Option<HwidData>,
     #[serde(rename = "kill_switch", default)]
     pub kill_switch: bool,
+    #[serde(rename = "split_tunnel", default)]
+    pub split_tunnel: String,
     #[serde(default)]
     pub autoconnect: AutoconnectInfo,
 }
@@ -355,6 +357,13 @@ pub struct RoutingUpdated {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SetKillSwitchData {
     pub enabled: bool,
+}
+
+/// Split-tunnel mode: "off", "exclude" (split apps bypass tunnel), or
+/// "include" (only split apps use the tunnel).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SetSplitTunnelData {
+    pub mode: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

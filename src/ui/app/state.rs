@@ -22,6 +22,7 @@ pub struct App {
     pub tun_name: String,
     pub hwid_info: Option<HwidData>,
     pub kill_switch_enabled: bool,
+    pub split_tunnel: String,
     pub autoconnect_enabled: bool,
     pub autostart_mode: String,
     pub systemd_enabled: bool,
@@ -78,6 +79,7 @@ impl App {
             tun_name,
             hwid_info: None,
             kill_switch_enabled,
+            split_tunnel: "off".to_string(),
             autoconnect_enabled: false,
             autostart_mode: "proxy".to_string(),
             systemd_enabled: false,
@@ -357,6 +359,11 @@ impl App {
         self.connection_status = state.connection_status;
         self.tun_enabled = state.tun_status;
         self.kill_switch_enabled = state.kill_switch;
+        if state.split_tunnel.is_empty() {
+            self.split_tunnel = "off".to_string();
+        } else {
+            self.split_tunnel = state.split_tunnel;
+        }
         self.autoconnect_enabled = state.autoconnect.enabled;
         self.autostart_mode = state.autoconnect.mode;
         self.hwid_info = state.hwid_info;

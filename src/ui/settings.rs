@@ -65,6 +65,10 @@ pub fn settings_layout() -> Vec<SettingsRow> {
             label: "Kill Switch",
             kind: SettingsKind::Toggle,
         },
+        SettingsRow::Item {
+            label: "Split tunnel",
+            kind: SettingsKind::Cycle,
+        },
         SettingsRow::Header("Diagnostics"),
         SettingsRow::Item {
             label: "Test method",
@@ -110,6 +114,24 @@ pub fn settings_layout() -> Vec<SettingsRow> {
     ]
 }
 
+/// Human-readable label for a split-tunnel mode value.
+pub fn split_tunnel_label(mode: &str) -> &'static str {
+    match mode {
+        "exclude" => "exclude (apps bypass)",
+        "include" => "include (only apps)",
+        _ => "off",
+    }
+}
+
+/// The next split-tunnel mode when the setting is cycled.
+pub fn next_split_tunnel_mode(mode: &str) -> &'static str {
+    match mode {
+        "off" => "exclude",
+        "exclude" => "include",
+        _ => "off",
+    }
+}
+
 pub fn item_count() -> usize {
     settings_layout()
         .iter()
@@ -132,6 +154,7 @@ pub struct SettingsValues<'a> {
     pub auto_test_on_subscribe: bool,
     pub tun_name: &'a str,
     pub kill_switch_enabled: bool,
+    pub split_tunnel: &'a str,
     pub hwid: Option<&'a HwidData>,
 }
 
@@ -209,7 +232,7 @@ pub fn render_settings(
     let hwid_val = values.hwid.map(|h| h.hwid.as_str()).unwrap_or("");
     let hwid_ua = values.hwid.map(|h| h.user_agent.as_str()).unwrap_or("");
 
-    let item_values: [String; 18] = [
+    let item_values: [String; 19] = [
         if values.autoconnect {
             "● on".into()
         } else {
@@ -238,6 +261,7 @@ pub fn render_settings(
         } else {
             "○ off".into()
         },
+        split_tunnel_label(values.split_tunnel).into(),
         values.test_method.to_string(),
         values.test_samples.to_string(),
         values.test_concurrency.to_string(),
@@ -322,7 +346,7 @@ mod tests {
 
     #[test]
     fn test_settings_layout_item_count() {
-        assert_eq!(item_count(), 18);
+        assert_eq!(item_count(), 19);
     }
 
     #[test]

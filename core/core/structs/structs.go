@@ -104,6 +104,7 @@ type ApplicationState struct {
 	TunStatus        bool                `json:"tun-status"`
 	HwidInfo         HwidData            `json:"hwid_info"`
 	KillSwitch       bool                `json:"kill_switch"`
+	SplitTunnel      string              `json:"split_tunnel"`
 	Autoconnect      AutoconnectInfo     `json:"autoconnect"`
 }
 
@@ -161,6 +162,10 @@ type UpdateGroupData struct {
 
 type SetKillSwitchData struct {
 	Enabled bool `json:"enabled"`
+}
+
+type SetSplitTunnelData struct {
+	Mode string `json:"mode"`
 }
 
 type SetAutoconnectData struct {

@@ -89,7 +89,11 @@ log_level = "warn"
 test_method = "http-get"
 tun_name = "whoisthattun"                  # mirrors core's `tun-name` — kept in sync by the TUI
 kill_switch_enabled = false
+ipc_socket_path = ""                       # blank = derive from XDG_RUNTIME_DIR (must match core)
+use_tcp = false                            # reach the core over legacy TCP instead of the Unix socket
 ```
+
+By default the TUI talks to the core over a **Unix domain socket** (see [IPC transport](#ipc-transport)). Set `use_tcp = true` (and `tcp-enabled` on the core) only for remote/advanced setups.
 
 **Core config** — `~/.config/whoisthat/config.json` (auto-generated):
 
@@ -108,9 +112,14 @@ kill_switch_enabled = false
   "autoconnect-enabled": false,
   "autoconnect-group-id": 0,
   "autoconnect-profile-id": 0,
-  "autoconnect-mode": "proxy"
+  "autoconnect-mode": "proxy",
+  "split-tunnel": { "mode": "off" },
+  "ipc-socket-path": "",
+  "tcp-enabled": false
 }
 ```
+
+`split-tunnel.mode` is `off`, `exclude`, or `include` (see [Split tunnel](#split-tunnel)). `ipc-socket-path` overrides the Unix domain socket location (blank = derive from `XDG_RUNTIME_DIR`); `tcp-enabled` additionally opens the legacy TCP listener on `core-tcp-port` (see [IPC transport](#ipc-transport)).
 
 `dns-servers` is a list of DNS server IPs used in three contexts:
 
@@ -139,10 +148,12 @@ Encrypted at rest with AES-256-GCM — key auto-generated on first run.
 - **Scan-all testing** — `t` scans all profiles across all groups with dedup; `T` tests only focused profile/subscription. Group-focused tests use the single `test-group` TCP command for efficiency.
 - **Auto-test on subscription refresh** — profiles are tested automatically after `u` so you see live latencies immediately. Toggle in Settings → Diagnostics.
 - **Custom routing rules** — domain, IP, protocol, port, geoip, geosite → proxy/direct/block (`r` tab). `direct` outbound works correctly in TUN mode via SO_MARK + fwmark routing (no root required). Use ←/→ to cycle type/outbound in the form.
-- **Kill-switch** — When enabled, blocks all non-VPN traffic if the connection drops. Uses a dedicated firewall table (`whoisthat_ks`, `whoisthat_ks_v6`) entirely independent of TUN rules — safe to combine with any routing setup. Works in both SOCKS and TUN modes. Toggle in Settings.
+- **Kill-switch** — When enabled, blocks all non-VPN traffic if the connection drops. Uses a dedicated firewall table (`whoisthat_ks`, `whoisthat_ks_v6`) entirely independent of TUN rules — safe to combine with any routing setup. Works in both SOCKS and TUN modes. Toggle in Settings. Orphaned tables from a crashed session are auto-reconciled on next core startup.
+- **Split tunnel** — route specific apps differently from the rest of the system. `exclude` mode makes launched apps bypass the tunnel (everything else is protected); `include` mode routes *only* launched apps through the tunnel (everything else goes direct). Launch an app into the split slice with `whoisthat run <app>`. Uses cgroup v2 socket matching + fwmark routing. Set the mode in Settings → Network.
 - Real-time connection status with uplink/downlink traffic stats
 - **Log viewer** — live tail from core log, auto-scroll, [WARN]/[ERRO] highlighting
 - **Configurable** — DNS servers, proxy ports, log level, test method, HWID, user-agent via settings and config files
+- **Authenticated IPC** — the TUI ↔ core channel is a Unix domain socket (mode `0600`, owned by the invoking user) under `$XDG_RUNTIME_DIR/whoisthat/`, so other local users can't command the capability-holding core. Legacy TCP on `127.0.0.1:4897` is opt-in (`tcp-enabled` in core config)
 - **Detach/reattach** — `q` leaves VPN running in background, reopen TUI to reattach
 - **Boot autostart** — autoconnect on startup with configurable mode (proxy or TUN); optional systemd user service for starting VPN at boot (before login via lingering)
 - **Profile search** — `/` to filter profiles by name, protocol, address, or host
@@ -159,9 +170,9 @@ Encrypted at rest with AES-256-GCM — key auto-generated on first run.
 │  WhoisThat (Rust TUI)        │  ratatui + crossterm
 │  ⋅ Profiles ⋅ Logs ⋅ Settings│
 └──────────┬───────────────────┘
-           │  TCP / JSON
+           │  Unix domain socket / JSON (TCP opt-in)
            │  4-byte big-endian length prefix + JSON payload
-           │  localhost:4897
+           │  $XDG_RUNTIME_DIR/whoisthat/core.sock
            ▼
 ┌──────────────────────────────┐
 │  WhoisThat Core (Go daemon)  │
@@ -195,7 +206,7 @@ Encrypted at rest with AES-256-GCM — key auto-generated on first run.
 
 3. **TUN mode** creates a virtual network interface (configurable name, default `whoisthattun`), sets up `iptables`/`nftables` rules (DNS hijack, MASQUERADE, auto-detected at runtime), and routes all system traffic through the Xray SOCKS5 proxy via `tun2socks`.
 
-4. **WhoisThat TUI** (this Rust binary) connects to the core over TCP on `127.0.0.1:4897`. It sends commands and receives asynchronous notifications. The TUI never touches networking directly — all VPN logic lives in the core.
+4. **WhoisThat TUI** (this Rust binary) connects to the core over a Unix domain socket (`$XDG_RUNTIME_DIR/whoisthat/core.sock`, mode `0600`) by default, or legacy TCP on `127.0.0.1:4897` when `tcp-enabled` is set in the core config and `use_tcp` in the TUI config. It sends commands and receives asynchronous notifications. The TUI never touches networking directly — all VPN logic lives in the core.
 
 ### Routing rules
 
@@ -294,6 +305,7 @@ Both client→core commands and core→client notifications use the same framing
 | `update-routing` | `{"config":{...}}` | `routing-updated` |
 | `die` | `{}` | (stops core) |
 | `set-kill-switch` | `{"enabled":bool}` | `kill-switch-updated` |
+| `set-split-tunnel` | `{"mode":"off"\|"exclude"\|"include"}` | `split-tunnel-updated` |
 | `set-autoconnect` | `{"enabled":bool,"group_id":int,"profile_id":int,"mode":"proxy"\|"tun"}` | `autoconnect-updated` |
 
 ### Notifications (Core → All Clients)
@@ -447,6 +459,29 @@ For debugging or manual setup: `sudo setcap cap_net_admin,cap_net_raw,cap_setpca
 
 **Capability detection** (`v` key before enabling TUN) creates a real test TUN device (`wt-capcheck`) and tears it down — a true functional check, not just a UID test. This means capabilities mode works correctly even when the binary has `+ep` but the user is not root.
 
+### Split Tunnel
+
+Split tunnel routes a chosen set of apps differently from the rest of the system. Set the mode in **Settings → Network → Split tunnel** (cycle `off` / `exclude` / `include`), then launch apps into the split slice:
+
+```bash
+whoisthat run firefox              # launch an app into the split slice
+whoisthat run curl https://…       # any command + args works
+```
+
+Two modes:
+
+- **`exclude`** — launched apps **bypass** the tunnel; everything else stays protected. Example: "route everything through the VPN *except* Firefox."
+- **`include`** — **only** launched apps use the tunnel; everything else goes direct. Example: "route *only* Firefox through the VPN."
+
+**How it works.** `whoisthat run` drops the app into a transient systemd `--user` scope under `whoisthat-split.slice` (via `systemd-run`). The core installs an nftables rule (`whoisthat_split` table, `route` output hook) that matches sockets by **cgroup v2 membership** (`socket cgroupv2`) and sets an fwmark. Policy routing then sends marked packets down the right path:
+
+- exclude → mark 1 → table 100 (physical gateway — the same bypass table xray's `direct` outbound already uses)
+- include → mark 2 → table 200 (default `dev <tun>`); in include mode the system-wide default TUN route is **not** installed, so unmarked traffic uses the physical gateway
+
+Changing the mode while TUN is up reconciles the live rules immediately (no reconnect needed). Requires cgroup v2 (the default on modern systemd distros) and a `systemctl --user` session.
+
+> **Security note.** In `include` mode, only apps launched via `whoisthat run` are protected — all other traffic goes direct, unprotected. This is intentional (that is what "only these apps" means), but it is the inverse of the usual whole-system VPN posture, so double-check what you launch.
+
 ### Systemd Integration
 
 WhoisThat Core can run as a **systemd user service**, starting the VPN engine at boot — before you log in — via [lingering](https://wiki.archlinux.org/title/Systemd/User#Automatic_start-up_of_systemd_user_instances). Toggle it from **Settings → Systemd autostart** or manage it manually from the shell.
@@ -529,7 +564,7 @@ sudo loginctl disable-linger $USER           # revoke
 | TUI detaches but VPN drops when I close terminal | Ran with `q` (detach) — core keeps living, but was originally launched as foreground child of the shell | Use **Settings → Systemd autostart** so the core runs as a user service, independent of any terminal |
 | Profile test shows `err` | Server down, wrong creds, or firewall blocking the test port range | Check `~/.config/whoisthat/core.log` for the test config and dialer error; verify outbound on the `test-port-range` (config.json) is open |
 | Routing rule doesn't trigger | Disabled in the rules list, or geo files missing | Press `Space` to enable; for `geoip`/`geosite` rules check `~/.config/whoisthat/geo/*.dat` exists and is ≥10 MB; re-trigger download by removing the files and restarting |
-| Kill-switch left dangling rules after exit | `Q` full-quit killed the core before it could clean up firewall rules | `rm` the `whoisthat_ks*` tables manually: `nft delete table whoisthat_ks 2>/dev/null; nft delete table ip6 whoisthat_ks_v6 2>/dev/null` (or reclaim via core restart) |
+| Kill-switch left dangling rules after exit | `Q` full-quit killed the core before it could clean up firewall rules | Auto-healed: the next core startup reconciles orphaned `whoisthat_*` tables and `table 100`/split routing when no other core is running. To force it now, just restart the core. Manual fallback: `nft delete table inet whoisthat_ks 2>/dev/null` |
 | Settings toggle shows "Could not enable lingering" | `pkexec loginctl enable-linger $USER` failed or was cancelled | Run in a terminal: `sudo loginctl enable-linger $USER` then retry the toggle in the TUI |
 | `whoisthat-screen.jpg` doesn't exist in build artifact | Image is checked into the repo but not in `target/` — only used by the README on GitHub | Ignore — it's display-only, not a runtime asset |
 | Logs pane is empty | No core log file, or log level filtering hides everything | Press `f` in the Logs tab to cycle the level filter; or raise log level in Settings |
@@ -555,6 +590,7 @@ Covers:
 - **Routing form logic** (`src/ui/routing.rs`) — `form_to_rule` / `rule_to_form` for all 6 match types and 3 outbounds, round-trip consistency
 - **Settings layout** (`src/ui/settings.rs`) — grouped layout, cursor navigation skipping headers, clamping
 - **Text editor** (`src/main.rs`) — `edit_text_field`: insert, backspace, delete, cursor movement, Home/End boundary conditions
+- **Split-tunnel launcher** (`src/launcher.rs`) — `whoisthat run` usage-code path and PATH lookup
 
 ### Go
 
@@ -566,8 +602,11 @@ go test ./lib/crypto/... ./lib/AppConfig/... ./db/...
 Covers:
 
 - **Crypto** (`lib/crypto`) — AES-256-GCM encrypt/decrypt round-trip, base64 wrappers, wrong key, short ciphertext, empty plaintext, nonce randomness
-- **Config** (`lib/AppConfig`) — default port values, DNS servers, HWID format (16 lowercase hex chars), HWID randomness
+- **Config** (`lib/AppConfig`) — default port values, DNS servers, HWID format (16 lowercase hex chars), HWID randomness, IPC socket-path resolution
 - **Database** (`db`) — path helpers, encrypt/decrypt round-trip via `writeEncryptedJSON`/`readEncryptedJSON`, encrypted file detection, key file creation and reuse across instances
+- **Network reconcile** (`lib/proxy/tun`) — startup orphan-rule teardown script covers every `whoisthat_*` table and is idempotent
+- **Split tunnel** (`lib/proxy/tun`) — generated exclude/include nftables `socket cgroupv2` + fwmark routing scripts, teardown idempotency
+- **TCP/UDS server** (`lib/TCPServer`) — length-prefixed framing round-trip over a Unix domain socket pair
 
 ---
 
@@ -613,10 +652,12 @@ Or toggle from **Settings → TUI log** + **Log level** — both apply to the TU
 
 ### Inspecting the core daemon manually
 
-The core listens on `127.0.0.1:4897`. Anything that speaks the length-prefixed JSON protocol can talk to it. During development it's often useful to:
+By default the core listens on a Unix domain socket at `$XDG_RUNTIME_DIR/whoisthat/core.sock` (mode `0600`). Anything that speaks the length-prefixed JSON protocol over that socket can talk to it. Set `tcp-enabled: true` in the core config to additionally expose the legacy `127.0.0.1:4897` TCP listener. During development it's often useful to:
 
 ```bash
-# Check if the core is up
+# Check if the core is up (UDS default)
+ss -xlp | grep core.sock
+# ...or the TCP listener, when tcp-enabled
 ss -tlnp | grep 4897
 
 # Tail the core's rotating log
@@ -658,10 +699,11 @@ whoisthat/
 ├── install.sh          ← Universal installer / updater
 ├── src/                ← Rust TUI source
 │   ├── main.rs         ← Entry point, event loop, autoconnect, systemd setup, caps
+│   ├── launcher.rs     ← `whoisthat run <app>` — launch into split-tunnel slice
 │   ├── config.rs       ← Config loader (~/.config/whoisthat/config.toml)
-│   ├── core_client/    ← TCP client for the Go core
+│   ├── core_client/    ← IPC client for the Go core (Unix socket / TCP)
 │   │   ├── protocol.rs ← All serde types mirroring Go structs
-│   │   ├── connection.rs ← TCP + 4-byte length framing
+│   │   ├── connection.rs ← UDS/TCP transport + 4-byte length framing
 │   │   ├── dispatch.rs ← Read loop → typed event channel
 │   │   └── commands.rs ← High-level async send functions
 │   └── ui/             ← ratatui components
@@ -678,13 +720,13 @@ whoisthat/
 │   └── core/
 │       ├── main.go     ← Daemon entry point; RaiseAmbientCaps() before everything
 │       ├── go.mod
-│       ├── commands/   ← TCP command handlers (connect, test, groups, subscription, ...)
+│       ├── commands/   ← TCP command handlers (connect, test, groups, subscription, split, ...)
 │       ├── structs/    ← Shared data types (mirror of src/core_client/protocol.rs)
 │       ├── db/         ← JSON file-based profile DB + readEncryptedJSON / MigrateToEncrypted
 │       ├── utils/      ← caps.go (RaiseAmbientCaps, CanTun), user.go (UIDs)
 │       └── lib/        ← Core libraries
 │           ├── logger/      ← Structured logger (lumberjack rotation, 20 MB)
-│           ├── TCPServer/  ← TCP server + dispatcher (length-prefixed JSON)
+│           ├── TCPServer/  ← IPC server + dispatcher (Unix socket / TCP, length-prefixed JSON)
 │           ├── AppConfig/  ← Core configuration, defaults, HWID gen
 │           ├── PortPool/   ← Dynamic port allocator for test/profile instances
 │           ├── crypto/     ← AES-256-GCM encrypt/decrypt for DB files

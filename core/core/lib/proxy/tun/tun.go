@@ -134,16 +134,29 @@ func (t *TunModeManager) Start(proxy_ipv4s []string, proxy_ipv6s []string, dns s
 		}
 	}
 
-	err = setupTunIpRoute(t.tun_name, t.tun_ip)
-	if err != nil {
-		t.clearNetworkRules()
-		return fmt.Errorf("there was an error setting up tun ip route %w", err)
-	}
-	if t.tun_ipv6 != "" {
-		if err2 := setupTunIpRoute6(t.tun_name, t.tun_ipv6); err2 != nil {
+	// In "include" split mode ONLY the chosen apps use the tunnel, so we must
+	// NOT install a system-wide default route via the TUN — that route lives in
+	// the dedicated table 200 keyed by fwmark instead (see applySplitRules).
+	splitMode := appconfig.GetConfig().SplitTunnel.Mode
+	if splitMode != "include" {
+		err = setupTunIpRoute(t.tun_name, t.tun_ip)
+		if err != nil {
 			t.clearNetworkRules()
-			return fmt.Errorf("there was an error setting up tun ipv6 route %w", err2)
+			return fmt.Errorf("there was an error setting up tun ip route %w", err)
 		}
+		if t.tun_ipv6 != "" {
+			if err2 := setupTunIpRoute6(t.tun_name, t.tun_ipv6); err2 != nil {
+				t.clearNetworkRules()
+				return fmt.Errorf("there was an error setting up tun ipv6 route %w", err2)
+			}
+		}
+	} else {
+		logger.Info("tun: include split mode — skipping system-wide TUN default route")
+	}
+
+	if err := t.applySplitRules(); err != nil {
+		t.clearNetworkRules()
+		return fmt.Errorf("there was an error applying split tunnel rules %w", err)
 	}
 
 	if t.tun2socks.IsRunning() {
@@ -213,6 +226,7 @@ func (t *TunModeManager) clearNetworkRules() error {
 		removeFwmarkRouting(1, t.default_interface, t.default_interface_ip),
 		removeFwmarkRouting6(1, t.default_interface, t.default_interface_ipv6),
 		cleanConntrackRules(t.tun_name, t.default_interface),
+		t.removeSplitRules(),
 	}
 	if t.sudoUid > 0 {
 		errs = append(errs, removeUidRouting(t.sudoUid, t.default_interface, t.default_interface_ip))

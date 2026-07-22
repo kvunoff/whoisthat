@@ -198,3 +198,36 @@ func TestSanitizeTestConfigRejectsNonHttpEndpoint(t *testing.T) {
 		t.Errorf("Concurrency should have been accepted: got %d", got.Concurrency)
 	}
 }
+
+func TestDefaultSocketPathHonorsXDG(t *testing.T) {
+	t.Setenv("XDG_RUNTIME_DIR", "/run/user/1234")
+	got := DefaultSocketPath()
+	want := "/run/user/1234/whoisthat/core.sock"
+	if got != want {
+		t.Errorf("DefaultSocketPath() = %q, want %q", got, want)
+	}
+}
+
+func TestDefaultSocketPathFallsBackToTmp(t *testing.T) {
+	t.Setenv("XDG_RUNTIME_DIR", "")
+	got := DefaultSocketPath()
+	// uid varies by test runner; assert the shape only.
+	if !regexp.MustCompile(`^/tmp/whoisthat-\d+/core\.sock$`).MatchString(got) {
+		t.Errorf("DefaultSocketPath() = %q, want /tmp/whoisthat-<uid>/core.sock", got)
+	}
+}
+
+func TestSocketPathHonorsOverride(t *testing.T) {
+	application_configuration = defaultConfig()
+	application_configuration.IPCSocketPath = "/custom/where.sock"
+	defer func() { application_configuration = defaultConfig() }()
+	if got := SocketPath(); got != "/custom/where.sock" {
+		t.Errorf("SocketPath() = %q, want /custom/where.sock", got)
+	}
+}
+
+func TestTCPDisabledByDefault(t *testing.T) {
+	if defaultConfig().TCPEnabled {
+		t.Error("TCPEnabled should default to false (UDS is the secure default)")
+	}
+}

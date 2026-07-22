@@ -35,6 +35,22 @@ type AppConfig struct {
 	AutoconnectProfileId int        `json:"autoconnect-profile-id"`
 	AutoconnectMode      string     `json:"autoconnect-mode"`
 	TestConfig           TestConfig `json:"test-config"`
+	// IPCSocketPath is the Unix domain socket the core listens on. Empty means
+	// "derive the default from XDG_RUNTIME_DIR at runtime" (see SocketPath()).
+	IPCSocketPath string `json:"ipc-socket-path,omitempty"`
+	// TCPEnabled additionally opens the legacy unauthenticated TCP listener on
+	// CoreTCPPort. Off by default: the UDS is the secure default transport and
+	// TCP is opt-in for remote/advanced setups.
+	TCPEnabled bool `json:"tcp-enabled"`
+	// SplitTunnel controls per-app routing for apps launched via `whoisthat run`.
+	SplitTunnel SplitTunnelConfig `json:"split-tunnel"`
+}
+
+// SplitTunnelConfig persists the split-tunnel mode. Mode is one of "off"
+// (default), "exclude" (split apps bypass the tunnel), or "include" (only split
+// apps use the tunnel). Apps enter the split slice via `whoisthat run <app>`.
+type SplitTunnelConfig struct {
+	Mode string `json:"mode"`
 }
 
 type TestConfig struct {
@@ -64,7 +80,7 @@ func defaultConfig() AppConfig {
 		DnsServers:      []string{"1.1.1.1", "8.8.8.8", "2606:4700:4700::1111", "2001:4860:4860::8888"},
 		TunName:         "whoisthattun",
 		HwidEnabled:     true,
-		UserAgent:       "whoisthat/v0.8.2",
+		UserAgent:       "whoisthat/v0.8.3",
 		AutoconnectMode: "proxy",
 		TestConfig: TestConfig{
 			Concurrency:    16,
@@ -104,6 +120,28 @@ func sanitizeTestConfig(cfg TestConfig) TestConfig {
 
 func GetConfig() AppConfig {
 	return application_configuration
+}
+
+// SocketPath returns the Unix domain socket path the core listens on. It honors
+// an explicit IPCSocketPath override, otherwise derives the default under
+// XDG_RUNTIME_DIR (falling back to /tmp/whoisthat-<uid> when that is unset, e.g.
+// under some systemd/boot contexts). The Rust TUI computes the same path so the
+// two agree without any handshake.
+func SocketPath() string {
+	if p := strings.TrimSpace(application_configuration.IPCSocketPath); p != "" {
+		return p
+	}
+	return DefaultSocketPath()
+}
+
+func DefaultSocketPath() string {
+	dir := os.Getenv("XDG_RUNTIME_DIR")
+	if dir == "" {
+		dir = filepath.Join("/tmp", fmt.Sprintf("whoisthat-%d", os.Getuid()))
+	} else {
+		dir = filepath.Join(dir, "whoisthat")
+	}
+	return filepath.Join(dir, "core.sock")
 }
 
 func LoadConfig() {
@@ -195,6 +233,22 @@ func SetUserAgent(ua string) {
 func SetKillSwitch(enabled bool) {
 	application_configuration.KillSwitchEnabled = enabled
 	SaveConfig()
+}
+
+// SetSplitTunnelMode persists the split-tunnel mode. Invalid values are coerced
+// to "off" (with a warning) so a bad client value cannot install bogus routing.
+func SetSplitTunnelMode(mode string) string {
+	switch mode {
+	case "off", "exclude", "include":
+	default:
+		if mode != "" {
+			logger.Warnf("config: invalid split-tunnel mode %q, using off", mode)
+		}
+		mode = "off"
+	}
+	application_configuration.SplitTunnel.Mode = mode
+	SaveConfig()
+	return mode
 }
 
 func sanitizeAutoconnectMode(mode string) string {

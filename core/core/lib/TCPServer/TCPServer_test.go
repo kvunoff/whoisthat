@@ -260,3 +260,60 @@ func itoa(i int) string {
 	}
 	return string(buf[pos:])
 }
+
+// TestBroadcast_FramingOverUnixSocket verifies the writeLoop's wire format is
+// transport-agnostic: the same 4-byte-length-prefixed framing must round-trip
+// over a real Unix domain socket (the new default IPC transport), not just
+// net.Pipe. Uses a socketpair via net.Listen("unix").
+func TestBroadcast_FramingOverUnixSocket(t *testing.T) {
+	dir := t.TempDir()
+	sockPath := dir + "/test.sock"
+
+	ln, err := net.Listen("unix", sockPath)
+	if err != nil {
+		t.Fatalf("listen unix: %v", err)
+	}
+	defer ln.Close()
+
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		c, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		accepted <- c
+	}()
+
+	client, err := net.Dial("unix", sockPath)
+	if err != nil {
+		t.Fatalf("dial unix: %v", err)
+	}
+	defer client.Close()
+
+	var server net.Conn
+	select {
+	case server = <-accepted:
+	case <-time.After(time.Second):
+		t.Fatal("accept timed out")
+	}
+	defer server.Close()
+
+	s := newTestServer()
+	cc := newClientConn(server)
+	defer closeClient(cc)
+	s.clients["u1"] = cc
+
+	payloads := [][]byte{[]byte(`{"msg":"hello"}`), []byte("second"), []byte(`{"x":42}`)}
+	for _, p := range payloads {
+		s.Broadcast(p)
+	}
+	for _, want := range payloads {
+		got, ok := readFramed(t, client, time.Second)
+		if !ok {
+			t.Fatal("did not receive a framed message over unix socket")
+		}
+		if string(got) != string(want) {
+			t.Fatalf("payload = %q, want %q", got, want)
+		}
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	lumberjack "gopkg.in/natefinch/lumberjack.v2"
 	"log"
+	"net"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -47,6 +48,19 @@ func main() {
 	stop_sig := make(chan bool, 1)
 	utils.RaiseAmbientCaps()
 	appconfig.LoadConfig()
+
+	// Self-heal: if no other core is already listening, tear down any leftover
+	// firewall/routing rules from a previous core that exited without cleaning
+	// up (hard quit, crash, power loss mid-TUN). Guarded on the IPC endpoint
+	// being free so we never nuke a live core's rules.
+	if !coreAlreadyRunning() {
+		if err := tunmode.ReconcileOrphanedRules(); err != nil {
+			logger.Warnf("startup reconcile: %v", err)
+		} else {
+			logger.Info("startup reconcile: orphaned rules cleared")
+		}
+	}
+
 	geoDir := filepath.Join(configDir, "whoisthat", "geo")
 	if _, err := geo.EnsureAssets(geoDir); err != nil {
 		logger.Warnf("main: geo assets not available: %v", err)
@@ -90,10 +104,31 @@ func main() {
 		tunmode.RemoveKillSwitchBlock()
 		proxy_manager.Stop()
 		tun_manager.Stop()
+		os.Remove(appconfig.SocketPath())
 		server.Broadcast(lib.CreateJsonNotification("warn", structs.Warning{Key: "died", Content: reason}))
 		os.Exit(0)
 	}()
 	select {}
+}
+
+// coreAlreadyRunning reports whether another whoisthat-core is already
+// listening on the IPC endpoint. Used to guard startup reconcile: we must not
+// tear down firewall/routing rules owned by a live core. Probes the UDS (the
+// default transport) and, if TCP is enabled, the TCP port too — a hit on
+// either means a live core owns the rules.
+func coreAlreadyRunning() bool {
+	cfg := appconfig.GetConfig()
+	if conn, err := net.DialTimeout("unix", appconfig.SocketPath(), 300*time.Millisecond); err == nil {
+		conn.Close()
+		return true
+	}
+	if cfg.TCPEnabled {
+		if conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", cfg.CoreTCPPort), 300*time.Millisecond); err == nil {
+			conn.Close()
+			return true
+		}
+	}
+	return false
 }
 
 func bootAutoconnect(database *db.DB, proxy_manager *proxy.ProxyManager, tun_manager *tunmode.TunModeManager, server *TCPServer.Server) {

@@ -2,7 +2,7 @@ use log::warn;
 use std::time::Duration;
 use tokio::sync::mpsc;
 
-use super::connection::CoreConnection;
+use super::connection::{CoreConnection, Endpoint};
 use super::protocol::*;
 use super::CoreClient;
 
@@ -32,6 +32,7 @@ pub enum CoreEvent {
     HwidUpdated(HwidData),
     TunNameUpdated(String),
     KillSwitchUpdated(bool),
+    SplitTunnelUpdated(String),
     AutoconnectUpdated(AutoconnectInfo),
     TestProgress(TestProgress),
     TestConfigUpdated(TestConfig),
@@ -64,8 +65,7 @@ macro_rules! try_dispatch {
 pub fn spawn_read_loop(
     mut conn: CoreConnection,
     client: CoreClient,
-    host: String,
-    port: u16,
+    endpoint: Endpoint,
     log_level: String,
 ) -> mpsc::UnboundedReceiver<CoreEvent> {
     let (tx, rx) = mpsc::unbounded_channel();
@@ -100,11 +100,11 @@ pub fn spawn_read_loop(
             // (1) Try reconnecting to a still-alive core.
             for attempt in 1..=5 {
                 tokio::time::sleep(Duration::from_millis(500)).await;
-                let Ok(read_conn) = CoreConnection::connect(&host, port).await else {
+                let Ok(read_conn) = CoreConnection::connect_endpoint(&endpoint).await else {
                     log::info!("reconnect attempt {attempt}/5 failed (core connect)");
                     continue;
                 };
-                let Ok(cmd_conn) = CoreConnection::connect(&host, port).await else {
+                let Ok(cmd_conn) = CoreConnection::connect_endpoint(&endpoint).await else {
                     log::warn!("reconnect attempt {attempt}/5: read conn OK, cmd conn failed");
                     continue;
                 };
@@ -120,9 +120,8 @@ pub fn spawn_read_loop(
                 if let Err(e) = spawn_core(&log_level) {
                     log::error!("Failed to respawn core: {e}");
                 } else {
-                    let addr = format!("{}:{}", host, port);
                     for _ in 0..30 {
-                        if tokio::net::TcpStream::connect(&addr).await.is_ok() {
+                        if CoreConnection::connect_endpoint(&endpoint).await.is_ok() {
                             recovered = true;
                             break;
                         }
@@ -130,8 +129,8 @@ pub fn spawn_read_loop(
                     }
                     if recovered {
                         match (
-                            CoreConnection::connect(&host, port).await,
-                            CoreConnection::connect(&host, port).await,
+                            CoreConnection::connect_endpoint(&endpoint).await,
+                            CoreConnection::connect_endpoint(&endpoint).await,
                         ) {
                             (Ok(read_conn), Ok(cmd_conn)) => {
                                 client.replace_conn(cmd_conn).await;
@@ -253,6 +252,11 @@ pub(crate) fn dispatch(msg: TcpMessage) -> CoreEvent {
         "kill-switch-updated" => {
             try_dispatch!(msg, "kill-switch-updated", SetKillSwitchData, |d| {
                 CoreEvent::KillSwitchUpdated(d.enabled)
+            })
+        }
+        "split-tunnel-updated" => {
+            try_dispatch!(msg, "split-tunnel-updated", SetSplitTunnelData, |d| {
+                CoreEvent::SplitTunnelUpdated(d.mode)
             })
         }
         "autoconnect-updated" => try_dispatch!(

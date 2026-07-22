@@ -22,6 +22,7 @@ func (cmd *Cmd) GetApplicationState(data structs.GetApplicationStateData, proxy_
 		TunStatus:        tun_manager.IsEnabledLocked(),
 		HwidInfo:         GetHwidInfo(),
 		KillSwitch:       proxy_manager.KillSwitchEnabled(),
+		SplitTunnel:      appconfig.GetConfig().SplitTunnel.Mode,
 		Autoconnect: structs.AutoconnectInfo{
 			Enabled: appconfig.GetConfig().AutoconnectEnabled,
 			Mode:    appconfig.GetConfig().AutoconnectMode,

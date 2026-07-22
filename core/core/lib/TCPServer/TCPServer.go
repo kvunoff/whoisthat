@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
+	"path/filepath"
 	"sync"
 	cmd "whoisthat-core/commands"
 	"whoisthat-core/db"
@@ -84,26 +86,17 @@ func NewServer(database *db.DB, proxy_manager *proxy.ProxyManager, tun_manager *
 
 func (s *Server) Start() {
 	app_config := appconfig.GetConfig()
-	port := app_config.CoreTCPPort
-
-	listen4, err := net.Listen("tcp4", fmt.Sprintf("127.0.0.1:%d", port))
-	if err != nil {
-		logger.Fatal("failed to listen on IPv4:", err)
-	}
-
-	listen6, err := net.Listen("tcp6", fmt.Sprintf("[::1]:%d", port))
-	if err != nil {
-		logger.Warn("failed to listen on IPv6:", err)
-	}
-
-	logger.Infof("listening on port %d (v4 + v6)", port)
 
 	go s.handleTunModeStatusChange()
 	go s.handleStatusChange()
 	go s.handleTestResults()
 	go s.handleStatsChange()
 
-	accept := func(listener net.Listener) {
+	// clientID must be unique per connection. UDS peers all report the same
+	// (empty) RemoteAddr, so fall back to a monotonic counter when the address
+	// is not distinguishing.
+	var idSeq uint64
+	accept := func(listener net.Listener, kind string) {
 		for {
 			conn, err := listener.Accept()
 			if err != nil {
@@ -112,16 +105,50 @@ func (s *Server) Start() {
 			}
 			cc := newClientConn(conn)
 			s.mutex.Lock()
-			clientID := conn.RemoteAddr().String()
+			seq := idSeq
+			idSeq++
+			clientID := fmt.Sprintf("%s#%d:%s", kind, seq, conn.RemoteAddr())
 			s.clients[clientID] = cc
 			s.mutex.Unlock()
 			go s.handleConnection(cc, clientID)
 		}
 	}
 
-	go accept(listen4)
-	if listen6 != nil {
-		go accept(listen6)
+	// Unix domain socket — the secure default transport. Access is gated by
+	// filesystem permissions (0600, user-owned dir), so only the owning user
+	// can command the cap_net_admin-holding core.
+	sockPath := appconfig.SocketPath()
+	if err := os.MkdirAll(filepath.Dir(sockPath), 0700); err != nil {
+		logger.Warn("failed to create socket dir:", err)
+	}
+	// Remove a stale socket left by a previous core. Safe: startup already
+	// confirmed no live core is listening before we reach here.
+	_ = os.Remove(sockPath)
+	if uds, err := net.Listen("unix", sockPath); err != nil {
+		logger.Fatal("failed to listen on unix socket:", err)
+	} else {
+		if err := os.Chmod(sockPath, 0600); err != nil {
+			logger.Warn("failed to chmod socket:", err)
+		}
+		logger.Infof("listening on unix socket %s", sockPath)
+		go accept(uds, "uds")
+	}
+
+	// Legacy TCP — opt-in only (remote/advanced use). Unauthenticated, so it
+	// stays off unless the user explicitly enables it.
+	if app_config.TCPEnabled {
+		port := app_config.CoreTCPPort
+		if listen4, err := net.Listen("tcp4", fmt.Sprintf("127.0.0.1:%d", port)); err != nil {
+			logger.Warn("failed to listen on IPv4:", err)
+		} else {
+			go accept(listen4, "tcp4")
+		}
+		if listen6, err := net.Listen("tcp6", fmt.Sprintf("[::1]:%d", port)); err != nil {
+			logger.Warn("failed to listen on IPv6:", err)
+		} else {
+			go accept(listen6, "tcp6")
+		}
+		logger.Infof("listening on tcp port %d (v4 + v6)", port)
 	}
 }
 
@@ -355,6 +382,14 @@ func (s *Server) handleConnection(cc *clientConn, clientID string) {
 				return
 			}
 			command_handler.SetKillSwitch(data)
+
+		case "set-split-tunnel":
+			var data structs.SetSplitTunnelData
+			if err := json.Unmarshal(raw_tcp_message.Data, &data); err != nil {
+				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
+				return
+			}
+			command_handler.SetSplitTunnel(data, s.tun_manager)
 
 		case "set-autoconnect":
 			var data structs.SetAutoconnectData

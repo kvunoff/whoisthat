@@ -1,5 +1,6 @@
 mod config;
 mod core_client;
+mod launcher;
 mod ui;
 
 use std::fs::{File, OpenOptions};
@@ -410,16 +411,28 @@ fn check_sudo_env() -> Option<&'static str> {
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
+    // `whoisthat run <app> [args...]` launches an app into the split-tunnel
+    // slice instead of starting the TUI. Handle it before any core/TUI setup.
+    let argv: Vec<String> = std::env::args().collect();
+    if argv.get(1).map(String::as_str) == Some("run") {
+        let code = launcher::run_in_split_slice(&argv[2..]);
+        std::process::exit(code);
+    }
+
     let logger = init_logger();
 
     let mut cfg = config::load_config();
     configure_logger(logger, cfg.log_enabled, &cfg.log_level);
     let current_version = env!("CARGO_PKG_VERSION").to_string();
 
+    // Resolve the IPC endpoint (Unix socket by default, TCP if configured).
+    let endpoint = cfg.endpoint();
+    log::info!("Core IPC endpoint: {}", endpoint.describe());
+
     // Check if core is running and version matches
     // Reattach if same version, kill+respawn if different, spawn if not running
     let mut core_alive = false;
-    if let Ok(mut conn) = CoreConnection::connect(&cfg.core_host, cfg.core_tcp_port).await {
+    if let Ok(mut conn) = CoreConnection::connect_endpoint(&endpoint).await {
         if cfg.core_version != current_version {
             log::info!(
                 "Core version mismatch (cfg='{}' current='{current_version}'), restarting",
@@ -439,10 +452,9 @@ async fn main() -> io::Result<()> {
         ensure_core_caps(&find_core_binary());
         spawn_core(&cfg.log_level)?;
         // Wait for core to start listening (retry with backoff)
-        let addr = format!("{}:{}", cfg.core_host, cfg.core_tcp_port);
         let mut retries = 0u32;
         loop {
-            if tokio::net::TcpStream::connect(&addr).await.is_ok() {
+            if CoreConnection::connect_endpoint(&endpoint).await.is_ok() {
                 break;
             }
             retries += 1;
@@ -457,7 +469,7 @@ async fn main() -> io::Result<()> {
         cfg.core_version = current_version;
         config::save_config(&cfg);
     }
-    let conn = CoreConnection::connect(&cfg.core_host, cfg.core_tcp_port)
+    let conn = CoreConnection::connect_endpoint(&endpoint)
         .await
         .map_err(|e| {
             io::Error::new(
@@ -468,12 +480,11 @@ async fn main() -> io::Result<()> {
 
     let client = CoreClient::new(conn);
 
-    let read_conn = CoreConnection::connect(&cfg.core_host, cfg.core_tcp_port).await?;
+    let read_conn = CoreConnection::connect_endpoint(&endpoint).await?;
     let mut core_rx = core_client::spawn_read_loop(
         read_conn,
         client.clone_ref(),
-        cfg.core_host.clone(),
-        cfg.core_tcp_port,
+        endpoint.clone(),
         cfg.log_level.clone(),
     );
     client.get_application_state().await?;
@@ -862,6 +873,13 @@ async fn handle_core_event(
         }
         CoreEvent::KillSwitchUpdated(enabled) => {
             app.kill_switch_enabled = enabled;
+        }
+        CoreEvent::SplitTunnelUpdated(mode) => {
+            app.split_tunnel = if mode.is_empty() {
+                "off".to_string()
+            } else {
+                mode
+            };
         }
         CoreEvent::AutoconnectUpdated(info) => {
             app.autoconnect_enabled = info.enabled;
@@ -1724,6 +1742,14 @@ async fn handle_normal_input(
                     config::save_config(cfg);
                 }
                 8 => {
+                    // Cycle split-tunnel mode: off -> exclude -> include -> off.
+                    // The core validates and reconciles live routing; it echoes
+                    // the persisted mode back via the split-tunnel-updated event.
+                    let next = ui::settings::next_split_tunnel_mode(&app.split_tunnel);
+                    app.split_tunnel = next.to_string();
+                    let _ = client.set_split_tunnel(next).await;
+                }
+                9 => {
                     let methods = ["tcp", "http-get", "http-head"];
                     let current = methods
                         .iter()
@@ -1734,7 +1760,7 @@ async fn handle_normal_input(
                     cfg.test_method = app.test_method.clone();
                     config::save_config(cfg);
                 }
-                9 => {
+                10 => {
                     let opts = [1, 3, 5, 10];
                     let cur = opts
                         .iter()
@@ -1745,7 +1771,7 @@ async fn handle_normal_input(
                     cfg.test_samples = next;
                     persist_and_sync_test_config(app, cfg, client).await;
                 }
-                10 => {
+                11 => {
                     let opts = [4, 8, 16, 32, 64];
                     let cur = opts
                         .iter()
@@ -1756,7 +1782,7 @@ async fn handle_normal_input(
                     cfg.test_concurrency = next;
                     persist_and_sync_test_config(app, cfg, client).await;
                 }
-                11 => {
+                12 => {
                     let opts = [3, 5, 10, 15];
                     let cur = opts
                         .iter()
@@ -1767,7 +1793,7 @@ async fn handle_normal_input(
                     cfg.test_timeout_seconds = next;
                     persist_and_sync_test_config(app, cfg, client).await;
                 }
-                12 => {
+                13 => {
                     let opts = [
                         ("cloudflare", "https://cp.cloudflare.com/generate_204"),
                         ("gstatic", "https://www.gstatic.com/generate_204"),
@@ -1782,13 +1808,13 @@ async fn handle_normal_input(
                     cfg.test_endpoint = next.1.to_string();
                     persist_and_sync_test_config(app, cfg, client).await;
                 }
-                13 => {
+                14 => {
                     app.test_config.auto_test_on_subscribe =
                         !app.test_config.auto_test_on_subscribe;
                     cfg.auto_test_on_subscribe = app.test_config.auto_test_on_subscribe;
                     persist_and_sync_test_config(app, cfg, client).await;
                 }
-                14 => {
+                15 => {
                     if let Some(ref hw) = app.hwid_info {
                         let _ = client
                             .set_hwid(&SetHwidData {
@@ -1798,8 +1824,8 @@ async fn handle_normal_input(
                             .await;
                     }
                 }
-                15 => {}
-                16 => {
+                16 => {}
+                17 => {
                     let _ = client
                         .set_hwid(&SetHwidData {
                             reset: true,
@@ -1807,7 +1833,7 @@ async fn handle_normal_input(
                         })
                         .await;
                 }
-                17 => {
+                18 => {
                     if let Some(ref hw) = app.hwid_info {
                         app.popup = Some(Popup::EditUserAgent {
                             input: hw.user_agent.clone(),

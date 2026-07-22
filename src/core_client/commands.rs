@@ -290,6 +290,19 @@ impl CoreClient {
             .await
     }
 
+    pub async fn set_split_tunnel(&self, mode: &str) -> std::io::Result<()> {
+        self.conn
+            .lock()
+            .await
+            .send(
+                "set-split-tunnel",
+                &SetSplitTunnelData {
+                    mode: mode.to_string(),
+                },
+            )
+            .await
+    }
+
     pub async fn set_autoconnect(
         &self,
         enabled: bool,
