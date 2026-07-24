@@ -54,6 +54,10 @@ type ProxyManager struct {
 		tested int64
 		total  int
 	}
+
+	testMu       sync.RWMutex
+	testConfig   structs.TestConfig
+	testEndpoints []string
 }
 
 func (p *ProxyManager) Init() {
@@ -64,19 +68,23 @@ func (p *ProxyManager) Init() {
 		tested int64
 		total  int
 	}{}
-	// Buffered so a transient send from xray-core's Exited watcher doesn't
-	// block forever if the server's handleStatusChange goroutine is parked
-	// inside a Broadcast. Combined with the per-client outbound goroutines
-	// in TCPServer, this breaks the historic deadlock chain where a stuck
-	// client write back-propagated into Connect/Stop.
 	p.StatusChanged = make(chan structs.ProxyStatus, 8)
 	p.StatsChanged = make(chan structs.TrafficStats, 8)
+	p.testConfig = structs.TestConfig{
+		Concurrency:    16,
+		TimeoutSeconds: 5,
+		SamplesPerTest: 3,
+		TestEndpoint:   "https://cp.cloudflare.com/generate_204",
+		AutoTestOnSub:  true,
+	}
+	p.testEndpoints = []string{
+		"https://cp.cloudflare.com/generate_204",
+		"https://www.gstatic.com/generate_204",
+		"https://www.bing.com/",
+	}
 	test_channel := make(chan TestRequest)
 	go p.listenForTests(test_channel)
 	p.testChannel = test_channel
-	// Buffered so test goroutines never block on a slow DB writer in the
-	// TCPServer's handleTestResults loop. Capacity matches a full
-	// subscription burst (~30 profiles × 3 samples broadcast stagger).
 	p.TestResultChannel = make(chan TestResult, 32)
 	p.core = &xray.XrayCore{
 		Exited: make(chan error),

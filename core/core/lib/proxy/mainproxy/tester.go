@@ -31,65 +31,39 @@ type TestRequest struct {
 	SampleCount int
 }
 
-// testEpoch is bumped by CancelTests to invalidate in-flight test
-// goroutines. A test goroutine captures the epoch value at enqueue time
-// and periodically checks it; if the value changed, the goroutine aborts
-// (so its subprocess doesn't linger killing mid-sample) — new tests for
-// the new epoch will be queued by the caller. This avoids hard-killing
-// xray/hysteria subprocesses which can leak if killed mid-handshake.
+// testEpoch is bumped by CancelTests to invalidate in-flight test goroutines.
 var testEpoch atomic.Int64
 
-// testEndpoints is the tried-in-order fallback list of URLs used for the
-// HTTP round-trip measurement. The first one that returns 2xx is the
-// measured sample. Endpoints after the first act purely as reachability
-// fallback — only the first endpoint's latency is recorded to keep
-// samples comparable.
-var testEndpoints = []string{
-	"https://cp.cloudflare.com/generate_204",
-	"https://www.gstatic.com/generate_204",
-	"https://www.bing.com/",
-}
-
-// testConfigDefaults are used when no explicit value is supplied on a
-// test request (set by the TUI / Defaults()). All values are mutable via
-// the SetTestConfig command.
-var testConfig = structs.TestConfig{
-	Concurrency:    16,
-	TimeoutSeconds: 5,
-	SamplesPerTest: 3,
-	TestEndpoint:   "https://cp.cloudflare.com/generate_204",
-	AutoTestOnSub:  true,
-}
-
-// SetTestConfig replaces the live test configuration. Called by the
-// SetTestConfig command handler. Receiver is the ProxyManager so the
-// command-handler call site reads naturally; the configuration itself
-// is package-global because tests share a single process-wide config.
+// SetTestConfig replaces the live test configuration.
 func (p *ProxyManager) SetTestConfig(cfg structs.TestConfig) {
+	p.testMu.Lock()
+	defer p.testMu.Unlock()
 	if cfg.Concurrency < 1 {
-		cfg.Concurrency = testConfig.Concurrency
+		cfg.Concurrency = p.testConfig.Concurrency
 	}
 	if cfg.TimeoutSeconds < 1 {
-		cfg.TimeoutSeconds = testConfig.TimeoutSeconds
+		cfg.TimeoutSeconds = p.testConfig.TimeoutSeconds
 	}
 	if cfg.SamplesPerTest < 1 {
-		cfg.SamplesPerTest = testConfig.SamplesPerTest
+		cfg.SamplesPerTest = p.testConfig.SamplesPerTest
 	}
 	if cfg.TestEndpoint == "" {
-		cfg.TestEndpoint = testConfig.TestEndpoint
+		cfg.TestEndpoint = p.testConfig.TestEndpoint
 	}
 	endpoints := []string{cfg.TestEndpoint}
-	for _, e := range testEndpoints {
+	for _, e := range p.testEndpoints {
 		if e != cfg.TestEndpoint {
 			endpoints = append(endpoints, e)
 		}
 	}
-	testEndpoints = endpoints
-	testConfig = cfg
+	p.testEndpoints = endpoints
+	p.testConfig = cfg
 }
 
 func (p *ProxyManager) GetTestConfig() structs.TestConfig {
-	return testConfig
+	p.testMu.RLock()
+	defer p.testMu.RUnlock()
+	return p.testConfig
 }
 
 // CancelTests invalidates all in-flight test goroutines by bumping the
@@ -101,6 +75,7 @@ func (p *ProxyManager) CancelTests() {
 }
 
 // SeedTestProgress initializes the per-group (tested, total) progress
+
 // tracker. Called by commands.TestGroup when enqueuing a batch.
 func (p *ProxyManager) SeedTestProgress(groupId, total int) {
 	if groupId == 0 {
@@ -138,7 +113,9 @@ func (p *ProxyManager) IncrementTestProgress(groupId int) (int, int, bool) {
 }
 
 func (p *ProxyManager) TestProfile(profile structs.Profile, method string) {
-	samples := testConfig.SamplesPerTest
+	p.testMu.RLock()
+	samples := p.testConfig.SamplesPerTest
+	p.testMu.RUnlock()
 	p.testChannel <- TestRequest{Profile: profile, Method: method, SampleCount: samples}
 }
 
@@ -148,7 +125,9 @@ func (p *ProxyManager) TestProfile(profile structs.Profile, method string) {
 // enqueued so the handler can include it in a TestProgress broadcast.
 func (p *ProxyManager) TestGroup(profiles []structs.Profile, method string, samples int) int {
 	if samples < 1 {
-		samples = testConfig.SamplesPerTest
+		p.testMu.RLock()
+		samples = p.testConfig.SamplesPerTest
+		p.testMu.RUnlock()
 	}
 	for _, prof := range profiles {
 		p.testChannel <- TestRequest{Profile: prof, Method: method, SampleCount: samples}
@@ -157,18 +136,20 @@ func (p *ProxyManager) TestGroup(profiles []structs.Profile, method string, samp
 }
 
 func (p *ProxyManager) listenForTests(tests_chan chan TestRequest) {
-	concurrency := testConfig.Concurrency
+	p.testMu.RLock()
+	concurrency := p.testConfig.Concurrency
+	p.testMu.RUnlock()
 	if concurrency < 1 {
 		concurrency = 16
 	}
 	sem := make(chan struct{}, concurrency)
 
 	for req := range tests_chan {
-		// Re-check concurrency in case SetTestConfig changed it.
-		if cap(sem) != testConfig.Concurrency && testConfig.Concurrency > 0 {
-			concurrency = testConfig.Concurrency
-			newSem := make(chan struct{}, concurrency)
-			sem = newSem
+		p.testMu.RLock()
+		newConcurrency := p.testConfig.Concurrency
+		p.testMu.RUnlock()
+		if cap(sem) != newConcurrency && newConcurrency > 0 {
+			sem = make(chan struct{}, newConcurrency)
 		}
 		sem <- struct{}{}
 		go func(req TestRequest) {
@@ -195,7 +176,9 @@ type pingResult struct {
 func (p *ProxyManager) test(req TestRequest) pingResult {
 	samples := req.SampleCount
 	if samples < 1 {
-		samples = testConfig.SamplesPerTest
+		p.testMu.RLock()
+		samples = p.testConfig.SamplesPerTest
+		p.testMu.RUnlock()
 	}
 
 	// Fast pre-filter: a raw TCP reachability dial. For non-hysteria
@@ -242,8 +225,11 @@ func (p *ProxyManager) testTcpOnly(profile structs.Profile) int {
 		return -1
 	}
 	target := net.JoinHostPort(addr, port)
+	p.testMu.RLock()
+	timeoutSec := p.testConfig.TimeoutSeconds
+	p.testMu.RUnlock()
 	start := time.Now()
-	conn, err := net.DialTimeout("tcp", target, time.Duration(testConfig.TimeoutSeconds)*time.Second)
+	conn, err := net.DialTimeout("tcp", target, time.Duration(timeoutSec)*time.Second)
 	if err != nil {
 		return -1
 	}
@@ -335,7 +321,11 @@ func (p *ProxyManager) runSamples(profile structs.Profile, port, samples int) pi
 		samples = 1
 	}
 	epoch := testEpoch.Load()
-	timeout := time.Duration(testConfig.TimeoutSeconds) * time.Second
+	p.testMu.RLock()
+	timeoutSec := p.testConfig.TimeoutSeconds
+	endpoints := append([]string(nil), p.testEndpoints...)
+	p.testMu.RUnlock()
+	timeout := time.Duration(timeoutSec) * time.Second
 	if timeout <= 0 {
 		timeout = 5 * time.Second
 	}
@@ -348,7 +338,7 @@ func (p *ProxyManager) runSamples(profile structs.Profile, port, samples int) pi
 			failures += samples - i
 			break
 		}
-		ms, ok := p.oneSample(port, timeout)
+		ms, ok := p.oneSample(port, timeout, endpoints)
 		if !ok {
 			failures++
 			continue
@@ -389,7 +379,7 @@ func (p *ProxyManager) runSamples(profile structs.Profile, port, samples int) pi
 // oneSample does a single HTTP GET through SOCKS5 against the configured
 // endpoint (with fallback to the alternates). Returns (latencyMs, true)
 // on 2xx, (0, false) on any error or non-2xx.
-func (p *ProxyManager) oneSample(port int, timeout time.Duration) (int, bool) {
+func (p *ProxyManager) oneSample(port int, timeout time.Duration, endpoints []string) (int, bool) {
 	dialer, err := goproxy.SOCKS5("tcp", fmt.Sprintf("127.0.0.1:%d", port), nil, goproxy.Direct)
 	if err != nil {
 		return 0, false
@@ -401,7 +391,7 @@ func (p *ProxyManager) oneSample(port int, timeout time.Duration) (int, bool) {
 		Transport: transport,
 		Timeout:   timeout,
 	}
-	for _, url := range testEndpoints {
+	for _, url := range endpoints {
 		req, err := http.NewRequest("GET", url, nil)
 		if err != nil {
 			continue

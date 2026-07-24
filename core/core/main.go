@@ -101,11 +101,26 @@ func main() {
 			reason = "Received stop request"
 		}
 		logger.Info("whoisthat-core shutting down:", reason)
-		tunmode.RemoveKillSwitchBlock()
-		proxy_manager.Stop()
-		tun_manager.Stop()
-		os.Remove(appconfig.SocketPath())
-		server.Broadcast(lib.CreateJsonNotification("warn", structs.Warning{Key: "died", Content: reason}))
+
+		// Bound cleanup so a hung Stop() (stuck subprocess kill, blocked
+		// firewall teardown) can't wedge shutdown forever. If cleanup
+		// doesn't finish in 10s, exit anyway — the startup reconcile on the
+		// next launch will tear down any leftover rules.
+		done := make(chan struct{})
+		go func() {
+			tunmode.RemoveKillSwitchBlock()
+			proxy_manager.Stop()
+			tun_manager.Stop()
+			os.Remove(appconfig.SocketPath())
+			server.Broadcast(lib.CreateJsonNotification("warn", structs.Warning{Key: "died", Content: reason}))
+			close(done)
+		}()
+		select {
+		case <-done:
+		case <-time.After(10 * time.Second):
+			logger.Warn("shutdown: cleanup timed out after 10s, exiting anyway")
+			os.Remove(appconfig.SocketPath())
+		}
 		os.Exit(0)
 	}()
 	select {}

@@ -32,15 +32,6 @@ func injectStatsConfig(configJSON []byte) ([]byte, error) {
 	return result, nil
 }
 
-type statEntry struct {
-	Name  string `json:"name"`
-	Value string `json:"value"`
-}
-
-type statsResponse struct {
-	Stat []statEntry `json:"stat"`
-}
-
 func (p *ProxyManager) collectStats(socksPort int, cancel chan struct{}, out chan<- structs.TrafficStats) {
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
@@ -53,20 +44,9 @@ func (p *ProxyManager) collectStats(socksPort int, cancel chan struct{}, out cha
 		case <-cancel:
 			return
 		case <-ticker.C:
-			stats, err := querySsStats(socksPort)
+			proxyUp, proxyDown, err := querySsStats(socksPort)
 			if err != nil {
 				continue
-			}
-
-			var proxyUp, proxyDown int64
-			for _, s := range stats.Stat {
-				v := parseValue(s.Value)
-				switch s.Name {
-				case "outbound>>>proxy>>>traffic>>>uplink":
-					proxyUp = v
-				case "outbound>>>proxy>>>traffic>>>downlink":
-					proxyDown = v
-				}
 			}
 
 			if firstRun {
@@ -95,38 +75,25 @@ var (
 	reBytesReceived = regexp.MustCompile(`bytes_received:(\d+)`)
 )
 
-func querySsStats(port int) (*statsResponse, error) {
+func querySsStats(port int) (up, down int64, err error) {
 	filter := fmt.Sprintf("dport = :%d", port)
 	cmd := exec.Command("ss", "-tie", filter)
-	output, err := cmd.Output()
-	if err != nil {
+	output, cmdErr := cmd.Output()
+	if cmdErr != nil {
 		if len(output) > 0 {
-			return nil, fmt.Errorf("ss (port %d): %w (output: %s)", port, err, string(output))
+			return 0, 0, fmt.Errorf("ss (port %d): %w (output: %s)", port, cmdErr, string(output))
 		}
-		return nil, fmt.Errorf("ss (port %d): %w", port, err)
+		return 0, 0, fmt.Errorf("ss (port %d): %w", port, cmdErr)
 	}
-
-	var proxyUp, proxyDown int64
 	for _, m := range reBytesSent.FindAllStringSubmatch(string(output), -1) {
-		if v, err := strconv.ParseInt(m[1], 10, 64); err == nil {
-			proxyUp += v
+		if v, e := strconv.ParseInt(m[1], 10, 64); e == nil {
+			up += v
 		}
 	}
 	for _, m := range reBytesReceived.FindAllStringSubmatch(string(output), -1) {
-		if v, err := strconv.ParseInt(m[1], 10, 64); err == nil {
-			proxyDown += v
+		if v, e := strconv.ParseInt(m[1], 10, 64); e == nil {
+			down += v
 		}
 	}
-
-	return &statsResponse{
-		Stat: []statEntry{
-			{Name: "outbound>>>proxy>>>traffic>>>uplink", Value: strconv.FormatInt(proxyUp, 10)},
-			{Name: "outbound>>>proxy>>>traffic>>>downlink", Value: strconv.FormatInt(proxyDown, 10)},
-		},
-	}, nil
-}
-
-func parseValue(s string) int64 {
-	v, _ := strconv.ParseInt(s, 10, 64)
-	return v
+	return up, down, nil
 }
