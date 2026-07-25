@@ -394,6 +394,19 @@ print_final_message() {
         fi
         echo
     fi
+
+    # Reinforce the hysteria requirement: install.sh prompts for it earlier
+    # (Step 8/8), but the consent line is easy to scroll past and the silent-
+    # failure mode (connect/test both give "100% loss" with no reason) is hard
+    # to diagnose. Re-probe here so the final banner surfaces a clear warning
+    # when the user skipped it.
+    if ! command -v hysteria &>/dev/null; then
+        echo -e "  ${RED}[!] hysteria binary not installed${NC}"
+        echo "      hysteria2:// / hy2:// profiles will NOT work without it."
+        echo "      Install now:  go install github.com/apernet/hysteria2/v2@${HYSTERIA_VERSION}"
+        echo "      Then copy:    sudo install -Dm755 ~/go/bin/hysteria /usr/local/bin/hysteria"
+        echo
+    fi
 }
 
 # =============================================================================

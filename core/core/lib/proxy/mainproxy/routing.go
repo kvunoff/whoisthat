@@ -45,6 +45,20 @@ func injectRoutingConfig(configJSON []byte, database *db.DB) ([]byte, error) {
 		rules = append(rules, rule)
 	}
 
+	// Route API gRPC traffic (xray StatsService) to the api handler outbound
+	// before any other rule. The api inbound is dokodemo-door on 127.0.0.1
+	// listening for our gRPC stats queries; without this rule those queries
+	// would be misrouted through user/DNS rules. Only emit if injectStatsConfig
+	// actually added the `api` service (apiPort > 0); otherwise the rule would
+	// reference a nonexistent outbound and break xray startup.
+	if _, hasAPI := config["api"]; hasAPI {
+		rules = append([]map[string]interface{}{{
+			"type":        "field",
+			"outboundTag": "api",
+			"inboundTag":  []string{"api"},
+		}}, rules...)
+	}
+
 	// Route all DNS traffic through proxy first — prevents DNS queries from
 	// matching user domain rules (e.g. ifconfig.me → direct would also send
 	// the DNS query for ifconfig.me to the direct outbound, breaking resolution).

@@ -77,7 +77,7 @@ func (cmd *Cmd) enableTun(profile structs.Profile, tun_manager *tunmode.TunModeM
 	resolved, err := resolveHostAndAddress(profile, appconfig.GetConfig().DnsServers)
 	if err != nil {
 		logger.Warn("tun: failed to resolve:", err)
-		cmd.warn("enable-tun-failed", "failed to resolve profile host")
+		cmd.warn("enable-tun-failed", fmt.Sprintf("failed to resolve profile host: %v", err))
 		return
 	}
 
@@ -87,7 +87,7 @@ func (cmd *Cmd) enableTun(profile structs.Profile, tun_manager *tunmode.TunModeM
 	err = tun_manager.Start(resolved.IPv4, resolved.IPv6, dns4, dns6)
 	if err != nil {
 		logger.Warn("tun: failed to start:", err)
-		cmd.warn("enable-tun-failed", "Failed to enable tun mode")
+		cmd.warn("enable-tun-failed", err.Error())
 		return
 	}
 }

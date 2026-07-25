@@ -20,12 +20,13 @@ import (
 )
 
 type Server struct {
-	clients       map[string]*clientConn
-	DB            *db.DB
-	mutex         sync.Mutex
-	proxy_manager *proxy.ProxyManager
-	tun_manager   *tunmode.TunModeManager
-	stop_sig      chan<- bool
+	clients        map[string]*clientConn
+	DB             *db.DB
+	mutex          sync.Mutex
+	proxy_manager  *proxy.ProxyManager
+	tun_manager    *tunmode.TunModeManager
+	stop_sig       chan<- bool
+	missingBinaries []MissingBinary
 }
 
 // clientConn wraps a net.Conn with its own dedicated outbound goroutine fed
@@ -74,13 +75,14 @@ func (c *clientConn) shutdown() {
 	}
 }
 
-func NewServer(database *db.DB, proxy_manager *proxy.ProxyManager, tun_manager *tunmode.TunModeManager, stop_sig chan<- bool) *Server {
+func NewServer(database *db.DB, proxy_manager *proxy.ProxyManager, tun_manager *tunmode.TunModeManager, stop_sig chan<- bool, missingBinaries []MissingBinary) *Server {
 	return &Server{
-		DB:            database,
-		clients:       make(map[string]*clientConn),
-		proxy_manager: proxy_manager,
-		tun_manager:   tun_manager,
-		stop_sig:      stop_sig,
+		DB:              database,
+		clients:         make(map[string]*clientConn),
+		proxy_manager:   proxy_manager,
+		tun_manager:     tun_manager,
+		stop_sig:        stop_sig,
+		missingBinaries: missingBinaries,
 	}
 }
 
@@ -183,6 +185,15 @@ func (s *Server) handleConnection(cc *clientConn, clientID string) {
 		}
 		s.mutex.Unlock()
 	}()
+
+	// Pre-flight unicast: warn this newly-connected client about any external
+	// binaries the core needs but couldn't find at startup. Sent directly to
+	// cc.out (NOT Broadcast) so each new TUI gets the message exactly once on
+	// connect — without it, the user has no idea why hy2/TUN tests silently
+	// fail until they read core.log.
+	if len(s.missingBinaries) > 0 {
+		sendMissingBinaryWarnings(cc, s.missingBinaries)
+	}
 
 	command_handler := cmd.Cmd{DB: s.DB, Broadcast: s.Broadcast}
 	reader := bufio.NewReader(conn)

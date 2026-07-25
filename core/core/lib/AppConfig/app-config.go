@@ -80,7 +80,7 @@ func defaultConfig() AppConfig {
 		DnsServers:      []string{"1.1.1.1", "8.8.8.8", "2606:4700:4700::1111", "2001:4860:4860::8888"},
 		TunName:         "whoisthattun",
 		HwidEnabled:     true,
-		UserAgent:       "whoisthat/v0.8.4",
+		UserAgent:       "whoisthat/v0.9.0",
 		AutoconnectMode: "proxy",
 		TestConfig: TestConfig{
 			Concurrency:    16,

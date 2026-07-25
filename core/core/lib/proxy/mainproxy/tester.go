@@ -7,9 +7,11 @@ import (
 	"regexp"
 	"sort"
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"time"
 	"whoisthat-core/lib"
+	"whoisthat-core/lib/logger"
 	"whoisthat-core/lib/proxy/hysteria"
 	"whoisthat-core/lib/proxy/xray"
 	"whoisthat-core/structs"
@@ -23,16 +25,25 @@ type TestResult struct {
 	Success     bool
 	Profile     structs.Profile
 	SampleCount int
+	FailReason  string
 }
 
 type TestRequest struct {
 	Profile     structs.Profile
 	Method      string
 	SampleCount int
+	epoch       int64 // epoch at enqueue time; 0 means "untracked" (skip check)
 }
 
 // testEpoch is bumped by CancelTests to invalidate in-flight test goroutines.
 var testEpoch atomic.Int64
+
+// inFlightMu guards inFlight — the set of (groupId, profileId) currently being
+// tested. Used by TestProfile/TestGroup to skip re-enqueueing a profile that is
+// already queued or running under the current epoch. Cleared in sendTestResult
+// when the goroutine finishes.
+var inFlightMu sync.Mutex
+var inFlight = map[[2]int]struct{}{}
 
 // SetTestConfig replaces the live test configuration.
 func (p *ProxyManager) SetTestConfig(cfg structs.TestConfig) {
@@ -69,7 +80,8 @@ func (p *ProxyManager) GetTestConfig() structs.TestConfig {
 // CancelTests invalidates all in-flight test goroutines by bumping the
 // epoch. Already-spawned xray/hysteria subprocesses for in-flight samples
 // finish their current sample (or time out) and then abort — no hard
-// kills, no orphan risk.
+// kills, no orphan risk. Pending requests still in the testChannel are
+// skipped by listenForTests, which checks epoch on dequeue.
 func (p *ProxyManager) CancelTests() {
 	testEpoch.Add(1)
 }
@@ -116,23 +128,64 @@ func (p *ProxyManager) TestProfile(profile structs.Profile, method string) {
 	p.testMu.RLock()
 	samples := p.testConfig.SamplesPerTest
 	p.testMu.RUnlock()
-	p.testChannel <- TestRequest{Profile: profile, Method: method, SampleCount: samples}
+	if !p.tryEnqueueInFlight(profile.GroupId, profile.Id) {
+		return
+	}
+	p.testChannel <- TestRequest{
+		Profile:     profile,
+		Method:      method,
+		SampleCount: samples,
+		epoch:       testEpoch.Load(),
+	}
 }
 
 // TestGroup enqueues tests for every profile in the given group. The
 // caller is the commands/test.go TestGroup handler — it pre-loads the
 // profiles from the DB and passes them in. Returns the number of tests
-// enqueued so the handler can include it in a TestProgress broadcast.
+// actually enqueued (skipping duplicates against the active in-flight set)
+// so the handler can include it in a TestProgress broadcast.
 func (p *ProxyManager) TestGroup(profiles []structs.Profile, method string, samples int) int {
 	if samples < 1 {
 		p.testMu.RLock()
 		samples = p.testConfig.SamplesPerTest
 		p.testMu.RUnlock()
 	}
+	enqueued := 0
+	epoch := testEpoch.Load()
 	for _, prof := range profiles {
-		p.testChannel <- TestRequest{Profile: prof, Method: method, SampleCount: samples}
+		if !p.tryEnqueueInFlight(prof.GroupId, prof.Id) {
+			continue
+		}
+		p.testChannel <- TestRequest{
+			Profile:     prof,
+			Method:      method,
+			SampleCount: samples,
+			epoch:       epoch,
+		}
+		enqueued++
 	}
-	return len(profiles)
+	return enqueued
+}
+
+// tryEnqueueInFlight reserves a (groupId, profileId) slot in the in-flight
+// set. Returns true if the slot was free (caller should enqueue), false if a
+// test for this profile is already queued/running (caller should skip).
+func (p *ProxyManager) tryEnqueueInFlight(groupId, profileId int) bool {
+	key := [2]int{groupId, profileId}
+	inFlightMu.Lock()
+	defer inFlightMu.Unlock()
+	if _, ok := inFlight[key]; ok {
+		return false
+	}
+	inFlight[key] = struct{}{}
+	return true
+}
+
+// releaseInFlight drops a (groupId, profileId) reservation. Idempotent.
+func releaseInFlight(groupId, profileId int) {
+	inFlightMu.Lock()
+	delete(inFlight, [2]int{groupId, profileId})
+	inFlightMu.Unlock()
 }
 
 func (p *ProxyManager) listenForTests(tests_chan chan TestRequest) {
@@ -145,18 +198,39 @@ func (p *ProxyManager) listenForTests(tests_chan chan TestRequest) {
 	sem := make(chan struct{}, concurrency)
 
 	for req := range tests_chan {
+		// Honor CancelTests without spawning subprocesses for already-
+		// cancelled requests. The epoch bumped by CancelTests invalidates
+		// every request still in the queue; we drop them here and free
+		// their in-flight slot so a fresh batch can immediately re-test.
+		epoch := testEpoch.Load()
+		reqEpoch := req.epoch
+		if reqEpoch > 0 && reqEpoch != epoch {
+			releaseInFlight(req.Profile.GroupId, req.Profile.Id)
+			continue
+		}
+
+		// Allow live concurrency changes between batches: if the user
+		// changes the setting in the TUI while a batch is running, swap
+		// to a new sized semaphore for subsequent spawns. We capture the
+		// current sem by VALUE in a local so existing goroutines keep
+		// draining the sem they acquired (a `defer <-sem` in a goroutine
+		// that already took `sem <- struct{}{}` on the old sem must
+		// release THAT same sem, not the freshly allocated one — fixing
+		// a previous goroutine-leak race on reassignment).
 		p.testMu.RLock()
 		newConcurrency := p.testConfig.Concurrency
 		p.testMu.RUnlock()
-		if cap(sem) != newConcurrency && newConcurrency > 0 {
+		if newConcurrency > 0 && cap(sem) != newConcurrency {
 			sem = make(chan struct{}, newConcurrency)
 		}
-		sem <- struct{}{}
-		go func(req TestRequest) {
+		localSem := sem
+		localSem <- struct{}{}
+		go func(req TestRequest, sem chan struct{}) {
 			defer func() { <-sem }()
+			defer releaseInFlight(req.Profile.GroupId, req.Profile.Id)
 			ping := p.test(req)
 			p.sendTestResult(req.Profile, ping)
-		}(req)
+		}(req, localSem)
 	}
 }
 
@@ -165,12 +239,16 @@ func (p *ProxyManager) listenForTests(tests_chan chan TestRequest) {
 // Jitter is max-min of successful samples (ms).
 // LossPct is the percentage of failed samples (0..100).
 // Success is true if at least one sample completed with a 2xx response.
+// failReason is populated only on failure and carries a human-readable
+// diagnostic (e.g. "xray.Start failed: ...", "all samples timed out").
+// Empty failReason with success=false means "no specific cause recorded".
 type pingResult struct {
 	latencyMs   int
 	jitterMs    int
 	lossPct     int
 	success     bool
 	sampleCount int
+	failReason  string
 }
 
 func (p *ProxyManager) test(req TestRequest) pingResult {
@@ -181,30 +259,43 @@ func (p *ProxyManager) test(req TestRequest) pingResult {
 		p.testMu.RUnlock()
 	}
 
+	// Epoch guard at the very top — protects against CancelTests firing
+	// between enqueue (in the caller) and spawn (here). Without this we'd
+	// launch subprocesses for tests the user already cancelled.
+	epoch := testEpoch.Load()
+	if req.epoch > 0 && req.epoch != epoch {
+		return pingResult{latencyMs: -1, sampleCount: samples, lossPct: 100, failReason: "cancelled"}
+	}
+
 	// Fast pre-filter: a raw TCP reachability dial. For non-hysteria
 	// protocols this is a meaningful quick reject — if the server's port
 	// isn't even open, don't waste 5s spawning xray. For hysteria2 the
 	// port is UDP, so the TCP dial is unrelated to reachability — skip.
 	if req.Method == "tcp" {
 		ms := p.testTcpOnly(req.Profile)
-		return pingResult{
+		res := pingResult{
 			latencyMs:   ms,
 			success:     ms > 0,
 			sampleCount: 1,
 		}
+		if ms <= 0 {
+			res.failReason = "tcp dial failed (see core.log)"
+		}
+		return res
 	}
 
 	if !isHysteriaProtocol(req.Profile.Protocol) {
-		// Quick reject: dial the server port directly. If unreachable
-		// we skip the expensive spawn+sample cycle entirely. This is
-		// purely an optimization — never written to DB on its own.
+		// Soft quick-reject: dial the server port directly. We use this
+		// as an informational signal rather than a hard gate — many real
+		// servers (especially CDN-fronted ones) drop direct TCP to the
+		// upstream port while still serving traffic through the proxy
+		// correctly. So we log the failure and proceed to the real
+		// xray-based test; if xray itself can't reach the server the
+		// samples will legitimately fail and report 100% loss then.
 		if !p.serverReachable(req.Profile) {
-			return pingResult{
-				latencyMs:   -1,
-				success:     false,
-				sampleCount: samples,
-				lossPct:     100,
-			}
+			logger.Warnf("test %s (gid=%d id=%d): serverReachable failed for %s://%s — proceeding anyway",
+				req.Profile.Name, req.Profile.GroupId, req.Profile.Id,
+				req.Profile.Protocol, req.Profile.Address)
 		}
 		return p.testViaXray(req.Profile, samples)
 	}
@@ -231,6 +322,8 @@ func (p *ProxyManager) testTcpOnly(profile structs.Profile) int {
 	start := time.Now()
 	conn, err := net.DialTimeout("tcp", target, time.Duration(timeoutSec)*time.Second)
 	if err != nil {
+		logger.Warnf("test %s (gid=%d id=%d): tcp dial %s failed: %v",
+			profile.Name, profile.GroupId, profile.Id, target, err)
 		return -1
 	}
 	conn.Close()
@@ -238,8 +331,10 @@ func (p *ProxyManager) testTcpOnly(profile structs.Profile) int {
 }
 
 // serverReachable is a fast pre-filter dial. Returns true if the
-// profile's server:port accepts a TCP connection within 2s. Latency is
-// not recorded — this is a yes/no gate.
+// profile's server:port accepts a TCP connection within 4s. Latency is
+// not recorded — this is a yes/no gate. Callers should treat a `false`
+// result as informational, not authoritative (CDN/proxy edge cases can
+// defeat raw TCP probes).
 func (p *ProxyManager) serverReachable(profile structs.Profile) bool {
 	port := extractPort(profile.Uri, profile.Protocol)
 	addr := profile.Address
@@ -250,7 +345,7 @@ func (p *ProxyManager) serverReachable(profile structs.Profile) bool {
 		return true // can't tell; let the real test decide
 	}
 	target := net.JoinHostPort(addr, port)
-	conn, err := net.DialTimeout("tcp", target, 2*time.Second)
+	conn, err := net.DialTimeout("tcp", target, 4*time.Second)
 	if err != nil {
 		return false
 	}
@@ -264,23 +359,32 @@ func (p *ProxyManager) serverReachable(profile structs.Profile) bool {
 func (p *ProxyManager) testViaXray(profile structs.Profile, samples int) pingResult {
 	port, err := p.portPool.GetPort()
 	if err != nil {
-		return pingResult{latencyMs: -1, sampleCount: samples, lossPct: 100}
+		logger.Warnf("test %s (gid=%d id=%d): port pool exhausted: %v",
+			profile.Name, profile.GroupId, profile.Id, err)
+		return pingResult{latencyMs: -1, sampleCount: samples, lossPct: 100, failReason: "no free test port available"}
 	}
 	defer p.portPool.ReleasePort(port)
 
 	parsed, err := lib.ParseUri(profile.Uri, port, -1)
 	if err != nil {
-		return pingResult{latencyMs: -1, sampleCount: samples, lossPct: 100}
+		logger.Warnf("test %s (gid=%d id=%d): ParseUri failed for %s://%s: %v",
+			profile.Name, profile.GroupId, profile.Id,
+			profile.Protocol, profile.Address, err)
+		return pingResult{latencyMs: -1, sampleCount: samples, lossPct: 100, failReason: fmt.Sprintf("ParseUri failed: %v", err)}
 	}
 
 	xray_core := xray.XrayCore{Exited: make(chan error)}
 	if err := xray_core.Start(parsed); err != nil {
-		return pingResult{latencyMs: -1, sampleCount: samples, lossPct: 100}
+		logger.Warnf("test %s (gid=%d id=%d): xray.Start failed: %v",
+			profile.Name, profile.GroupId, profile.Id, err)
+		return pingResult{latencyMs: -1, sampleCount: samples, lossPct: 100, failReason: fmt.Sprintf("xray.Start failed: %v", err)}
 	}
 	defer xray_core.Stop()
 
-	if !waitForListener("tcp", fmt.Sprintf("127.0.0.1:%d", port), 2*time.Second) {
-		return pingResult{latencyMs: -1, sampleCount: samples, lossPct: 100}
+	if !waitForListener("tcp", fmt.Sprintf("127.0.0.1:%d", port), 4*time.Second) {
+		logger.Warnf("test %s (gid=%d id=%d): xray SOCKS listener did not bind on port %d within 4s",
+			profile.Name, profile.GroupId, profile.Id, port)
+		return pingResult{latencyMs: -1, sampleCount: samples, lossPct: 100, failReason: fmt.Sprintf("xray SOCKS listener did not bind on port %d within 4s", port)}
 	}
 	return p.runSamples(profile, port, samples)
 }
@@ -291,23 +395,42 @@ func (p *ProxyManager) testViaXray(profile structs.Profile, samples int) pingRes
 func (p *ProxyManager) testViaHysteria(profile structs.Profile, samples int) pingResult {
 	port, err := p.portPool.GetPort()
 	if err != nil {
-		return pingResult{latencyMs: -1, sampleCount: samples, lossPct: 100}
+		logger.Warnf("test %s (gid=%d id=%d): port pool exhausted: %v",
+			profile.Name, profile.GroupId, profile.Id, err)
+		return pingResult{latencyMs: -1, sampleCount: samples, lossPct: 100, failReason: "no free test port available"}
 	}
 	defer p.portPool.ReleasePort(port)
 
 	yaml_config, err := lib.ParseUriHysteria(profile.Uri, port, -1)
 	if err != nil {
-		return pingResult{latencyMs: -1, sampleCount: samples, lossPct: 100}
+		logger.Warnf("test %s (gid=%d id=%d): ParseUriHysteria failed for %s://%s: %v",
+			profile.Name, profile.GroupId, profile.Id,
+			profile.Protocol, profile.Address, err)
+		return pingResult{latencyMs: -1, sampleCount: samples, lossPct: 100, failReason: fmt.Sprintf("ParseUriHysteria failed: %v", err)}
 	}
 
 	hyCore := hysteria.HysteriaCore{Exited: make(chan error)}
 	if err := hyCore.Start(yaml_config); err != nil {
-		return pingResult{latencyMs: -1, sampleCount: samples, lossPct: 100}
+		// The most common cause for a silent "always error" hysteria2
+		// test result is a missing/broken hysteria binary. Surface a
+		// clear, actionable log line so the user can install it. The
+		// same text is also carried up to the TUI via failReason so the
+		// user does not have to open core.log to diagnose it.
+		reason := fmt.Sprintf("hysteria.Start failed: %v "+
+			"(is the `hysteria` binary installed in /usr/bin or /usr/local/bin?)", err)
+		logger.Warnf("test %s (gid=%d id=%d): %s",
+			profile.Name, profile.GroupId, profile.Id, reason)
+		return pingResult{latencyMs: -1, sampleCount: samples, lossPct: 100, failReason: reason}
 	}
 	defer hyCore.Stop()
 
-	if !waitForListener("tcp", fmt.Sprintf("127.0.0.1:%d", port), 3*time.Second) {
-		return pingResult{latencyMs: -1, sampleCount: samples, lossPct: 100}
+	if !waitForListener("tcp", fmt.Sprintf("127.0.0.1:%d", port), 8*time.Second) {
+		reason := fmt.Sprintf("hysteria SOCKS listener did not bind on port %d within 8s "+
+			"(UDP handshake to %s:%s failed? check /tmp/whoisthat-hysteria-*.log)",
+			port, profile.Address, extractPort(profile.Uri, profile.Protocol))
+		logger.Warnf("test %s (gid=%d id=%d): %s",
+			profile.Name, profile.GroupId, profile.Id, reason)
+		return pingResult{latencyMs: -1, sampleCount: samples, lossPct: 100, failReason: reason}
 	}
 	return p.runSamples(profile, port, samples)
 }
@@ -352,6 +475,7 @@ func (p *ProxyManager) runSamples(profile structs.Profile, port, samples int) pi
 			sampleCount: samples,
 			lossPct:     100,
 			success:     false,
+			failReason:  fmt.Sprintf("all %d sample(s) failed (%d%% loss, timeout or non-2xx via SOCKS5)", samples, 100),
 		}
 	}
 	sort.Ints(succ)
@@ -433,10 +557,25 @@ func (p *ProxyManager) sendTestResult(profile structs.Profile, ping pingResult) 
 	if ping.success {
 		profile.TestedAt = time.Now().Unix()
 	}
-	p.TestResultChannel <- TestResult{
+	res := TestResult{
 		Success:     ping.success,
 		Profile:     profile,
 		SampleCount: ping.sampleCount,
+		FailReason:  ping.failReason,
+	}
+	// Non-blocking send: TestResultChannel is buffered (32). If the broadcast
+	// goroutine (handleTestResults) is briefly slow — typically because of
+	// a DB flush or a slow client — we drop the result on the floor rather
+	// than keeping this test goroutine (and the semaphore slot it owns)
+	// pinned. Dropping does mean a flaky UI may briefly miss a result but
+	// that's preferable to a wedged test queue that blocks Cancel and
+	// fresh enqueues. The DB will have already been updated when the next
+	// non-dropped result for this profile arrives.
+	select {
+	case p.TestResultChannel <- res:
+	default:
+		logger.Warnf("test %s (gid=%d id=%d): TestResultChannel full — dropping result latency=%dms",
+			profile.Name, profile.GroupId, profile.Id, ping.latencyMs)
 	}
 }
 

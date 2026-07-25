@@ -1,6 +1,7 @@
 target/
 .claude/
 .vscode/
+.opencode/
 *.log
 AGENTS.md
 ARCHITECTURE.md

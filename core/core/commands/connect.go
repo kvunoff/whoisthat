@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"fmt"
 	appconfig "whoisthat-core/lib/AppConfig"
 	"whoisthat-core/lib/logger"
 	proxy "whoisthat-core/lib/proxy/mainproxy"
@@ -34,7 +35,7 @@ func (cmd *Cmd) Connect(data structs.ConnectData, proxy_manager *proxy.ProxyMana
 	profile, err := cmd.DB.GetProfile(data.Profile.GroupId, data.Profile.Id)
 	if err != nil {
 		logger.Warn("connect: failed to get profile:", err)
-		cmd.warn("connect-failed", "Failed to connect")
+		cmd.warn("connect-failed", fmt.Sprintf("profile lookup failed: %v", err))
 		return
 	}
 	was_tun_enabled := tun_manager.IsEnabledLocked()
@@ -44,6 +45,7 @@ func (cmd *Cmd) Connect(data structs.ConnectData, proxy_manager *proxy.ProxyMana
 	}
 
 	killSwitchEnabled := appconfig.GetConfig().KillSwitchEnabled
+	tunName := appconfig.GetConfig().TunName
 
 	if killSwitchEnabled {
 		if err := tunmode.RemoveKillSwitchBlock(); err != nil {
@@ -51,9 +53,9 @@ func (cmd *Cmd) Connect(data structs.ConnectData, proxy_manager *proxy.ProxyMana
 		}
 	}
 
-	if err := proxy_manager.Connect(profile); err != nil {
+	if err := proxy_manager.Connect(profile, tunName); err != nil {
 		logger.Warn("connect failed:", err)
-		cmd.warn("connect-failed", "Failed to connect")
+		cmd.warn("connect-failed", err.Error())
 		return
 	}
 

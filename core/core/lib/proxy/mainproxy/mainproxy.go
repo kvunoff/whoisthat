@@ -40,6 +40,7 @@ type ProxyManager struct {
 	TestResultChannel chan TestResult
 	portPool          *portpool.PortPool
 	statsCancel       chan struct{}
+	statsApiPort      int
 	DB                *db.DB
 	proxyIPs          []string
 
@@ -82,7 +83,7 @@ func (p *ProxyManager) Init() {
 		"https://www.gstatic.com/generate_204",
 		"https://www.bing.com/",
 	}
-	test_channel := make(chan TestRequest)
+	test_channel := make(chan TestRequest, 256)
 	go p.listenForTests(test_channel)
 	p.testChannel = test_channel
 	p.TestResultChannel = make(chan TestResult, 32)
@@ -158,7 +159,7 @@ func isHysteriaProtocol(protocol string) bool {
 	return protocol == "hysteria2" || protocol == "hy2"
 }
 
-func (p *ProxyManager) Connect(profile structs.Profile) error {
+func (p *ProxyManager) Connect(profile structs.Profile, tunName string) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -183,6 +184,9 @@ func (p *ProxyManager) Connect(profile structs.Profile) error {
 
 	app_config := appconfig.GetConfig()
 
+	// Default 0 → ss-based fallback. Set to a portPool port on the xray path.
+	apiPort := 0
+
 	if isHysteriaProtocol(profile.Protocol) {
 		// Hysteria2 is NOT supported by xray-core; the official hysteria2
 		// client is spawned with a YAML config produced by the parser. xray
@@ -202,8 +206,20 @@ func (p *ProxyManager) Connect(profile structs.Profile) error {
 			return err
 		}
 
-		// Inject stats tracking config (policy + stats counters)
-		xray_config, err = injectStatsConfig(xray_config)
+		// Allocate a port for xray's gRPC StatsService listener. On failure
+		// (pool exhausted) we fall back to ss-based stats — apiPort stays 0,
+		// which disables injection of the api inbound/outbound and routes the
+		// collector to the legacy ss -tie path. The port is released in Stop().
+		allocated, apiErr := p.portPool.GetPort()
+		if apiErr != nil {
+			logger.Warnf("stats: port pool exhausted, falling back to ss -tie: %v", apiErr)
+		} else {
+			apiPort = allocated
+		}
+
+		// Inject stats tracking config (policy + stats counters, optional
+		// dokodemo-door API inbound when apiPort > 0).
+		xray_config, err = injectStatsConfig(xray_config, apiPort)
 		if err != nil {
 			logger.Warnf("failed to inject stats config: %v", err)
 		}
@@ -230,12 +246,24 @@ func (p *ProxyManager) Connect(profile structs.Profile) error {
 	logger.Infof("connected to %s (%s://%s)",
 		profile.Name, profile.Protocol, profile.Address)
 
-	// Start stats collector (uses ss -tie on SOCKS port, no xray gRPC API)
+	// Stop the previous stats goroutine and release the apiPort it was using
+	// (defends against leaks when Connect is called without an intervening
+	// Stop, e.g. switching profiles).
 	if p.statsCancel != nil {
 		close(p.statsCancel)
+		p.statsCancel = nil
 	}
+	if p.statsApiPort != 0 && p.portPool != nil {
+		p.portPool.ReleasePort(p.statsApiPort)
+		p.statsApiPort = 0
+	}
+
+	// Start stats collector. For xray use the gRPC StatsService on apiPort;
+	// for hysteria2 (and the apiPort=0 fallback) use ss -tie on the SOCKS port.
+	// Direct traffic is read from sysfs for the TUN device when one is configured.
 	p.statsCancel = make(chan struct{})
-	go p.collectStats(app_config.SocksPort, p.statsCancel, p.StatsChanged)
+	p.statsApiPort = apiPort
+	go p.collectStats(app_config.SocksPort, p.statsApiPort, tunName, p.statsCancel, p.StatsChanged)
 
 	p.status = structs.ProxyStatus{
 		Connection:  "connected",
@@ -263,6 +291,12 @@ func (p *ProxyManager) Stop() {
 	if p.statsCancel != nil {
 		close(p.statsCancel)
 		p.statsCancel = nil
+	}
+	if p.statsApiPort != 0 {
+		if p.portPool != nil {
+			p.portPool.ReleasePort(p.statsApiPort)
+		}
+		p.statsApiPort = 0
 	}
 	p.core.Stop()
 	p.status = structs.ProxyStatus{
