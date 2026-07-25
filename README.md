@@ -589,7 +589,7 @@ Covers:
 - **Message dispatch** (`src/core_client/dispatch.rs`) — all notification message types (19), unknown type handling, malformed JSON
 - **Routing form logic** (`src/ui/routing.rs`) — `form_to_rule` / `rule_to_form` for all 6 match types and 3 outbounds, round-trip consistency
 - **Settings layout** (`src/ui/settings.rs`) — grouped layout, cursor navigation skipping headers, clamping
-- **Text editor** (`src/main.rs`) — `edit_text_field`: insert, backspace, delete, cursor movement, Home/End boundary conditions
+- **Text editor** (`src/text_edit.rs`) — `edit_text_field`: insert, backspace, delete, cursor movement, Home/End boundary conditions
 - **Split-tunnel launcher** (`src/launcher.rs`) — `whoisthat run` usage-code path and PATH lookup
 
 ### Go
@@ -698,7 +698,17 @@ whoisthat/
 ├── README.md / AGENTS.md / UPDATE.md
 ├── install.sh          ← Universal installer / updater
 ├── src/                ← Rust TUI source
-│   ├── main.rs         ← Entry point, event loop, autoconnect, systemd setup, caps
+│   ├── main.rs         ← Entry point only: init logger, spawn core, terminal setup/teardown
+│   ├── event_loop.rs   ← AppEvent enum + run_loop (tokio::select! core_rx ↔ input_rx)
+│   ├── core_events.rs  ← handle_core_event — dispatches 22 CoreEvent broadcasts
+│   ├── input.rs        ← handle_input + handle_normal_input — key dispatch by tab/focus
+│   ├── popups.rs       ← Modal + routing popup key handlers, two-field forms
+│   ├── testing.rs      ← build_test_list, run_test_batch, persist_and_sync_test_config
+│   ├── text_edit.rs    ← edit_text_field line editor + clipboard paste + 15 tests
+│   ├── logger.rs       ← FileLogger (custom) + init/configure logger
+│   ├── core_spawn.rs   ← spawn_core, find_core_binary, ensure_core_caps (pkexec)
+│   ├── systemd.rs      ← Unit-file generation, linger, enable/disable service
+│   ├── net_info.rs     ← fetch_public_ip / fetch_public_ipv6 (raw TCP to ipify)
 │   ├── launcher.rs     ← `whoisthat run <app>` — launch into split-tunnel slice
 │   ├── config.rs       ← Config loader (~/.config/whoisthat/config.toml)
 │   ├── core_client/    ← IPC client for the Go core (Unix socket / TCP)
