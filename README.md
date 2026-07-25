@@ -34,7 +34,8 @@ curl -fsSL https://raw.githubusercontent.com/kvunoff/whoisthat/main/install.sh |
 
 The script auto-detects your distro, installs Go and Rust from official channels,
 builds everything from the latest tagged release, and copies binaries to `/usr/local/bin`.
-Xray-core is included. tun2socks is offered as an opt-in for TUN mode.
+Xray-core is included. tun2socks (TUN mode) and the official `hysteria` client
+(hysteria2 / hy2 profiles) are offered as opt-ins.
 
 ### Arch Linux (AUR)
 
@@ -71,7 +72,10 @@ sudo setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep /usr/local/bin/whoisthat-c
 ```
 
 Xray-core can be installed via `go install github.com/XTLS/Xray-core@latest`
-and moved to PATH. tun2socks is only needed for TUN mode.
+and moved to PATH. tun2socks is only needed for TUN mode. The official `hysteria`
+client (`go install github.com/apernet/hysteria2/v2@latest`) is required only
+for `hysteria2://` / `hy2://` profiles. Since v0.9.0 the core emits a startup
+warn to the TUI when any of these are missing — see Troubleshooting.
 
 ### Configuration
 
@@ -107,7 +111,7 @@ By default the TUI talks to the core over a **Unix domain socket** (see [IPC tra
   "tun-name": "whoisthattun",
   "hwid-enabled": true,
   "hwid": "1fb1e0141ab3e35a",
-  "user-agent": "whoisthat/v0.7.2",
+  "user-agent": "whoisthat/v0.9.0",
   "kill-switch-enabled": false,
   "autoconnect-enabled": false,
   "autoconnect-group-id": 0,
@@ -144,13 +148,14 @@ Encrypted at rest with AES-256-GCM — key auto-generated on first run.
 - Full system-wide TUN-mode VPN (`tun2socks` + `iptables`/`nftables`, auto-detected)
 - **Profile testing** — three methods: TCP connect (fast prefilter), HTTP GET, HTTP HEAD via SOCKS5. Multi-sample (default 3) with median latency, jitter, and packet-loss %.
 - **Per-protocol dispatch** — xray protocols (vless/vmess/trojan/ss/socks/http) spawn a mini xray; hysteria2 profiles spawn the official `hysteria` client. No more "everything goes to xray and fails for hy2".
-- **Test progress** — pending profiles show `…` immediately; in-flight batches broadcast tested/total progress. `C` cancels in-flight tests gracefully (epoch counter; no orphan subprocesses).
+- **Missing-binary UX** — on startup the core probes for xray, hysteria, tun2socks, and whoisthat-parser; each miss is unicast to the freshly-connected TUI as a `warn` with an actionable install hint. Connect-time errors also forward the real underlying `err.Error()` (no more generic "Failed to connect" hiding "binary not found").
+- **Test progress** — pending profiles show `…` immediately; in-flight batches broadcast tested/total progress. `C` cancels in-flight tests gracefully (epoch counter; no orphan subprocesses — also drops queued work before it spawns xray/hysteria). Test failures broadcast the reason as a `warn` (throttled to one per-reason per 5s so a 50-profile hy2 batch with no hysteria binary emits one warning, not fifty).
 - **Scan-all testing** — `t` scans all profiles across all groups with dedup; `T` tests only focused profile/subscription. Group-focused tests use the single `test-group` TCP command for efficiency.
 - **Auto-test on subscription refresh** — profiles are tested automatically after `u` so you see live latencies immediately. Toggle in Settings → Diagnostics.
 - **Custom routing rules** — domain, IP, protocol, port, geoip, geosite → proxy/direct/block (`r` tab). `direct` outbound works correctly in TUN mode via SO_MARK + fwmark routing (no root required). Use ←/→ to cycle type/outbound in the form.
 - **Kill-switch** — When enabled, blocks all non-VPN traffic if the connection drops. Uses a dedicated firewall table (`whoisthat_ks`, `whoisthat_ks_v6`) entirely independent of TUN rules — safe to combine with any routing setup. Works in both SOCKS and TUN modes. Toggle in Settings. Orphaned tables from a crashed session are auto-reconciled on next core startup.
 - **Split tunnel** — route specific apps differently from the rest of the system. `exclude` mode makes launched apps bypass the tunnel (everything else is protected); `include` mode routes *only* launched apps through the tunnel (everything else goes direct). Launch an app into the split slice with `whoisthat run <app>`. Uses cgroup v2 socket matching + fwmark routing. Set the mode in Settings → Network.
-- Real-time connection status with uplink/downlink traffic stats
+- Real-time connection status with per-second uplink/downlink traffic stats (proxy via xray gRPC StatsService; direct/TUN via `/sys/class/net/<tun>/statistics` — hysteria2 falls back to legacy `ss -tie` since it has no stats API)
 - **Log viewer** — live tail from core log, auto-scroll, [WARN]/[ERRO] highlighting
 - **Configurable** — DNS servers, proxy ports, log level, test method, HWID, user-agent via settings and config files
 - **Authenticated IPC** — the TUI ↔ core channel is a Unix domain socket (mode `0600`, owned by the invoking user) under `$XDG_RUNTIME_DIR/whoisthat/`, so other local users can't command the capability-holding core. Legacy TCP on `127.0.0.1:4897` is opt-in (`tcp-enabled` in core config)
@@ -260,7 +265,7 @@ When subscription updates are fetched, the core sends HTTP headers identifying t
 | `x-device-os` | `Linux` | `runtime.GOOS` |
 | `x-ver-os` | `6.12.0-arch1-1` | `uname -r` |
 | `x-device-model` | `Arch Linux` | `/etc/os-release` PRETTY_NAME |
-| `user-agent` | `whoisthat/v0.7.2` | User-configurable (Settings) |
+| `user-agent` | `whoisthat/v0.9.0` | User-configurable (Settings) |
 
 Response headers (`x-hwid-max-devices-reached`, `x-hwid-not-supported`, `x-hwid-limit`) are inspected and trigger warnings when device limits are reached.
 
@@ -437,7 +442,7 @@ Subscription metadata (`sub_*`) is populated from the `subscription-userinfo` HT
 | HWID: Enabled | on/off | Send HWID headers with subscription requests |
 | HWID | 1fb1e0141ab3e35a | Device identifier (read-only, auto-generated) |
 | Reset HWID | ⏎ | Generate a new random HWID |
-| User-Agent | whoisthat/v0.7.2 | User-Agent header (editable — press Enter to modify) |
+| User-Agent | whoisthat/v0.9.0 | User-Agent header (editable — press Enter to modify) |
 
 Navigate with `j`/`k`, press `Enter`/`Space` to toggle, cycle values, open edit popups, or execute actions.
 
@@ -569,6 +574,9 @@ sudo loginctl disable-linger $USER           # revoke
 | `whoisthat-screen.jpg` doesn't exist in build artifact | Image is checked into the repo but not in `target/` — only used by the README on GitHub | Ignore — it's display-only, not a runtime asset |
 | Logs pane is empty | No core log file, or log level filtering hides everything | Press `f` in the Logs tab to cycle the level filter; or raise log level in Settings |
 | `Cannot decrypt DB file` style errors in core log | Key file `~/.local/share/whoisthat/db/.key` was moved or deleted, but encrypted files remain | Keep the `.key` file — it's the AES-256-GCM master key, no fallback. If unsalvageable: stop core, delete `~/.local/share/whoisthat/db/`, restart to generate fresh key + empty DB |
+| `Warning: hysteria binary not installed — hysteria2:// / hy2:// profiles will not work` on TUI startup | Pre-flight check (v0.9.0+) didn't find `hysteria` on PATH | `go install github.com/apernet/hysteria2/v2@latest && sudo install -Dm755 ~/go/bin/hysteria /usr/local/bin/hysteria` (or run `install.sh` again and answer `y` to the hysteria2 prompt). Same shape for `xray` / `tun2socks` / `whoisthat-parser` |
+| Pressing `c` on a hysteria2 profile shows `Warning: failed to start hysteria: binary "hysteria" not found` instead of the old generic "Failed to connect" | Same cause — missing hysteria binary | Same fix — install `hysteria` per the row above |
+| Testing a hy2 group shows `Warning: 🇮🇹 …: hysteria.Start failed: ... (is the binary installed?)` once even though 50 profiles failed | Throttled test-failure warn (v0.9.0+): identical reasons collapse to one broadcast per 5s to keep the status bar readable | Install `hysteria`; the remaining failures will clear on the next `t`/`T` pass |
 
 **If you hit something not listed here:** `tail -f ~/.config/whoisthat/core.log whoisthat.log` and reproduce. Both logs are the first place to look — not the source code.
 
