@@ -16,6 +16,16 @@ type ResolvedIPs struct {
 }
 
 func ResolveDomain(domain string, dnsServers []string) (*ResolvedIPs, error) {
+	if ip := net.ParseIP(domain); ip != nil {
+		result := &ResolvedIPs{}
+		if ip.To4() != nil {
+			result.IPv4 = []string{domain}
+		} else {
+			result.IPv6 = []string{domain}
+		}
+		return result, nil
+	}
+
 	result := &ResolvedIPs{}
 	ipSet4 := make(map[string]bool)
 	ipSet6 := make(map[string]bool)

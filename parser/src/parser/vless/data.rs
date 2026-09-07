@@ -7,18 +7,15 @@ pub fn get_data(uri: &str) -> Result<RawData, String> {
         .split_once("vless://")
         .ok_or_else(|| "Invalid vless URI: missing 'vless://'".to_string())?
         .1;
-    let query_and_name = uri
-        .split_once("?")
-        .ok_or_else(|| "Missing query in vless URI".to_string())?
-        .1;
-    let (raw_query, name) = query_and_name
-        .split_once("#")
-        .unwrap_or((query_and_name, ""));
-    let parsed_address = parse_vless_address(
-        data.split_once("?")
-            .ok_or_else(|| "Missing '?' in vless URI".to_string())?
-            .0,
-    )?;
+    let (rest, name) = match data.split_once('#') {
+        Some((r, n)) => (r, n),
+        None => (data, ""),
+    };
+    let (raw_address_part, raw_query) = match rest.split_once('?') {
+        Some((a, q)) => (a, q),
+        None => (rest, ""),
+    };
+    let parsed_address = parse_vless_address(raw_address_part)?;
     let query: Vec<(&str, &str)> = querystring::querify(raw_query);
 
     Ok(RawData {
@@ -60,9 +57,9 @@ pub fn get_data(uri: &str) -> Result<RawData, String> {
 }
 
 fn parse_vless_address(raw_data: &str) -> Result<UserAddress, String> {
-    let (uuid_raw, raw_address) = raw_data.split_once("@").ok_or_else(|| {
-        "Wrong vless format, no `@` found in the address".to_string()
-    })?;
+    let (uuid_raw, raw_address) = raw_data
+        .split_once("@")
+        .ok_or_else(|| "Wrong vless format, no `@` found in the address".to_string())?;
     let uuid = String::from(uuid_raw);
     let address_wo_slash = raw_address.strip_suffix("/").unwrap_or(raw_address);
 
@@ -70,8 +67,8 @@ fn parse_vless_address(raw_data: &str) -> Result<UserAddress, String> {
         .parse()
         .map_err(|e| format!("Invalid vless address URI: {}", e))?;
 
-    let uuid = url_decode(Some(uuid))
-        .ok_or_else(|| "Failed to URL-decode vless UUID".to_string())?;
+    let uuid =
+        url_decode(Some(uuid)).ok_or_else(|| "Failed to URL-decode vless UUID".to_string())?;
 
     Ok(UserAddress {
         uuid,
@@ -176,10 +173,14 @@ mod tests {
     }
 
     #[test]
-    fn missing_query_returns_error() {
-        let result = get_data("vless://uuid@example.com:443");
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Missing query"));
+    fn parses_without_query() {
+        let result = get_data("vless://uuid@example.com:443#MyServer");
+        assert!(result.is_ok());
+        let data = result.unwrap();
+        assert_eq!(data.uuid, Some("uuid".to_string()));
+        assert_eq!(data.address, Some("example.com".to_string()));
+        assert_eq!(data.port, Some(443));
+        assert_eq!(data.remarks, "MyServer");
     }
 
     #[test]

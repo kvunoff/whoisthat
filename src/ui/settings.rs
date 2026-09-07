@@ -162,6 +162,7 @@ pub struct SettingsValues<'a> {
 pub struct SettingsState {
     pub list_state: ListState,
     pub item_cursor: usize,
+    pub scroll: usize,
 }
 
 impl SettingsState {
@@ -169,8 +170,9 @@ impl SettingsState {
         let mut s = Self {
             list_state: ListState::default(),
             item_cursor: 0,
+            scroll: 0,
         };
-        s.list_state.select(Some(0));
+        s.list_state.select(Some(1));
         s
     }
 
@@ -326,13 +328,27 @@ pub fn render_settings(
         })
         .collect();
 
+    // Keep cursor visible by adjusting scroll (mirrors tree.rs)
+    let visible = content_area.height.saturating_sub(1) as usize;
+    if state.item_cursor == 0 {
+        state.scroll = 0;
+    } else if selected_flat < state.scroll {
+        state.scroll = selected_flat;
+    } else if visible > 0 && selected_flat >= state.scroll + visible {
+        state.scroll = selected_flat.saturating_sub(visible).saturating_add(1);
+    }
+
+    let mut list_state = ListState::default()
+        .with_selected(Some(selected_flat))
+        .with_offset(state.scroll);
+
     let list = List::new(items)
-        .highlight_style(Style::default().fg(ACCENT))
+        .highlight_style(Style::default())
         .scroll_padding(3);
 
-    let mut ls = state.list_state.clone();
-    f.render_stateful_widget(list, content_area, &mut ls);
-    state.list_state = ls;
+    f.render_stateful_widget(list, content_area, &mut list_state);
+    state.scroll = list_state.offset();
+    state.list_state = list_state;
 
     let help = Paragraph::new(" j/k navigate  │  Enter/Space toggle / cycle / edit")
         .style(s_faint())
@@ -406,5 +422,26 @@ mod tests {
         s.cursor_up();
         s.cursor_up();
         assert_eq!(s.item_cursor, 0);
+    }
+
+    #[test]
+    fn test_settings_scroll_keeps_cursor_visible() {
+        let mut s = SettingsState::new();
+        let visible_height = 10usize;
+        let visible = visible_height.saturating_sub(1);
+
+        for _ in 0..item_count() {
+            let flat = s.flat_index();
+            if s.item_cursor == 0 {
+                s.scroll = 0;
+            } else if flat < s.scroll {
+                s.scroll = flat;
+            } else if visible > 0 && flat >= s.scroll + visible {
+                s.scroll = flat.saturating_sub(visible).saturating_add(1);
+            }
+            assert!(flat >= s.scroll);
+            assert!(flat <= s.scroll + visible);
+            s.cursor_down();
+        }
     }
 }

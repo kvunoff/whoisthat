@@ -37,6 +37,11 @@ func (x *XrayCore) Start(stdinPipe []byte) error {
 		return fmt.Errorf("command is already running")
 	}
 
+	if x.Exited == nil || x.channel_closed {
+		x.Exited = make(chan error, 1)
+		x.channel_closed = false
+	}
+
 	xraybin, err := utils.GetXrayBin()
 	if err != nil {
 		return fmt.Errorf("failed to start xray %w", err)
@@ -116,15 +121,14 @@ func (x *XrayCore) Start(stdinPipe []byte) error {
 		x.mu.Lock()
 		defer x.mu.Unlock()
 		if ctx.Err() == nil {
-			select {
-			case x.Exited <- err:
-				if x.running {
-					close(x.Exited)
-					x.channel_closed = true
+			x.running = false
+			if !x.channel_closed {
+				select {
+				case x.Exited <- err:
+				default:
 				}
-				x.running = false
-			default:
-				// Channel is full or no reader, don't block
+				close(x.Exited)
+				x.channel_closed = true
 			}
 		}
 

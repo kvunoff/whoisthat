@@ -15,8 +15,11 @@ pub(crate) fn edit_text_field(s: &mut String, cursor: &mut usize, key: KeyEvent)
     match key.code {
         KeyCode::Char(c) if c == 'v' && matches!(key.modifiers, KeyModifiers::CONTROL) => {
             if let Some(clip) = read_clipboard() {
-                *s = clip;
-                *cursor = s.chars().count();
+                let char_count = s.chars().count();
+                let c_idx = (*cursor).min(char_count);
+                let byte_idx = char_to_byte_idx(s, c_idx);
+                s.insert_str(byte_idx, &clip);
+                *cursor = c_idx + clip.chars().count();
             }
             false
         }

@@ -29,6 +29,11 @@ func (n *Tun2Socks) Start(tun_name string, port int) error {
 		return fmt.Errorf("command is already running")
 	}
 
+	if n.Exited == nil || n.channel_closed {
+		n.Exited = make(chan error, 1)
+		n.channel_closed = false
+	}
+
 	tun2socksbin, err := utils.GetTun2socksBin()
 	if err != nil {
 		return fmt.Errorf("failed to start tun: %w", err)
@@ -58,15 +63,14 @@ func (n *Tun2Socks) Start(tun_name string, port int) error {
 		n.mu.Lock()
 		defer n.mu.Unlock()
 		if ctx.Err() == nil {
-			select {
-			case n.Exited <- err:
-				if n.running {
-					close(n.Exited)
-					n.channel_closed = true
+			n.running = false
+			if !n.channel_closed {
+				select {
+				case n.Exited <- err:
+				default:
 				}
-				n.running = false
-			default:
-				// Channel is full or no reader, don't block
+				close(n.Exited)
+				n.channel_closed = true
 			}
 		}
 

@@ -43,25 +43,33 @@ pub(crate) fn build_test_list(app: &ui::App, focused_only: bool) -> Vec<(i32, i3
 }
 
 pub(crate) async fn run_test_batch(app: &mut ui::App, client: &CoreClient, list: &[(i32, i32)]) {
+    if list.is_empty() {
+        return;
+    }
     for (gid, pid) in list {
         app.mark_pending(*gid, *pid);
     }
     let method = app.test_method.clone();
     let samples = app.test_config.samples_per_test;
 
-    let mut single_group = None;
-    for (gid, _) in list {
-        if *gid != list[0].0 {
-            single_group = None;
-            break;
-        }
-        single_group = Some(*gid);
-    }
-    if let Some(gid) = single_group {
-        let _ = client.test_group(gid, &method, samples).await;
+    if list.len() == 1 {
+        let (gid, pid) = list[0];
+        let _ = client.test_profile(gid, pid, &method).await;
     } else {
-        for (gid, pid) in list {
-            let _ = client.test_profile(*gid, *pid, &method).await;
+        let first_gid = list[0].0;
+        let is_single_group = list.iter().all(|(gid, _)| *gid == first_gid);
+        let group_profile_count = app
+            .groups
+            .iter()
+            .find(|g| g.group.id == first_gid)
+            .map_or(0, |g| g.profiles.len());
+
+        if is_single_group && list.len() == group_profile_count {
+            let _ = client.test_group(first_gid, &method, samples).await;
+        } else {
+            for (gid, pid) in list {
+                let _ = client.test_profile(*gid, *pid, &method).await;
+            }
         }
     }
     app.msg(format!("Testing {} profiles...", list.len()));

@@ -10,6 +10,9 @@ import (
 )
 
 func RealUserUid() int {
+	if uid := os.Getuid(); uid > 0 {
+		return uid
+	}
 	if s := os.Getenv("SUDO_UID"); s != "" {
 		if uid, err := strconv.Atoi(s); err == nil && uid > 0 {
 			return uid
@@ -39,6 +42,9 @@ func RealUserUid() int {
 }
 
 func RealUserGid() int {
+	if gid := os.Getgid(); gid > 0 {
+		return gid
+	}
 	if s := os.Getenv("SUDO_GID"); s != "" {
 		if gid, err := strconv.Atoi(s); err == nil && gid > 0 {
 			return gid

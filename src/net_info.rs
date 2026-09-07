@@ -24,7 +24,10 @@ pub(crate) fn fetch_public_ip() -> Option<String> {
 }
 
 pub(crate) fn fetch_public_ipv6() -> Option<String> {
-    let addr = "api6.ipify.org:80".to_socket_addrs().ok()?.next()?;
+    let addr = "api6.ipify.org:80"
+        .to_socket_addrs()
+        .ok()?
+        .find(|a| a.is_ipv6())?;
     let mut stream = TcpStream::connect_timeout(&addr, Duration::from_secs(5)).ok()?;
     stream.set_read_timeout(Some(Duration::from_secs(5))).ok()?;
     stream

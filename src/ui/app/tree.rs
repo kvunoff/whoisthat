@@ -99,7 +99,9 @@ impl App {
                     -2 => Span::styled(" ...", s_dim()),
                     -1 => Span::styled(" err", s_error()),
                     0 => Span::styled("", s_dim()),
-                    ms => Span::styled(format!(" {}ms", ms), s_success()),
+                    ms if ms < 500 => Span::styled(format!(" {}ms", ms), s_success()),
+                    ms if ms < 1000 => Span::styled(format!(" {}ms", ms), s_warn()),
+                    ms => Span::styled(format!(" {}ms", ms), s_error()),
                 };
                 let style = if pos - 1 == self.cursor && left_focus {
                     s_text()
@@ -206,7 +208,9 @@ impl App {
                     -2 => Span::styled(" ...", s_dim()),
                     -1 => Span::styled(" err", s_error()),
                     0 => Span::styled("", s_dim()),
-                    ms => Span::styled(format!(" {}ms", ms), s_success()),
+                    ms if ms < 500 => Span::styled(format!(" {}ms", ms), s_success()),
+                    ms if ms < 1000 => Span::styled(format!(" {}ms", ms), s_warn()),
+                    ms => Span::styled(format!(" {}ms", ms), s_error()),
                 };
                 let style = if pos - 1 == self.cursor && left_focus {
                     s_text()

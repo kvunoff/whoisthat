@@ -7,18 +7,15 @@ pub fn get_data(uri: &str) -> Result<RawData, String> {
         .split_once("trojan://")
         .ok_or_else(|| "Invalid trojan URI: missing 'trojan://'".to_string())?
         .1;
-    let query_and_name = uri
-        .split_once("?")
-        .ok_or_else(|| "Missing query in trojan URI".to_string())?
-        .1;
-    let (raw_query, name) = query_and_name
-        .split_once("#")
-        .unwrap_or((query_and_name, ""));
-    let parsed_address = parse_trojan_address(
-        data.split_once("?")
-            .ok_or_else(|| "Missing '?' in trojan URI".to_string())?
-            .0,
-    )?;
+    let (rest, name) = match data.split_once('#') {
+        Some((r, n)) => (r, n),
+        None => (data, ""),
+    };
+    let (raw_address_part, raw_query) = match rest.split_once('?') {
+        Some((a, q)) => (a, q),
+        None => (rest, ""),
+    };
+    let parsed_address = parse_trojan_address(raw_address_part)?;
     let query: Vec<(&str, &str)> = querystring::querify(raw_query);
 
     Ok(RawData {
@@ -70,8 +67,8 @@ fn parse_trojan_address(raw_data: &str) -> Result<UserAddress, String> {
         .parse()
         .map_err(|e| format!("Invalid trojan address URI: {}", e))?;
 
-    let uuid = url_decode(Some(uuid))
-        .ok_or_else(|| "Failed to URL-decode trojan password".to_string())?;
+    let uuid =
+        url_decode(Some(uuid)).ok_or_else(|| "Failed to URL-decode trojan password".to_string())?;
 
     Ok(UserAddress {
         uuid,
@@ -110,7 +107,9 @@ mod tests {
 
     #[test]
     fn parses_with_tls_and_sni() {
-        let result = get_data("trojan://pw@example.com:443?security=tls&sni=sni.example.com&allowInsecure=true");
+        let result = get_data(
+            "trojan://pw@example.com:443?security=tls&sni=sni.example.com&allowInsecure=true",
+        );
         assert!(result.is_ok());
         let data = result.unwrap();
         assert_eq!(data.security, Some("tls".to_string()));
@@ -134,10 +133,14 @@ mod tests {
     }
 
     #[test]
-    fn missing_query_returns_error() {
-        let result = get_data("trojan://pw@example.com:443");
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Missing query"));
+    fn parses_without_query() {
+        let result = get_data("trojan://pw@example.com:443#MyTrojan");
+        assert!(result.is_ok());
+        let data = result.unwrap();
+        assert_eq!(data.uuid, Some("pw".to_string()));
+        assert_eq!(data.address, Some("example.com".to_string()));
+        assert_eq!(data.port, Some(443));
+        assert_eq!(data.remarks, "MyTrojan");
     }
 
     #[test]

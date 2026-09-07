@@ -86,9 +86,9 @@ func (p *ProxyManager) Init() {
 	test_channel := make(chan TestRequest, 256)
 	go p.listenForTests(test_channel)
 	p.testChannel = test_channel
-	p.TestResultChannel = make(chan TestResult, 32)
+	p.TestResultChannel = make(chan TestResult, 256)
 	p.core = &xray.XrayCore{
-		Exited: make(chan error),
+		Exited: make(chan error, 1),
 	}
 	test_port_range := appconfig.GetConfig().TestPortRange
 	p.portPool = portpool.CreatePortPool(test_port_range.Start, test_port_range.End)
@@ -196,7 +196,7 @@ func (p *ProxyManager) Connect(profile structs.Profile, tunName string) error {
 		if err != nil {
 			return err
 		}
-		p.core = &hysteria.HysteriaCore{Exited: make(chan error)}
+		p.core = &hysteria.HysteriaCore{Exited: make(chan error, 1)}
 		if err := p.core.Start(yaml_config); err != nil {
 			return err
 		}
@@ -235,7 +235,7 @@ func (p *ProxyManager) Connect(profile structs.Profile, tunName string) error {
 			logger.Infof("routing: outbounds %d → %d", prevOutboundsCount, afterOutboundsCount)
 		}
 
-		p.core = &xray.XrayCore{Exited: make(chan error)}
+		p.core = &xray.XrayCore{Exited: make(chan error, 1)}
 		if err := p.core.Start(xray_config); err != nil {
 			return err
 		}

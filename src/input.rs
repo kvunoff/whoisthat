@@ -179,6 +179,23 @@ async fn handle_normal_input(
             app.tab = ActiveTab::Profiles;
             return false;
         }
+        KeyCode::Char('2') => {
+            app.routing_popup = None;
+            app.tab = ActiveTab::Routing;
+            app.focus = Focus::LeftPanel;
+            let _ = client.get_routing().await;
+            return false;
+        }
+        KeyCode::Char('3') => {
+            app.tab = ActiveTab::Logs;
+            app.focus = Focus::LeftPanel;
+            return false;
+        }
+        KeyCode::Char('4') => {
+            app.tab = ActiveTab::Settings;
+            app.focus = Focus::LeftPanel;
+            return false;
+        }
         KeyCode::Char('h') | KeyCode::Char('?') => {
             app.help_scroll = 0;
             app.popup = Some(Popup::Help);

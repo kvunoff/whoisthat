@@ -24,8 +24,11 @@ fn get_raw_data_from_base64(decoded_base64: &[u8]) -> Result<RawData, String> {
     let json = serde_json::from_str::<Value>(json_str)
         .map_err(|e| format!("Invalid JSON in vmess base64: {}", e))?;
 
-    let port = get_str_field(&json, "port")
-        .and_then(|s| s.parse::<u16>().ok());
+    let port = json.get("port").and_then(|v| {
+        v.as_u64()
+            .and_then(|n| u16::try_from(n).ok())
+            .or_else(|| v.as_str().and_then(|s| s.parse::<u16>().ok()))
+    });
 
     Ok(RawData {
         remarks: url_decode(get_str_field(&json, "ps")).unwrap_or(String::from("")),
@@ -70,13 +73,14 @@ fn get_str_field(json: &Value, field: &str) -> Option<String> {
 }
 
 fn get_raw_data_from_uri(data: &str) -> Result<RawData, String> {
-    let (before_query, query_and_name) = data
-        .split_once("?")
-        .ok_or_else(|| "Missing query in vmess URI".to_string())?;
-
-    let (raw_query, name) = query_and_name
-        .split_once("#")
-        .unwrap_or((query_and_name, ""));
+    let (rest, name) = match data.split_once('#') {
+        Some((r, n)) => (r, n),
+        None => (data, ""),
+    };
+    let (before_query, raw_query) = match rest.split_once('?') {
+        Some((b, q)) => (b, q),
+        None => (rest, ""),
+    };
     let parsed_address = parse_vmess_address(before_query)?;
     let query: Vec<(&str, &str)> = querystring::querify(raw_query);
 
@@ -119,12 +123,9 @@ fn get_raw_data_from_uri(data: &str) -> Result<RawData, String> {
 }
 
 fn parse_vmess_address(raw_data: &str) -> Result<UserAddress, String> {
-    let (uuid_raw, raw_address) = raw_data
-        .split_once("@")
-        .ok_or_else(|| {
-            "Wrong vmess format, no `@` found in the address and it was not a valid base64"
-                .to_string()
-        })?;
+    let (uuid_raw, raw_address) = raw_data.split_once("@").ok_or_else(|| {
+        "Wrong vmess format, no `@` found in the address and it was not a valid base64".to_string()
+    })?;
     let uuid = String::from(uuid_raw);
     let address_wo_slash = raw_address.strip_suffix("/").unwrap_or(raw_address);
 
@@ -132,8 +133,8 @@ fn parse_vmess_address(raw_data: &str) -> Result<UserAddress, String> {
         .parse()
         .map_err(|e| format!("Invalid vmess address URI: {}", e))?;
 
-    let uuid = url_decode(Some(uuid))
-        .ok_or_else(|| "Failed to URL-decode vmess UUID".to_string())?;
+    let uuid =
+        url_decode(Some(uuid)).ok_or_else(|| "Failed to URL-decode vmess UUID".to_string())?;
 
     Ok(UserAddress {
         uuid,
@@ -274,7 +275,9 @@ mod tests {
 
         #[test]
         fn raw_uri_with_multiple_query_params() {
-            let result = get_data("vmess://uuid@example.com:443?security=tls&sni=sni.com&type=grpc&encryption=none");
+            let result = get_data(
+                "vmess://uuid@example.com:443?security=tls&sni=sni.com&type=grpc&encryption=none",
+            );
             assert!(result.is_ok());
             let data = result.unwrap();
             assert_eq!(data.security, Some("tls".to_string()));
@@ -282,5 +285,26 @@ mod tests {
             assert_eq!(data.r#type, Some("grpc".to_string()));
             assert_eq!(data.encryption, Some("none".to_string()));
         }
+
+        #[test]
+        fn parses_raw_uri_without_query() {
+            let result = get_data("vmess://uuid123@example.com:443#Remarks");
+            assert!(result.is_ok());
+            let data = result.unwrap();
+            assert_eq!(data.uuid, Some("uuid123".to_string()));
+            assert_eq!(data.address, Some("example.com".to_string()));
+            assert_eq!(data.port, Some(443));
+            assert_eq!(data.remarks, "Remarks");
+        }
+    }
+
+    #[test]
+    fn json_with_integer_port() {
+        let json_str = r#"{"add":"example.com","port":443,"id":"uuid","ps":"name","net":"tcp","tls":"","type":"none"}"#;
+        let uri = format!("vmess://{}", general_purpose::STANDARD.encode(json_str));
+        let result = get_data(&uri);
+        assert!(result.is_ok());
+        let data = result.unwrap();
+        assert_eq!(data.port, Some(443));
     }
 }

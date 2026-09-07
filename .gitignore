@@ -2,9 +2,9 @@ target/
 .claude/
 .vscode/
 .opencode/
+.freebuff/
 *.log
 AGENTS.md
 ARCHITECTURE.md
 UPDATE.md
 whoisthat-core
-.freebuff/

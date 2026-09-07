@@ -10,6 +10,7 @@ pub const TEXT_DIM: Color = Color::Rgb(86, 95, 137); // #565f89
 pub const TEXT_FAINT: Color = Color::Rgb(59, 66, 97); // #3b4261
 
 pub const SUCCESS: Color = Color::Rgb(158, 206, 106); // #9ece6a soft green
+pub const WARN: Color = Color::Rgb(224, 175, 104); // #e0af68 warm yellow
 pub const ERROR: Color = Color::Rgb(247, 118, 142); // #f7768e soft red
 pub const DISCONNECTED: Color = Color::Rgb(86, 95, 137); // #565f89
 
@@ -33,6 +34,9 @@ pub fn s_accent_bold() -> Style {
 }
 pub fn s_success() -> Style {
     Style::default().fg(SUCCESS)
+}
+pub fn s_warn() -> Style {
+    Style::default().fg(WARN)
 }
 pub fn s_error() -> Style {
     Style::default().fg(ERROR)

@@ -297,9 +297,9 @@ func (p *ProxyManager) test(req TestRequest) pingResult {
 				req.Profile.Name, req.Profile.GroupId, req.Profile.Id,
 				req.Profile.Protocol, req.Profile.Address)
 		}
-		return p.testViaXray(req.Profile, samples)
+		return p.testViaXray(req.Profile, req.Method, samples)
 	}
-	return p.testViaHysteria(req.Profile, samples)
+	return p.testViaHysteria(req.Profile, req.Method, samples)
 }
 
 // testTcpOnly is the legacy "raw TCP dial to server:port" measurement.
@@ -355,8 +355,8 @@ func (p *ProxyManager) serverReachable(profile structs.Profile) bool {
 
 // testViaXray spawns the xray subprocess with the profile's parsed
 // config, polls its SOCKS5 listener for readiness, then issues N HTTP
-// GETs via the SOCKS5 proxy and computes median + jitter + loss.
-func (p *ProxyManager) testViaXray(profile structs.Profile, samples int) pingResult {
+// GETs/HEADs via the SOCKS5 proxy and computes median + jitter + loss.
+func (p *ProxyManager) testViaXray(profile structs.Profile, method string, samples int) pingResult {
 	port, err := p.portPool.GetPort()
 	if err != nil {
 		logger.Warnf("test %s (gid=%d id=%d): port pool exhausted: %v",
@@ -373,7 +373,7 @@ func (p *ProxyManager) testViaXray(profile structs.Profile, samples int) pingRes
 		return pingResult{latencyMs: -1, sampleCount: samples, lossPct: 100, failReason: fmt.Sprintf("ParseUri failed: %v", err)}
 	}
 
-	xray_core := xray.XrayCore{Exited: make(chan error)}
+	xray_core := xray.XrayCore{Exited: make(chan error, 1)}
 	if err := xray_core.Start(parsed); err != nil {
 		logger.Warnf("test %s (gid=%d id=%d): xray.Start failed: %v",
 			profile.Name, profile.GroupId, profile.Id, err)
@@ -386,13 +386,13 @@ func (p *ProxyManager) testViaXray(profile structs.Profile, samples int) pingRes
 			profile.Name, profile.GroupId, profile.Id, port)
 		return pingResult{latencyMs: -1, sampleCount: samples, lossPct: 100, failReason: fmt.Sprintf("xray SOCKS listener did not bind on port %d within 4s", port)}
 	}
-	return p.runSamples(profile, port, samples)
+	return p.runSamples(profile, method, port, samples)
 }
 
 // testViaHysteria spawns the hysteria2 client with the profile's parsed
 // YAML and uses its SOCKS5 listener for the HTTP samples. Mirrors
 // testViaXray but calls ParseUriHysteria + HysteriaCore.
-func (p *ProxyManager) testViaHysteria(profile structs.Profile, samples int) pingResult {
+func (p *ProxyManager) testViaHysteria(profile structs.Profile, method string, samples int) pingResult {
 	port, err := p.portPool.GetPort()
 	if err != nil {
 		logger.Warnf("test %s (gid=%d id=%d): port pool exhausted: %v",
@@ -409,7 +409,7 @@ func (p *ProxyManager) testViaHysteria(profile structs.Profile, samples int) pin
 		return pingResult{latencyMs: -1, sampleCount: samples, lossPct: 100, failReason: fmt.Sprintf("ParseUriHysteria failed: %v", err)}
 	}
 
-	hyCore := hysteria.HysteriaCore{Exited: make(chan error)}
+	hyCore := hysteria.HysteriaCore{Exited: make(chan error, 1)}
 	if err := hyCore.Start(yaml_config); err != nil {
 		// The most common cause for a silent "always error" hysteria2
 		// test result is a missing/broken hysteria binary. Surface a
@@ -432,14 +432,14 @@ func (p *ProxyManager) testViaHysteria(profile structs.Profile, samples int) pin
 			profile.Name, profile.GroupId, profile.Id, reason)
 		return pingResult{latencyMs: -1, sampleCount: samples, lossPct: 100, failReason: reason}
 	}
-	return p.runSamples(profile, port, samples)
+	return p.runSamples(profile, method, port, samples)
 }
 
-// runSamples issues N independent HTTP GETs through the SOCKS5 proxy at
+// runSamples issues N independent HTTP GETs/HEADs through the SOCKS5 proxy at
 // 127.0.0.1:port, using the test endpoints as fallback. Records per-
 // sample latency (only the primary endpoint counts), computes median,
 // max-min jitter, and loss%.
-func (p *ProxyManager) runSamples(profile structs.Profile, port, samples int) pingResult {
+func (p *ProxyManager) runSamples(profile structs.Profile, method string, port, samples int) pingResult {
 	if samples < 1 {
 		samples = 1
 	}
@@ -461,7 +461,7 @@ func (p *ProxyManager) runSamples(profile structs.Profile, port, samples int) pi
 			failures += samples - i
 			break
 		}
-		ms, ok := p.oneSample(port, timeout, endpoints)
+		ms, ok := p.oneSample(port, method, timeout, endpoints)
 		if !ok {
 			failures++
 			continue
@@ -500,10 +500,10 @@ func (p *ProxyManager) runSamples(profile structs.Profile, port, samples int) pi
 	}
 }
 
-// oneSample does a single HTTP GET through SOCKS5 against the configured
+// oneSample does a single HTTP GET/HEAD through SOCKS5 against the configured
 // endpoint (with fallback to the alternates). Returns (latencyMs, true)
 // on 2xx, (0, false) on any error or non-2xx.
-func (p *ProxyManager) oneSample(port int, timeout time.Duration, endpoints []string) (int, bool) {
+func (p *ProxyManager) oneSample(port int, method string, timeout time.Duration, endpoints []string) (int, bool) {
 	dialer, err := goproxy.SOCKS5("tcp", fmt.Sprintf("127.0.0.1:%d", port), nil, goproxy.Direct)
 	if err != nil {
 		return 0, false
@@ -515,8 +515,12 @@ func (p *ProxyManager) oneSample(port int, timeout time.Duration, endpoints []st
 		Transport: transport,
 		Timeout:   timeout,
 	}
+	httpMethod := "GET"
+	if method == "http-head" {
+		httpMethod = "HEAD"
+	}
 	for _, url := range endpoints {
-		req, err := http.NewRequest("GET", url, nil)
+		req, err := http.NewRequest(httpMethod, url, nil)
 		if err != nil {
 			continue
 		}

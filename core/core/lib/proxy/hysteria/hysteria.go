@@ -46,6 +46,11 @@ func (h *HysteriaCore) Start(stdinPipe []byte) error {
 		return fmt.Errorf("hysteria is already running")
 	}
 
+	if h.Exited == nil || h.channel_closed {
+		h.Exited = make(chan error, 1)
+		h.channel_closed = false
+	}
+
 	hybin, err := utils.GetHysteriaBin()
 	if err != nil {
 		return fmt.Errorf("failed to start hysteria: %w", err)
@@ -135,15 +140,14 @@ func (h *HysteriaCore) Start(stdinPipe []byte) error {
 		h.mu.Lock()
 		defer h.mu.Unlock()
 		if ctx.Err() == nil {
-			select {
-			case h.Exited <- err:
-				if h.running {
-					close(h.Exited)
-					h.channel_closed = true
+			h.running = false
+			if !h.channel_closed {
+				select {
+				case h.Exited <- err:
+				default:
 				}
-				h.running = false
-			default:
-				// Channel full or no reader, don't block.
+				close(h.Exited)
+				h.channel_closed = true
 			}
 		}
 	}()

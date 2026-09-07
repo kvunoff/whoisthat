@@ -188,8 +188,12 @@ func (t *TunModeManager) Start(proxy_ipv4s []string, proxy_ipv6s []string, dns s
 				return
 			}
 			t.mu.Lock()
-			t.IsEnabled = false
-			t.StatusChanged <- t.IsEnabled
+			if t.IsEnabled {
+				logger.Warn("tun: tun2socks exited unexpectedly, clearing network rules")
+				t.clearNetworkRules()
+				t.IsEnabled = false
+				t.StatusChanged <- t.IsEnabled
+			}
 			t.mu.Unlock()
 		}
 	}()
