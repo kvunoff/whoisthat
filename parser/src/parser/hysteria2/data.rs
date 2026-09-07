@@ -1,6 +1,5 @@
 use crate::config_models::{RawData, UserAddress};
 use crate::utils::{get_parameter_value, url_decode};
-use http::Uri;
 
 pub fn get_data(uri: &str) -> Result<RawData, String> {
     let (_prefix, data) = if uri.starts_with("hysteria2://") {
@@ -12,19 +11,64 @@ pub fn get_data(uri: &str) -> Result<RawData, String> {
     }
     .ok_or_else(|| "Invalid hysteria2 URI".to_string())?;
 
-    let query_and_name = uri
-        .split_once("?")
-        .ok_or_else(|| "Missing query in hysteria2 URI".to_string())?
-        .1;
-    let (raw_query, name) = query_and_name
-        .split_once("#")
-        .unwrap_or((query_and_name, ""));
-    let parsed_address = parse_hysteria2_address(
-        data.split_once("?")
-            .ok_or_else(|| "Missing '?' in hysteria2 URI".to_string())?
-            .0,
-    )?;
+    // Split fragment (#name) if present
+    let (rest, name) = match data.split_once('#') {
+        Some((r, n)) => (r, n),
+        None => (data, ""),
+    };
+
+    // Split query string (?query) if present
+    let (raw_address_part, raw_query) = match rest.split_once('?') {
+        Some((a, q)) => (a, q),
+        None => (rest, ""),
+    };
+
+    let parsed_address = parse_hysteria2_address(raw_address_part)?;
     let query: Vec<(&str, &str)> = querystring::querify(raw_query);
+
+    let mut obfs = url_decode(
+        get_parameter_value(&query, "obfs")
+            .or_else(|| get_parameter_value(&query, "obfs-type"))
+            .or_else(|| get_parameter_value(&query, "obfs_type")),
+    );
+    let mut obfs_password = url_decode(
+        get_parameter_value(&query, "obfs-password")
+            .or_else(|| get_parameter_value(&query, "obfs_password"))
+            .or_else(|| get_parameter_value(&query, "obfs-param"))
+            .or_else(|| get_parameter_value(&query, "obfs_param")),
+    );
+
+    // If obfs or password is not provided via direct query params, check `fm` (Finalmask JSON format)
+    if obfs.is_none() || obfs_password.is_none() {
+        if let Some(fm_raw) = get_parameter_value(&query, "fm") {
+            if let Some(decoded_fm) = url_decode(Some(fm_raw.to_string())) {
+                if let Ok(val) = serde_json::from_str::<serde_json::Value>(&decoded_fm) {
+                    if let Some(udp_arr) = val
+                        .get("finalmask")
+                        .and_then(|f| f.get("udp"))
+                        .and_then(|u| u.as_array())
+                    {
+                        for item in udp_arr {
+                            if let Some(t) = item.get("type").and_then(|t| t.as_str()) {
+                                if obfs.is_none() {
+                                    obfs = Some(t.to_string());
+                                }
+                                if let Some(pw) = item
+                                    .get("settings")
+                                    .and_then(|s| s.get("password"))
+                                    .and_then(|p| p.as_str())
+                                {
+                                    if obfs_password.is_none() {
+                                        obfs_password = Some(pw.to_string());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     Ok(RawData {
         remarks: url_decode(Some(String::from(name))).unwrap_or(String::from("")),
@@ -57,8 +101,8 @@ pub fn get_data(uri: &str) -> Result<RawData, String> {
             .or_else(|| get_parameter_value(&query, "insecure")),
         server_method: None,
         username: None,
-        obfs: url_decode(get_parameter_value(&query, "obfs")),
-        obfs_password: url_decode(get_parameter_value(&query, "obfs-password")),
+        obfs,
+        obfs_password,
         up: url_decode(get_parameter_value(&query, "up")),
         down: url_decode(get_parameter_value(&query, "down")),
         // Some hysteria2 URIs advertise the multi-port range via `mport`,
@@ -71,28 +115,49 @@ pub fn get_data(uri: &str) -> Result<RawData, String> {
 
 fn parse_hysteria2_address(raw_data: &str) -> Result<UserAddress, String> {
     let (uuid_raw, raw_address) = raw_data
-        .split_once("@")
+        .split_once('@')
         .ok_or_else(|| "Wrong hysteria2 format, no `@` found in the address".to_string())?;
-    let uuid = String::from(uuid_raw);
-    let address_wo_slash = raw_address.strip_suffix("/").unwrap_or(raw_address);
-
-    let parsed: Uri = address_wo_slash
-        .parse()
-        .map_err(|e| format!("Invalid hysteria2 address URI: {}", e))?;
-
-    let uuid = url_decode(Some(uuid))
+    let uuid = url_decode(Some(String::from(uuid_raw)))
         .ok_or_else(|| "Failed to URL-decode hysteria2 password".to_string())?;
+    let address_wo_slash = raw_address.strip_suffix('/').unwrap_or(raw_address);
+
+    if address_wo_slash.is_empty() {
+        return Err("Missing host in hysteria2 address".to_string());
+    }
+
+    let (host, port) = if address_wo_slash.starts_with('[') {
+        if let Some(bracket_end) = address_wo_slash.find(']') {
+            let host_part = &address_wo_slash[1..bracket_end];
+            let after = &address_wo_slash[bracket_end + 1..];
+            let port = if let Some(port_str) = after.strip_prefix(':') {
+                port_str
+                    .parse::<u16>()
+                    .map_err(|e| format!("Invalid hysteria2 port: {}", e))?
+            } else {
+                443
+            };
+            (host_part.to_string(), port)
+        } else {
+            return Err("Invalid IPv6 address: missing closing bracket".to_string());
+        }
+    } else if let Some((h, p)) = address_wo_slash.rsplit_once(':') {
+        if let Ok(port) = p.parse::<u16>() {
+            (h.to_string(), port)
+        } else {
+            (address_wo_slash.to_string(), 443)
+        }
+    } else {
+        (address_wo_slash.to_string(), 443)
+    };
+
+    if host.is_empty() {
+        return Err("Missing host in hysteria2 address".to_string());
+    }
 
     Ok(UserAddress {
         uuid,
-        address: parsed
-            .host()
-            .ok_or_else(|| "Missing host in hysteria2 address".to_string())?
-            .to_string(),
-        port: parsed
-            .port()
-            .ok_or_else(|| "Missing port in hysteria2 address".to_string())?
-            .as_u16(),
+        address: host,
+        port,
     })
 }
 
@@ -140,8 +205,7 @@ mod tests {
 
     #[test]
     fn parses_with_insecure_param() {
-        let result =
-            get_data("hysteria2://pw@example.com:443?insecure=1");
+        let result = get_data("hysteria2://pw@example.com:443?insecure=1");
         assert!(result.is_ok());
         let data = result.unwrap();
         assert_eq!(data.allowInsecure, Some("1".to_string()));
@@ -159,6 +223,82 @@ mod tests {
     }
 
     #[test]
+    fn parses_with_obfs_aliases() {
+        let result = get_data(
+            "hy2://pw@example.com:443?obfs_type=salamander&obfs_password=secret2",
+        );
+        assert!(result.is_ok());
+        let data = result.unwrap();
+        assert_eq!(data.obfs, Some("salamander".to_string()));
+        assert_eq!(data.obfs_password, Some("secret2".to_string()));
+
+        let result2 = get_data(
+            "hy2://pw@example.com:443?obfs=salamander&obfs-param=secret3",
+        );
+        assert!(result2.is_ok());
+        let data2 = result2.unwrap();
+        assert_eq!(data2.obfs, Some("salamander".to_string()));
+        assert_eq!(data2.obfs_password, Some("secret3".to_string()));
+    }
+
+    #[test]
+    fn parses_with_fm_finalmask_json() {
+        let uri = "hysteria2://f46f8ebc@example.com:8443/?sni=example.com&fm=%7B%22finalmask%22%3A%7B%22udp%22%3A%5B%7B%22type%22%3A%22salamander%22%2C%22settings%22%3A%7B%22password%22%3A%22x93vL5mP4nC72H3w%22%2C%22packetSize%22%3A%22512-1200%22%7D%7D%5D%7D%7D#Node";
+        let result = get_data(uri);
+        assert!(result.is_ok());
+        let data = result.unwrap();
+        assert_eq!(data.uuid, Some("f46f8ebc".to_string()));
+        assert_eq!(data.address, Some("example.com".to_string()));
+        assert_eq!(data.port, Some(8443));
+        assert_eq!(data.sni, Some("example.com".to_string()));
+        assert_eq!(data.obfs, Some("salamander".to_string()));
+        assert_eq!(data.obfs_password, Some("x93vL5mP4nC72H3w".to_string()));
+        assert_eq!(data.remarks, "Node");
+    }
+
+    #[test]
+    fn parses_without_query_string() {
+        let result = get_data("hysteria2://mypassword@example.com:443#MyServer");
+        assert!(result.is_ok());
+        let data = result.unwrap();
+        assert_eq!(data.uuid, Some("mypassword".to_string()));
+        assert_eq!(data.address, Some("example.com".to_string()));
+        assert_eq!(data.port, Some(443));
+        assert_eq!(data.remarks, "MyServer");
+
+        let bare = get_data("hy2://mypassword@example.com:8443");
+        assert!(bare.is_ok());
+        let data_bare = bare.unwrap();
+        assert_eq!(data_bare.uuid, Some("mypassword".to_string()));
+        assert_eq!(data_bare.address, Some("example.com".to_string()));
+        assert_eq!(data_bare.port, Some(8443));
+    }
+
+    #[test]
+    fn parses_without_port_defaults_to_443() {
+        let result = get_data("hysteria2://mypassword@example.com?sni=example.com#Test");
+        assert!(result.is_ok());
+        let data = result.unwrap();
+        assert_eq!(data.address, Some("example.com".to_string()));
+        assert_eq!(data.port, Some(443));
+    }
+
+    #[test]
+    fn parses_ipv6_address() {
+        let result = get_data("hysteria2://mypassword@[2001:db8::1]:8443?test=1");
+        assert!(result.is_ok());
+        let data = result.unwrap();
+        assert_eq!(data.address, Some("2001:db8::1".to_string()));
+        assert_eq!(data.port, Some(8443));
+
+        let result_default_port = get_data("hysteria2://mypassword@[2001:db8::1]");
+        assert!(result_default_port.is_ok());
+        let data_def = result_default_port.unwrap();
+        assert_eq!(data_def.address, Some("2001:db8::1".to_string()));
+        assert_eq!(data_def.port, Some(443));
+    }
+
+    #[test]
     fn url_decodes_password() {
         let result = get_data("hysteria2://my%20password@example.com:443?test=1");
         assert!(result.is_ok());
@@ -171,18 +311,5 @@ mod tests {
         let result = get_data("hysteria2://noat.example.com:443?test=1");
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("no `@` found"));
-    }
-
-    #[test]
-    fn missing_query_returns_error() {
-        let result = get_data("hysteria2://pw@example.com:443");
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Missing query"));
-    }
-
-    #[test]
-    fn missing_port_returns_error() {
-        let result = get_data("hysteria2://pw@example.com?test=1");
-        assert!(result.is_err());
     }
 }
