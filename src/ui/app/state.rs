@@ -394,6 +394,7 @@ impl App {
     }
 
     pub fn apply_subscription_updated(&mut self, group: Group, profiles: Vec<Profile>) {
+        self.invalidate_uri_cache();
         if let Some(g) = self.groups.iter_mut().find(|g| g.group.id == group.id) {
             g.group = group;
             g.profiles = profiles;

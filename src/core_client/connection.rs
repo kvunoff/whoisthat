@@ -44,12 +44,86 @@ impl Stream {
             Stream::Tcp(s) => s.flush().await,
         }
     }
+}
 
-    async fn read_exact(&mut self, buf: &mut [u8]) -> std::io::Result<()> {
-        match self {
-            Stream::Unix(s) => s.read_exact(buf).await.map(|_| ()),
-            Stream::Tcp(s) => s.read_exact(buf).await.map(|_| ()),
+pub struct CoreReadHalf {
+    stream: CoreReadStream,
+}
+
+pub enum CoreReadStream {
+    Unix(tokio::net::unix::OwnedReadHalf),
+    Tcp(tokio::net::tcp::OwnedReadHalf),
+}
+
+impl CoreReadHalf {
+    pub async fn recv(&mut self) -> std::io::Result<TcpMessage> {
+        let mut len_buf = [0u8; 4];
+        match &mut self.stream {
+            CoreReadStream::Unix(s) => s.read_exact(&mut len_buf).await?,
+            CoreReadStream::Tcp(s) => s.read_exact(&mut len_buf).await?,
+        };
+
+        let len = u32::from_be_bytes(len_buf);
+        if len == 0 || len > 10 * 1024 * 1024 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("Invalid message length: {}", len),
+            ));
         }
+
+        let mut payload = vec![0u8; len as usize];
+        match &mut self.stream {
+            CoreReadStream::Unix(s) => s.read_exact(&mut payload).await?,
+            CoreReadStream::Tcp(s) => s.read_exact(&mut payload).await?,
+        };
+
+        let msg: TcpMessage = serde_json::from_slice(&payload)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
+
+        Ok(msg)
+    }
+}
+
+pub struct CoreWriteHalf {
+    stream: CoreWriteStream,
+}
+
+pub enum CoreWriteStream {
+    Unix(tokio::net::unix::OwnedWriteHalf),
+    Tcp(tokio::net::tcp::OwnedWriteHalf),
+}
+
+impl CoreWriteHalf {
+    pub async fn send(&mut self, msg: &str, data: &impl Serialize) -> std::io::Result<()> {
+        let payload = serde_json::json!({
+            "msg": msg,
+            "data": data,
+        });
+        let json = serde_json::to_vec(&payload)?;
+
+        let len = json.len() as u32;
+        if len == 0 || len > 10 * 1024 * 1024 {
+            error!("Invalid payload length: {}", len);
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("Invalid payload length: {}", len),
+            ));
+        }
+
+        let len_bytes = len.to_be_bytes();
+        match &mut self.stream {
+            CoreWriteStream::Unix(s) => {
+                s.write_all(&len_bytes).await?;
+                s.write_all(&json).await?;
+                s.flush().await?;
+            }
+            CoreWriteStream::Tcp(s) => {
+                s.write_all(&len_bytes).await?;
+                s.write_all(&json).await?;
+                s.flush().await?;
+            }
+        }
+        Ok(())
     }
 }
 
@@ -71,13 +145,40 @@ impl CoreConnection {
         Ok(Self { stream })
     }
 
-    /// Legacy TCP-only connect, retained for call sites that only speak TCP.
-    pub async fn connect(host: &str, port: u16) -> std::io::Result<Self> {
-        Self::connect_endpoint(&Endpoint::Tcp {
-            host: host.to_string(),
-            port,
-        })
-        .await
+    /// Split this connection into separate read and write halves for full-duplex IPC.
+    pub fn into_split(self) -> (CoreReadHalf, CoreWriteHalf) {
+        match self.stream {
+            Stream::Unix(s) => {
+                let (rh, wh) = s.into_split();
+                (
+                    CoreReadHalf {
+                        stream: CoreReadStream::Unix(rh),
+                    },
+                    CoreWriteHalf {
+                        stream: CoreWriteStream::Unix(wh),
+                    },
+                )
+            }
+            Stream::Tcp(s) => {
+                let (rh, wh) = s.into_split();
+                (
+                    CoreReadHalf {
+                        stream: CoreReadStream::Tcp(rh),
+                    },
+                    CoreWriteHalf {
+                        stream: CoreWriteStream::Tcp(wh),
+                    },
+                )
+            }
+        }
+    }
+
+    /// Connect and split into read and write halves in one step.
+    pub async fn connect_split(
+        endpoint: &Endpoint,
+    ) -> std::io::Result<(CoreReadHalf, CoreWriteHalf)> {
+        let conn = Self::connect_endpoint(endpoint).await?;
+        Ok(conn.into_split())
     }
 
     pub async fn send(&mut self, msg: &str, data: &impl Serialize) -> std::io::Result<()> {
@@ -100,26 +201,5 @@ impl CoreConnection {
         self.stream.write_all(&json).await?;
         self.stream.flush().await?;
         Ok(())
-    }
-
-    pub async fn recv(&mut self) -> std::io::Result<TcpMessage> {
-        let mut len_buf = [0u8; 4];
-        self.stream.read_exact(&mut len_buf).await?;
-
-        let len = u32::from_be_bytes(len_buf);
-        if len == 0 || len > 10 * 1024 * 1024 {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!("Invalid message length: {}", len),
-            ));
-        }
-
-        let mut payload = vec![0u8; len as usize];
-        self.stream.read_exact(&mut payload).await?;
-
-        let msg: TcpMessage = serde_json::from_slice(&payload)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
-
-        Ok(msg)
     }
 }

@@ -4,34 +4,48 @@ pub(crate) fn read_clipboard() -> Option<String> {
     arboard::Clipboard::new().ok()?.get_text().ok()
 }
 
+fn char_to_byte_idx(s: &str, char_idx: usize) -> usize {
+    s.char_indices()
+        .nth(char_idx)
+        .map(|(b, _)| b)
+        .unwrap_or(s.len())
+}
+
 pub(crate) fn edit_text_field(s: &mut String, cursor: &mut usize, key: KeyEvent) -> bool {
     match key.code {
         KeyCode::Char(c) if c == 'v' && matches!(key.modifiers, KeyModifiers::CONTROL) => {
             if let Some(clip) = read_clipboard() {
                 *s = clip;
-                *cursor = s.len();
+                *cursor = s.chars().count();
             }
             false
         }
         KeyCode::Char(c) => {
-            if *cursor <= s.len() {
-                s.insert(*cursor, c);
-            } else {
-                s.push(c);
-            }
-            *cursor += 1;
+            let char_count = s.chars().count();
+            let c_idx = (*cursor).min(char_count);
+            let byte_idx = char_to_byte_idx(s, c_idx);
+            s.insert(byte_idx, c);
+            *cursor = c_idx + 1;
             false
         }
         KeyCode::Backspace => {
+            let char_count = s.chars().count();
+            if *cursor > char_count {
+                *cursor = char_count;
+            }
             if *cursor > 0 && !s.is_empty() {
-                s.remove(*cursor - 1);
-                *cursor -= 1;
+                let target_char = *cursor - 1;
+                let byte_idx = char_to_byte_idx(s, target_char);
+                s.remove(byte_idx);
+                *cursor = target_char;
             }
             false
         }
         KeyCode::Delete => {
-            if *cursor < s.len() {
-                s.remove(*cursor);
+            let char_count = s.chars().count();
+            if *cursor < char_count {
+                let byte_idx = char_to_byte_idx(s, *cursor);
+                s.remove(byte_idx);
             }
             false
         }
@@ -40,7 +54,8 @@ pub(crate) fn edit_text_field(s: &mut String, cursor: &mut usize, key: KeyEvent)
             false
         }
         KeyCode::Right => {
-            if *cursor < s.len() {
+            let char_count = s.chars().count();
+            if *cursor < char_count {
                 *cursor += 1;
             }
             false
@@ -50,7 +65,7 @@ pub(crate) fn edit_text_field(s: &mut String, cursor: &mut usize, key: KeyEvent)
             false
         }
         KeyCode::End => {
-            *cursor = s.len();
+            *cursor = s.chars().count();
             false
         }
         _ => false,
@@ -196,6 +211,32 @@ mod tests {
         let mut s = String::from("abc");
         let mut c = 3usize;
         edit_text_field(&mut s, &mut c, key_ctrl(KeyCode::Char('v')));
-        assert!(c <= s.len());
+        assert!(c <= s.chars().count());
+    }
+
+    #[test]
+    fn utf8_insert_and_backspace_cyrillic() {
+        let mut s = String::new();
+        let mut c = 0usize;
+        edit_text_field(&mut s, &mut c, key(KeyCode::Char('П')));
+        edit_text_field(&mut s, &mut c, key(KeyCode::Char('р')));
+        edit_text_field(&mut s, &mut c, key(KeyCode::Char('и')));
+        assert_eq!(s, "При");
+        assert_eq!(c, 3);
+
+        // Backspace removes 'и' (2 bytes) without panic
+        edit_text_field(&mut s, &mut c, key(KeyCode::Backspace));
+        assert_eq!(s, "Пр");
+        assert_eq!(c, 2);
+
+        // Insert in middle
+        c = 1;
+        edit_text_field(&mut s, &mut c, key(KeyCode::Char('о')));
+        assert_eq!(s, "Пор");
+        assert_eq!(c, 2);
+
+        // Delete at cursor removes 'р'
+        edit_text_field(&mut s, &mut c, key(KeyCode::Delete));
+        assert_eq!(s, "По");
     }
 }

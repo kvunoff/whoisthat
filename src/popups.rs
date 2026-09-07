@@ -2,7 +2,7 @@ use crossterm::event::{self, KeyCode};
 
 use crate::core_client::protocol::{ProfileID, SetHwidData};
 use crate::core_client::CoreClient;
-use crate::text_edit::{edit_text_field, read_clipboard};
+use crate::text_edit::edit_text_field;
 use crate::ui::app::{Focus, Popup};
 use crate::ui::routing::{form_to_rule, RoutingPopup};
 use crate::ui::App;
@@ -250,7 +250,7 @@ pub(crate) async fn handle_routing_popup_input(
             mut cursor,
             mut field,
         }) => {
-            let save = handle_routing_form(
+            match handle_routing_form(
                 app,
                 &mut match_type,
                 &mut value,
@@ -258,19 +258,24 @@ pub(crate) async fn handle_routing_popup_input(
                 &mut cursor,
                 &mut field,
                 key,
-            );
-            if save {
-                let rule = form_to_rule(match_type, &value, outbound);
-                app.routing.rules.push(rule);
-                let _ = client.update_routing(&app.routing).await;
-            } else {
-                app.routing_popup = Some(RoutingPopup::Add {
-                    match_type,
-                    value,
-                    outbound,
-                    cursor,
-                    field,
-                });
+            ) {
+                FormResult::Save => {
+                    let rule = form_to_rule(match_type, &value, outbound);
+                    app.routing.rules.push(rule);
+                    let _ = client.update_routing(&app.routing).await;
+                }
+                FormResult::Cancel => {
+                    app.routing_popup = None;
+                }
+                FormResult::Continue => {
+                    app.routing_popup = Some(RoutingPopup::Add {
+                        match_type,
+                        value,
+                        outbound,
+                        cursor,
+                        field,
+                    });
+                }
             }
         }
         Some(RoutingPopup::Edit {
@@ -281,7 +286,7 @@ pub(crate) async fn handle_routing_popup_input(
             mut cursor,
             mut field,
         }) => {
-            let save = handle_routing_form(
+            match handle_routing_form(
                 app,
                 &mut match_type,
                 &mut value,
@@ -289,20 +294,27 @@ pub(crate) async fn handle_routing_popup_input(
                 &mut cursor,
                 &mut field,
                 key,
-            );
-            if save {
-                let rule = form_to_rule(match_type, &value, outbound);
-                app.routing.rules[index] = rule;
-                let _ = client.update_routing(&app.routing).await;
-            } else {
-                app.routing_popup = Some(RoutingPopup::Edit {
-                    index,
-                    match_type,
-                    value,
-                    outbound,
-                    cursor,
-                    field,
-                });
+            ) {
+                FormResult::Save => {
+                    let rule = form_to_rule(match_type, &value, outbound);
+                    if index < app.routing.rules.len() {
+                        app.routing.rules[index] = rule;
+                        let _ = client.update_routing(&app.routing).await;
+                    }
+                }
+                FormResult::Cancel => {
+                    app.routing_popup = None;
+                }
+                FormResult::Continue => {
+                    app.routing_popup = Some(RoutingPopup::Edit {
+                        index,
+                        match_type,
+                        value,
+                        outbound,
+                        cursor,
+                        field,
+                    });
+                }
             }
         }
         None => {}
@@ -320,16 +332,16 @@ fn handle_two_field_popup(
         KeyCode::Tab => {
             *field = if *field == 0 { 1 } else { 0 };
             *cursor = if *field == 0 {
-                field0.len()
+                field0.chars().count()
             } else {
-                field1.len()
+                field1.chars().count()
             };
             false
         }
         KeyCode::Enter => {
             if *field == 0 {
                 *field = 1;
-                *cursor = field1.len();
+                *cursor = field1.chars().count();
                 false
             } else {
                 true
@@ -343,6 +355,12 @@ fn handle_two_field_popup(
     }
 }
 
+pub(crate) enum FormResult {
+    Save,
+    Cancel,
+    Continue,
+}
+
 fn handle_routing_form(
     _app: &mut App,
     match_type: &mut usize,
@@ -351,80 +369,55 @@ fn handle_routing_form(
     cursor: &mut usize,
     field: &mut usize,
     key: event::KeyEvent,
-) -> bool {
+) -> FormResult {
     match key.code {
-        KeyCode::Esc => {
-            return false;
-        }
+        KeyCode::Esc => FormResult::Cancel,
         KeyCode::Tab => {
             *field = (*field + 1) % 3;
-            *cursor = if *field == 1 { value.len() } else { 0 };
+            *cursor = if *field == 1 {
+                value.chars().count()
+            } else {
+                0
+            };
+            FormResult::Continue
         }
         KeyCode::Enter => {
             if *field < 2 {
                 *field += 1;
-                *cursor = if *field == 1 { value.len() } else { 0 };
+                *cursor = if *field == 1 {
+                    value.chars().count()
+                } else {
+                    0
+                };
+                FormResult::Continue
             } else {
-                return true;
+                FormResult::Save
             }
         }
         KeyCode::Left => {
             if *field == 0 {
                 *match_type = if *match_type == 0 { 5 } else { *match_type - 1 };
             } else if *field == 1 {
-                *cursor = cursor.saturating_sub(1);
+                edit_text_field(value, cursor, key);
             } else if *field == 2 {
                 *outbound = if *outbound == 0 { 2 } else { *outbound - 1 };
             }
+            FormResult::Continue
         }
         KeyCode::Right => {
             if *field == 0 {
                 *match_type = (*match_type + 1) % 6;
-            } else if *field == 1 && *cursor < value.len() {
-                *cursor += 1;
+            } else if *field == 1 {
+                edit_text_field(value, cursor, key);
             } else if *field == 2 {
                 *outbound = (*outbound + 1) % 3;
             }
+            FormResult::Continue
         }
-        KeyCode::Char(c) => {
-            if *field == 1 {
-                if c == 'v' && matches!(key.modifiers, crossterm::event::KeyModifiers::CONTROL) {
-                    if let Some(clip) = read_clipboard() {
-                        *value = clip;
-                        *cursor = value.len();
-                    }
-                } else {
-                    if *cursor <= value.len() {
-                        value.insert(*cursor, c);
-                    } else {
-                        value.push(c);
-                    }
-                    *cursor += 1;
-                }
-            }
+        _ if *field == 1 => {
+            edit_text_field(value, cursor, key);
+            FormResult::Continue
         }
-        KeyCode::Backspace => {
-            if *field == 1 && *cursor > 0 && !value.is_empty() {
-                value.remove(*cursor - 1);
-                *cursor -= 1;
-            }
-        }
-        KeyCode::Delete => {
-            if *field == 1 && *cursor < value.len() {
-                value.remove(*cursor);
-            }
-        }
-        KeyCode::Home => {
-            if *field == 1 {
-                *cursor = 0;
-            }
-        }
-        KeyCode::End => {
-            if *field == 1 {
-                *cursor = value.len();
-            }
-        }
-        _ => {}
+        _ => FormResult::Continue,
     }
-    false
 }

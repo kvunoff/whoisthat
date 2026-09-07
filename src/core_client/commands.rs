@@ -1,32 +1,32 @@
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use super::connection::CoreConnection;
+use super::connection::CoreWriteHalf;
 use super::protocol::*;
 
 pub struct CoreClient {
-    conn: Arc<Mutex<CoreConnection>>,
+    writer: Arc<Mutex<CoreWriteHalf>>,
 }
 
 impl CoreClient {
-    pub fn new(conn: CoreConnection) -> Self {
+    pub fn new(writer: CoreWriteHalf) -> Self {
         Self {
-            conn: Arc::new(Mutex::new(conn)),
+            writer: Arc::new(Mutex::new(writer)),
         }
     }
 
-    pub async fn replace_conn(&self, new_conn: CoreConnection) {
-        *self.conn.lock().await = new_conn;
+    pub async fn replace_writer(&self, new_writer: CoreWriteHalf) {
+        *self.writer.lock().await = new_writer;
     }
 
     pub fn clone_ref(&self) -> Self {
         Self {
-            conn: self.conn.clone(),
+            writer: self.writer.clone(),
         }
     }
 
     pub async fn get_application_state(&self) -> std::io::Result<()> {
-        self.conn
+        self.writer
             .lock()
             .await
             .send("get-application-state", &GetApplicationStateData {})
@@ -34,7 +34,7 @@ impl CoreClient {
     }
 
     pub async fn connect(&self, group_id: i32, profile_id: i32) -> std::io::Result<()> {
-        self.conn
+        self.writer
             .lock()
             .await
             .send(
@@ -50,7 +50,7 @@ impl CoreClient {
     }
 
     pub async fn disconnect(&self) -> std::io::Result<()> {
-        self.conn
+        self.writer
             .lock()
             .await
             .send("disconnect", &DisconnectData {})
@@ -58,7 +58,7 @@ impl CoreClient {
     }
 
     pub async fn add_profiles(&self, uris: &str, group_id: i32) -> std::io::Result<()> {
-        self.conn
+        self.writer
             .lock()
             .await
             .send(
@@ -72,7 +72,7 @@ impl CoreClient {
     }
 
     pub async fn delete_profiles(&self, profiles: &[ProfileID]) -> std::io::Result<()> {
-        self.conn
+        self.writer
             .lock()
             .await
             .send(
@@ -90,7 +90,7 @@ impl CoreClient {
         profile_id: i32,
         method: &str,
     ) -> std::io::Result<()> {
-        self.conn
+        self.writer
             .lock()
             .await
             .send(
@@ -113,7 +113,7 @@ impl CoreClient {
         method: &str,
         sample_count: i32,
     ) -> std::io::Result<()> {
-        self.conn
+        self.writer
             .lock()
             .await
             .send(
@@ -128,7 +128,7 @@ impl CoreClient {
     }
 
     pub async fn cancel_tests(&self) -> std::io::Result<()> {
-        self.conn
+        self.writer
             .lock()
             .await
             .send("cancel-tests", &CancelTestsData {})
@@ -136,7 +136,7 @@ impl CoreClient {
     }
 
     pub async fn set_test_config(&self, config: &TestConfig) -> std::io::Result<()> {
-        self.conn
+        self.writer
             .lock()
             .await
             .send(
@@ -149,7 +149,7 @@ impl CoreClient {
     }
 
     pub async fn enable_tun(&self) -> std::io::Result<()> {
-        self.conn
+        self.writer
             .lock()
             .await
             .send("enable-tun", &EnableTunData {})
@@ -157,7 +157,7 @@ impl CoreClient {
     }
 
     pub async fn disable_tun(&self) -> std::io::Result<()> {
-        self.conn
+        self.writer
             .lock()
             .await
             .send("disable-tun", &DisableTunData {})
@@ -165,7 +165,7 @@ impl CoreClient {
     }
 
     pub async fn set_tun_name(&self, name: &str) -> std::io::Result<()> {
-        self.conn
+        self.writer
             .lock()
             .await
             .send(
@@ -178,7 +178,11 @@ impl CoreClient {
     }
 
     pub async fn is_root(&self) -> std::io::Result<()> {
-        self.conn.lock().await.send("is-root", &IsRootData {}).await
+        self.writer
+            .lock()
+            .await
+            .send("is-root", &IsRootData {})
+            .await
     }
 
     pub async fn rename_profile(
@@ -187,7 +191,7 @@ impl CoreClient {
         profile_id: i32,
         name: &str,
     ) -> std::io::Result<()> {
-        self.conn
+        self.writer
             .lock()
             .await
             .send(
@@ -204,11 +208,11 @@ impl CoreClient {
     }
 
     pub async fn die(&self) -> std::io::Result<()> {
-        self.conn.lock().await.send("die", &DieData {}).await
+        self.writer.lock().await.send("die", &DieData {}).await
     }
 
     pub async fn update_subscription(&self, group_id: i32) -> std::io::Result<()> {
-        self.conn
+        self.writer
             .lock()
             .await
             .send("update-subscription", &UpdateSubscriptionData { group_id })
@@ -216,7 +220,7 @@ impl CoreClient {
     }
 
     pub async fn delete_group(&self, id: i32) -> std::io::Result<()> {
-        self.conn
+        self.writer
             .lock()
             .await
             .send("delete-group", &DeleteGroupData { id })
@@ -224,7 +228,7 @@ impl CoreClient {
     }
 
     pub async fn add_group(&self, name: &str, subscription_url: &str) -> std::io::Result<()> {
-        self.conn
+        self.writer
             .lock()
             .await
             .send(
@@ -243,7 +247,7 @@ impl CoreClient {
         name: &str,
         subscription_url: &str,
     ) -> std::io::Result<()> {
-        self.conn
+        self.writer
             .lock()
             .await
             .send(
@@ -258,7 +262,7 @@ impl CoreClient {
     }
 
     pub async fn get_routing(&self) -> std::io::Result<()> {
-        self.conn
+        self.writer
             .lock()
             .await
             .send("get-routing", &GetRoutingData {})
@@ -266,7 +270,7 @@ impl CoreClient {
     }
 
     pub async fn update_routing(&self, config: &RoutingConfig) -> std::io::Result<()> {
-        self.conn
+        self.writer
             .lock()
             .await
             .send(
@@ -279,11 +283,11 @@ impl CoreClient {
     }
 
     pub async fn set_hwid(&self, data: &SetHwidData) -> std::io::Result<()> {
-        self.conn.lock().await.send("set-hwid", data).await
+        self.writer.lock().await.send("set-hwid", data).await
     }
 
     pub async fn set_kill_switch(&self, enabled: bool) -> std::io::Result<()> {
-        self.conn
+        self.writer
             .lock()
             .await
             .send("set-kill-switch", &SetKillSwitchData { enabled })
@@ -291,7 +295,7 @@ impl CoreClient {
     }
 
     pub async fn set_split_tunnel(&self, mode: &str) -> std::io::Result<()> {
-        self.conn
+        self.writer
             .lock()
             .await
             .send(
@@ -310,7 +314,7 @@ impl CoreClient {
         profile_id: i32,
         mode: &str,
     ) -> std::io::Result<()> {
-        self.conn
+        self.writer
             .lock()
             .await
             .send(

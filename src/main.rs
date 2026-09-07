@@ -87,7 +87,7 @@ async fn main() -> io::Result<()> {
         cfg.core_version = current_version;
         config::save_config(&cfg);
     }
-    let conn = CoreConnection::connect_endpoint(&endpoint)
+    let (read_half, write_half) = CoreConnection::connect_split(&endpoint)
         .await
         .map_err(|e| {
             io::Error::new(
@@ -96,11 +96,10 @@ async fn main() -> io::Result<()> {
             )
         })?;
 
-    let client = CoreClient::new(conn);
+    let client = CoreClient::new(write_half);
 
-    let read_conn = CoreConnection::connect_endpoint(&endpoint).await?;
     let mut core_rx = core_client::spawn_read_loop(
-        read_conn,
+        read_half,
         client.clone_ref(),
         endpoint.clone(),
         cfg.log_level.clone(),
@@ -232,7 +231,6 @@ async fn main() -> io::Result<()> {
     drop(term);
 
     let mut stdout = io::stdout();
-    let _ = writeln!(stdout, "--- Press Enter ---");
     let _ = stdout.flush();
 
     config::save_config(&cfg);

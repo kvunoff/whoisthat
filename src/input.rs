@@ -44,6 +44,7 @@ pub(crate) async fn handle_input(
 
                 if key.code == KeyCode::Char('q')
                     && app.popup.is_none()
+                    && app.routing_popup.is_none()
                     && !app.search_mode
                     && !matches!(key.modifiers, crossterm::event::KeyModifiers::CONTROL)
                 {
@@ -54,6 +55,7 @@ pub(crate) async fn handle_input(
                     || (key.code == KeyCode::Char('c')
                         && key.modifiers == crossterm::event::KeyModifiers::CONTROL))
                     && app.popup.is_none()
+                    && app.routing_popup.is_none()
                     && !app.search_mode
                 {
                     let _ = client.die().await;
@@ -84,6 +86,11 @@ async fn handle_normal_input(
 ) -> bool {
     app.clear_msg();
 
+    if app.routing_popup.is_some() {
+        handle_routing_popup_input(app, client, key).await;
+        return false;
+    }
+
     if app.search_mode && app.focus == Focus::LeftPanel && app.tab == ActiveTab::Profiles {
         match key.code {
             KeyCode::Esc => {
@@ -101,18 +108,10 @@ async fn handle_normal_input(
                     app.clamp_cursor();
                 }
             }
-            KeyCode::Char('j') | KeyCode::Down => app.cursor_down(),
-            KeyCode::Char('k') | KeyCode::Up => app.cursor_up(),
-            KeyCode::Char('g') => app.cursor_top(),
-            KeyCode::Char('G') => app.cursor_bottom(),
-            KeyCode::Char(c) => {
-                let mut cur = app.search_input.len();
-                edit_text_field(&mut app.search_input, &mut cur, key);
-                app.search_query = Some(app.search_input.clone());
-                app.cursor = 0;
-            }
-            KeyCode::Backspace => {
-                let mut cur = app.search_input.len();
+            KeyCode::Down => app.cursor_down(),
+            KeyCode::Up => app.cursor_up(),
+            KeyCode::Char(_) | KeyCode::Backspace => {
+                let mut cur = app.search_input.chars().count();
                 edit_text_field(&mut app.search_input, &mut cur, key);
                 app.search_query = Some(app.search_input.clone());
                 app.cursor = 0;
@@ -122,22 +121,9 @@ async fn handle_normal_input(
         return false;
     }
 
-    if app.tab == ActiveTab::Routing {
-        if app.routing_popup.is_some() {
-            handle_routing_popup_input(app, client, key).await;
-            return false;
-        }
-        match key.code {
-            KeyCode::Char('j') | KeyCode::Down => {
-                let len = app.routing.rules.len();
-                if len > 0 && app.routing_cursor + 1 < len {
-                    app.routing_cursor += 1;
-                }
-            }
-            KeyCode::Char('k') | KeyCode::Up => {
-                app.routing_cursor = app.routing_cursor.saturating_sub(1);
-            }
-            KeyCode::Char('a') => {
+    match key.code {
+        KeyCode::Char('a') => {
+            if app.tab == ActiveTab::Routing {
                 app.routing_popup = Some(RoutingPopup::Add {
                     match_type: 0,
                     value: String::new(),
@@ -147,42 +133,6 @@ async fn handle_normal_input(
                 });
                 return false;
             }
-            KeyCode::Char('e') => {
-                if let Some(rule) = app.routing.rules.get(app.routing_cursor) {
-                    let (mt, val, ob) = rule_to_form(rule);
-                    let cursor = val.len();
-                    app.routing_popup = Some(RoutingPopup::Edit {
-                        index: app.routing_cursor,
-                        match_type: mt,
-                        value: val,
-                        outbound: ob,
-                        cursor,
-                        field: 0,
-                    });
-                }
-                return false;
-            }
-            KeyCode::Char('x') => {
-                if app.routing.rules.get(app.routing_cursor).is_some() {
-                    app.routing_popup = Some(RoutingPopup::ConfirmDelete {
-                        index: app.routing_cursor,
-                    });
-                }
-                return false;
-            }
-            KeyCode::Char(' ') => {
-                if let Some(rule) = app.routing.rules.get_mut(app.routing_cursor) {
-                    rule.enabled = !rule.enabled;
-                    let _ = client.update_routing(&app.routing).await;
-                }
-                return false;
-            }
-            _ => {}
-        }
-    }
-
-    match key.code {
-        KeyCode::Char('a') => {
             let clip = read_clipboard();
             if let Some(text) = clip {
                 if !text.is_empty() {
@@ -236,6 +186,49 @@ async fn handle_normal_input(
             return false;
         }
         _ => {}
+    }
+
+    if app.tab == ActiveTab::Routing {
+        match key.code {
+            KeyCode::Char('j') | KeyCode::Down => {
+                let len = app.routing.rules.len();
+                if len > 0 && app.routing_cursor + 1 < len {
+                    app.routing_cursor += 1;
+                }
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                app.routing_cursor = app.routing_cursor.saturating_sub(1);
+            }
+            KeyCode::Char('e') | KeyCode::Enter => {
+                if let Some(rule) = app.routing.rules.get(app.routing_cursor) {
+                    let (mt, val, ob) = rule_to_form(rule);
+                    let cursor = val.chars().count();
+                    app.routing_popup = Some(RoutingPopup::Edit {
+                        index: app.routing_cursor,
+                        match_type: mt,
+                        value: val,
+                        outbound: ob,
+                        cursor,
+                        field: 0,
+                    });
+                }
+            }
+            KeyCode::Char('x') | KeyCode::Delete => {
+                if app.routing.rules.get(app.routing_cursor).is_some() {
+                    app.routing_popup = Some(RoutingPopup::ConfirmDelete {
+                        index: app.routing_cursor,
+                    });
+                }
+            }
+            KeyCode::Char(' ') => {
+                if let Some(rule) = app.routing.rules.get_mut(app.routing_cursor) {
+                    rule.enabled = !rule.enabled;
+                    let _ = client.update_routing(&app.routing).await;
+                }
+            }
+            _ => {}
+        }
+        return false;
     }
 
     if app.tab == ActiveTab::Settings {
@@ -331,7 +324,7 @@ async fn handle_normal_input(
                 6 => {
                     app.popup = Some(Popup::EditTunName {
                         input: app.tun_name.clone(),
-                        cursor: app.tun_name.len(),
+                        cursor: app.tun_name.chars().count(),
                     });
                     app.focus = Focus::Popup;
                 }
@@ -434,7 +427,7 @@ async fn handle_normal_input(
                     if let Some(ref hw) = app.hwid_info {
                         app.popup = Some(Popup::EditUserAgent {
                             input: hw.user_agent.clone(),
-                            cursor: hw.user_agent.len(),
+                            cursor: hw.user_agent.chars().count(),
                         });
                         app.focus = Focus::Popup;
                     }
@@ -517,7 +510,7 @@ async fn handle_normal_input(
                             name: g.group.name.clone(),
                             url: g.group.subscription_url.clone(),
                             group_id: g.group.id,
-                            cursor: g.group.subscription_url.len(),
+                            cursor: g.group.subscription_url.chars().count(),
                             field: 1,
                         });
                         app.focus = Focus::Popup;
@@ -525,7 +518,7 @@ async fn handle_normal_input(
                 } else if let Some(p) = app.selected_profile() {
                     app.popup = Some(Popup::EditProfileName {
                         input: p.name.clone(),
-                        cursor: p.name.len(),
+                        cursor: p.name.chars().count(),
                         group_id: p.group_id,
                         profile_id: p.id,
                     });

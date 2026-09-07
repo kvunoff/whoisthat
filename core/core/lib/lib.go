@@ -78,12 +78,17 @@ func getDBAddProfileDataFromURI(uri string, group_id int) (structs.DBAddProfileD
 }
 
 func decode64(str string) string {
-	decoded, err := base64.StdEncoding.DecodeString(str)
-	if err != nil {
-		return str
+	clean := strings.TrimSpace(str)
+	encodings := []*base64.Encoding{
+		base64.StdEncoding,
+		base64.RawStdEncoding,
+		base64.URLEncoding,
+		base64.RawURLEncoding,
 	}
-	if utf8.Valid(decoded) {
-		return string(decoded)
+	for _, enc := range encodings {
+		if decoded, err := enc.DecodeString(clean); err == nil && utf8.Valid(decoded) {
+			return string(decoded)
+		}
 	}
 	return str
 }

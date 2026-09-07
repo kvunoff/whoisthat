@@ -315,12 +315,12 @@ fn render_rule_form(
 
     let type_line = Line::from(vec![
         Span::styled("Type: ", f0),
-        Span::styled("◄ ", if field == 0 { s_faint() } else { s_faint() }),
+        Span::styled("◄ ", if field == 0 { s_accent() } else { s_faint() }),
         Span::styled(
             TYPE_LABELS[match_type],
             if field == 0 { s_accent() } else { inactive },
         ),
-        Span::styled(" ►", if field == 0 { s_faint() } else { s_faint() }),
+        Span::styled(" ►", if field == 0 { s_accent() } else { s_faint() }),
     ]);
     f.render_widget(Paragraph::new(type_line), Rect::new(inner.x + 1, y, w, 1));
     y += 2;
@@ -341,8 +341,8 @@ fn render_rule_form(
     y += 1;
     let val_display = if value.is_empty() {
         match match_type {
-            0 => "geosite:...",
-            1 => "geoip:...",
+            0 => "example.com",
+            1 => "10.0.0.0/8",
             2 => "http",
             3 => "443",
             4 => "geoip:ru",
@@ -362,12 +362,12 @@ fn render_rule_form(
 
     let ob_line = Line::from(vec![
         Span::styled("Outbound: ", f2),
-        Span::styled("◄ ", if field == 2 { s_faint() } else { s_faint() }),
+        Span::styled("◄ ", if field == 2 { s_accent() } else { s_faint() }),
         Span::styled(
             OUTBOUND_LABELS[outbound],
             if field == 2 { s_accent() } else { inactive },
         ),
-        Span::styled(" ►", if field == 2 { s_faint() } else { s_faint() }),
+        Span::styled(" ►", if field == 2 { s_accent() } else { s_faint() }),
     ]);
     f.render_widget(Paragraph::new(ob_line), Rect::new(inner.x + 1, y, w, 1));
     y += 2;
@@ -383,6 +383,51 @@ fn render_rule_form(
             .style(s_dim())
             .alignment(Alignment::Center),
         Rect::new(inner.x + 1, y, w, 2),
+    );
+}
+
+fn render_routing_confirm(f: &mut Frame, area: Rect) {
+    let v = Layout::vertical([
+        Constraint::Fill(1),
+        Constraint::Length(7),
+        Constraint::Fill(1),
+    ])
+    .split(area);
+    let h = Layout::horizontal([
+        Constraint::Percentage(25),
+        Constraint::Percentage(50),
+        Constraint::Percentage(25),
+    ])
+    .split(v[1]);
+    let pa = h[1];
+    f.render_widget(ratatui::widgets::Clear, pa);
+
+    let block = Block::default()
+        .title(" Delete Rule ")
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(ERROR))
+        .style(s_surface());
+
+    let inner = block.inner(pa);
+    f.render_widget(block, pa);
+
+    let chunks =
+        Layout::vertical([Constraint::Percentage(50), Constraint::Percentage(50)]).split(inner);
+
+    f.render_widget(
+        Paragraph::new("Delete this rule?\nThis cannot be undone.")
+            .style(s_text())
+            .alignment(Alignment::Center)
+            .wrap(ratatui::widgets::Wrap { trim: true }),
+        chunks[0],
+    );
+
+    f.render_widget(
+        Paragraph::new(" Enter confirm | Esc cancel ")
+            .style(s_accent())
+            .alignment(Alignment::Center),
+        chunks[1],
     );
 }
 
@@ -516,49 +561,4 @@ mod tests {
         assert_eq!(reconstructed.domain, original.domain);
         assert_eq!(reconstructed.outbound_tag, "block");
     }
-}
-
-fn render_routing_confirm(f: &mut Frame, area: Rect) {
-    let v = Layout::vertical([
-        Constraint::Fill(1),
-        Constraint::Length(7),
-        Constraint::Fill(1),
-    ])
-    .split(area);
-    let h = Layout::horizontal([
-        Constraint::Percentage(25),
-        Constraint::Percentage(50),
-        Constraint::Percentage(25),
-    ])
-    .split(v[1]);
-    let pa = h[1];
-    f.render_widget(ratatui::widgets::Clear, pa);
-
-    let block = Block::default()
-        .title(" Delete Rule ")
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(ERROR))
-        .style(s_surface());
-
-    let inner = block.inner(pa);
-    f.render_widget(block, pa);
-
-    let chunks =
-        Layout::vertical([Constraint::Percentage(50), Constraint::Percentage(50)]).split(inner);
-
-    f.render_widget(
-        Paragraph::new("Delete this rule?\nThis cannot be undone.")
-            .style(s_text())
-            .alignment(Alignment::Center)
-            .wrap(ratatui::widgets::Wrap { trim: true }),
-        chunks[0],
-    );
-
-    f.render_widget(
-        Paragraph::new(" Enter confirm | Esc cancel ")
-            .style(s_accent())
-            .alignment(Alignment::Center),
-        chunks[1],
-    );
 }

@@ -2,7 +2,7 @@ use log::warn;
 use std::time::Duration;
 use tokio::sync::mpsc;
 
-use super::connection::{CoreConnection, Endpoint};
+use super::connection::{CoreConnection, CoreReadHalf, Endpoint};
 use super::protocol::*;
 use super::CoreClient;
 
@@ -23,6 +23,7 @@ pub enum CoreEvent {
     TunStatusChanged(bool),
     IsRootAnswer(bool),
     Warning {
+        #[allow(dead_code)]
         key: String,
         content: String,
     },
@@ -63,7 +64,7 @@ macro_rules! try_dispatch {
 ///    and emits `CoreEvent::Reconnected` so the UI can re-sync state.
 /// 4. On failure: emits `CoreEvent::Disconnected` and terminates (terminal).
 pub fn spawn_read_loop(
-    mut conn: CoreConnection,
+    mut conn: CoreReadHalf,
     client: CoreClient,
     endpoint: Endpoint,
     log_level: String,
@@ -100,16 +101,13 @@ pub fn spawn_read_loop(
             // (1) Try reconnecting to a still-alive core.
             for attempt in 1..=5 {
                 tokio::time::sleep(Duration::from_millis(500)).await;
-                let Ok(read_conn) = CoreConnection::connect_endpoint(&endpoint).await else {
+                let Ok((read_half, write_half)) = CoreConnection::connect_split(&endpoint).await
+                else {
                     log::info!("reconnect attempt {attempt}/5 failed (core connect)");
                     continue;
                 };
-                let Ok(cmd_conn) = CoreConnection::connect_endpoint(&endpoint).await else {
-                    log::warn!("reconnect attempt {attempt}/5: read conn OK, cmd conn failed");
-                    continue;
-                };
-                client.replace_conn(cmd_conn).await;
-                conn = read_conn;
+                client.replace_writer(write_half).await;
+                conn = read_half;
                 recovered = true;
                 break;
             }
@@ -128,15 +126,12 @@ pub fn spawn_read_loop(
                         tokio::time::sleep(Duration::from_secs(1)).await;
                     }
                     if recovered {
-                        match (
-                            CoreConnection::connect_endpoint(&endpoint).await,
-                            CoreConnection::connect_endpoint(&endpoint).await,
-                        ) {
-                            (Ok(read_conn), Ok(cmd_conn)) => {
-                                client.replace_conn(cmd_conn).await;
-                                conn = read_conn;
+                        match CoreConnection::connect_split(&endpoint).await {
+                            Ok((read_half, write_half)) => {
+                                client.replace_writer(write_half).await;
+                                conn = read_half;
                             }
-                            _ => recovered = false,
+                            Err(_) => recovered = false,
                         }
                     }
                 }

@@ -168,12 +168,18 @@ pub fn config_path() -> PathBuf {
 
 pub fn load_config() -> AppConfig {
     let path = config_path();
-    if path.exists() {
+    let existed = path.exists();
+    if existed {
         match std::fs::read_to_string(&path) {
             Ok(content) => match toml::from_str(&content) {
                 Ok(config) => return config,
                 Err(e) => {
-                    log::warn!("Failed to parse config: {}, using defaults", e);
+                    log::warn!(
+                        "Failed to parse config: {}, backing up and using defaults",
+                        e
+                    );
+                    let bak = path.with_file_name("config.toml.bak");
+                    let _ = std::fs::copy(&path, &bak);
                 }
             },
             Err(e) => {
@@ -182,7 +188,9 @@ pub fn load_config() -> AppConfig {
         }
     }
     let default = AppConfig::default();
-    save_config(&default);
+    if !existed {
+        save_config(&default);
+    }
     default
 }
 

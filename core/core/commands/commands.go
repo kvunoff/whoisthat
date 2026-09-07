@@ -45,6 +45,7 @@ func (cmd *Cmd) UpdateProfile(data structs.UpdateProfileData) {
 	if err != nil {
 		logger.Warnf("failed to update profile %d,%d: %s", data.Profile.GroupId, data.Profile.Id, err.Error())
 		cmd.warn("update-profile-failed", "there was an error updating the profile")
+		return
 	}
 	profile_updated := structs.ProfileUpdated{
 		Profile: profile_data,
