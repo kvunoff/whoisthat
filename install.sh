@@ -1,169 +1,393 @@
 #!/usr/bin/env bash
 # =============================================================================
-# WhoisThat — universal installer / updater
-# Usage:  curl -fsSL https://raw.githubusercontent.com/kvunoff/whoisthat/main/install.sh | bash
+# WhoisThat — Universal Installer & Updater
+# Usage:
+#   curl -fsSL https://raw.githubusercontent.com/kvunoff/whoisthat/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/kvunoff/whoisthat/main/install.sh | bash -s -- --yes
 #
-# Works for both fresh installs and upgrades. If whoisthat is already installed
-# it will rebuild from the latest tagged release and overwrite the old binaries.
+# Works for both fresh installs and upgrades. When whoisthat is already installed,
+# it will rebuild from the latest tagged release and update the binaries.
 #
-# What it does:
-#   1. Detects the Linux distribution
-#   2. Installs system prerequisites (git, curl, C compiler)
-#   3. Installs Go 1.24+ from the official tarball (go.dev)
-#   4. Installs Rust via rustup (official installer)
-#   5. Clones the latest tagged release and builds parser → core → TUI
-#   6. Copies whoisthat, whoisthat-core, whoisthat-parser to /usr/local/bin
-#   7. Installs xray-core (go install, pinned version)
-#   8. Optionally: tun2socks for TUN mode
-#
-# Transparency: every step is printed to the terminal, nothing is hidden.
-# Only the C compiler and basic tools come from distro repos.
-# Go and Rust use official installers because distro packages are outdated.
+# Components:
+#   1. System prerequisites (build-essential/base-devel, git, curl, unzip, libcap)
+#   2. Go 1.24+ (official go.dev distribution)
+#   3. Rust stable (official rustup.rs distribution)
+#   4. WhoisThat suite:
+#        - whoisthat-parser (standalone Rust URI -> Xray JSON generator)
+#        - whoisthat-core   (Go VPN daemon with ambient Linux capabilities)
+#        - whoisthat        (Ratatui Rust TUI client)
+#   5. Xray-core (official release: xray, geoip.dat, geosite.dat)
+#   6. tun2socks (optional: official release for system-wide TUN mode)
+#   7. hysteria2 (optional: official client for hysteria2:// / hy2:// profiles)
 # =============================================================================
 set -euo pipefail
 
-# --- constants ---------------------------------------------------------------
-BUILD_DIR="/tmp/whoisthat-build"          # temporary build directory
-GO_VERSION="1.25.0"                       # minimum Go version (bump when go.mod changes)
-XRAY_VERSION="v1.8.23"                    # pinned Xray-core release
-TUN2SOCKS_VERSION="v2.5.2"               # pinned tun2socks release
-HYSTERIA_VERSION="v2.7.5"                 # pinned hysteria2 client release
+# --- version constants -------------------------------------------------------
+GO_MIN_VERSION="1.24.0"
+GO_INSTALL_VERSION="1.25.0"
+XRAY_VERSION="v1.8.23"
+TUN2SOCKS_VERSION="v2.5.2"
+HYSTERIA_VERSION="2.9.3"
 
-# --- terminal colors ---------------------------------------------------------
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-CYAN='\033[0;36m'
-NC='\033[0m' # No Color
+# --- configuration & defaults ------------------------------------------------
+BUILD_DIR="/tmp/whoisthat-build-$$"
+GIT_REPO="https://github.com/kvunoff/whoisthat.git"
+ASSUME_YES=false
+NONINTERACTIVE=false
+INSTALL_TUN=true
+INSTALL_HY2=true
+TARGET_BRANCH=""
+BUILD_LOCAL=false
+UNINSTALL_MODE=false
+MODE="Install"
+
+# --- terminal styling --------------------------------------------------------
+if [ -t 1 ]; then
+    RED='\033[0;31m'
+    GREEN='\033[0;32m'
+    YELLOW='\033[1;33m'
+    BLUE='\033[0;34m'
+    CYAN='\033[0;36m'
+    BOLD='\033[1m'
+    NC='\033[0m'
+else
+    RED=''
+    GREEN=''
+    YELLOW=''
+    BLUE=''
+    CYAN=''
+    BOLD=''
+    NC=''
+fi
 
 info()  { echo -e "${GREEN}[+]${NC} $*"; }
 warn()  { echo -e "${YELLOW}[!]${NC} $*"; }
 err()   { echo -e "${RED}[-]${NC} $*"; }
-step()  { echo -e "\n${CYAN}==>${NC} ${YELLOW}$*${NC}"; }
+step()  { echo -e "\n${CYAN}==>${NC} ${BOLD}$*${NC}"; }
 
-# --- platform guard ----------------------------------------------------------
-[[ "$(uname)" == "Linux" ]] || { err "Only Linux is supported"; exit 1; }
+# --- platform & privilege setup ----------------------------------------------
+[[ "$(uname)" == "Linux" ]] || { err "Only Linux is supported."; exit 1; }
 
-# --- cleanup on failure ------------------------------------------------------
-trap 'err "Build failed. Cleaning up..."; rm -rf "$BUILD_DIR"' ERR
-
-# --- detect the Linux distribution -------------------------------------------
-detect_distro() {
-    if [ -f /etc/os-release ]; then
-        . /etc/os-release
-        DISTRO_ID="${ID:-unknown}"
-    else
-        DISTRO_ID="unknown"
+cleanup() {
+    local exit_code=$?
+    if [ -d "$BUILD_DIR" ] && [ "${SKIP_CLEANUP:-false}" != "true" ]; then
+        rm -rf "$BUILD_DIR"
     fi
-    info "Detected distro: ${DISTRO_ID}"
+    if [ $exit_code -ne 0 ]; then
+        err "Installation failed (exit code $exit_code)."
+    fi
+}
+trap cleanup EXIT
+
+# Determine sudo requirement (support running directly as root)
+if [ "$(id -u)" -eq 0 ]; then
+    SUDO=""
+elif command -v sudo &>/dev/null; then
+    SUDO="sudo"
+else
+    err "This installer requires superuser privileges to install binaries to /usr/local/bin."
+    err "Please install 'sudo' or run as root."
+    exit 1
+fi
+
+ensure_sudo() {
+    if [ -n "$SUDO" ]; then
+        if ! $SUDO -v 2>/dev/null; then
+            info "Requesting sudo privileges for installation..."
+            $SUDO -v || { err "Superuser authentication failed."; exit 1; }
+        fi
+    fi
 }
 
-# --- install system-level build tools ----------------------------------------
+# --- helper functions --------------------------------------------------------
+show_help() {
+    cat <<EOF
+WhoisThat Universal Installer & Updater
+
+Usage:
+  install.sh [options]
+  curl -fsSL https://raw.githubusercontent.com/kvunoff/whoisthat/main/install.sh | bash -s -- [options]
+
+Options:
+  -y, --yes          Automatic yes to prompts (install all optional components)
+  --no-tun           Skip installation of tun2socks (TUN mode engine)
+  --no-hy2           Skip installation of hysteria2 client
+  --branch <name>    Build from a specific git branch or tag (default: latest release tag)
+  --local            Build directly from current repository directory instead of cloning
+  --uninstall        Remove whoisthat binaries from /usr/local/bin
+  -h, --help         Show this help message and exit
+
+Environment Variables:
+  NONINTERACTIVE=1   Assume non-interactive execution (defaults to skipping optional prompts unless -y)
+  ASSUME_YES=1       Equivalent to --yes
+  WHOISTHAT_BRANCH   Equivalent to --branch
+
+EOF
+}
+
+prompt_yes_no() {
+    local prompt="$1"
+    local default="${2:-N}"
+    local answer=""
+
+    if [ "$ASSUME_YES" = "true" ]; then
+        return 0
+    fi
+    if [ "$NONINTERACTIVE" = "true" ]; then
+        [[ "$default" =~ ^[Yy]$ ]] && return 0 || return 1
+    fi
+
+    # Read from /dev/tty if available (crucial for curl | bash)
+    if [ -c /dev/tty ]; then
+        read -rp "$prompt " answer < /dev/tty || answer="$default"
+    elif [ -t 0 ]; then
+        read -rp "$prompt " answer || answer="$default"
+    else
+        answer="$default"
+    fi
+
+    [[ "$answer" =~ ^[Yy]$ ]]
+}
+
+version_ge() {
+    # Returns 0 if version $1 >= version $2
+    local v1="$1" v2="$2"
+    [[ "$v1" =~ ^[0-9]+\.[0-9]+$ ]] && v1="${v1}.0"
+    [[ "$v2" =~ ^[0-9]+\.[0-9]+$ ]] && v2="${v2}.0"
+    [ "$(printf '%s\n%s\n' "$v2" "$v1" | sort -V | head -n1)" = "$v2" ]
+}
+
+extract_zip() {
+    local zip_file="$1"
+    local target_dir="$2"
+    mkdir -p "$target_dir"
+    if command -v unzip &>/dev/null; then
+        unzip -q -o "$zip_file" -d "$target_dir"
+    elif command -v python3 &>/dev/null; then
+        python3 -m zipfile -e "$zip_file" "$target_dir"
+    else
+        err "Neither 'unzip' nor 'python3' is available to extract $zip_file"
+        return 1
+    fi
+}
+
+# --- argument parsing --------------------------------------------------------
+parse_args() {
+    [ "${ASSUME_YES:-0}" = "1" ] && ASSUME_YES=true
+    [ "${NONINTERACTIVE:-0}" = "1" ] && NONINTERACTIVE=true
+    [ -n "${WHOISTHAT_BRANCH:-}" ] && TARGET_BRANCH="$WHOISTHAT_BRANCH"
+
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -y|--yes)
+                ASSUME_YES=true
+                shift
+                ;;
+            --no-tun)
+                INSTALL_TUN=false
+                shift
+                ;;
+            --no-hy2)
+                INSTALL_HY2=false
+                shift
+                ;;
+            --branch)
+                if [ -n "${2:-}" ]; then
+                    TARGET_BRANCH="$2"
+                    shift 2
+                else
+                    err "--branch requires an argument"
+                    exit 1
+                fi
+                ;;
+            --local)
+                BUILD_LOCAL=true
+                shift
+                ;;
+            --uninstall)
+                UNINSTALL_MODE=true
+                shift
+                ;;
+            -h|--help)
+                show_help
+                exit 0
+                ;;
+            *)
+                warn "Unknown option: $1"
+                shift
+                ;;
+        esac
+    done
+}
+
+# --- uninstallation ----------------------------------------------------------
+uninstall_whoisthat() {
+    step "Uninstalling WhoisThat"
+    ensure_sudo
+
+    local removed=0
+    for bin in whoisthat whoisthat-core whoisthat-parser; do
+        if [ -f "/usr/local/bin/$bin" ]; then
+            $SUDO rm -f "/usr/local/bin/$bin"
+            info "Removed /usr/local/bin/$bin"
+            removed=1
+        fi
+    done
+
+    if [ "$removed" -eq 0 ]; then
+        info "No WhoisThat binaries were found in /usr/local/bin."
+    else
+        info "WhoisThat binaries removed successfully."
+    fi
+
+    echo
+    warn "User configuration (~/.config/whoisthat) and database (~/.local/share/whoisthat) were preserved."
+    warn "To completely delete all user data and credentials, run:"
+    echo -e "    ${YELLOW}rm -rf ~/.config/whoisthat ~/.local/share/whoisthat${NC}"
+    echo
+    exit 0
+}
+
+# --- hardware and system detection -------------------------------------------
+detect_arch() {
+    local m
+    m="$(uname -m)"
+    case "$m" in
+        x86_64|amd64)
+            ARCH_FAMILY="amd64"
+            GO_ARCH="amd64"
+            XRAY_ARCH="64"
+            T2S_ARCH="amd64"
+            HY_ARCH="amd64"
+            ;;
+        aarch64|arm64)
+            ARCH_FAMILY="arm64"
+            GO_ARCH="arm64"
+            XRAY_ARCH="arm64-v8a"
+            T2S_ARCH="arm64"
+            HY_ARCH="arm64"
+            ;;
+        *)
+            err "Unsupported architecture: $m"
+            err "Precompiled engine packages support x86_64 and aarch64."
+            exit 1
+            ;;
+    esac
+    info "Platform: Linux ($m -> $ARCH_FAMILY)"
+}
+
+detect_distro() {
+    if [ -f /etc/os-release ]; then
+        # shellcheck disable=SC1091
+        . /etc/os-release
+        DISTRO_ID="${ID:-unknown}"
+        DISTRO_NAME="${PRETTY_NAME:-$DISTRO_ID}"
+    else
+        DISTRO_ID="unknown"
+        DISTRO_NAME="Unknown Linux"
+    fi
+    info "Distribution: ${DISTRO_NAME}"
+}
+
+# --- step 1: system build tools ----------------------------------------------
 install_system_deps() {
     step "Step 1/8: System prerequisites"
 
-    # Only the C compiler + git + curl come from the distro repo.
-    # Go and Rust are installed separately via official channels.
     case "$DISTRO_ID" in
         debian|ubuntu|linuxmint|pop)
-            info "Debian/Ubuntu — installing build-essential git curl"
-            sudo apt-get update -qq
-            sudo apt-get install -y -qq build-essential git curl
+            info "Debian/Ubuntu family — installing build-essential, git, curl, unzip, libcap2-bin"
+            $SUDO apt-get update -qq
+            $SUDO apt-get install -y -qq build-essential git curl unzip libcap2-bin
             ;;
         fedora|rhel|centos|rocky|almalinux)
-            info "Fedora/RHEL — installing gcc git curl make"
-            sudo dnf install -y -q gcc git curl make
+            info "Fedora/RHEL family — installing gcc, git, curl, make, unzip, libcap"
+            $SUDO dnf install -y -q gcc git curl make unzip libcap
             ;;
         arch|manjaro|endeavouros)
-            info "Arch — installing base-devel git curl"
-            sudo pacman -S --noconfirm --needed base-devel git curl
+            info "Arch family — installing base-devel, git, curl, unzip, libcap"
+            $SUDO pacman -S --noconfirm --needed base-devel git curl unzip libcap
             ;;
         alpine)
-            info "Alpine — installing build-base git curl"
-            sudo apk add --no-cache build-base git curl
+            info "Alpine — installing build-base, git, curl, unzip, libcap"
+            $SUDO apk add --no-cache build-base git curl unzip libcap
             ;;
         opensuse*|suse)
-            info "openSUSE — installing gcc git curl make"
-            sudo zypper install -y -l gcc git curl make
+            info "openSUSE — installing gcc, git, curl, make, unzip, libcap-progs"
+            $SUDO zypper install -y -l gcc git curl make unzip libcap-progs
             ;;
         *)
-            warn "Unknown distro (${DISTRO_ID})."
-            warn "Make sure you have: a C compiler (gcc/clang), git, curl, make."
-            warn "Continuing anyway — build may fail if tools are missing."
+            warn "Unrecognized distribution (${DISTRO_ID})."
+            warn "Ensure you have: C compiler, make, git, curl, unzip, and libcap (setcap)."
             ;;
     esac
 }
 
-# --- install Go from the official tarball (go.dev) ---------------------------
-#     Distro repos ship ancient versions. We need 1.24+ for omitzero.
+# --- step 2: Go toolchain ----------------------------------------------------
 install_go() {
-    step "Step 2/8: Install Go ${GO_VERSION} (official tarball)"
+    step "Step 2/8: Verify Go toolchain (>= ${GO_MIN_VERSION})"
 
-    if ! command -v curl &>/dev/null; then
-        err "curl is required to download Go. It should have been installed in step 1."
-        exit 1
+    # Check existing environment PATH + standard /usr/local/go/bin
+    if [ -d "/usr/local/go/bin" ] && [[ ":$PATH:" != *":/usr/local/go/bin:"* ]]; then
+        export PATH="/usr/local/go/bin:$PATH"
     fi
 
-    # Check if the right version is already available
     if command -v go &>/dev/null; then
         local current_go
         current_go=$(go version 2>/dev/null | awk '{print $3}' | sed 's/^go//')
-        if [ "$(printf '%s\n' "$GO_VERSION" "$current_go" | sort -V | head -1)" = "$GO_VERSION" ]; then
-            info "Go ${current_go} already installed (>= ${GO_VERSION}), skipping"
+        if version_ge "$current_go" "$GO_MIN_VERSION"; then
+            info "Go ${current_go} detected (>= ${GO_MIN_VERSION}), skipping installation"
             return
         fi
-        warn "Found Go ${current_go} (need >= ${GO_VERSION}), upgrading"
+        warn "Found Go ${current_go}, but >= ${GO_MIN_VERSION} is required. Upgrading..."
+    else
+        info "Go not found in PATH. Installing Go ${GO_INSTALL_VERSION}..."
     fi
 
-    local go_arch
-    case "$(uname -m)" in
-        x86_64)  go_arch="amd64" ;;
-        aarch64) go_arch="arm64" ;;
-        *)       err "Unsupported architecture: $(uname -m)"; exit 1 ;;
-    esac
-
-    local go_tarball="go${GO_VERSION}.linux-${go_arch}.tar.gz"
+    local go_tarball="go${GO_INSTALL_VERSION}.linux-${GO_ARCH}.tar.gz"
     local go_url="https://go.dev/dl/${go_tarball}"
+    local tmp_tar="/tmp/${go_tarball}"
 
-    info "Downloading from go.dev: ${go_url}"
-    curl -fsSL "$go_url" -o "/tmp/${go_tarball}"
+    info "Downloading ${go_url}..."
+    curl -fsSL "$go_url" -o "$tmp_tar"
 
-    info "Extracting to /usr/local/go"
-    sudo rm -rf /usr/local/go
-    sudo tar -C /usr/local -xzf "/tmp/${go_tarball}"
-    rm -f "/tmp/${go_tarball}"
+    info "Extracting to /usr/local/go..."
+    $SUDO rm -rf /usr/local/go
+    $SUDO tar -C /usr/local -xzf "$tmp_tar"
+    rm -f "$tmp_tar"
 
-    # Add Go to PATH for the current session
     export PATH="/usr/local/go/bin:$PATH"
 
-    # Add to shell profile so it survives terminal restarts
     local profile_file="$HOME/.profile"
-    if ! grep -q '/usr/local/go/bin' "$profile_file" 2>/dev/null; then
+    if [ -f "$profile_file" ] && ! grep -q '/usr/local/go/bin' "$profile_file" 2>/dev/null; then
         echo 'export PATH="/usr/local/go/bin:$PATH"' >> "$profile_file"
         info "Added /usr/local/go/bin to ~/.profile"
     fi
 
-    info "Go installed: $(go version)"
+    info "Go ready: $(go version)"
 }
 
-# --- install Rust via rustup (official installer) ----------------------------
+# --- step 3: Rust toolchain --------------------------------------------------
 install_rust() {
-    step "Step 3/8: Install Rust (rustup.rs)"
+    step "Step 3/8: Verify Rust toolchain"
 
-    if command -v rustc &>/dev/null; then
+    if [ -f "$HOME/.cargo/env" ]; then
+        # shellcheck source=/dev/null
+        source "$HOME/.cargo/env"
+    elif [ -d "$HOME/.cargo/bin" ] && [[ ":$PATH:" != *":$HOME/.cargo/bin:"* ]]; then
+        export PATH="$HOME/.cargo/bin:$PATH"
+    fi
+
+    if command -v cargo &>/dev/null && command -v rustc &>/dev/null; then
         local rust_ver
         rust_ver=$(rustc --version | awk '{print $2}')
-        info "Rust ${rust_ver} already installed, skipping"
+        info "Rust ${rust_ver} detected, skipping installation"
         return
     fi
 
-    info "Running the official rustup installer (rustup.rs)"
-    # --default-toolchain stable — install the stable compiler
-    # -y — non-interactive (no prompts)
+    info "Installing Rust stable via official rustup installer (https://rustup.rs)..."
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
         | sh -s -- -y --default-toolchain stable
 
-    # rustup installs everything into ~/.cargo/bin
     if [ -f "$HOME/.cargo/env" ]; then
         # shellcheck source=/dev/null
         source "$HOME/.cargo/env"
@@ -171,261 +395,274 @@ install_rust() {
         export PATH="$HOME/.cargo/bin:$PATH"
     fi
 
-    info "Rust installed: $(rustc --version)"
+    info "Rust ready: $(rustc --version)"
 }
 
-# --- check that sudo is available --------------------------------------------
-ensure_sudo() {
-    if ! command -v sudo &>/dev/null; then
-        warn "sudo not found — some steps require root."
-        warn "If the script fails, install sudo or run as root."
-    fi
-}
-
-# --- build WhoisThat (parser → core → TUI) -----------------------------------
-#     Clones the latest tagged release (stable), not the main branch.
-#     Verifies that each build step produced the expected binary.
+# --- step 4: build WhoisThat binaries ----------------------------------------
 build_whoisthat() {
-    step "Step 4/8: Build WhoisThat"
+    step "Step 4/8: Build WhoisThat suite"
 
-    rm -rf "$BUILD_DIR"
+    local src_dir="$BUILD_DIR"
 
-    # Fetch the latest release tag so we build a stable version, not HEAD.
-    # Uses git ls-remote (no GitHub API rate limit).
-    info "Looking up latest release tag..."
-    local tag
-    tag=$(git ls-remote --tags --sort=-version:refname \
-        https://github.com/kvunoff/whoisthat.git 'refs/tags/v*' \
-        | head -1 | awk '{print $2}' | sed 's|refs/tags/||')
-    if [ -z "$tag" ]; then
-        err "Could not find any release tag. Falling back to main branch."
-        tag="main"
+    # Option to build in-place if running directly from local repo clone
+    if [ "$BUILD_LOCAL" = "true" ] || ([ -f "./Cargo.toml" ] && [ -d "./core/core" ] && [ -d "./parser" ] && [ -z "$TARGET_BRANCH" ]); then
+        info "Building directly from current directory: $(pwd)"
+        src_dir="$(pwd)"
+        SKIP_CLEANUP=true
+    else
+        rm -rf "$BUILD_DIR"
+        mkdir -p "$BUILD_DIR"
+
+        local tag="$TARGET_BRANCH"
+        if [ -z "$tag" ]; then
+            info "Looking up latest release tag from GitHub..."
+            tag=$(git ls-remote --tags --sort=-version:refname "$GIT_REPO" 'refs/tags/v*' \
+                | grep -v '\^{}' \
+                | head -1 \
+                | awk '{print $2}' \
+                | sed 's|refs/tags/||')
+            if [ -z "$tag" ]; then
+                warn "Could not determine latest release tag. Falling back to 'main' branch."
+                tag="main"
+            fi
+        fi
+
+        info "Cloning whoisthat (${tag}) into ${BUILD_DIR}..."
+        git clone --depth 1 --branch "${tag}" "$GIT_REPO" "$BUILD_DIR"
     fi
-    info "Cloning whoisthat ${tag} into ${BUILD_DIR}..."
-    git clone --depth 1 --branch "${tag}" https://github.com/kvunoff/whoisthat.git "$BUILD_DIR"
-    cd "$BUILD_DIR"
 
-    # 1. Build the parser (whoisthat-parser) — standalone Rust binary.
-    #    Parses VLESS/VMess/Trojan/SS URIs and generates Xray JSON config.
-    info "Building whoisthat-parser..."
+    cd "$src_dir"
+
+    # 1. whoisthat-parser (Rust)
+    info "1/3 Building whoisthat-parser..."
     cargo build --release --manifest-path parser/Cargo.toml
-    if [ ! -f parser/target/release/whoisthat-parser ]; then
-        err "whoisthat-parser build failed — binary not found"
-        exit 1
-    fi
-    info "  -> $(parser/target/release/whoisthat-parser --version 2>/dev/null || echo 'ok')"
+    [ -f parser/target/release/whoisthat-parser ] || { err "whoisthat-parser build failed"; exit 1; }
 
-    # 2. Build the Go core (whoisthat-core) — the VPN engine.
-    #    Manages Xray, TUN, profile DB, and the TCP command server.
-    info "Building whoisthat-core..."
+    # 2. whoisthat-core (Go)
+    info "2/3 Building whoisthat-core..."
     (cd core/core && go build -o whoisthat-core)
-    if [ ! -f core/core/whoisthat-core ]; then
-        err "whoisthat-core build failed — binary not found"
-        exit 1
-    fi
-    info "  -> ok"
+    [ -f core/core/whoisthat-core ] || { err "whoisthat-core build failed"; exit 1; }
 
-    # 3. Build the Rust TUI (whoisthat) — the terminal interface.
-    info "Building whoisthat TUI..."
+    # 3. whoisthat TUI (Rust)
+    info "3/3 Building whoisthat TUI..."
     cargo build --release
-    if [ ! -f target/release/whoisthat ]; then
-        err "whoisthat TUI build failed — binary not found"
-        exit 1
-    fi
-    info "  -> ok"
+    [ -f target/release/whoisthat ] || { err "whoisthat TUI build failed"; exit 1; }
 
-    info "Build complete."
+    BUILD_SRC_DIR="$src_dir"
+    info "All WhoisThat components built successfully."
 }
 
-# --- install binaries to /usr/local/bin --------------------------------------
+# --- step 5: install binaries & set capabilities -----------------------------
 install_binaries() {
     step "Step 5/8: Install binaries to /usr/local/bin"
 
-    cd "$BUILD_DIR"
+    cd "$BUILD_SRC_DIR"
 
-    info "Copying whoisthat, whoisthat-core, whoisthat-parser"
-    sudo install -Dm755 target/release/whoisthat              /usr/local/bin/whoisthat
-    sudo install -Dm755 core/core/whoisthat-core               /usr/local/bin/whoisthat-core
-    sudo install -Dm755 parser/target/release/whoisthat-parser /usr/local/bin/whoisthat-parser
-    sudo setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep /usr/local/bin/whoisthat-core
+    info "Installing whoisthat, whoisthat-core, whoisthat-parser..."
+    $SUDO install -Dm755 target/release/whoisthat              /usr/local/bin/whoisthat
+    $SUDO install -Dm755 core/core/whoisthat-core               /usr/local/bin/whoisthat-core
+    $SUDO install -Dm755 parser/target/release/whoisthat-parser /usr/local/bin/whoisthat-parser
 
-    info "Binaries installed:"
-    info "  whoisthat        — TUI (run 'whoisthat' to start)"
-    info "  whoisthat-core   — VPN engine (auto-spawned by the TUI)"
-    info "  whoisthat-parser — URI → Xray config (internal)"
+    info "Granting network capabilities to whoisthat-core..."
+    if $SUDO setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep /usr/local/bin/whoisthat-core 2>/dev/null; then
+        info "Capabilities configured: cap_net_admin, cap_net_raw, cap_setpcap"
+    else
+        warn "setcap failed or filesystem does not support capabilities."
+        warn "WhoisThat will offer pkexec capability setup on startup if required for TUN mode."
+    fi
 }
 
-# --- install Xray-core (pinned version for reproducibility) ------------------
+# --- step 6: install Xray-core -----------------------------------------------
 install_xray() {
-    step "Step 6/8: Install Xray-core ${XRAY_VERSION}"
+    step "Step 6/8: Verify Xray-core (${XRAY_VERSION})"
 
     if command -v xray &>/dev/null; then
         info "xray already installed: $(xray version 2>&1 | head -1)"
         return
     fi
 
-    # go install with a pinned tag ensures reproducible builds.
-    info "Installing Xray-core via go install (may take a minute)..."
-    go install "github.com/XTLS/Xray-core@${XRAY_VERSION}"
+    local xray_zip="Xray-linux-${XRAY_ARCH}.zip"
+    local xray_url="https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}/${xray_zip}"
+    local tmp_dir="/tmp/whoisthat-xray-$$"
 
-    # go install places the binary into GOPATH/bin; move it to a system path.
-    local gobin="${GOPATH:-$HOME/go}/bin"
-    if [ -f "$gobin/xray" ]; then
-        sudo install -Dm755 "$gobin/xray" /usr/local/bin/xray
+    info "Downloading precompiled Xray-core ${XRAY_VERSION} (${XRAY_ARCH})..."
+    mkdir -p "$tmp_dir"
+    if curl -fsSL "$xray_url" -o "${tmp_dir}/${xray_zip}"; then
+        extract_zip "${tmp_dir}/${xray_zip}" "$tmp_dir"
+        $SUDO install -Dm755 "${tmp_dir}/xray" /usr/local/bin/xray
+
+        # Install bundled geo assets for fallback routing
+        $SUDO mkdir -p /usr/local/share/xray
+        [ -f "${tmp_dir}/geoip.dat" ] && $SUDO install -Dm644 "${tmp_dir}/geoip.dat" /usr/local/share/xray/geoip.dat
+        [ -f "${tmp_dir}/geosite.dat" ] && $SUDO install -Dm644 "${tmp_dir}/geosite.dat" /usr/local/share/xray/geosite.dat
+
+        rm -rf "$tmp_dir"
         info "Xray-core installed: $(xray version 2>&1 | head -1)"
-    elif [ -f "$HOME/go/bin/xray" ]; then
-        sudo install -Dm755 "$HOME/go/bin/xray" /usr/local/bin/xray
-        info "Xray-core installed"
     else
-        warn "Xray-core binary not found in GOPATH."
-        warn "Install manually: go install github.com/XTLS/Xray-core@${XRAY_VERSION}"
-        warn "Then copy: sudo install -Dm755 ~/go/bin/xray /usr/local/bin/xray"
+        rm -rf "$tmp_dir"
+        err "Failed to download Xray-core from ${xray_url}"
+        exit 1
     fi
 }
 
-# --- install tun2socks (optional, for TUN mode only) -------------------------
+# --- step 7: install tun2socks (optional) ------------------------------------
 install_tun2socks() {
-    step "Step 7/8: Install tun2socks (optional — TUN mode only)"
+    step "Step 7/8: Verify tun2socks (optional — TUN mode engine)"
 
     if command -v tun2socks &>/dev/null; then
         info "tun2socks already installed"
         return
     fi
 
-    # Explicit opt-in — do not install unless the user says yes.
-    warn "TUN mode requires root privileges and does not work on all systems."
-    read -rp "    Install tun2socks ${TUN2SOCKS_VERSION}? [y/N] " answer
-    if [[ ! "$answer" =~ ^[Yy]$ ]]; then
+    if [ "$INSTALL_TUN" = "false" ]; then
+        info "Skipping tun2socks (--no-tun specified)"
+        return
+    fi
+
+    warn "tun2socks enables transparent system-wide TUN mode."
+    if ! prompt_yes_no "    Install tun2socks ${TUN2SOCKS_VERSION}? [y/N]" "N"; then
         info "Skipping tun2socks"
         return
     fi
 
-    info "Installing tun2socks via go install..."
-    go install "github.com/xjasonlyu/tun2socks/v2@${TUN2SOCKS_VERSION}"
+    local t2s_zip="tun2socks-linux-${T2S_ARCH}.zip"
+    local t2s_url="https://github.com/xjasonlyu/tun2socks/releases/download/${TUN2SOCKS_VERSION}/${t2s_zip}"
+    local tmp_dir="/tmp/whoisthat-tun2socks-$$"
 
-    local gobin="${GOPATH:-$HOME/go}/bin"
-    if [ -f "$gobin/tun2socks" ]; then
-        sudo install -Dm755 "$gobin/tun2socks" /usr/local/bin/tun2socks
-        info "tun2socks installed"
-    elif [ -f "$HOME/go/bin/tun2socks" ]; then
-        sudo install -Dm755 "$HOME/go/bin/tun2socks" /usr/local/bin/tun2socks
-        info "tun2socks installed"
+    info "Downloading tun2socks ${TUN2SOCKS_VERSION} (${T2S_ARCH})..."
+    mkdir -p "$tmp_dir"
+    if curl -fsSL "$t2s_url" -o "${tmp_dir}/${t2s_zip}"; then
+        extract_zip "${tmp_dir}/${t2s_zip}" "$tmp_dir"
+        local bin
+        bin=$(find "$tmp_dir" -type f -name "tun2socks*" | head -1)
+        if [ -n "$bin" ]; then
+            $SUDO install -Dm755 "$bin" /usr/local/bin/tun2socks
+            info "tun2socks installed successfully"
+        else
+            warn "tun2socks binary not found in downloaded archive"
+        fi
+        rm -rf "$tmp_dir"
     else
-        warn "tun2socks not found — build may have failed."
-        warn "Try manually: go install github.com/xjasonlyu/tun2socks/v2@${TUN2SOCKS_VERSION}"
+        rm -rf "$tmp_dir"
+        warn "Failed to download tun2socks from ${t2s_url}"
     fi
 }
 
-# --- install hysteria2 (optional, for hysteria2:// subscriptions) -------------
+# --- step 8: install hysteria2 (optional) ------------------------------------
 install_hysteria2() {
-    step "Step 8/8: Install hysteria2 client (optional — hysteria2:// profiles)"
+    step "Step 8/8: Verify hysteria2 client (optional — hysteria2:// profiles)"
 
     if command -v hysteria &>/dev/null; then
-        info "hysteria already installed: $(hysteria version 2>&1 | head -1)"
+        local hy_ver
+        hy_ver=$(hysteria version 2>&1 | grep -m1 "Version:" | awk '{print $2}' || echo "")
+        info "hysteria already installed: ${hy_ver:-ok}"
         return
     fi
 
-    # xray-core does NOT implement the hysteria2 protocol. Subscriptions
-    # containing hysteria2:// / hy2:// URIs need the official hysteria2 client
-    # binary from apernet/hysteria2. Without it, connect attempts fail silently.
-    read -rp "    Install hysteria2 ${HYSTERIA_VERSION}? [y/N] " answer
-    if [[ ! "$answer" =~ ^[Yy]$ ]]; then
+    if [ "$INSTALL_HY2" = "false" ]; then
+        info "Skipping hysteria2 (--no-hy2 specified)"
+        return
+    fi
+
+    warn "xray-core does NOT implement the hysteria2 protocol."
+    warn "Subscriptions containing hysteria2:// / hy2:// profiles require the hysteria binary."
+    if ! prompt_yes_no "    Install hysteria2 client v${HYSTERIA_VERSION}? [y/N]" "N"; then
         info "Skipping hysteria2"
-        warn "hysteria2:// / hy2:// profiles will not work without the hysteria binary."
-        warn "Install manually: go install github.com/apernet/hysteria2/v2@${HYSTERIA_VERSION}"
+        warn "hysteria2:// / hy2:// profiles will not be able to connect without the hysteria binary."
         return
     fi
 
-    info "Installing hysteria2 via go install..."
-    go install "github.com/apernet/hysteria2/v2@${HYSTERIA_VERSION}"
+    local hy_bin="hysteria-linux-${HY_ARCH}"
+    local hy_url="https://github.com/apernet/hysteria/releases/download/app%2Fv${HYSTERIA_VERSION}/${hy_bin}"
+    local tmp_bin="/tmp/whoisthat-hysteria-$$"
 
-    local gobin="${GOPATH:-$HOME/go}/bin"
-    if [ -f "$gobin/hysteria" ]; then
-        sudo install -Dm755 "$gobin/hysteria" /usr/local/bin/hysteria
-        info "hysteria2 installed: $(hysteria version 2>&1 | head -1)"
-    elif [ -f "$HOME/go/bin/hysteria" ]; then
-        sudo install -Dm755 "$HOME/go/bin/hysteria" /usr/local/bin/hysteria
-        info "hysteria2 installed"
+    info "Downloading hysteria v${HYSTERIA_VERSION} (${HY_ARCH})..."
+    if curl -fsSL "$hy_url" -o "$tmp_bin"; then
+        local hy_ver
+        hy_ver=$("$tmp_bin" version 2>&1 | grep -m1 "Version:" | awk '{print $2}' || echo "v${HYSTERIA_VERSION}")
+        $SUDO install -Dm755 "$tmp_bin" /usr/local/bin/hysteria
+        rm -f "$tmp_bin"
+        info "hysteria installed: ${hy_ver}"
     else
-        warn "hysteria2 binary not found in GOPATH."
-        warn "Install manually: go install github.com/apernet/hysteria2/v2@${HYSTERIA_VERSION}"
-        warn "Then copy: sudo install -Dm755 ~/go/bin/hysteria /usr/local/bin/hysteria"
+        rm -f "$tmp_bin"
+        warn "Failed to download hysteria client from ${hy_url}"
     fi
 }
 
-# --- final summary -----------------------------------------------------------
+# --- final banner & instructions ---------------------------------------------
 print_final_message() {
+    local action="installed"
+    [ "$MODE" = "Upgrade" ] && action="upgraded"
+
     echo
-    echo -e "${GREEN}============================================${NC}"
-    echo -e "${GREEN}  WhoisThat ${mode,,}ed successfully!${NC}"
-    echo -e "${GREEN}============================================${NC}"
+    echo -e "${GREEN}======================================================${NC}"
+    echo -e "${GREEN}  WhoisThat ${action} successfully!${NC}"
+    echo -e "${GREEN}======================================================${NC}"
     echo
-    echo "  Usage:"
-    echo -e "    ${YELLOW}whoisthat${NC}            — normal mode"
-    echo -e "    ${YELLOW}sudo -E whoisthat${NC}    — TUN mode (system-wide VPN)"
+    echo -e "  Launch:"
+    echo -e "    ${BOLD}whoisthat${NC}"
     echo
-    echo "  Config & data:"
-    echo "    ~/.config/whoisthat/        — core and TUI config"
-    echo "    ~/.local/share/whoisthat/db/ — profile database"
+    echo -e "  Modes:"
+    echo -e "    • Proxy mode:     SOCKS5 (127.0.0.1:3090) & HTTP (127.0.0.1:3091)"
+    echo -e "    • TUN mode:        Press '${BOLD}v${NC}' inside the TUI for full-system routing"
+    echo -e "                      (runs as regular user via Linux ambient capabilities)"
     echo
-    echo "  Key bindings:"
-    echo "    j/k/↑/↓  — navigate"
-    echo "    U         — add group (subscription)"
-    echo "    u         — update subscription"
-    echo "    e         — edit group"
-    echo "    c/Enter   — connect"
-    echo "    d         — disconnect"
-    echo "    X         — delete group"
-    echo "    h         — help (all keys)"
-    echo "    q         — detach (VPN keeps running in background)"
-    echo "    Q/Ctrl+C  — full quit (stop VPN + exit)"
+    echo -e "  Key bindings:"
+    echo -e "    ${BOLD}j / k / ↑ / ↓${NC}  — navigate profiles"
+    echo -e "    ${BOLD}Enter / c${NC}      — connect / reconnect"
+    echo -e "    ${BOLD}d${NC}              — disconnect"
+    echo -e "    ${BOLD}v${NC}              — toggle TUN mode"
+    echo -e "    ${BOLD}t / T${NC}          — test latency (t = all, T = selected)"
+    echo -e "    ${BOLD}C${NC}              — cancel running tests"
+    echo -e "    ${BOLD}U${NC}              — add new subscription (group)"
+    echo -e "    ${BOLD}u${NC}              — update subscription"
+    echo -e "    ${BOLD}e${NC}              — edit subscription"
+    echo -e "    ${BOLD}X${NC}              — delete subscription"
+    echo -e "    ${BOLD}y${NC}              — copy profile URI"
+    echo -e "    ${BOLD}h${NC}              — view full help & all hotkeys"
+    echo -e "    ${BOLD}q${NC}              — detach (VPN keeps running in background)"
+    echo -e "    ${BOLD}Q / Ctrl+C${NC}     — full quit (stops VPN and exits)"
     echo
-    echo "  Clean up the build directory:"
-    echo -e "    ${YELLOW}rm -rf ${BUILD_DIR}${NC}"
+    echo -e "  Configuration:"
+    echo -e "    Config:    ~/.config/whoisthat/"
+    echo -e "    Database:  ~/.local/share/whoisthat/db/ (AES-256-GCM encrypted)"
     echo
 
-    # Suggest PATH reload if Go or Cargo were freshly installed.
-    # We check the profile file because PATH is already set in-script.
-    if ! grep -q '/usr/local/go/bin' "$HOME/.profile" 2>/dev/null; then
-        echo -e "  ${YELLOW}[!] Restart your terminal or run:${NC}"
-        echo "      source ~/.profile"
-        if [ -f "$HOME/.cargo/env" ]; then
-            echo "      source ~/.cargo/env"
-        fi
+    if [ -d "/usr/local/go/bin" ] && ! grep -q '/usr/local/go/bin' "$HOME/.profile" 2>/dev/null; then
+        echo -e "  ${YELLOW}[!] To make Go available in future shells, run:${NC}"
+        echo -e "      source ~/.profile"
         echo
     fi
 
-    # Reinforce the hysteria requirement: install.sh prompts for it earlier
-    # (Step 8/8), but the consent line is easy to scroll past and the silent-
-    # failure mode (connect/test both give "100% loss" with no reason) is hard
-    # to diagnose. Re-probe here so the final banner surfaces a clear warning
-    # when the user skipped it.
     if ! command -v hysteria &>/dev/null; then
-        echo -e "  ${RED}[!] hysteria binary not installed${NC}"
-        echo "      hysteria2:// / hy2:// profiles will NOT work without it."
-        echo "      Install now:  go install github.com/apernet/hysteria2/v2@${HYSTERIA_VERSION}"
-        echo "      Then copy:    sudo install -Dm755 ~/go/bin/hysteria /usr/local/bin/hysteria"
+        echo -e "  ${YELLOW}[i] hysteria2 binary not installed${NC}"
+        echo -e "      hysteria2:// / hy2:// profiles will not work without it."
+        echo -e "      Install anytime: curl -fsSL https://github.com/apernet/hysteria/releases/download/app%2Fv${HYSTERIA_VERSION}/hysteria-linux-amd64 | sudo install -Dm755 /dev/stdin /usr/local/bin/hysteria"
         echo
     fi
 }
 
-# =============================================================================
-# Main
-# =============================================================================
+# --- main --------------------------------------------------------------------
 main() {
-    local mode="Install"
+    parse_args "$@"
+
+    if [ "$UNINSTALL_MODE" = "true" ]; then
+        uninstall_whoisthat
+    fi
+
     if command -v whoisthat &>/dev/null || [ -f /usr/local/bin/whoisthat ]; then
-        mode="Upgrade"
+        MODE="Upgrade"
         local cur
-        cur=$(whoisthat --version 2>/dev/null || echo "unknown")
-        info "whoisthat ${cur} detected — will upgrade to latest release"
+        cur=$(whoisthat --version 2>/dev/null || echo "detected")
+        info "Existing whoisthat installation found (${cur}) -> Upgrading"
     fi
 
     echo
-    echo -e "${CYAN}  WhoisThat — Universal ${mode}er${NC}"
-    echo -e "${CYAN}  ==================================${NC}"
+    echo -e "${CYAN}${BOLD}  WhoisThat — Universal ${MODE}er${NC}"
+    echo -e "${CYAN}  ======================================${NC}"
     echo
 
+    detect_arch
     detect_distro
     ensure_sudo
     install_system_deps
@@ -439,4 +676,6 @@ main() {
     print_final_message
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
+fi
