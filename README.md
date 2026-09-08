@@ -12,7 +12,7 @@ A modern terminal-based VPN client. Rust TUI frontend. Go engine backed by Xray-
 
 - [Installation](#installation) — quick install, AUR, manual build, configuration
 - [Features](#features)
-- [Architecture](#architecture) — how it works, routing rules, HWID
+- [Architecture](#architecture) — how it works, IPC transport, routing rules, HWID
 - [TCP API Protocol](#tcp-api-protocol) — wire format, commands, notifications, structures
 - [Usage](#usage) — keybindings, settings, TUN mode, systemd, subscriptions
 - [Troubleshooting](#troubleshooting)
@@ -32,10 +32,16 @@ A modern terminal-based VPN client. Rust TUI frontend. Go engine backed by Xray-
 curl -fsSL https://raw.githubusercontent.com/kvunoff/whoisthat/main/install.sh | bash
 ```
 
-The script auto-detects your distro, installs Go and Rust from official channels,
+Or unattended with all optional components (`tun2socks` and `hysteria`):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/kvunoff/whoisthat/main/install.sh | bash -s -- --yes
+```
+
+The script auto-detects your architecture (`x86_64` / `aarch64`) and distro, installs Go and Rust from official channels,
 builds everything from the latest tagged release, and copies binaries to `/usr/local/bin`.
-Xray-core is included. tun2socks (TUN mode) and the official `hysteria` client
-(hysteria2 / hy2 profiles) are offered as opt-ins.
+Precompiled Xray-core, tun2socks (TUN mode), and the official `hysteria` client
+(hysteria2 / hy2 profiles) are installed and verified automatically.
 
 ### Arch Linux (AUR)
 
@@ -71,11 +77,13 @@ sudo install -Dm755 parser/target/release/whoisthat-parser /usr/local/bin/whoist
 sudo setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep /usr/local/bin/whoisthat-core
 ```
 
-Xray-core can be installed via `go install github.com/XTLS/Xray-core@latest`
-and moved to PATH. tun2socks is only needed for TUN mode. The official `hysteria`
-client (`go install github.com/apernet/hysteria2/v2@latest`) is required only
-for `hysteria2://` / `hy2://` profiles. Since v0.9.0 the core emits a startup
-warn to the TUI when any of these are missing — see Troubleshooting.
+External proxy engines can be installed via precompiled official releases (or automatically via `install.sh`):
+
+- **Xray-core**: Download the official release archive from [Xray-core releases](https://github.com/XTLS/Xray-core/releases) and place `xray` into `/usr/local/bin/xray`.
+- **tun2socks**: Required only for TUN mode; download from [tun2socks releases](https://github.com/xjasonlyu/tun2socks/releases) into `/usr/local/bin/tun2socks`.
+- **Hysteria client**: Required only for `hysteria2://` / `hy2://` profiles; download the standalone binary from [Hysteria releases](https://github.com/apernet/hysteria/releases) into `/usr/local/bin/hysteria`.
+
+Since v0.9.0 the core emits a startup warning to the TUI when any of these binaries are missing — see Troubleshooting.
 
 ### Configuration
 
@@ -111,7 +119,7 @@ By default the TUI talks to the core over a **Unix domain socket** (see [IPC tra
   "tun-name": "whoisthattun",
   "hwid-enabled": true,
   "hwid": "1fb1e0141ab3e35a",
-  "user-agent": "whoisthat/v0.9.0",
+  "user-agent": "whoisthat/v0.9.4",
   "kill-switch-enabled": false,
   "autoconnect-enabled": false,
   "autoconnect-group-id": 0,
@@ -207,11 +215,19 @@ Encrypted at rest with AES-256-GCM — key auto-generated on first run.
 
 2. **Protocol subprocesses.** The core spawns one of two subprocesses per profile:
    - **Xray-core** — VLESS (incl. Reality/xTLS Vision), VMess, Trojan (incl. reality/WS/gRPC), Shadowsocks, SOCKS5. xray-core JSON config is generated on-the-fly from the profile URI by the bundled `whoisthat-parser`. xray-core does **not** implement the Hysteria2 protocol.
-   - **Hysteria2 client** (apernet/hysteria2, optional — installed separately by `install.sh`) — spawned only for `hysteria2://` / `hy2://` profiles. The parser emits a YAML config (server, auth, TLS, obfs/salamander, bandwidth, port-hopping) which is fed via stdin to `hysteria run -c -`. xray's stats/routing/DNS injection does not apply.
+   - **Hysteria2 client** ([apernet/hysteria](https://github.com/apernet/hysteria), optional — installed separately by `install.sh`) — spawned only for `hysteria2://` / `hy2://` profiles. The parser emits a YAML config (server, auth, TLS, obfs/salamander, bandwidth, port-hopping) which is fed via stdin to `hysteria run -c -`. xray's stats/routing/DNS injection does not apply.
 
 3. **TUN mode** creates a virtual network interface (configurable name, default `whoisthattun`), sets up `iptables`/`nftables` rules (DNS hijack, MASQUERADE, auto-detected at runtime), and routes all system traffic through the Xray SOCKS5 proxy via `tun2socks`.
 
 4. **WhoisThat TUI** (this Rust binary) connects to the core over a Unix domain socket (`$XDG_RUNTIME_DIR/whoisthat/core.sock`, mode `0600`) by default, or legacy TCP on `127.0.0.1:4897` when `tcp-enabled` is set in the core config and `use_tcp` in the TUI config. It sends commands and receives asynchronous notifications. The TUI never touches networking directly — all VPN logic lives in the core.
+
+### IPC Transport
+
+The TUI and core communicate using length-prefixed JSON framing:
+
+- **Unix Domain Socket (default)** — `$XDG_RUNTIME_DIR/whoisthat/core.sock` (mode `0600`, owned by the invoking user). Ensures only authorized local processes can command the capability-holding VPN core.
+- **TCP listener (opt-in)** — `127.0.0.1:4897`. Enabled by setting `tcp-enabled: true` in `config.json` and `use_tcp = true` in `config.toml` (useful for development, containers, or headless setups).
+- **Wire framing** — 4-byte big-endian `uint32` length prefix followed by UTF-8 JSON payload. Both client requests and core notifications use the identical wire format.
 
 ### Routing rules
 
@@ -265,7 +281,7 @@ When subscription updates are fetched, the core sends HTTP headers identifying t
 | `x-device-os` | `Linux` | `runtime.GOOS` |
 | `x-ver-os` | `6.12.0-arch1-1` | `uname -r` |
 | `x-device-model` | `Arch Linux` | `/etc/os-release` PRETTY_NAME |
-| `user-agent` | `whoisthat/v0.9.0` | User-configurable (Settings) |
+| `user-agent` | `whoisthat/v0.9.4` | User-configurable (Settings) |
 
 Response headers (`x-hwid-max-devices-reached`, `x-hwid-not-supported`, `x-hwid-limit`) are inspected and trigger warnings when device limits are reached.
 
@@ -312,6 +328,9 @@ Both client→core commands and core→client notifications use the same framing
 | `set-kill-switch` | `{"enabled":bool}` | `kill-switch-updated` |
 | `set-split-tunnel` | `{"mode":"off"\|"exclude"\|"include"}` | `split-tunnel-updated` |
 | `set-autoconnect` | `{"enabled":bool,"group_id":int,"profile_id":int,"mode":"proxy"\|"tun"}` | `autoconnect-updated` |
+| `test-group` | `{"group_id":int,"method":"str"}` | `profile-updated` / `test-progress` |
+| `cancel-tests` | `{}` | (cancels active latency tests) |
+| `set-test-config` | `{"method":"str","samples":int,"concurrency":int,"timeout":int,"endpoint":"str","auto_test":bool}` | `test-config-updated` |
 
 ### Notifications (Core → All Clients)
 
@@ -334,7 +353,10 @@ Both client→core commands and core→client notifications use the same framing
 | `routing-updated` | `{"config":{...}}` |
 | `warn` | `{"key":"str","content":"str"}` |
 | `kill-switch-updated` | `{"enabled":bool}` |
+| `split-tunnel-updated` | `{"mode":"off"\|"exclude"\|"include"}` |
 | `autoconnect-updated` | `{"enabled":bool,"mode":"proxy"\|"tun"}` |
+| `test-progress` | `{"current":int,"total":int}` |
+| `test-config-updated` | Full test configuration object |
 
 ### Profile structure
 
@@ -396,6 +418,7 @@ Subscription metadata (`sub_*`) is populated from the `subscription-userinfo` HT
 | `d` | Disconnect |
 | `t` | Test all profiles (starts from cursor, top-to-bottom, dedup) |
 | `T` | Test focused profile or subscription group only |
+| `C` | Cancel in-flight latency tests |
 | `v` | Toggle TUN mode (checks caps first; on first run offers one-time `pkexec setcap` setup, then enables TUN) |
 
 ### Profiles & Groups
@@ -408,16 +431,18 @@ Subscription metadata (`sub_*`) is populated from the `subscription-userinfo` HT
 | `e` | Edit group (name + subscription URL) **or** rename selected profile |
 | `U` | Add new group (name + subscription URL) |
 | `u` | Update subscription (refresh profiles from URL) |
+| `y` | Copy selected profile URI to clipboard |
 | `Ctrl+V` | Paste from clipboard in input popups |
 
 ### Tabs & Quit
 
 | Key | Action |
 | --- | --- |
+| `1` / `2` / `3` / `4` | Switch tab directly: 1 (Profiles), 2 (Logs), 3 (Routing), 4 (Settings) |
 | `l` | Logs view (live tail with auto-scroll, `f` to filter by level) |
 | `r` | Routing rules (domain/IP/protocol/port/geoip/geosite → proxy/direct/block) |
 | `s` | Settings |
-| `1` / `Esc` | Back to Profiles |
+| `Esc` | Back to Profiles tab or close active popup |
 | `q` | Detach TUI (VPN stays connected in background) |
 | `Q` / `Ctrl+C` | Full quit (stop VPN + exit) |
 
@@ -442,7 +467,7 @@ Subscription metadata (`sub_*`) is populated from the `subscription-userinfo` HT
 | HWID: Enabled | on/off | Send HWID headers with subscription requests |
 | HWID | 1fb1e0141ab3e35a | Device identifier (read-only, auto-generated) |
 | Reset HWID | ⏎ | Generate a new random HWID |
-| User-Agent | whoisthat/v0.9.0 | User-Agent header (editable — press Enter to modify) |
+| User-Agent | whoisthat/v0.9.4 | User-Agent header (editable — press Enter to modify) |
 
 Navigate with `j`/`k`, press `Enter`/`Space` to toggle, cycle values, open edit popups, or execute actions.
 
@@ -574,7 +599,7 @@ sudo loginctl disable-linger $USER           # revoke
 | `whoisthat-screen.jpg` doesn't exist in build artifact | Image is checked into the repo but not in `target/` — only used by the README on GitHub | Ignore — it's display-only, not a runtime asset |
 | Logs pane is empty | No core log file, or log level filtering hides everything | Press `f` in the Logs tab to cycle the level filter; or raise log level in Settings |
 | `Cannot decrypt DB file` style errors in core log | Key file `~/.local/share/whoisthat/db/.key` was moved or deleted, but encrypted files remain | Keep the `.key` file — it's the AES-256-GCM master key, no fallback. If unsalvageable: stop core, delete `~/.local/share/whoisthat/db/`, restart to generate fresh key + empty DB |
-| `Warning: hysteria binary not installed — hysteria2:// / hy2:// profiles will not work` on TUI startup | Pre-flight check (v0.9.0+) didn't find `hysteria` on PATH | `go install github.com/apernet/hysteria2/v2@latest && sudo install -Dm755 ~/go/bin/hysteria /usr/local/bin/hysteria` (or run `install.sh` again and answer `y` to the hysteria2 prompt). Same shape for `xray` / `tun2socks` / `whoisthat-parser` |
+| `Warning: hysteria binary not installed — hysteria2:// / hy2:// profiles will not work` on TUI startup | Pre-flight check (v0.9.0+) didn't find `hysteria` on PATH | Download the precompiled binary from [Hysteria releases](https://github.com/apernet/hysteria/releases) to `/usr/local/bin/hysteria` (or run `install.sh` and answer `y` to the hysteria prompt). Same shape for `xray` / `tun2socks` / `whoisthat-parser` |
 | Pressing `c` on a hysteria2 profile shows `Warning: failed to start hysteria: binary "hysteria" not found` instead of the old generic "Failed to connect" | Same cause — missing hysteria binary | Same fix — install `hysteria` per the row above |
 | Testing a hy2 group shows `Warning: 🇮🇹 …: hysteria.Start failed: ... (is the binary installed?)` once even though 50 profiles failed | Throttled test-failure warn (v0.9.0+): identical reasons collapse to one broadcast per 5s to keep the status bar readable | Install `hysteria`; the remaining failures will clear on the next `t`/`T` pass |
 
@@ -594,7 +619,7 @@ cargo test
 
 Covers:
 
-- **Message dispatch** (`src/core_client/dispatch.rs`) — all notification message types (19), unknown type handling, malformed JSON
+- **Message dispatch** (`src/core_client/dispatch.rs`) — all notification message types (22), unknown type handling, malformed JSON
 - **Routing form logic** (`src/ui/routing.rs`) — `form_to_rule` / `rule_to_form` for all 6 match types and 3 outbounds, round-trip consistency
 - **Settings layout** (`src/ui/settings.rs`) — grouped layout, cursor navigation skipping headers, clamping
 - **Text editor** (`src/text_edit.rs`) — `edit_text_field`: insert, backspace, delete, cursor movement, Home/End boundary conditions
@@ -759,7 +784,7 @@ whoisthat/
 
 ## Credits
 
-Powered by [Xray-core](https://github.com/XTLS/Xray-core), [tun2socks](https://github.com/xjasonlyu/tun2socks).
+Powered by [Xray-core](https://github.com/XTLS/Xray-core), [tun2socks](https://github.com/xjasonlyu/tun2socks), and [Hysteria](https://github.com/apernet/hysteria).
 
 ---
 
