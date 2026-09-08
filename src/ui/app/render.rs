@@ -95,7 +95,7 @@ impl App {
         let block = Block::default()
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
-            .border_style(Style::default().fg(BORDER))
+            .border_style(Style::default().fg(border()))
             .title_alignment(Alignment::Right)
             .title_bottom(header_actions)
             .style(s_bg());
@@ -142,6 +142,7 @@ impl App {
                     autoconnect: self.autoconnect_enabled,
                     autostart_mode: &self.autostart_mode,
                     systemd_enabled: self.systemd_enabled,
+                    theme: crate::ui::theme::current_theme().name,
                     show_ip: self.show_ip,
                     log_enabled: self.log_enabled,
                     log_level: &self.log_level,
@@ -196,7 +197,7 @@ impl App {
         let block = Block::default()
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
-            .border_style(Style::default().fg(BORDER))
+            .border_style(Style::default().fg(border()))
             .style(s_bg());
 
         let inner = block.inner(area);

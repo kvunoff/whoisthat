@@ -12,7 +12,11 @@ use crate::ui::uri::{self};
 impl App {
     pub(super) fn render_tree(&mut self, f: &mut Frame, area: Rect) {
         let left_focus = self.focus == Focus::LeftPanel;
-        let border_color = if left_focus { BORDER_ACTIVE } else { BORDER };
+        let border_color = if left_focus {
+            border_active()
+        } else {
+            border()
+        };
 
         let block = Block::default()
             .borders(Borders::ALL)

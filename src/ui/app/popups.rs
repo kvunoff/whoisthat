@@ -72,7 +72,7 @@ impl App {
             .title(" Switch View ")
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
-            .border_style(Style::default().fg(ACCENT))
+            .border_style(Style::default().fg(accent()))
             .style(s_surface());
 
         let inner = block.inner(pa);
@@ -120,7 +120,7 @@ impl App {
             .title(title)
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
-            .border_style(Style::default().fg(ACCENT))
+            .border_style(Style::default().fg(accent()))
             .style(s_surface());
 
         let inner = block.inner(pa);
@@ -140,7 +140,7 @@ impl App {
                 .block(
                     Block::default()
                         .borders(Borders::ALL)
-                        .border_style(Style::default().fg(ACCENT)),
+                        .border_style(Style::default().fg(accent())),
                 )
                 .style(s_text()),
             rows[1],
@@ -184,22 +184,14 @@ impl App {
             .title(format!(" {} ", title))
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
-            .border_style(Style::default().fg(ACCENT))
+            .border_style(Style::default().fg(accent()))
             .style(s_surface());
 
         let inner = block.inner(pa);
         f.render_widget(block, pa);
 
-        let field0_style = if field == 0 {
-            Style::default().fg(ACCENT)
-        } else {
-            s_dim()
-        };
-        let field1_style = if field == 1 {
-            Style::default().fg(ACCENT)
-        } else {
-            s_dim()
-        };
+        let field0_style = if field == 0 { s_accent() } else { s_dim() };
+        let field1_style = if field == 1 { s_accent() } else { s_dim() };
 
         let w = inner.width.saturating_sub(2);
         let mut y = inner.y;
@@ -261,7 +253,7 @@ impl App {
             .title(" Confirm Delete ")
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
-            .border_style(Style::default().fg(ERROR))
+            .border_style(Style::default().fg(error()))
             .style(s_surface());
 
         let inner = block.inner(pa);
@@ -295,7 +287,7 @@ impl App {
             .title(" Keyboard Shortcuts ")
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
-            .border_style(Style::default().fg(ACCENT))
+            .border_style(Style::default().fg(accent()))
             .style(s_surface());
 
         let inner = block.inner(pa);
@@ -304,10 +296,10 @@ impl App {
         let global: &[(&str, &str)] = &[
             ("Tab", "Open Pages / View Switcher"),
             ("1/Esc", "Profiles tab"),
-            ("r", "Routing tab"),
-            ("m", "Traffic tab"),
-            ("l", "Logs tab"),
-            ("s", "Settings tab"),
+            ("2/r", "Routing tab"),
+            ("3/m", "Traffic tab"),
+            ("4/l", "Logs tab"),
+            ("5/s", "Settings tab"),
             ("Mouse", "Wheel scroll, click tabs/items"),
             ("h/?", "This help"),
             ("q", "Detach (VPN stays on)"),

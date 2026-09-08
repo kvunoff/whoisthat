@@ -233,7 +233,7 @@ fn read_log_file(path: &str) -> (Vec<String>, Option<BufReader<File>>) {
 }
 
 pub fn render_logs(f: &mut Frame, area: Rect, state: &LogsState, focused: bool) {
-    let border_color = if focused { BORDER_ACTIVE } else { BORDER };
+    let border_color = if focused { border_active() } else { border() };
 
     let title = format!(" Logs [{}] ", state.filter.label());
 

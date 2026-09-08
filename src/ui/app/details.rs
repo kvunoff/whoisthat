@@ -15,7 +15,11 @@ use crate::ui::uri::{self};
 impl App {
     pub(super) fn render_details(&self, f: &mut Frame, area: Rect) {
         let right_focus = self.focus == Focus::RightPanel;
-        let border_color = if right_focus { BORDER_ACTIVE } else { BORDER };
+        let border_color = if right_focus {
+            border_active()
+        } else {
+            border()
+        };
 
         let block = Block::default()
             .borders(Borders::ALL)

@@ -381,7 +381,7 @@ pub fn render_routing_tab(
     focused: bool,
     is_hy2: bool,
 ) {
-    let border_color = if focused { BORDER_ACTIVE } else { BORDER };
+    let border_color = if focused { border_active() } else { border() };
 
     let block = Block::default()
         .title(" Routing Rules ")
@@ -480,7 +480,7 @@ pub fn render_routing_tab(
             ],
         )
         .header(header)
-        .row_highlight_style(Style::default().bg(SURFACE))
+        .row_highlight_style(Style::default().bg(surface()))
         .highlight_symbol("> ");
 
         let mut ts = TableState::default();
@@ -572,7 +572,7 @@ fn render_presets_popup(f: &mut Frame, cursor: usize, config: &RoutingConfig, ar
         .title(" ⚡ Routing Presets (GeoIP / GeoSite) ")
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(ACCENT))
+        .border_style(Style::default().fg(accent()))
         .style(s_surface());
 
     let inner = block.inner(pa);
@@ -629,7 +629,7 @@ fn render_presets_popup(f: &mut Frame, cursor: usize, config: &RoutingConfig, ar
             line2.extend(rules_spans);
             line2.push(Span::styled(")", s_faint()));
 
-            let item_bg = if is_selected { SURFACE } else { BG };
+            let item_bg = if is_selected { surface() } else { bg() };
             ListItem::new(vec![Line::from(line1), Line::from(line2)])
                 .style(Style::default().bg(item_bg))
         })
@@ -689,13 +689,13 @@ fn render_rule_form(
         .title(format!(" {} ", title))
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(ACCENT))
+        .border_style(Style::default().fg(accent()))
         .style(s_surface());
 
     let inner = block.inner(pa);
     f.render_widget(block, pa);
 
-    let active = Style::default().fg(ACCENT);
+    let active = s_accent();
     let inactive = s_dim();
     let f0 = if field == 0 { active } else { inactive };
     let f1 = if field == 1 { active } else { inactive };
@@ -797,7 +797,7 @@ fn render_routing_confirm(f: &mut Frame, area: Rect) {
         .title(" Delete Rule ")
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(ERROR))
+        .border_style(Style::default().fg(error()))
         .style(s_surface());
 
     let inner = block.inner(pa);

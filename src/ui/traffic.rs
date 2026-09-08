@@ -10,6 +10,10 @@ use ratatui::Frame;
 use crate::core_client::protocol::TrafficStats;
 use crate::ui::app::format_bytes;
 use crate::ui::theme::*;
+use ratatui::style::Color;
+
+const TRAFFIC_DOWN: Color = Color::Rgb(74, 222, 128); // Always green (#4ade80)
+const TRAFFIC_UP: Color = Color::Rgb(248, 113, 113); // Always red (#f87171)
 
 const DEFAULT_HISTORY_LEN: usize = 60;
 
@@ -171,15 +175,22 @@ fn render_stat_cards(
     let down_block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(BORDER))
+        .border_style(Style::default().fg(border()))
         .title(" Download (RX) ")
         .style(s_bg());
     let down_text = vec![
         Line::from(vec![
-            Span::styled("▼ ", s_success().add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "▼ ",
+                Style::default()
+                    .fg(TRAFFIC_DOWN)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled(
                 format!("{}/s", format_bytes(cur_down)),
-                s_success().add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(TRAFFIC_DOWN)
+                    .add_modifier(Modifier::BOLD),
             ),
         ]),
         Line::from(vec![
@@ -195,15 +206,18 @@ fn render_stat_cards(
     let up_block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(BORDER))
+        .border_style(Style::default().fg(border()))
         .title(" Upload (TX) ")
         .style(s_bg());
     let up_text = vec![
         Line::from(vec![
-            Span::styled("▲ ", s_accent().add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "▲ ",
+                Style::default().fg(TRAFFIC_UP).add_modifier(Modifier::BOLD),
+            ),
             Span::styled(
                 format!("{}/s", format_bytes(cur_up)),
-                s_accent().add_modifier(Modifier::BOLD),
+                Style::default().fg(TRAFFIC_UP).add_modifier(Modifier::BOLD),
             ),
         ]),
         Line::from(vec![
@@ -219,7 +233,7 @@ fn render_stat_cards(
     let total_block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(BORDER))
+        .border_style(Style::default().fg(border()))
         .title(" Session Totals ")
         .style(s_bg());
 
@@ -265,13 +279,13 @@ fn render_traffic_chart(f: &mut Frame, area: Rect, history: &TrafficHistory) {
             .name("Download (Proxy)")
             .marker(Marker::Braille)
             .graph_type(GraphType::Line)
-            .style(Style::default().fg(SUCCESS))
+            .style(Style::default().fg(TRAFFIC_DOWN))
             .data(&down_data),
         Dataset::default()
             .name("Upload (Proxy)")
             .marker(Marker::Braille)
             .graph_type(GraphType::Line)
-            .style(Style::default().fg(ACCENT))
+            .style(Style::default().fg(TRAFFIC_UP))
             .data(&up_data),
     ];
 
@@ -281,20 +295,20 @@ fn render_traffic_chart(f: &mut Frame, area: Rect, history: &TrafficHistory) {
                 .title(" Traffic History (60s) ")
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
-                .border_style(Style::default().fg(BORDER))
+                .border_style(Style::default().fg(border()))
                 .style(s_bg()),
         )
         .x_axis(
             Axis::default()
                 .title(Span::styled("Time", s_dim()))
-                .style(Style::default().fg(BORDER))
+                .style(Style::default().fg(border()))
                 .bounds([0.0, 59.0])
                 .labels(x_labels),
         )
         .y_axis(
             Axis::default()
                 .title(Span::styled("Rate", s_dim()))
-                .style(Style::default().fg(BORDER))
+                .style(Style::default().fg(border()))
                 .bounds([0.0, max_y])
                 .labels(y_labels),
         );
@@ -312,7 +326,7 @@ fn render_footer(
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(BORDER))
+        .border_style(Style::default().fg(border()))
         .style(s_bg());
 
     let current = history.history.back();

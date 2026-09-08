@@ -202,17 +202,17 @@ async fn handle_normal_input(
             return false;
         }
         KeyCode::Char('3') => {
-            app.tab = ActiveTab::Logs;
+            app.tab = ActiveTab::Traffic;
             app.focus = Focus::LeftPanel;
             return false;
         }
         KeyCode::Char('4') => {
-            app.tab = ActiveTab::Settings;
+            app.tab = ActiveTab::Logs;
             app.focus = Focus::LeftPanel;
             return false;
         }
         KeyCode::Char('5') => {
-            app.tab = ActiveTab::Traffic;
+            app.tab = ActiveTab::Settings;
             app.focus = Focus::LeftPanel;
             return false;
         }
@@ -337,6 +337,11 @@ async fn handle_normal_input(
                     }
                 }
                 3 => {
+                    let next_theme = crate::ui::theme::cycle_theme();
+                    cfg.theme = next_theme.to_string();
+                    config::save_config(cfg);
+                }
+                4 => {
                     app.show_ip = !app.show_ip;
                     cfg.show_ip = app.show_ip;
                     if !app.show_ip {
@@ -345,13 +350,13 @@ async fn handle_normal_input(
                     }
                     config::save_config(cfg);
                 }
-                4 => {
+                5 => {
                     app.log_enabled = !app.log_enabled;
                     cfg.log_enabled = app.log_enabled;
                     config::save_config(cfg);
                     configure_logger(logger, cfg.log_enabled, &cfg.log_level);
                 }
-                5 => {
+                6 => {
                     let levels = ["error", "warn", "info", "debug", "trace"];
                     let current = levels
                         .iter()
@@ -363,25 +368,25 @@ async fn handle_normal_input(
                     config::save_config(cfg);
                     configure_logger(logger, cfg.log_enabled, &cfg.log_level);
                 }
-                6 => {
+                7 => {
                     app.popup = Some(Popup::EditTunName {
                         input: app.tun_name.clone(),
                         cursor: app.tun_name.chars().count(),
                     });
                     app.focus = Focus::Popup;
                 }
-                7 => {
+                8 => {
                     app.kill_switch_enabled = !app.kill_switch_enabled;
                     let _ = client.set_kill_switch(app.kill_switch_enabled).await;
                     cfg.kill_switch_enabled = app.kill_switch_enabled;
                     config::save_config(cfg);
                 }
-                8 => {
+                9 => {
                     let next = next_split_tunnel_mode(&app.split_tunnel);
                     app.split_tunnel = next.to_string();
                     let _ = client.set_split_tunnel(next).await;
                 }
-                9 => {
+                10 => {
                     let methods = ["tcp", "http-get", "http-head"];
                     let current = methods
                         .iter()
@@ -392,7 +397,7 @@ async fn handle_normal_input(
                     cfg.test_method = app.test_method.clone();
                     config::save_config(cfg);
                 }
-                10 => {
+                11 => {
                     let opts = [1, 3, 5, 10];
                     let cur = opts
                         .iter()
@@ -403,7 +408,7 @@ async fn handle_normal_input(
                     cfg.test_samples = next;
                     persist_and_sync_test_config(app, cfg, client).await;
                 }
-                11 => {
+                12 => {
                     let opts = [4, 8, 16, 32, 64];
                     let cur = opts
                         .iter()
@@ -414,7 +419,7 @@ async fn handle_normal_input(
                     cfg.test_concurrency = next;
                     persist_and_sync_test_config(app, cfg, client).await;
                 }
-                12 => {
+                13 => {
                     let opts = [3, 5, 10, 15];
                     let cur = opts
                         .iter()
@@ -425,7 +430,7 @@ async fn handle_normal_input(
                     cfg.test_timeout_seconds = next;
                     persist_and_sync_test_config(app, cfg, client).await;
                 }
-                13 => {
+                14 => {
                     let opts = [
                         ("cloudflare", "https://cp.cloudflare.com/generate_204"),
                         ("gstatic", "https://www.gstatic.com/generate_204"),
@@ -440,13 +445,13 @@ async fn handle_normal_input(
                     cfg.test_endpoint = next.1.to_string();
                     persist_and_sync_test_config(app, cfg, client).await;
                 }
-                14 => {
+                15 => {
                     app.test_config.auto_test_on_subscribe =
                         !app.test_config.auto_test_on_subscribe;
                     cfg.auto_test_on_subscribe = app.test_config.auto_test_on_subscribe;
                     persist_and_sync_test_config(app, cfg, client).await;
                 }
-                15 => {
+                16 => {
                     if let Some(ref hw) = app.hwid_info {
                         let _ = client
                             .set_hwid(&SetHwidData {
@@ -456,8 +461,8 @@ async fn handle_normal_input(
                             .await;
                     }
                 }
-                16 => {}
-                17 => {
+                17 => {}
+                18 => {
                     let _ = client
                         .set_hwid(&SetHwidData {
                             reset: true,
@@ -465,7 +470,7 @@ async fn handle_normal_input(
                         })
                         .await;
                 }
-                18 => {
+                19 => {
                     if let Some(ref hw) = app.hwid_info {
                         app.popup = Some(Popup::EditUserAgent {
                             input: hw.user_agent.clone(),

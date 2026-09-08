@@ -17,6 +17,8 @@ pub struct AppConfig {
     pub core_version: String,
     #[serde(default = "default_true")]
     pub show_ip: bool,
+    #[serde(default = "default_theme")]
+    pub theme: String,
     #[serde(default)]
     pub log_enabled: bool,
     #[serde(default = "default_log_level")]
@@ -59,6 +61,9 @@ fn default_core_host() -> String {
 fn default_true() -> bool {
     true
 }
+fn default_theme() -> String {
+    "tokyo-night".into()
+}
 fn default_log_level() -> String {
     "warn".into()
 }
@@ -91,6 +96,7 @@ impl Default for AppConfig {
             last_profile_id: 0,
             core_version: String::new(),
             show_ip: true,
+            theme: default_theme(),
             log_enabled: false,
             log_level: default_log_level(),
             test_method: default_test_method(),

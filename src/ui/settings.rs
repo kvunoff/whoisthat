@@ -45,6 +45,10 @@ pub fn settings_layout() -> Vec<SettingsRow> {
         },
         SettingsRow::Header("Display"),
         SettingsRow::Item {
+            label: "Theme",
+            kind: SettingsKind::Cycle,
+        },
+        SettingsRow::Item {
             label: "Show IP",
             kind: SettingsKind::Toggle,
         },
@@ -143,6 +147,7 @@ pub struct SettingsValues<'a> {
     pub autoconnect: bool,
     pub autostart_mode: &'a str,
     pub systemd_enabled: bool,
+    pub theme: &'a str,
     pub show_ip: bool,
     pub log_enabled: bool,
     pub log_level: &'a str,
@@ -215,7 +220,7 @@ pub fn render_settings(
     state: &mut SettingsState,
     focused: bool,
 ) {
-    let border_color = if focused { BORDER_ACTIVE } else { BORDER };
+    let border_color = if focused { border_active() } else { border() };
 
     let block = Block::default()
         .title(" Settings ")
@@ -234,7 +239,7 @@ pub fn render_settings(
     let hwid_val = values.hwid.map(|h| h.hwid.as_str()).unwrap_or("");
     let hwid_ua = values.hwid.map(|h| h.user_agent.as_str()).unwrap_or("");
 
-    let item_values: [String; 19] = [
+    let item_values: [String; 20] = [
         if values.autoconnect {
             "● on".into()
         } else {
@@ -246,6 +251,7 @@ pub fn render_settings(
         } else {
             "○ off".into()
         },
+        values.theme.to_string(),
         if values.show_ip {
             "● on".into()
         } else {
@@ -362,7 +368,7 @@ mod tests {
 
     #[test]
     fn test_settings_layout_item_count() {
-        assert_eq!(item_count(), 19);
+        assert_eq!(item_count(), 20);
     }
 
     #[test]
