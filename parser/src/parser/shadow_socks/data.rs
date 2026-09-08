@@ -54,9 +54,9 @@ pub fn get_data(uri: &str) -> Result<RawData, String> {
 }
 
 fn parse_ss_address(raw_data: &str) -> Result<models::ShadowSocksAddress, String> {
-    let (userinfo_raw, raw_address) = raw_data.split_once("@").ok_or_else(|| {
-        "Wrong shadowsocks format, no `@` found in the address".to_string()
-    })?;
+    let (userinfo_raw, raw_address) = raw_data
+        .split_once("@")
+        .ok_or_else(|| "Wrong shadowsocks format, no `@` found in the address".to_string())?;
     let userinfo = String::from(userinfo_raw);
     let address_wo_slash = raw_address.strip_suffix("/").unwrap_or(raw_address);
 
@@ -95,13 +95,16 @@ mod tests {
 
     #[test]
     fn parses_valid_ss_uri() {
-        let method_password = base64::engine::general_purpose::STANDARD
-            .encode("chacha20-ietf-poly1305:secretpw");
+        let method_password =
+            base64::engine::general_purpose::STANDARD.encode("chacha20-ietf-poly1305:secretpw");
         let uri = format!("ss://{}@example.com:8388#MySS", method_password);
         let result = get_data(&uri);
         assert!(result.is_ok());
         let data = result.unwrap();
-        assert_eq!(data.server_method, Some("chacha20-ietf-poly1305".to_string()));
+        assert_eq!(
+            data.server_method,
+            Some("chacha20-ietf-poly1305".to_string())
+        );
         assert_eq!(data.uuid, Some("secretpw".to_string()));
         assert_eq!(data.address, Some("example.com".to_string()));
         assert_eq!(data.port, Some(8388));
@@ -112,8 +115,8 @@ mod tests {
 
     #[test]
     fn parses_without_remarks() {
-        let method_password = base64::engine::general_purpose::STANDARD
-            .encode("aes-256-gcm:password");
+        let method_password =
+            base64::engine::general_purpose::STANDARD.encode("aes-256-gcm:password");
         let uri = format!("ss://{}@example.com:8388", method_password);
         let result = get_data(&uri);
         assert!(result.is_ok());
@@ -130,8 +133,7 @@ mod tests {
 
     #[test]
     fn no_colon_in_decoded_returns_error() {
-        let method_password = base64::engine::general_purpose::STANDARD
-            .encode("no-colon-here");
+        let method_password = base64::engine::general_purpose::STANDARD.encode("no-colon-here");
         let uri = format!("ss://{}@example.com:8388", method_password);
         let result = get_data(&uri);
         assert!(result.is_err());
@@ -140,8 +142,7 @@ mod tests {
 
     #[test]
     fn missing_at_returns_error() {
-        let method_password = base64::engine::general_purpose::STANDARD
-            .encode("method:pass");
+        let method_password = base64::engine::general_purpose::STANDARD.encode("method:pass");
         let uri = format!("ss://{}-no-at", method_password);
         let result = get_data(&uri);
         assert!(result.is_err());
@@ -150,9 +151,11 @@ mod tests {
 
     #[test]
     fn sip002_query_params_are_silently_ignored() {
-        let method_password = base64::engine::general_purpose::STANDARD
-            .encode("method:pass");
-        let uri = format!("ss://{}@example.com:8388?plugin=obfs-local;obfs=http#Name", method_password);
+        let method_password = base64::engine::general_purpose::STANDARD.encode("method:pass");
+        let uri = format!(
+            "ss://{}@example.com:8388?plugin=obfs-local;obfs=http#Name",
+            method_password
+        );
         let result = get_data(&uri);
         assert!(result.is_ok());
         let data = result.unwrap();
@@ -162,8 +165,7 @@ mod tests {
 
     #[test]
     fn empty_password_allowed() {
-        let method_password = base64::engine::general_purpose::STANDARD
-            .encode("method:");
+        let method_password = base64::engine::general_purpose::STANDARD.encode("method:");
         let uri = format!("ss://{}@example.com:8388", method_password);
         let result = get_data(&uri);
         assert!(result.is_ok());
@@ -174,8 +176,7 @@ mod tests {
 
     #[test]
     fn url_encodes_remarks() {
-        let method_password = base64::engine::general_purpose::STANDARD
-            .encode("method:pass");
+        let method_password = base64::engine::general_purpose::STANDARD.encode("method:pass");
         let uri = format!("ss://{}@example.com:8388#SS%20Name", method_password);
         let result = get_data(&uri);
         assert!(result.is_ok());

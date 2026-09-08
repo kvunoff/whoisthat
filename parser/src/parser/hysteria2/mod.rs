@@ -15,7 +15,7 @@ pub fn create_outbound_settings(data: &RawData) -> OutboundSettings {
         _ => None,
     };
 
-    return OutboundSettings::Hysteria2(crate::config_models::Hysteria2OutboundSettings {
+    OutboundSettings::Hysteria2(crate::config_models::Hysteria2OutboundSettings {
         servers: vec![crate::config_models::Hysteria2ServerObject {
             address: data.address.clone(),
             port: data.port,
@@ -23,7 +23,7 @@ pub fn create_outbound_settings(data: &RawData) -> OutboundSettings {
             level: Some(0),
             obfs,
         }],
-    });
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -116,7 +116,11 @@ pub struct Hysteria2ClientConfig {
     pub http: Option<Hysteria2ClientListen>,
 }
 
-pub fn build_client_config(data: &RawData, socks_port: u16, http_port: Option<u16>) -> Hysteria2ClientConfig {
+pub fn build_client_config(
+    data: &RawData,
+    socks_port: u16,
+    http_port: Option<u16>,
+) -> Hysteria2ClientConfig {
     let server = match (&data.address, data.port) {
         (Some(addr), Some(port)) => format!("{}:{}", addr, port),
         (Some(addr), None) => addr.clone(),
@@ -130,8 +134,8 @@ pub fn build_client_config(data: &RawData, socks_port: u16, http_port: Option<u1
             .collect::<Vec<_>>()
     });
 
-    let allow_insecure =
-        data.allowInsecure == Some(String::from("true")) || data.allowInsecure == Some(String::from("1"));
+    let allow_insecure = data.allowInsecure == Some(String::from("true"))
+        || data.allowInsecure == Some(String::from("1"));
 
     let tls = if data.sni.is_some() || allow_insecure || alpn_vec.is_some() {
         Some(Hysteria2ClientTLS {
@@ -182,7 +186,11 @@ pub fn build_client_config(data: &RawData, socks_port: u16, http_port: Option<u1
     }
 }
 
-pub fn create_client_yaml(data: &RawData, socks_port: u16, http_port: Option<u16>) -> Result<String, String> {
+pub fn create_client_yaml(
+    data: &RawData,
+    socks_port: u16,
+    http_port: Option<u16>,
+) -> Result<String, String> {
     let cfg = build_client_config(data, socks_port, http_port);
     serde_yaml::to_string(&cfg).map_err(|e| e.to_string())
 }
@@ -287,7 +295,10 @@ mod tests {
         assert!(!tls.insecure.unwrap());
         let obfs = cfg.obfs.unwrap();
         assert_eq!(obfs.obfs_type, Some("salamander".to_string()));
-        assert_eq!(obfs.salamander.unwrap().password, Some("obfs-secret".to_string()));
+        assert_eq!(
+            obfs.salamander.unwrap().password,
+            Some("obfs-secret".to_string())
+        );
         assert!(cfg.http.is_none());
     }
 
@@ -304,7 +315,10 @@ mod tests {
         let mut d = sample_hysteria2_data();
         d.alpn = Some("h2,http/1.1".to_string());
         let cfg = build_client_config(&d, 3090, None);
-        assert_eq!(cfg.tls.unwrap().alpn.unwrap(), vec!["h2".to_string(), "http/1.1".to_string()]);
+        assert_eq!(
+            cfg.tls.unwrap().alpn.unwrap(),
+            vec!["h2".to_string(), "http/1.1".to_string()]
+        );
     }
 
     #[test]

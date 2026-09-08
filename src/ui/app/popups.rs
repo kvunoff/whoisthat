@@ -105,6 +105,7 @@ impl App {
         );
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn render_group_form(
         &self,
         f: &mut Frame,
@@ -268,6 +269,7 @@ impl App {
             ("c/Enter", "Connect to profile"),
             ("d", "Disconnect"),
             ("t/T", "Test latency / test group"),
+            ("y", "Copy profile URI"),
             ("a", "Import profile URI"),
             ("x/X", "Delete profile / group"),
             ("u", "Update subscription"),
@@ -330,8 +332,7 @@ impl App {
         );
 
         let mut y = inner.y + 1;
-        for i in self.help_scroll..end {
-            let (key, desc, is_header) = &help[i];
+        for (key, desc, is_header) in help.iter().take(end).skip(self.help_scroll) {
             if y >= inner.y + inner.height {
                 break;
             }

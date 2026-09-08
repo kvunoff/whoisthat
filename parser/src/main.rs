@@ -39,7 +39,25 @@ fn main() {
                 .action(clap::ArgAction::SetTrue)
                 .requires("socksport"),
         )
+        .arg(
+            Arg::new("get_metadata_batch")
+                .long("get-metadata-batch")
+                .help("Read newline-delimited URIs from stdin and output a JSON array of metadata")
+                .action(clap::ArgAction::SetTrue),
+        )
         .get_matches();
+
+    if matches.get_flag("get_metadata_batch") {
+        let stdin = std::io::stdin();
+        match parser::get_metadata_batch_from_reader(stdin.lock()) {
+            Ok(json) => print!("{}", json),
+            Err(e) => {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
 
     let uri = match matches.get_one::<String>("uri") {
         Some(uri) => uri.to_owned(),
@@ -49,7 +67,7 @@ fn main() {
                 eprintln!("Error reading URI from terminal: {}", e);
                 std::process::exit(1);
             }
-        }
+        },
     };
     let socksport = matches.get_one::<u16>("socksport").copied();
     let httpport = matches.get_one::<u16>("httpport").copied();

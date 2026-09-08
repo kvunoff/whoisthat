@@ -315,3 +315,13 @@ pub struct ConfigMetaData {
     pub address: Option<String>,
     pub port: Option<u16>,
 }
+
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+pub struct BatchProfileMetaData {
+    pub uri: String,
+    pub name: String,
+    pub protocol: String,
+    pub host: Option<String>,
+    pub address: Option<String>,
+    pub port: Option<u16>,
+}

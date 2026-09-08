@@ -23,6 +23,9 @@ jobs:
       - name: Build parser
         working-directory: parser
         run: cargo build --release
+      - name: clippy parser
+        working-directory: parser
+        run: cargo clippy --all-targets --no-deps
       - name: Test
         run: cargo test
 

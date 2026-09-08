@@ -8,8 +8,8 @@ use super::CoreClient;
 
 #[derive(Debug, Clone)]
 pub enum CoreEvent {
-    ApplicationState(ApplicationState),
-    StatusChanged(ProxyStatus),
+    ApplicationState(Box<ApplicationState>),
+    StatusChanged(Box<ProxyStatus>),
     ProfilesAdded(Vec<Profile>),
     ProfilesDeleted(Vec<ProfileID>),
     ProfileUpdated(Profile),
@@ -192,9 +192,13 @@ fn find_core_binary() -> String {
 pub(crate) fn dispatch(msg: TcpMessage) -> CoreEvent {
     match msg.msg.as_str() {
         "application-state" => {
-            try_dispatch!(msg, "application-state", ApplicationState, ApplicationState)
+            try_dispatch!(msg, "application-state", ApplicationState, |d| {
+                CoreEvent::ApplicationState(Box::new(d))
+            })
         }
-        "status-changed" => try_dispatch!(msg, "status-changed", ProxyStatus, StatusChanged),
+        "status-changed" => try_dispatch!(msg, "status-changed", ProxyStatus, |d| {
+            CoreEvent::StatusChanged(Box::new(d))
+        }),
         "profiles-added" => try_dispatch!(msg, "profiles-added", ProfilesAdded, |d| {
             CoreEvent::ProfilesAdded(d.profiles)
         }),

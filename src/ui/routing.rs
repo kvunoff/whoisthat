@@ -126,6 +126,7 @@ pub fn render_routing_tab(
     config: &RoutingConfig,
     cursor: usize,
     focused: bool,
+    is_hy2: bool,
 ) {
     let border_color = if focused { BORDER_ACTIVE } else { BORDER };
 
@@ -136,11 +137,30 @@ pub fn render_routing_tab(
         .border_style(Style::default().fg(border_color))
         .style(s_bg());
 
-    let v = Layout::vertical([Constraint::Min(0), Constraint::Length(2)]).split(block.inner(area));
+    let inner = block.inner(area);
     f.render_widget(block, area);
 
-    let list_area = v[0];
-    let help_area = v[1];
+    let (list_area, help_area) = if is_hy2 {
+        let v = Layout::vertical([
+            Constraint::Length(1),
+            Constraint::Min(0),
+            Constraint::Length(2),
+        ])
+        .split(inner);
+
+        let warn_line = Line::from(vec![
+            Span::styled(" ⚠ ", s_warn()),
+            Span::styled(
+                "Active connection is Hysteria2: routing rules apply only to Xray protocols",
+                s_warn(),
+            ),
+        ]);
+        f.render_widget(Paragraph::new(warn_line).style(s_bg()), v[0]);
+        (v[1], v[2])
+    } else {
+        let v = Layout::vertical([Constraint::Min(0), Constraint::Length(2)]).split(inner);
+        (v[0], v[1])
+    };
 
     if config.rules.is_empty() {
         f.render_widget(
@@ -269,6 +289,7 @@ pub fn render_routing_popup(f: &mut Frame, popup: &RoutingPopup, area: Rect) {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_rule_form(
     f: &mut Frame,
     title: &str,

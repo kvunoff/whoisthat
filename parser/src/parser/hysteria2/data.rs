@@ -224,17 +224,14 @@ mod tests {
 
     #[test]
     fn parses_with_obfs_aliases() {
-        let result = get_data(
-            "hy2://pw@example.com:443?obfs_type=salamander&obfs_password=secret2",
-        );
+        let result =
+            get_data("hy2://pw@example.com:443?obfs_type=salamander&obfs_password=secret2");
         assert!(result.is_ok());
         let data = result.unwrap();
         assert_eq!(data.obfs, Some("salamander".to_string()));
         assert_eq!(data.obfs_password, Some("secret2".to_string()));
 
-        let result2 = get_data(
-            "hy2://pw@example.com:443?obfs=salamander&obfs-param=secret3",
-        );
+        let result2 = get_data("hy2://pw@example.com:443?obfs=salamander&obfs-param=secret3");
         assert!(result2.is_ok());
         let data2 = result2.unwrap();
         assert_eq!(data2.obfs, Some("salamander".to_string()));

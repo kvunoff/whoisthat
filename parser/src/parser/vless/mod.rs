@@ -2,7 +2,7 @@ pub mod data;
 use crate::config_models::*;
 
 pub fn create_outbound_settings(data: &RawData) -> OutboundSettings {
-    return OutboundSettings::Vless(VlessOutboundSettings {
+    OutboundSettings::Vless(VlessOutboundSettings {
         vnext: vec![VnextServerObject {
             port: data.port,
             address: data.address.clone(),
@@ -14,7 +14,7 @@ pub fn create_outbound_settings(data: &RawData) -> OutboundSettings {
                 security: None,
             }]),
         }],
-    });
+    })
 }
 
 #[cfg(test)]

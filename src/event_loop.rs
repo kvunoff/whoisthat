@@ -16,6 +16,7 @@ pub(crate) enum AppEvent {
     PublicIpv6(String),
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn run_loop<B: Backend>(
     term: &mut ratatui::Terminal<B>,
     app: &mut App,

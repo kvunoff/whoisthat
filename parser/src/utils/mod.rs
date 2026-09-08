@@ -1,17 +1,17 @@
 pub mod inbound_generator;
 
 pub fn url_decode_str(value: &str) -> Option<String> {
-    return urlencoding::decode(value)
+    urlencoding::decode(value)
         .ok()
-        .map(|decoded| decoded.into_owned());
+        .map(|decoded| decoded.into_owned())
 }
 
 pub fn url_decode(value: Option<String>) -> Option<String> {
-    return value.and_then(|s| {
+    value.and_then(|s| {
         urlencoding::decode(&s)
             .ok()
             .map(|decoded| decoded.into_owned())
-    });
+    })
 }
 
 pub fn parse_raw_json(input: &str) -> Option<serde_json::Value> {
@@ -24,11 +24,8 @@ pub fn parse_raw_json(input: &str) -> Option<serde_json::Value> {
 }
 
 pub fn get_parameter_value(query: &Vec<(&str, &str)>, param: &str) -> Option<String> {
-    let param = query
-        .iter()
-        .find(|q| String::from(q.0) == String::from(param))
-        .map(|q| q.1.to_string());
-    
+    let param = query.iter().find(|q| q.0 == param).map(|q| q.1.to_string());
+
     match param {
         Some(param) if param.is_empty() => None,
         Some(param) if !param.is_empty() => Some(param),
@@ -50,7 +47,10 @@ mod tests {
 
         #[test]
         fn decodes_percent_encoded_spaces() {
-            assert_eq!(url_decode_str("hello%20world"), Some("hello world".to_string()));
+            assert_eq!(
+                url_decode_str("hello%20world"),
+                Some("hello world".to_string())
+            );
         }
 
         #[test]
@@ -60,12 +60,18 @@ mod tests {
 
         #[test]
         fn passes_through_unencoded() {
-            assert_eq!(url_decode_str("hello+world"), Some("hello+world".to_string()));
+            assert_eq!(
+                url_decode_str("hello+world"),
+                Some("hello+world".to_string())
+            );
         }
 
         #[test]
         fn decodes_cyrillic() {
-            assert_eq!(url_decode_str("%D0%BF%D1%80%D0%B8%D0%B2%D0%B5%D1%82"), Some("привет".to_string()));
+            assert_eq!(
+                url_decode_str("%D0%BF%D1%80%D0%B8%D0%B2%D0%B5%D1%82"),
+                Some("привет".to_string())
+            );
         }
 
         #[test]
@@ -99,12 +105,18 @@ mod tests {
 
         #[test]
         fn delegates_to_url_decode_str_for_some() {
-            assert_eq!(url_decode(Some("hello%20world".to_string())), Some("hello world".to_string()));
+            assert_eq!(
+                url_decode(Some("hello%20world".to_string())),
+                Some("hello world".to_string())
+            );
         }
 
         #[test]
         fn passes_through_invalid_encoding_in_some() {
-            assert_eq!(url_decode(Some("hello%ZZ".to_string())), Some("hello%ZZ".to_string()));
+            assert_eq!(
+                url_decode(Some("hello%ZZ".to_string())),
+                Some("hello%ZZ".to_string())
+            );
         }
     }
 
@@ -159,7 +171,10 @@ mod tests {
         #[test]
         fn finds_existing_param() {
             let query = vec![("sni", "example.com"), ("type", "ws")];
-            assert_eq!(get_parameter_value(&query, "sni"), Some("example.com".to_string()));
+            assert_eq!(
+                get_parameter_value(&query, "sni"),
+                Some("example.com".to_string())
+            );
         }
 
         #[test]

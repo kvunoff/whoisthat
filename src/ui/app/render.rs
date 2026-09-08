@@ -191,7 +191,14 @@ impl App {
             }
             ActiveTab::Routing => {
                 let focused = self.focus == Focus::LeftPanel;
-                render_routing_tab(f, area, &self.routing, self.routing_cursor, focused);
+                render_routing_tab(
+                    f,
+                    area,
+                    &self.routing,
+                    self.routing_cursor,
+                    focused,
+                    self.is_connected_hy2(),
+                );
             }
         }
     }

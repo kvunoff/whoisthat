@@ -134,6 +134,10 @@ func (t *TunModeManager) Start(proxy_ipv4s []string, proxy_ipv6s []string, dns s
 		}
 	}
 
+	if err2 := setupResolvectlDns(t.tun_name, t.dns); err2 != nil {
+		logger.Warnf("tun: resolvectl dns setup: %v", err2)
+	}
+
 	// In "include" split mode ONLY the chosen apps use the tunnel, so we must
 	// NOT install a system-wide default route via the TUN — that route lives in
 	// the dedicated table 200 keyed by fwmark instead (see applySplitRules).
@@ -231,6 +235,7 @@ func (t *TunModeManager) clearNetworkRules() error {
 		removeFwmarkRouting6(1, t.default_interface, t.default_interface_ipv6),
 		cleanConntrackRules(t.tun_name, t.default_interface),
 		t.removeSplitRules(),
+		revertResolvectlDns(t.tun_name),
 	}
 	if t.sudoUid > 0 {
 		errs = append(errs, removeUidRouting(t.sudoUid, t.default_interface, t.default_interface_ip))

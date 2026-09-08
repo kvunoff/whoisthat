@@ -23,7 +23,7 @@ pub(crate) async fn handle_core_event(
         CoreEvent::ApplicationState(s) => {
             let was_connected = s.connection_status.connection == "connected";
             let already_migrated = app.autoconnect_enabled;
-            app.apply_state(s);
+            app.apply_state(*s);
             if *first_state {
                 *first_state = false;
                 if !cfg.autoconnect_migrated
@@ -72,7 +72,7 @@ pub(crate) async fn handle_core_event(
                 s.connected_at,
                 s.profile.as_ref().map(|p| (p.id, p.group_id))
             );
-            app.connection_status = s;
+            app.connection_status = *s;
             if was != app.is_connected() {
                 app.clear_msg();
                 let tx = ip_tx.clone();

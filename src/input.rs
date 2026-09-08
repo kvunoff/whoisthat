@@ -565,6 +565,17 @@ async fn handle_normal_input(
                 app.test_progress = None;
                 app.msg("Cancelling in-flight tests...");
             }
+            KeyCode::Char('y') => {
+                if let Some(p) = app.selected_profile() {
+                    match arboard::Clipboard::new() {
+                        Ok(mut cb) => match cb.set_text(&p.uri) {
+                            Ok(()) => app.msg("Copied profile URI to clipboard"),
+                            Err(e) => app.msg(format!("Failed to copy URI: {e}")),
+                        },
+                        Err(e) => app.msg(format!("Clipboard unavailable: {e}")),
+                    }
+                }
+            }
             KeyCode::Char('x') => {
                 if let Some(p) = app.selected_profile() {
                     let name = if p.name.is_empty() {
@@ -625,6 +636,17 @@ async fn handle_normal_input(
             KeyCode::Char('T') => {
                 let list = build_test_list(app, true);
                 run_test_batch(app, client, &list).await;
+            }
+            KeyCode::Char('y') => {
+                if let Some(p) = app.selected_profile() {
+                    match arboard::Clipboard::new() {
+                        Ok(mut cb) => match cb.set_text(&p.uri) {
+                            Ok(()) => app.msg("Copied profile URI to clipboard"),
+                            Err(e) => app.msg(format!("Failed to copy URI: {e}")),
+                        },
+                        Err(e) => app.msg(format!("Clipboard unavailable: {e}")),
+                    }
+                }
             }
             _ => {}
         },

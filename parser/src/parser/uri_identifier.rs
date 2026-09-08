@@ -30,7 +30,7 @@ pub fn get_uri_protocol(uri: &str) -> Option<Protocols> {
     if uri.starts_with("hysteria2://") || uri.starts_with("hy2://") {
         return Some(Protocols::Hysteria2);
     }
-    return None;
+    None
 }
 
 #[cfg(test)]
@@ -39,7 +39,7 @@ mod tests {
     #[test]
     fn return_none_for_invalid_uri() {
         let protocol = get_uri_protocol("123-vless://3d1c3f04-729d-59d3-bdb6-3f3f4352e173@root.ii.one:2083?security=reality&sni=www.spamhaus.org&fp=safari&pbk=7xhH4b_VkliBxGulljcyPOH-bYUA2dl-XAdZAsfhk04&sid=6ba85179e30d4fc2&type=tcp&flow=xtls-rprx-vision#Ha-ac");
-        assert!(matches!(protocol, None));
+        assert!(protocol.is_none());
     }
     #[test]
     fn recognize_vless_protocol() {

@@ -64,18 +64,13 @@ fn parse_socks_address(raw_data: &str) -> Result<models::SocksAddress, String> {
         .parse()
         .map_err(|e| format!("Invalid socks address URI: {}", e))?;
 
-    return match maybe_userinfo {
+    match maybe_userinfo {
         Some(userinfo) => {
             let url_decoded = url_decode_str(&userinfo).unwrap_or(userinfo);
             let username_and_password = general_purpose::STANDARD
                 .decode(url_decoded.clone())
-                .map(|a| {
-                    String::from(
-                        std::str::from_utf8(&a)
-                            .unwrap_or("")
-                    )
-                })
-                .unwrap_or(String::from(url_decoded.clone()));
+                .map(|a| String::from(std::str::from_utf8(&a).unwrap_or("")))
+                .unwrap_or(url_decoded.clone());
 
             let (username, password) = username_and_password
                 .split_once(":")
@@ -83,7 +78,11 @@ fn parse_socks_address(raw_data: &str) -> Result<models::SocksAddress, String> {
 
             Ok(models::SocksAddress {
                 username: Some(String::from(username)),
-                password: if password.is_empty() { None } else { Some(String::from(password)) },
+                password: if password.is_empty() {
+                    None
+                } else {
+                    Some(String::from(password))
+                },
                 address: parsed
                     .host()
                     .ok_or_else(|| "Missing host in socks address".to_string())?
@@ -106,7 +105,7 @@ fn parse_socks_address(raw_data: &str) -> Result<models::SocksAddress, String> {
                 .ok_or_else(|| "Missing port in socks address".to_string())?
                 .as_u16(),
         }),
-    };
+    }
 }
 
 #[cfg(test)]
@@ -138,8 +137,7 @@ mod tests {
 
     #[test]
     fn parses_base64_credentials() {
-        let encoded = base64::engine::general_purpose::STANDARD
-            .encode("b64user:b64pass");
+        let encoded = base64::engine::general_purpose::STANDARD.encode("b64user:b64pass");
         let uri = format!("socks5://{}@example.com:1080", encoded);
         let result = get_data(&uri);
         assert!(result.is_ok());

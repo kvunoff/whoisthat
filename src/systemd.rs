@@ -110,13 +110,10 @@ pub(crate) fn setup_systemd_service(core_path: &str, log_level: &str) -> Result<
         return Err("systemctl --user enable failed".into());
     }
 
-    if !linger_is_enabled() {
-        if !enable_linger_via_pkexec() {
-            return Err(
-                "Could not enable lingering. Run manually: sudo loginctl enable-linger $USER"
-                    .into(),
-            );
-        }
+    if !linger_is_enabled() && !enable_linger_via_pkexec() {
+        return Err(
+            "Could not enable lingering. Run manually: sudo loginctl enable-linger $USER".into(),
+        );
     }
 
     Ok(())

@@ -66,8 +66,8 @@ impl App {
         let mut cursor_pos_in_list = 0;
         let mut pos = 0;
 
-        for (_gi, g) in self.groups.iter().enumerate() {
-            for (_pi, p) in g.profiles.iter().enumerate() {
+        for g in self.groups.iter() {
+            for p in g.profiles.iter() {
                 if !self.profile_matches(&ql, p) {
                     continue;
                 }
@@ -153,7 +153,7 @@ impl App {
         let mut cursor_pos_in_list = 0;
         let mut pos = 0;
 
-        for (_gi, g) in self.groups.iter().enumerate() {
+        for g in self.groups.iter() {
             if pos == self.cursor {
                 cursor_pos_in_list = items.len();
             }
@@ -179,7 +179,7 @@ impl App {
                 ),
             ])));
 
-            for (_pi, p) in g.profiles.iter().enumerate() {
+            for p in g.profiles.iter() {
                 if pos == self.cursor {
                     cursor_pos_in_list = items.len();
                 }

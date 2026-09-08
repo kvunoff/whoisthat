@@ -197,12 +197,12 @@ impl App {
             "—"
         };
 
-        let mut rows: Vec<Line> = Vec::new();
-
-        rows.push(section_header("Profile"));
-        rows.push(kv_row("Name", &name));
-        rows.push(kv_row("Protocol", &protocol));
-        rows.push(kv_row("Group", group_name));
+        let mut rows: Vec<Line> = vec![
+            section_header("Profile"),
+            kv_row("Name", &name),
+            kv_row("Protocol", &protocol),
+            kv_row("Group", group_name),
+        ];
 
         if let Some(g) = self.current_group() {
             if !g.group.subscription_url.is_empty() {
@@ -261,10 +261,10 @@ impl App {
             let latency = format!("{} ms", p.test_result);
             rows.push(kv_row("Latency", &latency));
             if p.jitter_ms > 0 {
-                rows.push(kv_row("Jitter", &format!("±{} ms", p.jitter_ms)));
+                rows.push(kv_row("Jitter", format!("±{} ms", p.jitter_ms)));
             }
             if p.loss_pct > 0 {
-                rows.push(kv_row("Loss", &format!("{}%", p.loss_pct)));
+                rows.push(kv_row("Loss", format!("{}%", p.loss_pct)));
             }
         } else if p.test_result == -2 {
             rows.push(kv_row("Latency", "testing..."));

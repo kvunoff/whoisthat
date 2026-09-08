@@ -1,17 +1,17 @@
 use crate::config_models::{
-    self, ConfigMetaData, GRPCSettings, HttpUpgradeSettings, KCPSettings, NonHeaderObject, Outbound,
-    OutboundSettings, QuicSettings, RawData, RealitySettings, StreamSettings, TCPHeader, TCPSettings,
-    TlsSettings, WsSettings, XHTTPSettings,
+    self, ConfigMetaData, GRPCSettings, HttpUpgradeSettings, KCPSettings, NonHeaderObject,
+    Outbound, OutboundSettings, QuicSettings, RawData, RealitySettings, StreamSettings, TCPHeader,
+    TCPSettings, TlsSettings, WsSettings, XHTTPSettings,
 };
 use crate::utils::{inbound_generator, parse_raw_json};
 
+mod hysteria2;
 mod shadow_socks;
 mod socks;
 mod trojan;
 mod uri_identifier;
 mod vless;
 mod vmess;
-mod hysteria2;
 
 pub fn get_metadata(uri: &str) -> Result<String, String> {
     let (protocol, data, _) = get_uri_data(uri)?;
@@ -19,14 +19,40 @@ pub fn get_metadata(uri: &str) -> Result<String, String> {
         name: data.remarks,
         host: data.host.clone(),
         address: data.address.clone(),
-        port: data.port.clone(),
+        port: data.port,
         protocol,
     };
     let serialized = serde_json::to_string(&meta_data).map_err(|e| e.to_string())?;
     Ok(serialized)
 }
 
-pub fn create_json_config(uri: &str, socks_port: Option<u16>, http_port: Option<u16>) -> Result<String, String> {
+pub fn get_metadata_batch_from_reader<R: std::io::BufRead>(reader: R) -> Result<String, String> {
+    let mut results = Vec::new();
+    for line in reader.lines() {
+        let line = line.map_err(|e| e.to_string())?;
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if let Ok((protocol, data, _)) = get_uri_data(trimmed) {
+            results.push(config_models::BatchProfileMetaData {
+                uri: trimmed.to_string(),
+                name: data.remarks,
+                protocol,
+                host: data.host,
+                address: data.address,
+                port: data.port,
+            });
+        }
+    }
+    serde_json::to_string(&results).map_err(|e| e.to_string())
+}
+
+pub fn create_json_config(
+    uri: &str,
+    socks_port: Option<u16>,
+    http_port: Option<u16>,
+) -> Result<String, String> {
     let config = create_config(uri, socks_port, http_port)?;
     let serialized = serde_json::to_string(&config).map_err(|e| e.to_string())?;
     Ok(serialized)
@@ -61,9 +87,9 @@ pub fn create_hysteria2_client_yaml(
 ) -> Result<String, String> {
     let protocol = uri_identifier::get_uri_protocol(uri);
     if !matches!(protocol, Some(uri_identifier::Protocols::Hysteria2)) {
-        return Err(format!(
-            "URI is not a hysteria2/hy2 link (this command only handles hysteria2)"
-        ));
+        return Err(
+            "URI is not a hysteria2/hy2 link (this command only handles hysteria2)".to_string(),
+        );
     }
     let data = hysteria2::data::get_data(uri)?;
     hysteria2::create_client_yaml(&data, socks_port, http_port)
@@ -82,9 +108,7 @@ pub fn create_outbound_object(uri: &str) -> Result<config_models::Outbound, Stri
     // falls back to plaintext trojan which the server rejects.
     // An explicit `security=none` (or any non-tls value) is still respected.
     let effective_security = if name == "trojan" {
-        data.security
-            .clone()
-            .or_else(|| Some(String::from("tls")))
+        data.security.clone().or_else(|| Some(String::from("tls")))
     } else {
         data.security.clone()
     };
@@ -211,41 +235,41 @@ pub fn create_outbound_object(uri: &str) -> Result<config_models::Outbound, Stri
 }
 
 fn get_uri_data(uri: &str) -> Result<(String, RawData, OutboundSettings), String> {
-	let protocol = uri_identifier::get_uri_protocol(uri);
-	match protocol {
-		Some(uri_identifier::Protocols::Vless) => {
-			let d = vless::data::get_data(uri)?;
-			let s = vless::create_outbound_settings(&d);
-			Ok((String::from("vless"), d, s))
-		}
-		Some(uri_identifier::Protocols::Vmess) => {
-			let d = vmess::data::get_data(uri)?;
-			let s = vmess::create_outbound_settings(&d);
-			Ok((String::from("vmess"), d, s))
-		}
-		Some(uri_identifier::Protocols::Trojan) => {
-			let d = trojan::data::get_data(uri)?;
-			let s = trojan::create_outbound_settings(&d);
-			Ok((String::from("trojan"), d, s))
-		}
-		Some(uri_identifier::Protocols::Shadowsocks) => {
-			let d = shadow_socks::data::get_data(uri)?;
-			let s = shadow_socks::create_outbound_settings(&d);
-			Ok((String::from("shadowsocks"), d, s))
-		}
-		Some(uri_identifier::Protocols::Socks) => {
-			let d = socks::data::get_data(uri)?;
-			let s = socks::create_outbound_settings(&d);
-			Ok((String::from("socks"), d, s))
-		}
-		Some(uri_identifier::Protocols::Hysteria2) => {
-			let d = hysteria2::data::get_data(uri)?;
-			let s = hysteria2::create_outbound_settings(&d);
-			Ok((String::from("hysteria2"), d, s))
-		}
-		Some(_) => Err("The protocol was recognized but is not supported yet".to_string()),
-		None => Err("The protocol is not supported".to_string()),
-	}
+    let protocol = uri_identifier::get_uri_protocol(uri);
+    match protocol {
+        Some(uri_identifier::Protocols::Vless) => {
+            let d = vless::data::get_data(uri)?;
+            let s = vless::create_outbound_settings(&d);
+            Ok((String::from("vless"), d, s))
+        }
+        Some(uri_identifier::Protocols::Vmess) => {
+            let d = vmess::data::get_data(uri)?;
+            let s = vmess::create_outbound_settings(&d);
+            Ok((String::from("vmess"), d, s))
+        }
+        Some(uri_identifier::Protocols::Trojan) => {
+            let d = trojan::data::get_data(uri)?;
+            let s = trojan::create_outbound_settings(&d);
+            Ok((String::from("trojan"), d, s))
+        }
+        Some(uri_identifier::Protocols::Shadowsocks) => {
+            let d = shadow_socks::data::get_data(uri)?;
+            let s = shadow_socks::create_outbound_settings(&d);
+            Ok((String::from("shadowsocks"), d, s))
+        }
+        Some(uri_identifier::Protocols::Socks) => {
+            let d = socks::data::get_data(uri)?;
+            let s = socks::create_outbound_settings(&d);
+            Ok((String::from("socks"), d, s))
+        }
+        Some(uri_identifier::Protocols::Hysteria2) => {
+            let d = hysteria2::data::get_data(uri)?;
+            let s = hysteria2::create_outbound_settings(&d);
+            Ok((String::from("hysteria2"), d, s))
+        }
+        Some(_) => Err("The protocol was recognized but is not supported yet".to_string()),
+        None => Err("The protocol is not supported".to_string()),
+    }
 }
 
 #[cfg(test)]
@@ -289,7 +313,8 @@ mod tests {
 
         #[test]
         fn dispatches_shadowsocks() {
-            let encoded = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, "method:pass");
+            let encoded =
+                base64::Engine::encode(&base64::engine::general_purpose::STANDARD, "method:pass");
             let uri = format!("ss://{}@example.com:8388", encoded);
             let result = get_uri_data(&uri);
             assert!(result.is_ok());
@@ -349,6 +374,21 @@ mod tests {
             let result = get_metadata("not-a-uri");
             assert!(result.is_err());
         }
+
+        #[test]
+        fn batch_metadata_extracts_multiple_uris() {
+            let input = "vless://uuid1@example.com:443?test=1#Profile1\n\ninvalid_line\ntrojan://pw2@example.org:443?test=2#Profile2\n";
+            let result = get_metadata_batch_from_reader(input.as_bytes());
+            assert!(result.is_ok());
+            let json = result.unwrap();
+            let parsed: Vec<config_models::BatchProfileMetaData> =
+                serde_json::from_str(&json).unwrap();
+            assert_eq!(parsed.len(), 2);
+            assert_eq!(parsed[0].name, "Profile1");
+            assert_eq!(parsed[0].protocol, "vless");
+            assert_eq!(parsed[1].name, "Profile2");
+            assert_eq!(parsed[1].protocol, "trojan");
+        }
     }
 
     mod create_config_tests {
@@ -389,11 +429,8 @@ mod tests {
 
         #[test]
         fn produces_valid_json() {
-            let result = create_json_config(
-                "vless://uuid@example.com:443?test=1",
-                Some(3090),
-                None,
-            );
+            let result =
+                create_json_config("vless://uuid@example.com:443?test=1", Some(3090), None);
             assert!(result.is_ok());
             let json = result.unwrap();
             assert!(json.contains("vless"));
@@ -413,7 +450,7 @@ mod tests {
         #[test]
         fn creates_vless_with_tls() {
             let result = create_outbound_object(
-                "vless://uuid@example.com:443?security=tls&sni=sni.com&type=tcp&fp=chrome#test"
+                "vless://uuid@example.com:443?security=tls&sni=sni.com&type=tcp&fp=chrome#test",
             );
             assert!(result.is_ok());
             let outbound = result.unwrap();
@@ -433,7 +470,10 @@ mod tests {
             );
             assert!(result.is_ok());
             let outbound = result.unwrap();
-            assert_eq!(outbound.streamSettings.security, Some("reality".to_string()));
+            assert_eq!(
+                outbound.streamSettings.security,
+                Some("reality".to_string())
+            );
             let reality = outbound.streamSettings.realitySettings.unwrap();
             assert_eq!(reality.serverName, Some("google.com".to_string()));
             assert_eq!(reality.publicKey, Some("pubkey".to_string()));
@@ -444,7 +484,7 @@ mod tests {
         #[test]
         fn creates_vless_with_ws() {
             let result = create_outbound_object(
-                "vless://uuid@example.com:443?type=ws&host=ws.example.com&path=/ws-path"
+                "vless://uuid@example.com:443?type=ws&host=ws.example.com&path=/ws-path",
             );
             assert!(result.is_ok());
             let outbound = result.unwrap();
@@ -457,7 +497,7 @@ mod tests {
         #[test]
         fn creates_vless_with_grpc() {
             let result = create_outbound_object(
-                "vless://uuid@example.com:443?type=grpc&serviceName=svc&authority=auth"
+                "vless://uuid@example.com:443?type=grpc&serviceName=svc&authority=auth",
             );
             assert!(result.is_ok());
             let outbound = result.unwrap();
@@ -470,7 +510,7 @@ mod tests {
         #[test]
         fn creates_vless_with_allow_insecure() {
             let result = create_outbound_object(
-                "vless://uuid@example.com:443?security=tls&sni=sni.com&allowInsecure=1"
+                "vless://uuid@example.com:443?security=tls&sni=sni.com&allowInsecure=1",
             );
             assert!(result.is_ok());
             let outbound = result.unwrap();
@@ -480,9 +520,8 @@ mod tests {
 
         #[test]
         fn does_not_allow_insecure_by_default() {
-            let result = create_outbound_object(
-                "vless://uuid@example.com:443?security=tls&sni=sni.com"
-            );
+            let result =
+                create_outbound_object("vless://uuid@example.com:443?security=tls&sni=sni.com");
             assert!(result.is_ok());
             let outbound = result.unwrap();
             let tls = outbound.streamSettings.tlsSettings.unwrap();
@@ -492,7 +531,7 @@ mod tests {
         #[test]
         fn creates_trojan_with_tcp_header() {
             let result = create_outbound_object(
-                "trojan://pw@example.com:443?security=tls&sni=sni.com&type=tcp&headerType=http"
+                "trojan://pw@example.com:443?security=tls&sni=sni.com&type=tcp&headerType=http",
             );
             assert!(result.is_ok());
             let outbound = result.unwrap();
@@ -502,9 +541,8 @@ mod tests {
 
         #[test]
         fn creates_kcp_settings() {
-            let result = create_outbound_object(
-                "vless://uuid@example.com:443?type=kcp&seed=myseed"
-            );
+            let result =
+                create_outbound_object("vless://uuid@example.com:443?type=kcp&seed=myseed");
             assert!(result.is_ok());
             let outbound = result.unwrap();
             let kcp = outbound.streamSettings.kcpSettings.unwrap();
@@ -519,7 +557,10 @@ mod tests {
             assert!(result.is_ok());
             let outbound = result.unwrap();
             let tls = outbound.streamSettings.tlsSettings.unwrap();
-            assert_eq!(tls.alpn, Some(vec!["h2".to_string(), "http/1.1".to_string()]));
+            assert_eq!(
+                tls.alpn,
+                Some(vec!["h2".to_string(), "http/1.1".to_string()])
+            );
         }
 
         #[test]
@@ -529,7 +570,10 @@ mod tests {
             );
             assert!(result.is_ok());
             let tls = result.unwrap().streamSettings.tlsSettings.unwrap();
-            assert_eq!(tls.alpn, Some(vec!["h2".to_string(), "http/1.1".to_string()]));
+            assert_eq!(
+                tls.alpn,
+                Some(vec!["h2".to_string(), "http/1.1".to_string()])
+            );
         }
 
         #[test]
@@ -602,7 +646,10 @@ mod tests {
             );
             assert!(result.is_ok());
             let outbound = result.unwrap();
-            assert_eq!(outbound.streamSettings.security, Some("reality".to_string()));
+            assert_eq!(
+                outbound.streamSettings.security,
+                Some("reality".to_string())
+            );
             let reality = outbound.streamSettings.realitySettings.unwrap();
             assert_eq!(reality.publicKey, Some("pubkey".to_string()));
             assert_eq!(reality.shortId, Some("sid".to_string()));
@@ -621,9 +668,8 @@ mod tests {
 
         #[test]
         fn grpc_multimode_default_false() {
-            let result = create_outbound_object(
-                "vless://uuid@example.com:443?type=grpc&serviceName=svc",
-            );
+            let result =
+                create_outbound_object("vless://uuid@example.com:443?type=grpc&serviceName=svc");
             assert!(result.is_ok());
             let grpc = result.unwrap().streamSettings.grpcSettings.unwrap();
             assert_eq!(grpc.multiMode, Some(false));

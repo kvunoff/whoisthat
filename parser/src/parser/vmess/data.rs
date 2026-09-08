@@ -10,12 +10,10 @@ pub fn get_data(uri: &str) -> Result<RawData, String> {
         .ok_or_else(|| "Invalid vmess URI: missing 'vmess://'".to_string())?
         .1;
 
-    return match general_purpose::STANDARD
-        .decode(url_decode_str(data).unwrap_or(String::from(data)))
-    {
+    match general_purpose::STANDARD.decode(url_decode_str(data).unwrap_or(String::from(data))) {
         Ok(decoded) => get_raw_data_from_base64(&decoded),
         Err(_) => get_raw_data_from_uri(data),
-    };
+    }
 }
 
 fn get_raw_data_from_base64(decoded_base64: &[u8]) -> Result<RawData, String> {
@@ -69,7 +67,7 @@ fn get_raw_data_from_base64(decoded_base64: &[u8]) -> Result<RawData, String> {
 }
 
 fn get_str_field(json: &Value, field: &str) -> Option<String> {
-    return json.get(field).and_then(|v| v.as_str()).map(String::from);
+    json.get(field).and_then(|v| v.as_str()).map(String::from)
 }
 
 fn get_raw_data_from_uri(data: &str) -> Result<RawData, String> {

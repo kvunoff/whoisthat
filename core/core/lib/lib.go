@@ -34,8 +34,21 @@ func AddProfiles(DB *db.DB, data structs.AddProfilesData) structs.ProfilesAdded 
 	}
 }
 
+type batchProfileMetaData struct {
+	Uri      string `json:"uri"`
+	Name     string `json:"name"`
+	Protocol string `json:"protocol"`
+	Address  string `json:"address,omitzero"`
+	Host     string `json:"host,omitzero"`
+}
+
 func GetDBAddProfileDatasFromStr(str string, group_id int) []structs.DBAddProfileData {
 	str = decode64(str)
+
+	if profiles, err := getDBAddProfileDatasFromStrBatch(str, group_id); err == nil && len(profiles) > 0 {
+		return profiles
+	}
+
 	uris := strings.FieldsSeq(str)
 	var profiles []structs.DBAddProfileData
 	for uri := range uris {
@@ -46,6 +59,39 @@ func GetDBAddProfileDatasFromStr(str string, group_id int) []structs.DBAddProfil
 		profiles = append(profiles, profile)
 	}
 	return profiles
+}
+
+func getDBAddProfileDatasFromStrBatch(str string, group_id int) ([]structs.DBAddProfileData, error) {
+	parserbin, err := utils.GetParserBin()
+	if err != nil {
+		return nil, fmt.Errorf("failed to find parser bin: %w", err)
+	}
+
+	cmd := exec.Command(parserbin, "--get-metadata-batch")
+	cmd.Stdin = strings.NewReader(str)
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("batch metadata failed: %w", err)
+	}
+
+	var batchItems []batchProfileMetaData
+	if err := json.Unmarshal(out, &batchItems); err != nil {
+		return nil, fmt.Errorf("unmarshaling batch metadata: %w", err)
+	}
+
+	profiles := make([]structs.DBAddProfileData, 0, len(batchItems))
+	for _, item := range batchItems {
+		profiles = append(profiles, structs.DBAddProfileData{
+			Protocol: item.Protocol,
+			Name:     item.Name,
+			Address:  item.Address,
+			Host:     item.Host,
+			Uri:      item.Uri,
+			GroupId:  group_id,
+			NanoID:   generateNanoID(),
+		})
+	}
+	return profiles, nil
 }
 
 func getDBAddProfileDataFromURI(uri string, group_id int) (structs.DBAddProfileData, error) {

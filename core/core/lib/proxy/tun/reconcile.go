@@ -53,6 +53,7 @@ while [ $i -lt 32 ]; do
 done
 ip route flush table 100 2>/dev/null || true
 ip -6 route flush table 100 2>/dev/null || true
+resolvectl revert whoisthattun 2>/dev/null || true
 `
 }
 
