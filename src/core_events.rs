@@ -204,6 +204,24 @@ pub(crate) async fn handle_core_event(
             if app.routing_cursor >= len && len > 0 {
                 app.routing_cursor = len - 1;
             }
+            if app.is_connected() {
+                let tx = ip_tx.clone();
+                tokio::spawn(async move {
+                    tokio::time::sleep(Duration::from_millis(600)).await;
+                    if let Some(ip) = tokio::task::spawn_blocking(fetch_public_ip)
+                        .await
+                        .unwrap_or(None)
+                    {
+                        let _ = tx.send(AppEvent::PublicIp(ip));
+                    }
+                    if let Some(ip) = tokio::task::spawn_blocking(fetch_public_ipv6)
+                        .await
+                        .unwrap_or(None)
+                    {
+                        let _ = tx.send(AppEvent::PublicIpv6(ip));
+                    }
+                });
+            }
         }
         CoreEvent::HwidUpdated(hw) => {
             app.hwid_info = Some(hw);

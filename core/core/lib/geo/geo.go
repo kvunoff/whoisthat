@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 	"whoisthat-core/lib/logger"
@@ -268,10 +269,11 @@ func verifyGeoIP(path string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), verifyTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, xrayBin, "run")
+	var stderrBuf bytes.Buffer
+	cmd := exec.CommandContext(ctx, xrayBin, "run", "-test")
 	cmd.Stdin = bytes.NewReader(raw)
 	cmd.Stdout = nil
-	cmd.Stderr = nil
+	cmd.Stderr = &stderrBuf
 	cmd.Env = append(os.Environ(), "XRAY_LOCATION_ASSET="+filepath.Dir(path))
 
 	if err := cmd.Run(); err != nil {
@@ -281,7 +283,12 @@ func verifyGeoIP(path string) bool {
 			logger.Warnf("geo: xray verification timed out after %s — treating as failure", verifyTimeout)
 			return false
 		}
-		logger.Warnf("geo: xray verification failed: %v", err)
+		errOutput := strings.TrimSpace(stderrBuf.String())
+		if errOutput != "" {
+			logger.Warnf("geo: xray verification failed: %v (%s)", err, errOutput)
+		} else {
+			logger.Warnf("geo: xray verification failed: %v", err)
+		}
 		return false
 	}
 	return true

@@ -839,4 +839,3 @@ resolvectl revert %s 2>/dev/null || true
 	_, err := runScriptWithSh(script)
 	return err
 }
-

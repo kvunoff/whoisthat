@@ -20,12 +20,12 @@ import (
 )
 
 type Server struct {
-	clients        map[string]*clientConn
-	DB             *db.DB
-	mutex          sync.Mutex
-	proxy_manager  *proxy.ProxyManager
-	tun_manager    *tunmode.TunModeManager
-	stop_sig       chan<- bool
+	clients         map[string]*clientConn
+	DB              *db.DB
+	mutex           sync.Mutex
+	proxy_manager   *proxy.ProxyManager
+	tun_manager     *tunmode.TunModeManager
+	stop_sig        chan<- bool
 	missingBinaries []MissingBinary
 }
 
@@ -424,7 +424,7 @@ func (s *Server) handleConnection(cc *clientConn, clientID string) {
 				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
-			command_handler.UpdateRouting(data)
+			command_handler.UpdateRouting(data, s.proxy_manager)
 
 		default:
 			logger.Warn("Unknown message:", raw_tcp_message.Msg)

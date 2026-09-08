@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sync"
 	"syscall"
 	"time"
@@ -85,6 +86,9 @@ func (x *XrayCore) Start(stdinPipe []byte) error {
 		if geo.IsReady() {
 			cmd.Env = append(os.Environ(), "XRAY_LOCATION_ASSET="+ad)
 			logger.Infof("xray XRAY_LOCATION_ASSET=%s", ad)
+		} else if _, err := os.Stat(filepath.Join(ad, "geoip.dat")); err == nil {
+			cmd.Env = append(os.Environ(), "XRAY_LOCATION_ASSET="+ad)
+			logger.Infof("xray XRAY_LOCATION_ASSET=%s (fallback: files exist)", ad)
 		} else {
 			logger.Warn("xray: geo assets not ready, skipping XRAY_LOCATION_ASSET")
 		}

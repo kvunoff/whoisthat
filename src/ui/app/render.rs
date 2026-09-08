@@ -34,7 +34,7 @@ impl App {
             self.render_popup(f, popup, area);
         }
         if let Some(ref popup) = self.routing_popup {
-            render_routing_popup(f, popup, area);
+            render_routing_popup(f, popup, area, &self.routing);
         }
     }
 

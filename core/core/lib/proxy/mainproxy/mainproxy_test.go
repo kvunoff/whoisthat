@@ -188,3 +188,30 @@ func TestExitWatcher_ConcurrentStartRetire(t *testing.T) {
 		}
 	}
 }
+
+func TestReloadRouting_Disconnected(t *testing.T) {
+	p := newTestProxyManager()
+	if err := p.ReloadRouting("whoisthattun"); err != nil {
+		t.Errorf("ReloadRouting when disconnected = %v, want nil", err)
+	}
+	if p.status.Connection != "disconnected" {
+		t.Errorf("status = %v, want disconnected", p.status.Connection)
+	}
+}
+
+func TestReloadRouting_Hysteria(t *testing.T) {
+	p := newTestProxyManager()
+	p.status = structs.ProxyStatus{
+		Connection: "connected",
+		Profile: structs.Profile{
+			Protocol: "hysteria2",
+			Name:     "hy2-node",
+		},
+	}
+	if err := p.ReloadRouting("whoisthattun"); err != nil {
+		t.Errorf("ReloadRouting for hysteria = %v, want nil", err)
+	}
+	if p.status.Connection != "connected" {
+		t.Errorf("status = %v, want connected", p.status.Connection)
+	}
+}

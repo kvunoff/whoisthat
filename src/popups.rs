@@ -4,7 +4,7 @@ use crate::core_client::protocol::{ProfileID, SetHwidData};
 use crate::core_client::CoreClient;
 use crate::text_edit::edit_text_field;
 use crate::ui::app::{ActiveTab, Focus, Popup};
-use crate::ui::routing::{form_to_rule, RoutingPopup};
+use crate::ui::routing::{form_to_rule, toggle_preset, RoutingPopup, ROUTING_PRESETS};
 use crate::ui::App;
 
 pub(crate) async fn handle_popup_input(
@@ -290,6 +290,7 @@ pub(crate) async fn handle_routing_popup_input(
                 if app.routing_cursor >= app.routing.rules.len() && app.routing_cursor > 0 {
                     app.routing_cursor -= 1;
                 }
+                app.msg("Rule deleted");
                 let _ = client.update_routing(&app.routing).await;
             }
             KeyCode::Esc => {}
@@ -316,6 +317,7 @@ pub(crate) async fn handle_routing_popup_input(
                 FormResult::Save => {
                     let rule = form_to_rule(match_type, &value, outbound);
                     app.routing.rules.push(rule);
+                    app.msg("Rule added");
                     let _ = client.update_routing(&app.routing).await;
                 }
                 FormResult::Cancel => {
@@ -353,6 +355,7 @@ pub(crate) async fn handle_routing_popup_input(
                     let rule = form_to_rule(match_type, &value, outbound);
                     if index < app.routing.rules.len() {
                         app.routing.rules[index] = rule;
+                        app.msg("Rule saved");
                         let _ = client.update_routing(&app.routing).await;
                     }
                 }
@@ -371,6 +374,39 @@ pub(crate) async fn handle_routing_popup_input(
                 }
             }
         }
+        Some(RoutingPopup::Presets { mut cursor }) => match key.code {
+            KeyCode::Esc => {}
+            KeyCode::Char('j') | KeyCode::Down => {
+                let max = ROUTING_PRESETS.len().saturating_sub(1);
+                if cursor < max {
+                    cursor += 1;
+                }
+                app.routing_popup = Some(RoutingPopup::Presets { cursor });
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                cursor = cursor.saturating_sub(1);
+                app.routing_popup = Some(RoutingPopup::Presets { cursor });
+            }
+            KeyCode::Home => {
+                app.routing_popup = Some(RoutingPopup::Presets { cursor: 0 });
+            }
+            KeyCode::End => {
+                let max = ROUTING_PRESETS.len().saturating_sub(1);
+                app.routing_popup = Some(RoutingPopup::Presets { cursor: max });
+            }
+            KeyCode::Enter | KeyCode::Char(' ') => {
+                if let Some(preset) = ROUTING_PRESETS.get(cursor) {
+                    let now_applied = toggle_preset(&mut app.routing, preset);
+                    let action = if now_applied { "applied" } else { "removed" };
+                    app.msg(format!("Preset {}: {}", action, preset.title));
+                    let _ = client.update_routing(&app.routing).await;
+                }
+                app.routing_popup = Some(RoutingPopup::Presets { cursor });
+            }
+            _ => {
+                app.routing_popup = Some(RoutingPopup::Presets { cursor });
+            }
+        },
         None => {}
     }
 }

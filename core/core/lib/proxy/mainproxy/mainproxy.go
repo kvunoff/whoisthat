@@ -56,8 +56,8 @@ type ProxyManager struct {
 		total  int
 	}
 
-	testMu       sync.RWMutex
-	testConfig   structs.TestConfig
+	testMu        sync.RWMutex
+	testConfig    structs.TestConfig
 	testEndpoints []string
 }
 
