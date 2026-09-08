@@ -60,7 +60,56 @@ impl App {
                 cursor,
                 field,
             } => self.render_group_form(f, "Add Group", name, url, *cursor, *field, area),
+            Popup::TabSwitcher { cursor } => self.render_tab_switcher_popup(f, *cursor, area),
         }
+    }
+
+    fn render_tab_switcher_popup(&self, f: &mut Frame, cursor: usize, area: Rect) {
+        let pa = centered_rect_fixed(56, 9, area);
+        f.render_widget(Clear, pa);
+
+        let block = Block::default()
+            .title(" Switch View ")
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(Style::default().fg(ACCENT))
+            .style(s_surface());
+
+        let inner = block.inner(pa);
+        f.render_widget(block, pa);
+
+        let tabs: &[(&str, &str, &str)] = &[
+            ("[1]", "Profiles", "Active server configs & subscriptions"),
+            ("[2]", "Routing", "Traffic routing rules & domain bypass"),
+            ("[3]", "Traffic", "Real-time speed charts & totals"),
+            ("[4]", "Logs", "Core logs & daemon event output"),
+            ("[5]", "Settings", "TUI preferences & core configuration"),
+        ];
+
+        let mut lines = Vec::new();
+        for (i, (num, name, desc)) in tabs.iter().enumerate() {
+            let is_selected = i == cursor;
+            let (indicator, num_style, name_style, desc_style) = if is_selected {
+                (" ▸ ", s_accent_bold(), s_accent_bold(), s_text())
+            } else {
+                ("   ", s_faint(), s_text(), s_dim())
+            };
+
+            lines.push(Line::from(vec![
+                Span::styled(indicator, num_style),
+                Span::styled(format!("{} ", num), num_style),
+                Span::styled(format!("{:<9} ", name), name_style),
+                Span::styled(*desc, desc_style),
+            ]));
+        }
+
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![Span::styled(
+            " [↑/↓/j/k] Navigate  ·  [1-5] Jump  ·  [Enter] Select ",
+            s_faint(),
+        )]));
+
+        f.render_widget(Paragraph::new(lines).style(s_surface()), inner);
     }
 
     fn render_text_popup(&self, f: &mut Frame, title: &str, hint: &str, input: &str, area: Rect) {
@@ -253,12 +302,13 @@ impl App {
         f.render_widget(block, pa);
 
         let global: &[(&str, &str)] = &[
+            ("Tab", "Open Pages / View Switcher"),
             ("1/Esc", "Profiles tab"),
             ("r", "Routing tab"),
             ("m", "Traffic tab"),
             ("l", "Logs tab"),
             ("s", "Settings tab"),
-            ("Tab", "Switch focus"),
+            ("Mouse", "Wheel scroll, click tabs/items"),
             ("h/?", "This help"),
             ("q", "Detach (VPN stays on)"),
             ("Q/C-c", "Quit + stop VPN"),
@@ -266,6 +316,8 @@ impl App {
 
         let profiles: &[(&str, &str)] = &[
             ("j/k", "Navigate cursor"),
+            ("Space/Enter", "Fold / unfold group"),
+            ("h/l / ←/→", "Collapse/expand / panel focus"),
             ("g/G", "Top / bottom"),
             ("c/Enter", "Connect to profile"),
             ("d", "Disconnect"),

@@ -10,7 +10,7 @@ use crate::popups::{handle_popup_input, handle_routing_popup_input};
 use crate::systemd::{setup_systemd_service, teardown_systemd_service};
 use crate::testing::{build_test_list, persist_and_sync_test_config, run_test_batch};
 use crate::text_edit::{edit_text_field, read_clipboard};
-use crate::ui::app::{ActiveTab, Focus, Popup};
+use crate::ui::app::{ActiveTab, Focus, Popup, TreeNode};
 use crate::ui::routing::{rule_to_form, RoutingPopup};
 use crate::ui::settings::next_split_tunnel_mode;
 use crate::ui::App;
@@ -72,7 +72,7 @@ pub(crate) async fn handle_input(
                 return handle_normal_input(app, client, key, cfg, logger).await;
             }
             Event::Mouse(mouse) => {
-                let _ = mouse;
+                return handle_mouse_input(app, client, mouse, cfg, logger).await;
             }
             _ => {}
         },
@@ -125,6 +125,13 @@ async fn handle_normal_input(
     }
 
     match key.code {
+        KeyCode::Tab | KeyCode::BackTab => {
+            app.popup = Some(Popup::TabSwitcher {
+                cursor: app.tab_index(),
+            });
+            app.focus = Focus::Popup;
+            return false;
+        }
         KeyCode::Char('a') => {
             if app.tab == ActiveTab::Routing {
                 app.routing_popup = Some(RoutingPopup::Add {
@@ -484,12 +491,11 @@ async fn handle_normal_input(
         return false;
     }
 
-    if key.code == KeyCode::Tab {
-        app.focus = match app.focus {
-            Focus::LeftPanel => Focus::RightPanel,
-            Focus::RightPanel => Focus::LeftPanel,
-            Focus::Popup => Focus::LeftPanel,
-        };
+    if app.tab == ActiveTab::Traffic {
+        if key.code == KeyCode::Char('d') {
+            let _ = client.disconnect().await;
+            app.msg("Disconnecting...");
+        }
         return false;
     }
 
@@ -515,10 +521,49 @@ async fn handle_normal_input(
                     return false;
                 }
             }
-            KeyCode::Char('c') | KeyCode::Enter => {
+            KeyCode::Char('h') | KeyCode::Left => {
+                if let Some(TreeNode::Group(gi)) = app.tree_node_at(app.cursor) {
+                    if let Some(g) = app.groups.get(gi) {
+                        app.collapse_group(g.group.id);
+                    }
+                } else if let Some(parent_pos) = app.parent_group_cursor() {
+                    app.cursor = parent_pos;
+                }
+            }
+            KeyCode::Char('l') | KeyCode::Right => {
+                if let Some(TreeNode::Group(gi)) = app.tree_node_at(app.cursor) {
+                    if let Some(g) = app.groups.get(gi) {
+                        if app.is_group_collapsed(g.group.id) {
+                            app.expand_group(g.group.id);
+                        } else if !g.profiles.is_empty() {
+                            app.cursor_down();
+                        }
+                    }
+                } else if app.selected_profile().is_some() {
+                    app.focus = Focus::RightPanel;
+                }
+            }
+            KeyCode::Char(' ') => {
+                if let Some(TreeNode::Group(gi)) = app.tree_node_at(app.cursor) {
+                    if let Some(g) = app.groups.get(gi) {
+                        app.toggle_group_collapsed(g.group.id);
+                    }
+                }
+            }
+            KeyCode::Char('c') => {
                 if let Some(p) = app.selected_profile() {
                     let _ = client.connect(p.group_id, p.id).await;
                     app.msg("Connecting...");
+                }
+            }
+            KeyCode::Enter => {
+                if let Some(p) = app.selected_profile() {
+                    let _ = client.connect(p.group_id, p.id).await;
+                    app.msg("Connecting...");
+                } else if let Some(TreeNode::Group(gi)) = app.tree_node_at(app.cursor) {
+                    if let Some(g) = app.groups.get(gi) {
+                        app.toggle_group_collapsed(g.group.id);
+                    }
                 }
             }
             KeyCode::Char('d') => {
@@ -620,6 +665,9 @@ async fn handle_normal_input(
             _ => {}
         },
         Focus::RightPanel => match key.code {
+            KeyCode::Char('h') | KeyCode::Left => {
+                app.focus = Focus::LeftPanel;
+            }
             KeyCode::Char('c') | KeyCode::Enter => {
                 if let Some(p) = app.selected_profile() {
                     let _ = client.connect(p.group_id, p.id).await;
@@ -664,6 +712,253 @@ async fn handle_normal_input(
             _ => {}
         },
         Focus::Popup => {}
+    }
+
+    false
+}
+
+pub(crate) async fn handle_mouse_input(
+    app: &mut App,
+    client: &CoreClient,
+    mouse: crossterm::event::MouseEvent,
+    cfg: &mut config::AppConfig,
+    logger: &'static FileLogger,
+) -> bool {
+    use crossterm::event::{MouseButton, MouseEventKind};
+
+    if let Some(Popup::TabSwitcher { cursor: _ }) = app.popup {
+        if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left)) {
+            let pa = crate::ui::app::centered_rect_fixed(56, 9, app.last_area);
+            if mouse.column >= pa.x
+                && mouse.column < pa.x + pa.width
+                && mouse.row >= pa.y
+                && mouse.row < pa.y + pa.height
+            {
+                let inner_y = pa.y + 1;
+                if mouse.row >= inner_y && mouse.row < inner_y + 5 {
+                    let clicked_tab_idx = (mouse.row - inner_y) as usize;
+                    let target = App::tab_from_index(clicked_tab_idx);
+                    app.tab = target;
+                    app.popup = None;
+                    app.focus = Focus::LeftPanel;
+                    if target == ActiveTab::Routing {
+                        app.routing_popup = None;
+                        let _ = client.get_routing().await;
+                    }
+                    return false;
+                }
+            } else {
+                app.popup = None;
+                app.focus = Focus::LeftPanel;
+                return false;
+            }
+        }
+        return false;
+    }
+
+    if app.popup.is_some() || app.routing_popup.is_some() {
+        return false;
+    }
+
+    match mouse.kind {
+        MouseEventKind::ScrollDown => {
+            match app.tab {
+                ActiveTab::Profiles => {
+                    app.cursor_down();
+                }
+                ActiveTab::Logs => {
+                    app.logs_state.scroll_down();
+                }
+                ActiveTab::Settings => {
+                    app.settings_state.cursor_down();
+                }
+                ActiveTab::Routing => {
+                    let max = app.routing.rules.len().saturating_sub(1);
+                    if app.routing_cursor < max {
+                        app.routing_cursor += 1;
+                    }
+                }
+                ActiveTab::Traffic => {}
+            }
+            false
+        }
+        MouseEventKind::ScrollUp => {
+            match app.tab {
+                ActiveTab::Profiles => {
+                    app.cursor_up();
+                }
+                ActiveTab::Logs => {
+                    app.logs_state.scroll_up();
+                }
+                ActiveTab::Settings => {
+                    app.settings_state.cursor_up();
+                }
+                ActiveTab::Routing => {
+                    if app.routing_cursor > 0 {
+                        app.routing_cursor -= 1;
+                    }
+                }
+                ActiveTab::Traffic => {}
+            }
+            false
+        }
+        MouseEventKind::Down(MouseButton::Left) => {
+            handle_mouse_left_click(app, client, mouse.column, mouse.row, cfg, logger).await
+        }
+        _ => false,
+    }
+}
+
+async fn handle_mouse_left_click(
+    app: &mut App,
+    client: &CoreClient,
+    col: u16,
+    row: u16,
+    _cfg: &mut config::AppConfig,
+    _logger: &'static FileLogger,
+) -> bool {
+    let top_y = app.last_area.y;
+    let top_h = 4;
+
+    // 1. Check click in Top Bar
+    if row >= top_y && row < top_y + top_h {
+        let total_actions_len = 62;
+        let start_x = app.last_area.x + app.last_area.width.saturating_sub(total_actions_len + 2);
+        if col >= start_x {
+            let rel_from_right = (app.last_area.x + app.last_area.width).saturating_sub(col);
+            if rel_from_right <= 18 {
+                return true;
+            } else if rel_from_right <= 33 {
+                app.popup = Some(Popup::Help);
+                app.focus = Focus::Popup;
+                return false;
+            } else {
+                app.popup = Some(Popup::TabSwitcher {
+                    cursor: app.tab_index(),
+                });
+                app.focus = Focus::Popup;
+                return false;
+            }
+        }
+
+        // Check row 1 (status line: " WhoisThat │ ● Connected ...")
+        if row == top_y + 1 {
+            let top_x = app.last_area.x;
+            if col >= top_x + 12 && col <= top_x + 32 {
+                if app.is_connected() {
+                    let _ = client.disconnect().await;
+                    app.msg("Disconnecting...");
+                } else if let Some(p) = app.selected_profile() {
+                    let _ = client.connect(p.group_id, p.id).await;
+                    app.msg("Connecting...");
+                }
+                return false;
+            }
+        }
+        return false;
+    }
+
+    // 2. Check click in Main Area
+    let main_y = top_y + 4;
+    let main_h = app.last_area.height.saturating_sub(7);
+    if row >= main_y && row < main_y + main_h {
+        match app.tab {
+            ActiveTab::Profiles => {
+                let main_w = app.last_area.width;
+                let tree_w = (main_w * 55) / 100;
+                let tree_x = app.last_area.x;
+                if col < tree_x + tree_w {
+                    app.focus = Focus::LeftPanel;
+                    let inner_x = tree_x + 1;
+                    let inner_y = main_y + 1;
+                    let inner_w = tree_w.saturating_sub(2);
+                    let inner_h = main_h.saturating_sub(2);
+                    if col >= inner_x
+                        && col < inner_x + inner_w
+                        && row >= inner_y
+                        && row < inner_y + inner_h
+                    {
+                        let row_offset = (row - inner_y) as usize;
+                        let target_idx = app.tree_scroll + row_offset;
+                        if target_idx < app.tree_len() {
+                            if app.cursor == target_idx {
+                                // Clicked on already selected item
+                                if let Some(TreeNode::Group(gi)) = app.tree_node_at(target_idx) {
+                                    if let Some(g) = app.groups.get(gi) {
+                                        app.toggle_group_collapsed(g.group.id);
+                                    }
+                                } else if let Some(p) = app.selected_profile() {
+                                    let _ = client.connect(p.group_id, p.id).await;
+                                    app.msg("Connecting...");
+                                }
+                            } else {
+                                app.cursor = target_idx;
+                            }
+                        }
+                    }
+                } else {
+                    app.focus = Focus::RightPanel;
+                }
+            }
+            ActiveTab::Settings => {
+                app.focus = Focus::LeftPanel;
+                let inner_y = main_y + 1;
+                let inner_h = main_h.saturating_sub(2);
+                if row >= inner_y && row < inner_y + inner_h {
+                    let row_offset = (row - inner_y) as usize;
+                    let target_flat = app.settings_state.scroll + row_offset;
+                    let layout = crate::ui::settings::settings_layout();
+                    if let Some(crate::ui::settings::SettingsRow::Item { .. }) =
+                        layout.get(target_flat)
+                    {
+                        let item_idx = layout[..=target_flat]
+                            .iter()
+                            .filter(|r| matches!(r, crate::ui::settings::SettingsRow::Item { .. }))
+                            .count()
+                            .saturating_sub(1);
+                        app.settings_state.item_cursor = item_idx;
+                    }
+                }
+            }
+            ActiveTab::Routing => {
+                app.focus = Focus::LeftPanel;
+                let is_hy2 = app.is_connected_hy2();
+                let start_row = if is_hy2 { main_y + 3 } else { main_y + 2 };
+                if row >= start_row && row < main_y + main_h.saturating_sub(2) {
+                    let rule_idx = (row - start_row) as usize;
+                    if rule_idx < app.routing.rules.len() {
+                        if app.routing_cursor == rule_idx {
+                            if let Some(rule) = app.routing.rules.get_mut(rule_idx) {
+                                rule.enabled = !rule.enabled;
+                                let _ = client.update_routing(&app.routing).await;
+                            }
+                        } else {
+                            app.routing_cursor = rule_idx;
+                        }
+                    }
+                }
+            }
+            ActiveTab::Logs => {
+                app.focus = Focus::LeftPanel;
+            }
+            ActiveTab::Traffic => {}
+        }
+        return false;
+    }
+
+    // 3. Check click in Bottom Bar
+    let bot_y = app.last_area.bottom().saturating_sub(3);
+    if row >= bot_y {
+        let bot_x = app.last_area.x;
+        if col >= bot_x + 22 && col <= bot_x + 35 {
+            if app.tun_enabled {
+                let _ = client.disable_tun().await;
+            } else {
+                let _ = client.is_root().await;
+                app.msg("Checking root...");
+            }
+        }
+        return false;
     }
 
     false

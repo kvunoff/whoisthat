@@ -90,3 +90,11 @@ pub fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
     ])
     .split(popup_layout[1])[1]
 }
+
+pub fn centered_rect_fixed(width: u16, height: u16, r: Rect) -> Rect {
+    let w = width.min(r.width.saturating_sub(2));
+    let h = height.min(r.height.saturating_sub(2));
+    let x = r.x + (r.width.saturating_sub(w)) / 2;
+    let y = r.y + (r.height.saturating_sub(h)) / 2;
+    Rect::new(x, y, w, h)
+}

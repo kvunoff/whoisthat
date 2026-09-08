@@ -16,6 +16,7 @@ use crate::ui::traffic::render_traffic_tab;
 impl App {
     pub fn render(&mut self, f: &mut Frame) {
         let area = f.area();
+        self.last_area = area;
         f.render_widget(Block::default().style(s_bg()), area);
 
         let v = Layout::vertical([
@@ -71,14 +72,32 @@ impl App {
         }
         let status_line = Line::from(status_spans);
 
-        let tab_line = Line::from(self.tab_spans());
+        let current_tab_name = match self.tab {
+            ActiveTab::Profiles => "Profiles",
+            ActiveTab::Routing => "Routing",
+            ActiveTab::Traffic => "Traffic",
+            ActiveTab::Logs => "Logs",
+            ActiveTab::Settings => "Settings",
+        };
+
+        let header_actions = Line::from(vec![
+            Span::styled(" [Tab] ", s_accent_bold()),
+            Span::styled("Pages ▾ ", s_accent().add_modifier(Modifier::BOLD)),
+            Span::styled(format!("({}) ", current_tab_name), s_dim()),
+            Span::styled("│ ", s_faint()),
+            Span::styled("[?/h] ", s_accent_bold()),
+            Span::styled("Help ", s_text()),
+            Span::styled("│ ", s_faint()),
+            Span::styled("[Q/q] ", s_accent_bold()),
+            Span::styled("Quit/Detach ", s_text()),
+        ]);
 
         let block = Block::default()
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
             .border_style(Style::default().fg(BORDER))
             .title_alignment(Alignment::Right)
-            .title_bottom(tab_line)
+            .title_bottom(header_actions)
             .style(s_bg());
 
         let inner = block.inner(area);
@@ -98,58 +117,6 @@ impl App {
             Span::styled(format!(" ↓{}", format_bytes(ts.direct_down)), s_dim()),
         ]);
         f.render_widget(Paragraph::new(stats_line), rows[1]);
-    }
-
-    fn tab_spans(&self) -> Vec<Span<'_>> {
-        let tabs: &[(char, &str, ActiveTab)] = &[
-            ('1', " profiles", ActiveTab::Profiles),
-            ('r', " route", ActiveTab::Routing),
-            ('m', " traffic", ActiveTab::Traffic),
-            ('l', " logs", ActiveTab::Logs),
-            ('s', " settings", ActiveTab::Settings),
-        ];
-
-        let actions: &[(char, &str)] = &[
-            ('a', " add"),
-            ('u', " sub"),
-            ('v', " tun"),
-            ('h', " help"),
-            ('q', " detach"),
-            ('Q', " quit"),
-        ];
-
-        let mut result = vec![Span::raw(" ")];
-
-        for (i, (key, label, tab)) in tabs.iter().enumerate() {
-            let is_active = self.tab == *tab;
-            let key_style = if is_active {
-                s_accent().add_modifier(Modifier::BOLD)
-            } else {
-                s_faint()
-            };
-            let label_style = if is_active {
-                s_accent().add_modifier(Modifier::BOLD)
-            } else {
-                s_faint()
-            };
-            result.push(Span::styled(format!("[{}]", key), key_style));
-            result.push(Span::styled(*label, label_style));
-            if i < tabs.len() - 1 {
-                result.push(Span::styled(" ", s_faint()));
-            }
-        }
-
-        result.push(Span::styled("  │ ", s_faint()));
-
-        for (i, (key, label)) in actions.iter().enumerate() {
-            result.push(Span::styled(format!("[{}]", key), s_faint()));
-            result.push(Span::styled(*label, s_faint()));
-            if i < actions.len() - 1 {
-                result.push(Span::raw(" "));
-            }
-        }
-
-        result
     }
 
     fn render_main(&mut self, f: &mut Frame, area: Rect) {

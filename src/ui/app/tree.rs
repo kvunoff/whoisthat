@@ -159,25 +159,31 @@ impl App {
             }
             pos += 1;
 
+            let is_collapsed = self.is_group_collapsed(g.group.id);
             let has_sub = !g.group.subscription_url.is_empty();
             let marker = if has_sub { " ↻" } else { "" };
-            let conn_mark = if g.profiles.iter().any(|p| p.group_id == gid && p.id == pid) {
-                " ●"
-            } else {
-                ""
-            };
+            let has_conn = g.profiles.iter().any(|p| p.group_id == gid && p.id == pid);
+            let fold_icon = if is_collapsed { "▸" } else { "▾" };
             let group_style = if pos - 1 == self.cursor && left_focus {
                 s_accent_bold()
             } else {
                 s_accent()
             };
-            items.push(ListItem::new(Line::from(vec![
-                Span::styled(format!("▸{}{}", marker, conn_mark), group_style),
+            let mut spans = vec![
+                Span::styled(format!("{}{}", fold_icon, marker), group_style),
                 Span::styled(
                     format!(" {} ({})", g.group.name, g.profiles.len()),
                     s_text(),
                 ),
-            ])));
+            ];
+            if has_conn {
+                spans.push(Span::styled(" ●", s_success()));
+            }
+            items.push(ListItem::new(Line::from(spans)));
+
+            if is_collapsed {
+                continue;
+            }
 
             for p in g.profiles.iter() {
                 if pos == self.cursor {

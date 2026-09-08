@@ -1,4 +1,7 @@
 use std::cell::RefCell;
+use std::collections::HashSet;
+
+use ratatui::layout::Rect;
 
 use crate::config;
 use crate::core_client::protocol::*;
@@ -51,6 +54,9 @@ pub struct App {
 
     pub test_progress: Option<TestProgress>,
     pub test_config: TestConfig,
+
+    pub collapsed_groups: HashSet<i32>,
+    pub last_area: Rect,
 
     uri_cache: RefCell<Option<(i32, i32, ParsedUri)>>,
 }
@@ -111,19 +117,23 @@ impl App {
             search_mode: false,
             test_progress: None,
             test_config,
+            collapsed_groups: HashSet::new(),
+            last_area: Rect::default(),
             uri_cache: RefCell::new(None),
         }
     }
 
     // --- tree helpers ---
 
-    fn tree_len(&self) -> usize {
+    pub fn tree_len(&self) -> usize {
         match &self.search_query {
             None => {
                 let mut n = 0;
                 for g in &self.groups {
                     n += 1;
-                    n += g.profiles.len();
+                    if !self.collapsed_groups.contains(&g.group.id) {
+                        n += g.profiles.len();
+                    }
                 }
                 n
             }
@@ -149,7 +159,7 @@ impl App {
             || p.host.to_lowercase().contains(query)
     }
 
-    pub(super) fn tree_node_at(&self, cursor: usize) -> Option<TreeNode> {
+    pub fn tree_node_at(&self, cursor: usize) -> Option<TreeNode> {
         match &self.search_query {
             None => {
                 let mut pos = 0;
@@ -158,11 +168,13 @@ impl App {
                         return Some(TreeNode::Group(gi));
                     }
                     pos += 1;
-                    let plen = g.profiles.len();
-                    if cursor < pos + plen {
-                        return Some(TreeNode::Profile(gi, cursor - pos));
+                    if !self.collapsed_groups.contains(&g.group.id) {
+                        let plen = g.profiles.len();
+                        if cursor < pos + plen {
+                            return Some(TreeNode::Profile(gi, cursor - pos));
+                        }
+                        pos += plen;
                     }
-                    pos += plen;
                 }
                 None
             }
@@ -211,6 +223,26 @@ impl App {
 
     pub fn on_group(&self) -> bool {
         matches!(self.tree_node_at(self.cursor), Some(TreeNode::Group(_)))
+    }
+
+    pub fn tab_index(&self) -> usize {
+        match self.tab {
+            ActiveTab::Profiles => 0,
+            ActiveTab::Routing => 1,
+            ActiveTab::Traffic => 2,
+            ActiveTab::Logs => 3,
+            ActiveTab::Settings => 4,
+        }
+    }
+
+    pub fn tab_from_index(idx: usize) -> ActiveTab {
+        match idx {
+            1 => ActiveTab::Routing,
+            2 => ActiveTab::Traffic,
+            3 => ActiveTab::Logs,
+            4 => ActiveTab::Settings,
+            _ => ActiveTab::Profiles,
+        }
     }
 
     pub fn is_connected(&self) -> bool {
@@ -452,6 +484,7 @@ impl App {
 
     pub fn apply_group_deleted(&mut self, id: i32) {
         self.groups.retain(|g| g.group.id != id);
+        self.collapsed_groups.remove(&id);
         self.clamp_cursor();
     }
 
@@ -459,6 +492,55 @@ impl App {
         if let Some(existing) = self.groups.iter_mut().find(|gw| gw.group.id == g.id) {
             existing.group = g.clone();
         }
+    }
+
+    pub fn is_group_collapsed(&self, group_id: i32) -> bool {
+        self.collapsed_groups.contains(&group_id)
+    }
+
+    pub fn toggle_group_collapsed(&mut self, group_id: i32) {
+        if self.collapsed_groups.contains(&group_id) {
+            self.collapsed_groups.remove(&group_id);
+        } else {
+            self.collapsed_groups.insert(group_id);
+        }
+        self.clamp_cursor();
+    }
+
+    pub fn collapse_group(&mut self, group_id: i32) {
+        if self.collapsed_groups.insert(group_id) {
+            self.clamp_cursor();
+        }
+    }
+
+    pub fn expand_group(&mut self, group_id: i32) {
+        if self.collapsed_groups.remove(&group_id) {
+            self.clamp_cursor();
+        }
+    }
+
+    pub fn parent_group_cursor(&self) -> Option<usize> {
+        match self.tree_node_at(self.cursor)? {
+            TreeNode::Group(gi) => self.cursor_for_group(gi),
+            TreeNode::Profile(gi, _) => self.cursor_for_group(gi),
+        }
+    }
+
+    pub fn cursor_for_group(&self, target_gi: usize) -> Option<usize> {
+        if self.search_query.is_some() {
+            return None;
+        }
+        let mut pos = 0;
+        for (gi, g) in self.groups.iter().enumerate() {
+            if gi == target_gi {
+                return Some(pos);
+            }
+            pos += 1;
+            if !self.collapsed_groups.contains(&g.group.id) {
+                pos += g.profiles.len();
+            }
+        }
+        None
     }
 }
 
@@ -550,5 +632,99 @@ mod tests {
             ..Default::default()
         });
         assert!(app.is_connected_hy2());
+    }
+
+    #[test]
+    fn test_collapsed_group_tree_len_and_node_at() {
+        let mut app = make_app_with_profile();
+        // Add second group with 2 profiles
+        app.groups.push(GroupWithProfiles {
+            group: Group {
+                id: 2,
+                ..Default::default()
+            },
+            profiles: vec![
+                Profile {
+                    id: 20,
+                    group_id: 2,
+                    ..Default::default()
+                },
+                Profile {
+                    id: 21,
+                    group_id: 2,
+                    ..Default::default()
+                },
+            ],
+        });
+
+        // Group 1 (1 profile) + Group 2 (2 profiles) = 2 groups + 3 profiles = 5 items
+        assert_eq!(app.tree_len(), 5);
+        assert_eq!(app.tree_node_at(0), Some(TreeNode::Group(0)));
+        assert_eq!(app.tree_node_at(1), Some(TreeNode::Profile(0, 0)));
+        assert_eq!(app.tree_node_at(2), Some(TreeNode::Group(1)));
+        assert_eq!(app.tree_node_at(3), Some(TreeNode::Profile(1, 0)));
+        assert_eq!(app.tree_node_at(4), Some(TreeNode::Profile(1, 1)));
+
+        // Collapse Group 1
+        app.collapse_group(1);
+        assert!(app.is_group_collapsed(1));
+        // Total should now be 1 (group 1) + 1 (group 2) + 2 (profiles of group 2) = 4
+        assert_eq!(app.tree_len(), 4);
+        assert_eq!(app.tree_node_at(0), Some(TreeNode::Group(0)));
+        // Next visible node is Group 2!
+        assert_eq!(app.tree_node_at(1), Some(TreeNode::Group(1)));
+        assert_eq!(app.tree_node_at(2), Some(TreeNode::Profile(1, 0)));
+        assert_eq!(app.tree_node_at(3), Some(TreeNode::Profile(1, 1)));
+
+        // Collapse Group 2 as well
+        app.collapse_group(2);
+        assert_eq!(app.tree_len(), 2);
+        assert_eq!(app.tree_node_at(0), Some(TreeNode::Group(0)));
+        assert_eq!(app.tree_node_at(1), Some(TreeNode::Group(1)));
+        assert_eq!(app.tree_node_at(2), None);
+
+        // Toggle Group 1 back open
+        app.toggle_group_collapsed(1);
+        assert!(!app.is_group_collapsed(1));
+        assert_eq!(app.tree_len(), 3); // Group 1 (1 profile) + Group 2 (collapsed, 0 profiles)
+        assert_eq!(app.tree_node_at(0), Some(TreeNode::Group(0)));
+        assert_eq!(app.tree_node_at(1), Some(TreeNode::Profile(0, 0)));
+        assert_eq!(app.tree_node_at(2), Some(TreeNode::Group(1)));
+    }
+
+    #[test]
+    fn test_cursor_clamp_on_collapse() {
+        let mut app = make_app_with_profile();
+        app.cursor = 1; // On profile 0 of group 1
+        assert_eq!(app.tree_node_at(app.cursor), Some(TreeNode::Profile(0, 0)));
+
+        app.collapse_group(1);
+        // Only 1 item visible now (Group 1 at cursor 0)
+        assert_eq!(app.cursor, 0);
+        assert_eq!(app.tree_node_at(app.cursor), Some(TreeNode::Group(0)));
+    }
+
+    #[test]
+    fn test_tab_index_conversions() {
+        let mut app = make_app_with_profile();
+        app.tab = ActiveTab::Profiles;
+        assert_eq!(app.tab_index(), 0);
+        assert_eq!(App::tab_from_index(0), ActiveTab::Profiles);
+
+        app.tab = ActiveTab::Routing;
+        assert_eq!(app.tab_index(), 1);
+        assert_eq!(App::tab_from_index(1), ActiveTab::Routing);
+
+        app.tab = ActiveTab::Traffic;
+        assert_eq!(app.tab_index(), 2);
+        assert_eq!(App::tab_from_index(2), ActiveTab::Traffic);
+
+        app.tab = ActiveTab::Logs;
+        assert_eq!(app.tab_index(), 3);
+        assert_eq!(App::tab_from_index(3), ActiveTab::Logs);
+
+        app.tab = ActiveTab::Settings;
+        assert_eq!(app.tab_index(), 4);
+        assert_eq!(App::tab_from_index(4), ActiveTab::Settings);
     }
 }

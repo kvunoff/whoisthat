@@ -3,7 +3,7 @@ use crossterm::event::{self, KeyCode};
 use crate::core_client::protocol::{ProfileID, SetHwidData};
 use crate::core_client::CoreClient;
 use crate::text_edit::edit_text_field;
-use crate::ui::app::{Focus, Popup};
+use crate::ui::app::{ActiveTab, Focus, Popup};
 use crate::ui::routing::{form_to_rule, RoutingPopup};
 use crate::ui::App;
 
@@ -13,6 +13,60 @@ pub(crate) async fn handle_popup_input(
     key: event::KeyEvent,
 ) -> bool {
     match app.popup.take() {
+        Some(Popup::TabSwitcher { mut cursor }) => match key.code {
+            KeyCode::Esc | KeyCode::Char('q') => {
+                app.popup = None;
+                app.focus = Focus::LeftPanel;
+            }
+            KeyCode::Char('k') | KeyCode::Up | KeyCode::BackTab => {
+                cursor = if cursor == 0 { 4 } else { cursor - 1 };
+                app.popup = Some(Popup::TabSwitcher { cursor });
+            }
+            KeyCode::Char('j') | KeyCode::Down | KeyCode::Tab => {
+                cursor = (cursor + 1) % 5;
+                app.popup = Some(Popup::TabSwitcher { cursor });
+            }
+            KeyCode::Enter => {
+                let target = App::tab_from_index(cursor);
+                app.tab = target;
+                app.popup = None;
+                app.focus = Focus::LeftPanel;
+                if target == ActiveTab::Routing {
+                    app.routing_popup = None;
+                    let _ = client.get_routing().await;
+                }
+            }
+            KeyCode::Char('1') => {
+                app.tab = ActiveTab::Profiles;
+                app.popup = None;
+                app.focus = Focus::LeftPanel;
+            }
+            KeyCode::Char('2') | KeyCode::Char('r') => {
+                app.tab = ActiveTab::Routing;
+                app.popup = None;
+                app.focus = Focus::LeftPanel;
+                app.routing_popup = None;
+                let _ = client.get_routing().await;
+            }
+            KeyCode::Char('3') | KeyCode::Char('m') => {
+                app.tab = ActiveTab::Traffic;
+                app.popup = None;
+                app.focus = Focus::LeftPanel;
+            }
+            KeyCode::Char('4') | KeyCode::Char('l') => {
+                app.tab = ActiveTab::Logs;
+                app.popup = None;
+                app.focus = Focus::LeftPanel;
+            }
+            KeyCode::Char('5') | KeyCode::Char('s') => {
+                app.tab = ActiveTab::Settings;
+                app.popup = None;
+                app.focus = Focus::LeftPanel;
+            }
+            _ => {
+                app.popup = Some(Popup::TabSwitcher { cursor });
+            }
+        },
         Some(Popup::Help) => match key.code {
             KeyCode::Char('j') | KeyCode::Down => {
                 app.help_scroll = app.help_scroll.saturating_add(1);
@@ -329,7 +383,7 @@ fn handle_two_field_popup(
     key: event::KeyEvent,
 ) -> bool {
     match key.code {
-        KeyCode::Tab => {
+        KeyCode::Tab | KeyCode::BackTab => {
             *field = if *field == 0 { 1 } else { 0 };
             *cursor = if *field == 0 {
                 field0.chars().count()
@@ -374,6 +428,15 @@ fn handle_routing_form(
         KeyCode::Esc => FormResult::Cancel,
         KeyCode::Tab => {
             *field = (*field + 1) % 3;
+            *cursor = if *field == 1 {
+                value.chars().count()
+            } else {
+                0
+            };
+            FormResult::Continue
+        }
+        KeyCode::BackTab => {
+            *field = if *field == 0 { 2 } else { *field - 1 };
             *cursor = if *field == 1 {
                 value.chars().count()
             } else {

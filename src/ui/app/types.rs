@@ -57,10 +57,13 @@ pub enum Popup {
         profile_id: i32,
     },
     Help,
+    TabSwitcher {
+        cursor: usize,
+    },
 }
 
-#[derive(Debug, Clone, Copy)]
-pub(crate) enum TreeNode {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TreeNode {
     Group(usize),
     Profile(usize, usize),
 }
