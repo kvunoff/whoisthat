@@ -25,6 +25,9 @@ pub(crate) async fn handle_input(
     match ev {
         AppEvent::Tick => {
             app.logs_state.poll();
+            if !app.is_connected() {
+                app.traffic_history.push_zero();
+            }
         }
         AppEvent::PublicIp(ip) => {
             if app.show_ip {
@@ -161,6 +164,11 @@ async fn handle_normal_input(
             let _ = client.get_routing().await;
             return false;
         }
+        KeyCode::Char('m') => {
+            app.tab = ActiveTab::Traffic;
+            app.focus = Focus::LeftPanel;
+            return false;
+        }
         KeyCode::Char('s') => {
             app.tab = ActiveTab::Settings;
             app.focus = Focus::LeftPanel;
@@ -193,6 +201,11 @@ async fn handle_normal_input(
         }
         KeyCode::Char('4') => {
             app.tab = ActiveTab::Settings;
+            app.focus = Focus::LeftPanel;
+            return false;
+        }
+        KeyCode::Char('5') => {
+            app.tab = ActiveTab::Traffic;
             app.focus = Focus::LeftPanel;
             return false;
         }

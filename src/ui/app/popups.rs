@@ -254,8 +254,9 @@ impl App {
 
         let global: &[(&str, &str)] = &[
             ("1/Esc", "Profiles tab"),
-            ("l", "Logs tab"),
             ("r", "Routing tab"),
+            ("m", "Traffic tab"),
+            ("l", "Logs tab"),
             ("s", "Settings tab"),
             ("Tab", "Switch focus"),
             ("h/?", "This help"),
@@ -298,11 +299,18 @@ impl App {
             ("f", "Cycle log level filter"),
         ];
 
+        let traffic: &[(&str, &str)] = &[
+            ("1/Esc", "Back to profiles"),
+            ("v", "Toggle TUN mode"),
+            ("d", "Disconnect"),
+        ];
+
         let (tab_name, tab_help): (&str, &[(&str, &str)]) = match self.tab {
             ActiveTab::Profiles => ("Profiles", profiles),
             ActiveTab::Routing => ("Routing", routing),
             ActiveTab::Settings => ("Settings", settings),
             ActiveTab::Logs => ("Logs", logs),
+            ActiveTab::Traffic => ("Traffic", traffic),
         };
 
         let sections: [(&str, &[(&str, &str)]); 2] = [("Global", global), (tab_name, tab_help)];

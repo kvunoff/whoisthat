@@ -6,6 +6,7 @@ use crate::core_client::protocol::*;
 use crate::ui::logs::LogsState;
 use crate::ui::routing::RoutingPopup;
 use crate::ui::settings::SettingsState;
+use crate::ui::traffic::TrafficHistory;
 use crate::ui::uri::{self, ParsedUri};
 
 use super::types::*;
@@ -40,6 +41,7 @@ pub struct App {
     pub settings_state: SettingsState,
     pub logs_state: LogsState,
     pub traffic_stats: TrafficStats,
+    pub traffic_history: TrafficHistory,
     pub routing: RoutingConfig,
     pub routing_cursor: usize,
     pub routing_popup: Option<RoutingPopup>,
@@ -100,6 +102,7 @@ impl App {
                     .unwrap_or("core.log"),
             ),
             traffic_stats: TrafficStats::default(),
+            traffic_history: TrafficHistory::new(),
             routing: RoutingConfig::default(),
             routing_cursor: 0,
             routing_popup: None,
@@ -238,6 +241,13 @@ impl App {
             .iter()
             .find(|g| g.group.id == gid)
             .map(|g| g.group.name.as_str())
+    }
+
+    pub fn connected_profile_name(&self) -> Option<&str> {
+        self.connection_status
+            .profile
+            .as_ref()
+            .map(|p| p.name.as_str())
     }
 
     pub fn cursor_down(&mut self) {

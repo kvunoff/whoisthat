@@ -11,6 +11,7 @@ use crate::ui::logs::render_logs;
 use crate::ui::routing::{render_routing_popup, render_routing_tab};
 use crate::ui::settings::{render_settings, SettingsValues};
 use crate::ui::theme::*;
+use crate::ui::traffic::render_traffic_tab;
 
 impl App {
     pub fn render(&mut self, f: &mut Frame) {
@@ -103,6 +104,7 @@ impl App {
         let tabs: &[(char, &str, ActiveTab)] = &[
             ('1', " profiles", ActiveTab::Profiles),
             ('r', " route", ActiveTab::Routing),
+            ('m', " traffic", ActiveTab::Traffic),
             ('l', " logs", ActiveTab::Logs),
             ('s', " settings", ActiveTab::Settings),
         ];
@@ -198,6 +200,18 @@ impl App {
                     self.routing_cursor,
                     focused,
                     self.is_connected_hy2(),
+                );
+            }
+            ActiveTab::Traffic => {
+                let connected_name = self.connected_profile_name();
+                render_traffic_tab(
+                    f,
+                    area,
+                    &self.traffic_history,
+                    self.is_connected(),
+                    connected_name,
+                    self.tun_enabled,
+                    &self.tun_name,
                 );
             }
         }

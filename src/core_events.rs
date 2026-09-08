@@ -164,6 +164,7 @@ pub(crate) async fn handle_core_event(
         }
 
         CoreEvent::TrafficStats(ts) => {
+            app.traffic_history.push(&ts);
             app.traffic_stats = ts;
         }
 

@@ -1,9 +1,10 @@
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ActiveTab {
     Profiles,
+    Routing,
+    Traffic,
     Logs,
     Settings,
-    Routing,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
