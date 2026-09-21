@@ -17,6 +17,7 @@ A modern terminal-based VPN client. Rust TUI frontend. Go engine backed by Xray-
 - [Architecture](#architecture) — how it works, IPC transport, routing rules, HWID
 - [TCP API Protocol](#tcp-api-protocol) — wire format, commands, notifications, structures
 - [Usage](#usage) — keybindings, settings, TUN mode, systemd, subscriptions
+- [CLI & Desktop Integration](#cli--desktop-integration) — command-line flags, quick toggles, desktop widgets & status streaming
 - [Troubleshooting](#troubleshooting)
 - [Testing](#testing)
 - [Development](#development) — dev loop, logs, debugging, CI
@@ -122,7 +123,7 @@ By default the TUI talks to the core over a **Unix domain socket** (see [IPC tra
   "tun-name": "whoisthattun",
   "hwid-enabled": true,
   "hwid": "1fb1e0141ab3e35a",
-  "user-agent": "whoisthat/v0.9.9",
+  "user-agent": "whoisthat/v0.9.10",
   "kill-switch-enabled": false,
   "autoconnect-enabled": false,
   "autoconnect-group-id": 0,
@@ -181,6 +182,7 @@ Encrypted at rest with AES-256-GCM — key auto-generated on first run.
 - **Profile search** — `/` to filter profiles by name, protocol, address, or host
 - Public IP display (auto-refreshed every 30s and on connect/disconnect/TUN-toggle)
 - Keyboard-driven with optional full mouse navigation
+- **Comprehensive CLI & Linux desktop integration** — first-class non-TUI subcommands and shorthand flags for quick toggles and external desktop widgets (GNOME Shell Extension, Waybar, Polybar, scripts). Instant connection toggle (`whoisthat -t`), TUN mode toggle (`whoisthat -mt`), systemd user service management (`whoisthat -st`), kill-switch control (`whoisthat -kt`), public IP check (`whoisthat --ip`), and live status monitoring (`whoisthat status --short` or continuous reactive streaming `whoisthat status --watch --json`).
 
 ---
 
@@ -504,7 +506,7 @@ Subscription metadata (`sub_*`) is populated from the `subscription-userinfo` HT
 | HWID: Enabled | on/off | Send HWID headers with subscription requests |
 | HWID | 1fb1e0141ab3e35a | Device identifier (read-only, auto-generated) |
 | Reset HWID | ⏎ | Generate a new random HWID |
-| User-Agent | whoisthat/v0.9.9 | User-Agent header (editable — press Enter to modify) |
+| User-Agent | whoisthat/v0.9.10 | User-Agent header (editable — press Enter to modify) |
 
 Navigate with `j`/`k`, press `Enter`/`Space` to toggle, cycle values, open edit popups, or execute actions.
 
@@ -618,6 +620,67 @@ sudo loginctl disable-linger $USER           # revoke
 3. The details panel shows subscription metadata when available (traffic used, expiry, last updated)
 4. Press `e` to edit the group name or subscription URL at any time
 5. Press `X` to delete the entire group and its profiles
+
+---
+
+## CLI & Desktop Integration
+
+WhoisThat provides a rich set of non-interactive command-line subcommands and shorthand flags. These can be used in shell scripts, custom keyboard shortcuts, desktop status bars (**Waybar**, **Polybar**, **i3status**, **dwmbars**), or desktop environment extensions (**GNOME Shell Extension**).
+
+CLI commands connect to the core over its Unix domain socket, execute instantly, and exit with code `0` without initializing the terminal or TUI layout.
+
+### Commands & Shorthand Flags
+
+| Command / Flag | Shorthand | Description |
+| --- | --- | --- |
+| `whoisthat --toggle` / `toggle` | `-t` | Toggle VPN state (smart toggle: disconnects if active, or reconnects to last profile) |
+| `whoisthat --start [profile]` / `connect` | `-c [profile]` | Connect to profile by ID, `group:id`, or name (connects to last profile if omitted) |
+| `whoisthat --stop` / `disconnect` | `-d` | Disconnect the active VPN session |
+| `whoisthat --mode-toggle` / `toggle-tun` | `-mt` | Toggle between TUN mode (system-wide) and Proxy mode (SOCKS5/HTTP) |
+| `whoisthat --mode-tun` / `--tun` | — | Force enable TUN mode |
+| `whoisthat --mode-proxy` / `--proxy` | — | Force enable Proxy mode (TUN disabled) |
+| `whoisthat --systemd-toggle` | `-st` | Toggle systemd user service (`whoisthat-core.service`) |
+| `whoisthat --systemd-on` / `--enable` | — | Enable and start systemd user service (auto-configures linger) |
+| `whoisthat --systemd-off` / `--disable` | — | Disable and stop systemd user service |
+| `whoisthat --systemd-status` | — | Check if systemd user service is enabled or disabled |
+| `whoisthat --killswitch-toggle` | `-kt` | Toggle kill-switch firewall protection |
+| `whoisthat --killswitch-on` / `--off` | — | Enable or disable kill-switch protection |
+| `whoisthat status --short` | `status -s` | Single-line compact status: `[Connected] [TUN] ↓ 1.2 MB/s ↑ 340.0 KB/s` |
+| `whoisthat status --json` | `status -j` | Machine-readable JSON status snapshot |
+| `whoisthat status --watch --json` | `status -w -j` | Continuous live streaming (1 update per second NDJSON for desktop widgets) |
+| `whoisthat --profiles [--json]` | `-p` | List all subscription groups and profiles |
+| `whoisthat --ip` | `ip` | Fetch and print public IPv4 and IPv6 |
+| `whoisthat run <app> [args...]` | — | Launch application inside the split-tunnel cgroup slice |
+| `whoisthat --version` | `-v` | Display program version |
+| `whoisthat --help` | `-h` | Display full help and flag list |
+
+### Status Bar Formatting Examples
+
+When using `whoisthat status --short` (or `-s`):
+* **Connected via TUN**: `[Connected] [TUN] ↓ 1.2 MB/s ↑ 340.0 KB/s`
+* **Connected via Proxy**: `[Connected] [Proxy] ↓ 1.2 MB/s ↑ 340.0 KB/s`
+* **Disconnected**: `[Disconnected]`
+* **Daemon offline**: `[Offline]`
+
+When using `whoisthat status --json` (or `-j`):
+```json
+{
+  "core_running": true,
+  "connected": true,
+  "status": "connected",
+  "mode": "tun",
+  "tun_enabled": true,
+  "group_id": 1,
+  "group_name": "Premium",
+  "profile_id": 3,
+  "profile_name": "Netherlands-10G",
+  "protocol": "vless",
+  "rx_speed_bytes": 1258291,
+  "tx_speed_bytes": 348160,
+  "rx_speed_human": "1.2 MB/s",
+  "tx_speed_human": "340.0 KB/s"
+}
+```
 
 ---
 

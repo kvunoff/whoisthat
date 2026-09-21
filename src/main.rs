@@ -1,3 +1,4 @@
+mod cli;
 mod config;
 mod core_client;
 mod core_events;
@@ -39,6 +40,18 @@ async fn main() -> io::Result<()> {
     if argv.get(1).map(String::as_str) == Some("run") {
         let code = launcher::run_in_split_slice(&argv[2..]);
         std::process::exit(code);
+    }
+
+    if let Some(cmd) = argv.get(1).map(String::as_str) {
+        if cli::is_cli_command(cmd) {
+            match cli::handle_cli(&argv[1..]).await {
+                Ok(_) => std::process::exit(0),
+                Err(e) => {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
+            }
+        }
     }
 
     let logger = init_logger();
