@@ -96,6 +96,7 @@ autoconnect = false
 last_group_id = 0
 last_profile_id = 0
 show_ip = true
+theme = "tokyo-night"                          # tokyo-night, catppuccin-mocha, nord, dracula, gruvbox-dark, solarized-dark, cyberpunk, monokai-pro
 log_enabled = false
 log_level = "warn"
 test_method = "http-get"
@@ -119,7 +120,7 @@ By default the TUI talks to the core over a **Unix domain socket** (see [IPC tra
   "tun-name": "whoisthattun",
   "hwid-enabled": true,
   "hwid": "1fb1e0141ab3e35a",
-  "user-agent": "whoisthat/v0.9.4",
+  "user-agent": "whoisthat/v0.9.9",
   "kill-switch-enabled": false,
   "autoconnect-enabled": false,
   "autoconnect-group-id": 0,
@@ -160,19 +161,24 @@ Encrypted at rest with AES-256-GCM — key auto-generated on first run.
 - **Test progress** — pending profiles show `…` immediately; in-flight batches broadcast tested/total progress. `C` cancels in-flight tests gracefully (epoch counter; no orphan subprocesses — also drops queued work before it spawns xray/hysteria). Test failures broadcast the reason as a `warn` (throttled to one per-reason per 5s so a 50-profile hy2 batch with no hysteria binary emits one warning, not fifty).
 - **Scan-all testing** — `t` scans all profiles across all groups with dedup; `T` tests only focused profile/subscription. Group-focused tests use the single `test-group` TCP command for efficiency.
 - **Auto-test on subscription refresh** — profiles are tested automatically after `u` so you see live latencies immediately. Toggle in Settings → Diagnostics.
-- **Custom routing rules** — domain, IP, protocol, port, geoip, geosite → proxy/direct/block (`r` tab). `direct` outbound works correctly in TUN mode via SO_MARK + fwmark routing (no root required). Use ←/→ to cycle type/outbound in the form.
+- **Responsive adaptive TUI layout** — dynamic viewport geometry engine automatically categorizes terminal dimensions into width tiers (`Compact` <80, `Medium` 80–125, `Wide` 126–160, `UltraWide` >160) and height tiers (`Tiny` <16, `Short` 16–24, `Normal` 25–42, `Tall` >42). Adapts seamlessly between side-by-side, vertical stacked, and full-screen single-panel modes (`Tab` to toggle details), with dual-column connection details on wide displays and safety screens below 45×8.
+- **Curated color themes** — 8 high-contrast dark palettes: Tokyo Night, Catppuccin Mocha, Nord, Dracula, Gruvbox Dark, Solarized Dark, Cyberpunk, and Monokai Pro. Switch live in Settings with instant preview; saved persistently to `config.toml`.
+- **Real-time traffic monitoring tab** — dedicated dashboard (`3` or `m`) with high-resolution Braille bandwidth charts (RX green, TX red), dynamic Y-axis scaling, peak speeds, session data totals, and interface diagnostics.
+- **Custom routing rules** — domain, IP, protocol, port, geoip, geosite → proxy/direct/block (`2` or `r` tab). `direct` outbound works correctly in TUN mode via SO_MARK + fwmark routing (no root required). Use ←/→ to cycle type/outbound in the form.
+- **Routing presets catalog & live hot-reload** — 1-click presets catalog (`p` key in Routing) for blocking ads & telemetry, bypassing domestic (RU) / LAN traffic, and routing media (YouTube/Twitch/Discord), Telegram, AI services (OpenAI/Claude), and social platforms. Routing edits apply instantly without restarting the proxy.
 - **Kill-switch** — When enabled, blocks all non-VPN traffic if the connection drops. Uses a dedicated firewall table (`whoisthat_ks`, `whoisthat_ks_v6`) entirely independent of TUN rules — safe to combine with any routing setup. Works in both SOCKS and TUN modes. Toggle in Settings. Orphaned tables from a crashed session are auto-reconciled on next core startup.
 - **Split tunnel** — route specific apps differently from the rest of the system. `exclude` mode makes launched apps bypass the tunnel (everything else is protected); `include` mode routes *only* launched apps through the tunnel (everything else goes direct). Launch an app into the split slice with `whoisthat run <app>`. Uses cgroup v2 socket matching + fwmark routing. Set the mode in Settings → Network.
-- Real-time connection status with per-second uplink/downlink traffic stats (proxy via xray gRPC StatsService; direct/TUN via `/sys/class/net/<tun>/statistics` — hysteria2 falls back to legacy `ss -tie` since it has no stats API)
-- **Log viewer** — live tail from core log, auto-scroll, [WARN]/[ERRO] highlighting
+- **Collapsible group folding** — fold and unfold subscription groups (`Space`, `Enter`, `h`/`l`) with persistent tree state, clean arrow indicators (`▼`/`▶`), and automatic cursor clamping.
+- **Full mouse interaction** — click to select and connect profiles, toggle group folding, switch tabs, toggle routing rules, toggle TUN mode from the bottom bar, and navigate settings. Mouse hit-testing dynamically synchronizes with responsive layout coordinates.
+- **Compact tab switcher** — press `Tab` to summon a lightweight modal switcher with numeric direct jumps (`1` Profiles, `2` Routing, `3` Traffic, `4` Logs, `5` Settings).
+- **Log viewer** — live tail from core log, auto-scroll, [WARN]/[ERRO] highlighting (`4` or `l`)
 - **Configurable** — DNS servers, proxy ports, log level, test method, HWID, user-agent via settings and config files
 - **Authenticated IPC** — the TUI ↔ core channel is a Unix domain socket (mode `0600`, owned by the invoking user) under `$XDG_RUNTIME_DIR/whoisthat/`, so other local users can't command the capability-holding core. Legacy TCP on `127.0.0.1:4897` is opt-in (`tcp-enabled` in core config)
 - **Detach/reattach** — `q` leaves VPN running in background, reopen TUI to reattach
 - **Boot autostart** — autoconnect on startup with configurable mode (proxy or TUN); optional systemd user service for starting VPN at boot (before login via lingering)
 - **Profile search** — `/` to filter profiles by name, protocol, address, or host
 - Public IP display (auto-refreshed every 30s and on connect/disconnect/TUN-toggle)
-- Dark color scheme (Tokyo Night inspired)
-- Keyboard-driven — mouse is optional
+- Keyboard-driven with optional full mouse navigation
 
 ---
 
@@ -242,7 +248,19 @@ Custom routing rules can redirect traffic to `proxy`, `direct`, or `block` outbo
 | `geoip` | `rule.ip` prefixed `geoip:` | `geoip:private` |
 | `geosite` | `rule.domain` prefixed `geosite:` | `geosite:category-ads` |
 
-Rules are stored in `~/.local/share/whoisthat/db/routing.json` and injected into xray's JSON config on every connect (DNS-bypass rule first, then user rules in order, disabled rules skipped).
+Rules are stored in `~/.local/share/whoisthat/db/routing.json` and injected into xray's JSON config on every connect (DNS-bypass rule first, then user rules in order, disabled rules skipped). Modifying or toggling rules applies immediately via live hot-reload without restarting the proxy.
+
+**Routing Presets Catalog:**
+
+Press `p` in the Routing tab (`2` or `r`) to access pre-configured rule collections that can be enabled or disabled with a single keystroke:
+
+- 🇷🇺 **Bypass Russia** — direct access to Russian domains (`geosite:category-ru`) and IPs (`geoip:ru`)
+- 🛡️ **Block Ads & Trackers** — global ad, tracker, and telemetry blocking (`geosite:category-ads-all` → `block`)
+- 🏠 **Bypass LAN / Local** — direct access to RFC1918 private subnets (`geoip:private` → `direct`)
+- 📺 **Proxy Media** — route YouTube, Discord, and Twitch through the proxy
+- 💬 **Proxy Telegram** — route Telegram domains and official CIDRs (`geosite:telegram`, `geoip:telegram`)
+- 🤖 **Proxy AI Services** — route OpenAI and Anthropic / Claude platforms through the proxy
+- 📸 **Proxy Blocked Socials** — route Twitter/X, Instagram, and Meta platforms through the proxy
 
 **Default rule:** private IP ranges → direct, hardcoded as CIDR (not `geoip:private`) so it works even when geo files aren't available.
 
@@ -404,17 +422,21 @@ Subscription metadata (`sub_*`) is populated from the `subscription-userinfo` HT
 | --- | --- |
 | `j` / `↓` | Move cursor down |
 | `k` / `↑` | Move cursor up |
+| `h` / `←` | Collapse group (when on group header) or jump to parent group |
+| `l` / `→` | Expand group (when on group header) or switch focus to Details panel |
+| `Space` | Toggle group collapse/expand (when on group header) |
 | `g` | Jump to top |
 | `G` | Jump to bottom |
-| `Tab` | Switch focus (list ↔ details panel) |
+| `Tab` | Open compact Tab Switcher popup (or toggle Tree ↔ Details in single-panel mode) |
 | `/` | Search / filter profiles (type to filter, Esc to clear) |
 | `h` / `?` | Show help (context-aware) |
+| `Mouse` | Left-click to select/connect, toggle groups, switch tabs, toggle TUN, or navigate settings |
 
 ### Connection
 
 | Key | Action |
 | --- | --- |
-| `c` / `Enter` | Connect to selected profile |
+| `c` / `Enter` | Connect to selected profile (or toggle group fold if on group header) |
 | `d` | Disconnect |
 | `t` | Test all profiles (starts from cursor, top-to-bottom, dedup) |
 | `T` | Test focused profile or subscription group only |
@@ -434,15 +456,27 @@ Subscription metadata (`sub_*`) is populated from the `subscription-userinfo` HT
 | `y` | Copy selected profile URI to clipboard |
 | `Ctrl+V` | Paste from clipboard in input popups |
 
+### Routing Tab Shortcuts (Tab 2)
+
+| Key | Action |
+| --- | --- |
+| `p` / `P` | Open Presets catalog (Ads & Trackers, Bypass RU/LAN, Media, Telegram, AI, Socials) |
+| `a` | Add new routing rule |
+| `Space` | Toggle rule enabled/disabled (live hot-reload) |
+| `e` | Edit selected rule |
+| `x` | Delete selected rule |
+
 ### Tabs & Quit
 
 | Key | Action |
 | --- | --- |
-| `1` / `2` / `3` / `4` | Switch tab directly: 1 (Profiles), 2 (Logs), 3 (Routing), 4 (Settings) |
-| `l` | Logs view (live tail with auto-scroll, `f` to filter by level) |
-| `r` | Routing rules (domain/IP/protocol/port/geoip/geosite → proxy/direct/block) |
-| `s` | Settings |
-| `Esc` | Back to Profiles tab or close active popup |
+| `1` | Profiles tab (`Esc` from other tabs) |
+| `2` / `r` | Routing rules tab |
+| `3` / `m` | Traffic monitoring tab (real-time Braille charts) |
+| `4` / `l` | Logs view (live tail with auto-scroll, `f` to filter by level) |
+| `5` / `s` | Settings tab |
+| `Tab` | Open compact Tab Switcher popup |
+| `Esc` | Back to Profiles tab, return from Details to Tree, or close active popup |
 | `q` | Detach TUI (VPN stays connected in background) |
 | `Q` / `Ctrl+C` | Full quit (stop VPN + exit) |
 
@@ -450,6 +484,7 @@ Subscription metadata (`sub_*`) is populated from the `subscription-userinfo` HT
 
 | Setting | Values | Description |
 | --- | --- | --- |
+| Theme | Tokyo Night / Catppuccin Mocha / Nord / Dracula / Gruvbox Dark / Solarized Dark / Cyberpunk / Monokai Pro | Curated dark color palettes (live cycle with Enter/Space, saved to `config.toml`) |
 | Autoconnect | on/off | Auto-connect to last used profile on startup (core handles boot autostart) |
 | Autostart mode | proxy/tun | VPN mode for boot autostart (proxy = SOCKS5, tun = full system VPN) |
 | Systemd autostart | on/off | Start VPN core at boot via systemd user service (auto-enables linger) |
@@ -467,7 +502,7 @@ Subscription metadata (`sub_*`) is populated from the `subscription-userinfo` HT
 | HWID: Enabled | on/off | Send HWID headers with subscription requests |
 | HWID | 1fb1e0141ab3e35a | Device identifier (read-only, auto-generated) |
 | Reset HWID | ⏎ | Generate a new random HWID |
-| User-Agent | whoisthat/v0.9.4 | User-Agent header (editable — press Enter to modify) |
+| User-Agent | whoisthat/v0.9.9 | User-Agent header (editable — press Enter to modify) |
 
 Navigate with `j`/`k`, press `Enter`/`Space` to toggle, cycle values, open edit popups, or execute actions.
 
@@ -617,12 +652,16 @@ The project has unit tests for both the Rust TUI and the Go core. No external de
 cargo test
 ```
 
-Covers:
+Covers (88 unit tests):
 
 - **Message dispatch** (`src/core_client/dispatch.rs`) — all notification message types (22), unknown type handling, malformed JSON
-- **Routing form logic** (`src/ui/routing.rs`) — `form_to_rule` / `rule_to_form` for all 6 match types and 3 outbounds, round-trip consistency
-- **Settings layout** (`src/ui/settings.rs`) — grouped layout, cursor navigation skipping headers, clamping
-- **Text editor** (`src/text_edit.rs`) — `edit_text_field`: insert, backspace, delete, cursor movement, Home/End boundary conditions
+- **Responsive layout geometry** (`src/ui/layout.rs`, `src/ui/app/helpers.rs`) — width/height tier categorization, threshold warnings (<45x8), responsive rect auto-bounding, side-by-side vs stacked splits, traffic card responsive modes
+- **Routing & Presets logic** (`src/ui/routing.rs`) — `form_to_rule` / `rule_to_form` for all 6 match types and 3 outbounds, preset definitions, idempotent preset application & toggling
+- **Traffic monitoring & history** (`src/ui/traffic.rs`) — ring buffer history initialization, rolling push, dynamic max-Y chart scaling
+- **Theme system** (`src/ui/theme.rs`) — theme selection, live cycling across all 8 curated palettes, persistence
+- **Tree state & navigation** (`src/ui/app/state.rs`) — group collapse/expansion, cursor clamping, test pending markers
+- **Settings layout** (`src/ui/settings.rs`) — grouped layout, cursor navigation skipping headers, scroll clamping
+- **Text editor** (`src/text_edit.rs`) — `edit_text_field`: insert, backspace, delete, cursor movement, Home/End boundary conditions, Cyrillic UTF-8 editing
 - **Split-tunnel launcher** (`src/launcher.rs`) — `whoisthat run` usage-code path and PATH lookup
 
 ### Go
@@ -751,9 +790,11 @@ whoisthat/
 │   │   └── commands.rs ← High-level async send functions
 │   └── ui/             ← ratatui components
 │       ├── app/        ← Main app state + rendering (mod, types, state, render, tree, details, popups, helpers)
-│       ├── theme.rs    ← Color palette (Tokyo Night)
+│       ├── layout.rs   ← Responsive layout geometry engine (width/height tiers, adaptive splits)
+│       ├── theme.rs    ← Curated color palettes (8 dark themes: Tokyo Night, Catppuccin, Nord, etc.)
 │       ├── settings.rs ← Settings screen
-│       ├── routing.rs  ← Routing rules tab + popups
+│       ├── routing.rs  ← Routing rules tab + presets catalog + popups
+│       ├── traffic.rs  ← Real-time traffic monitoring tab (Braille charts + live transfer stats)
 │       ├── logs.rs     ← Log viewer (live tail + auto-scroll + level filter)
 │       ├── uri.rs      ← URI detail parser (VLESS/VMess/Trojan/SS/SOCKS/Hysteria2)
 ├── parser/             ← whoisthat-parser — URI → Xray JSON (standalone Rust binary)
