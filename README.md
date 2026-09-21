@@ -183,6 +183,7 @@ Encrypted at rest with AES-256-GCM — key auto-generated on first run.
 - Public IP display (auto-refreshed every 30s and on connect/disconnect/TUN-toggle)
 - Keyboard-driven with optional full mouse navigation
 - **Comprehensive CLI & Linux desktop integration** — first-class non-TUI subcommands and shorthand flags for quick toggles and external desktop widgets (GNOME Shell Extension, Waybar, Polybar, scripts). Instant connection toggle (`whoisthat -t`), TUN mode toggle (`whoisthat -mt`), systemd user service management (`whoisthat -st`), kill-switch control (`whoisthat -kt`), public IP check (`whoisthat --ip`), and live status monitoring (`whoisthat status --short` or continuous reactive streaming `whoisthat status --watch --json`).
+- **Official GNOME Shell Extension** — live top-bar status indicator, real-time speed monitor, and quick control dropdown menu ([GNOME Extensions](https://extensions.gnome.org/extension/10998/whoisthat-vpn-indicator/) / [GitHub](https://github.com/kvunoff/whoisthat-extension))
 
 ---
 
@@ -681,6 +682,18 @@ When using `whoisthat status --json` (or `-j`):
   "tx_speed_human": "340.0 KB/s"
 }
 ```
+
+### GNOME Shell Extension
+
+WhoisThat features an official GNOME Shell extension for seamless desktop integration:
+
+- **Top Bar Indicator**: Live status dot (`●`), TUN/Proxy badge, and continuous bandwidth monitor (`↓ rx ↑ tx`) right on your desktop panel.
+- **Quick Controls**: 1-click connect/disconnect toggle, TUN mode switch, profile switcher grouped by subscription, and direct terminal TUI launcher.
+- **Customization**: Change top bar position (Right, Center, Left) with real-time relocation, toggle visible elements, and choose your preferred terminal emulator.
+
+Available on:
+- 📦 **GNOME Extensions**: [WhoisThat VPN Indicator on extensions.gnome.org](https://extensions.gnome.org/extension/10998/whoisthat-vpn-indicator/)
+- 💻 **Source Code & Guide**: [kvunoff/whoisthat-extension](https://github.com/kvunoff/whoisthat-extension)
 
 ---
 
