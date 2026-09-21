@@ -1,5 +1,5 @@
-use std::time::Duration;
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 
 use crate::config;
 use crate::core_client::connection::CoreConnection;
@@ -147,10 +147,7 @@ impl CliStatus {
             "WhoisThat: Disconnected".to_string()
         } else {
             let mode_tag = if self.tun_enabled { "TUN" } else { "Proxy" };
-            let name = self
-                .profile_name
-                .as_deref()
-                .unwrap_or("connected");
+            let name = self.profile_name.as_deref().unwrap_or("connected");
             format!(
                 "WhoisThat: [Connected] [{}] ({}) ↓ {} ↑ {}",
                 mode_tag, name, self.rx_speed_human, self.tx_speed_human
@@ -260,7 +257,10 @@ pub async fn handle_cli(args: &[String]) -> Result<(), Box<dyn std::error::Error
 }
 
 fn print_help() {
-    println!("WhoisThat v{} — Linux CLI & desktop integration\n", env!("CARGO_PKG_VERSION"));
+    println!(
+        "WhoisThat v{} — Linux CLI & desktop integration\n",
+        env!("CARGO_PKG_VERSION")
+    );
     println!("USAGE:");
     println!("    whoisthat [COMMAND / OPTION] [ARGS...]\n");
     println!("CONNECTION COMMANDS:");
@@ -275,14 +275,18 @@ fn print_help() {
     println!("    -st, --systemd-toggle         Toggle systemd service (whoisthat-core.service)");
     println!("         --systemd-on,  --enable   Enable & start systemd user service");
     println!("         --systemd-off, --disable  Disable & stop systemd user service");
-    println!("         --systemd-status          Print current service status (enabled/disabled)\n");
+    println!(
+        "         --systemd-status          Print current service status (enabled/disabled)\n"
+    );
     println!("KILL-SWITCH COMMANDS:");
     println!("    -kt, --killswitch-toggle       Toggle kill-switch protection");
     println!("         --killswitch-on           Enable kill-switch");
     println!("         --killswitch-off          Disable kill-switch\n");
     println!("STATUS & MONITORING:");
     println!("    status [--short] [--json]     Show status snapshot or stream updates");
-    println!("    -s,  --short                  Compact status: [Connected] [TUN] ↓ 1.2 MB/s ↑ 340 KB/s");
+    println!(
+        "    -s,  --short                  Compact status: [Connected] [TUN] ↓ 1.2 MB/s ↑ 340 KB/s"
+    );
     println!("    -j,  --json                   Structured JSON output");
     println!("    -w,  --watch                  Stream live updates continuously per second\n");
     println!("INFORMATION & UTILITIES:");
@@ -889,10 +893,18 @@ async fn handle_profiles(args: &[String]) -> Result<(), Box<dyn std::error::Erro
 
     println!("Groups & Profiles:\n");
     for g in &state.groups {
-        println!("Group #{}: {} ({} profiles)", g.group.id, g.group.name, g.profiles.len());
+        println!(
+            "Group #{}: {} ({} profiles)",
+            g.group.id,
+            g.group.name,
+            g.profiles.len()
+        );
         for p in &g.profiles {
             let active = if let Some(ref cur) = state.connection_status.profile {
-                if cur.id == p.id && cur.group_id == p.group_id && state.connection_status.connection == "connected" {
+                if cur.id == p.id
+                    && cur.group_id == p.group_id
+                    && state.connection_status.connection == "connected"
+                {
                     " [ACTIVE]"
                 } else {
                     ""
@@ -900,7 +912,10 @@ async fn handle_profiles(args: &[String]) -> Result<(), Box<dyn std::error::Erro
             } else {
                 ""
             };
-            println!("  [{}:{}] {} ({}){}", g.group.id, p.id, p.name, p.protocol, active);
+            println!(
+                "  [{}:{}] {} ({}){}",
+                g.group.id, p.id, p.name, p.protocol, active
+            );
         }
         println!();
     }
@@ -936,10 +951,16 @@ mod tests {
         s.tun_enabled = true;
         s.rx_speed_human = "1.2 MB/s".to_string();
         s.tx_speed_human = "340.0 KB/s".to_string();
-        assert_eq!(s.format_short(), "[Connected] [TUN] ↓ 1.2 MB/s ↑ 340.0 KB/s");
+        assert_eq!(
+            s.format_short(),
+            "[Connected] [TUN] ↓ 1.2 MB/s ↑ 340.0 KB/s"
+        );
 
         s.tun_enabled = false;
-        assert_eq!(s.format_short(), "[Connected] [Proxy] ↓ 1.2 MB/s ↑ 340.0 KB/s");
+        assert_eq!(
+            s.format_short(),
+            "[Connected] [Proxy] ↓ 1.2 MB/s ↑ 340.0 KB/s"
+        );
     }
 
     #[test]
