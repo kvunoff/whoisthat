@@ -21,7 +21,15 @@ impl App {
             border()
         };
 
+        let title =
+            if self.layout.profiles_mode == crate::ui::layout::ProfilesLayoutMode::SinglePanel {
+                " Details [Tab: Profiles] "
+            } else {
+                " Details "
+            };
+
         let block = Block::default()
+            .title(title)
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
             .border_style(Style::default().fg(border_color))
@@ -231,15 +239,20 @@ impl App {
         rows.push(kv_row("Security", security));
         rows.push(kv_row("Flow", flow));
 
-        if p.uri.starts_with("ss://") {
-            if let Some(method) = uri::parse_ss_method(&p.uri) {
-                let method_display = if uri::is_insecure_ss_cipher(&method) {
+        let cipher_display = if p.uri.starts_with("ss://") {
+            uri::parse_ss_method(&p.uri).map(|method| {
+                if uri::is_insecure_ss_cipher(&method) {
                     format!("⚠ {} (insecure)", method)
                 } else {
                     method
-                };
-                rows.push(kv_row("Cipher", method_display));
-            }
+                }
+            })
+        } else {
+            None
+        };
+
+        if let Some(ref cipher) = cipher_display {
+            rows.push(kv_row("Cipher", cipher));
         }
 
         rows.push(Line::from(""));
@@ -250,7 +263,93 @@ impl App {
         } else {
             Span::styled("○ Disconnected", s_dim())
         };
-        rows.push(kv_row_span("State", state));
+        rows.push(kv_row_span("State", state.clone()));
+
+        if inner.width >= 70 {
+            let cols = Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)])
+                .split(inner);
+
+            let mut left_rows: Vec<Line> = vec![
+                section_header("Profile"),
+                kv_row("Name", &name),
+                kv_row("Protocol", &protocol),
+                kv_row("Group", group_name),
+            ];
+            if let Some(g) = self.current_group() {
+                if !g.group.subscription_url.is_empty() {
+                    left_rows.push(kv_row("Sub", &g.group.subscription_url));
+                }
+            }
+            left_rows.push(Line::from(""));
+            left_rows.push(section_header("Connection"));
+            left_rows.push(kv_row(
+                "Address",
+                if p.address.is_empty() {
+                    "—"
+                } else {
+                    &p.address
+                },
+            ));
+            left_rows.push(kv_row("Port", port));
+            left_rows.push(kv_row("SNI", sni));
+            left_rows.push(kv_row("Transport", transport));
+            left_rows.push(kv_row("Security", security));
+            left_rows.push(kv_row("Flow", flow));
+            if let Some(ref cipher) = cipher_display {
+                left_rows.push(kv_row("Cipher", cipher));
+            }
+
+            let mut right_rows: Vec<Line> = vec![
+                section_header("Status"),
+                kv_row_span("State", state.clone()),
+            ];
+            if conn_mark {
+                let ts = self.connection_status.connected_at;
+                if ts > 0 {
+                    let dt = chrono::DateTime::from_timestamp(ts, 0)
+                        .map(|d| d.format("%H:%M:%S").to_string())
+                        .unwrap_or_default();
+                    right_rows.push(kv_row("Since", &dt));
+                }
+            }
+            right_rows.push(kv_row("TUN", if self.tun_enabled { "on" } else { "off" }));
+            right_rows.push(Line::from(""));
+            right_rows.push(section_header("Diagnostics"));
+            if p.test_result > 0 {
+                right_rows.push(kv_row("Latency", format!("{} ms", p.test_result)));
+                if p.jitter_ms > 0 {
+                    right_rows.push(kv_row("Jitter", format!("±{} ms", p.jitter_ms)));
+                }
+                if p.loss_pct > 0 {
+                    right_rows.push(kv_row("Loss", format!("{}%", p.loss_pct)));
+                }
+            } else if p.test_result == -2 {
+                right_rows.push(kv_row("Latency", "testing..."));
+            } else if p.test_result == -1 {
+                right_rows.push(kv_row("Latency", "failed"));
+            }
+            if p.tested_at > 0 {
+                let ago = format_relative(p.tested_at);
+                right_rows.push(kv_row("Last test", &ago));
+            }
+
+            let w0 = cols[0].width.saturating_sub(1);
+            for (i, line) in left_rows.iter().enumerate().take(cols[0].height as usize) {
+                f.render_widget(
+                    Paragraph::new(line.clone()),
+                    Rect::new(cols[0].x, cols[0].y + i as u16, w0, 1),
+                );
+            }
+
+            let w1 = cols[1].width.saturating_sub(1);
+            for (i, line) in right_rows.iter().enumerate().take(cols[1].height as usize) {
+                f.render_widget(
+                    Paragraph::new(line.clone()),
+                    Rect::new(cols[1].x, cols[1].y + i as u16, w1, 1),
+                );
+            }
+            return;
+        }
 
         if conn_mark {
             let ts = self.connection_status.connected_at;

@@ -26,11 +26,19 @@ impl App {
 
         let inner = block.inner(area);
 
-        if self.search_query.is_some() {
-            f.render_widget(block.title(" Search Results "), area);
-        } else {
-            f.render_widget(block.title(" Profiles "), area);
-        }
+        let title =
+            if self.layout.profiles_mode == crate::ui::layout::ProfilesLayoutMode::SinglePanel {
+                if self.search_query.is_some() {
+                    " Search Results [Tab: Details] "
+                } else {
+                    " Profiles [Tab: Details] "
+                }
+            } else if self.search_query.is_some() {
+                " Search Results "
+            } else {
+                " Profiles "
+            };
+        f.render_widget(block.title(title), area);
 
         if self.groups.is_empty() && self.search_query.is_none() {
             let msg = Paragraph::new("No groups.\nPress [a] to import profiles.")
@@ -112,9 +120,16 @@ impl App {
                 } else {
                     s_dim()
                 };
+                let avail = (inner.width as usize).saturating_sub(18);
+                let display_name = if avail > 3 && name.chars().count() > avail {
+                    let truncated: String = name.chars().take(avail.saturating_sub(1)).collect();
+                    format!("{}…", truncated)
+                } else {
+                    name.to_string()
+                };
                 items.push(ListItem::new(Line::from(vec![
                     conn_mark,
-                    Span::styled(name, style),
+                    Span::styled(display_name, style),
                     Span::styled(format!(" [{}]", proto.to_uppercase()), s_faint()),
                     test,
                 ])));
@@ -240,10 +255,17 @@ impl App {
                 } else {
                     Span::styled("", s_dim())
                 };
+                let avail = (inner.width as usize).saturating_sub(18);
+                let display_name = if avail > 3 && name.chars().count() > avail {
+                    let truncated: String = name.chars().take(avail.saturating_sub(1)).collect();
+                    format!("{}…", truncated)
+                } else {
+                    name.to_string()
+                };
                 items.push(ListItem::new(Line::from(vec![
                     Span::styled("  ", s_dim()),
                     conn_mark,
-                    Span::styled(name, style),
+                    Span::styled(display_name, style),
                     warn,
                     Span::styled(format!(" [{}]", proto.to_uppercase()), s_faint()),
                     test,

@@ -423,15 +423,28 @@ pub fn render_routing_tab(
             list_area,
         );
     } else {
-        let header = Row::new(vec![
-            Cell::from(Span::styled("On", s_faint())),
-            Cell::from(Span::styled("Type", s_faint())),
-            Cell::from(Span::styled("Value", s_faint())),
-            Cell::from(Span::raw("")),
-            Cell::from(Span::styled("Outbound", s_faint())),
-        ])
-        .height(1)
-        .bottom_margin(0);
+        let is_compact = area.width < 75;
+        let header = if is_compact {
+            Row::new(vec![
+                Cell::from(Span::styled("On", s_faint())),
+                Cell::from(Span::styled("Type", s_faint())),
+                Cell::from(Span::styled("Value", s_faint())),
+                Cell::from(Span::raw("")),
+                Cell::from(Span::styled("Out", s_faint())),
+            ])
+            .height(1)
+            .bottom_margin(0)
+        } else {
+            Row::new(vec![
+                Cell::from(Span::styled("On", s_faint())),
+                Cell::from(Span::styled("Type", s_faint())),
+                Cell::from(Span::styled("Value", s_faint())),
+                Cell::from(Span::raw("")),
+                Cell::from(Span::styled("Outbound", s_faint())),
+            ])
+            .height(1)
+            .bottom_margin(0)
+        };
 
         let rows: Vec<Row> = config
             .rules
@@ -469,26 +482,39 @@ pub fn render_routing_tab(
             })
             .collect();
 
-        let table = Table::new(
-            rows,
+        let col_constraints = if is_compact {
+            [
+                Constraint::Length(3),
+                Constraint::Length(8),
+                Constraint::Min(8),
+                Constraint::Length(1),
+                Constraint::Length(7),
+            ]
+        } else {
             [
                 Constraint::Length(4),
                 Constraint::Length(10),
                 Constraint::Min(10),
                 Constraint::Length(3),
                 Constraint::Length(10),
-            ],
-        )
-        .header(header)
-        .row_highlight_style(Style::default().bg(surface()))
-        .highlight_symbol("> ");
+            ]
+        };
+
+        let table = Table::new(rows, col_constraints)
+            .header(header)
+            .row_highlight_style(Style::default().bg(surface()))
+            .highlight_symbol("> ");
 
         let mut ts = TableState::default();
         ts.select(Some(cursor));
         f.render_stateful_widget(table, list_area, &mut ts);
     }
 
-    let hint = " a add  │  p presets  │  e edit  │  x delete  │  Space toggle  │  j/k navigate ";
+    let hint = if area.width < 75 {
+        " a:add │ p:presets │ e:edit │ x:del │ Spc:toggle "
+    } else {
+        " a add  │  p presets  │  e edit  │  x delete  │  Space toggle  │  j/k navigate "
+    };
     f.render_widget(
         Paragraph::new(hint)
             .style(s_faint())
@@ -551,21 +577,7 @@ pub fn render_routing_popup(
 }
 
 fn render_presets_popup(f: &mut Frame, cursor: usize, config: &RoutingConfig, area: Rect) {
-    let popup_h = 22.min(area.height.saturating_sub(2));
-    let popup_w = 84.min(area.width.saturating_sub(4));
-    let v = Layout::vertical([
-        Constraint::Fill(1),
-        Constraint::Length(popup_h),
-        Constraint::Fill(1),
-    ])
-    .split(area);
-    let h = Layout::horizontal([
-        Constraint::Fill(1),
-        Constraint::Length(popup_w),
-        Constraint::Fill(1),
-    ])
-    .split(v[1]);
-    let pa = h[1];
+    let pa = crate::ui::app::responsive_rect(84, 22, 95, 90, area);
     f.render_widget(ratatui::widgets::Clear, pa);
 
     let block = Block::default()
@@ -670,19 +682,7 @@ fn render_rule_form(
     field: usize,
     area: Rect,
 ) {
-    let v = Layout::vertical([
-        Constraint::Fill(1),
-        Constraint::Length(14),
-        Constraint::Fill(1),
-    ])
-    .split(area);
-    let h = Layout::horizontal([
-        Constraint::Percentage(15),
-        Constraint::Percentage(70),
-        Constraint::Percentage(15),
-    ])
-    .split(v[1]);
-    let pa = h[1];
+    let pa = crate::ui::app::responsive_rect(65, 14, 92, 90, area);
     f.render_widget(ratatui::widgets::Clear, pa);
 
     let block = Block::default()
@@ -778,19 +778,7 @@ fn render_rule_form(
 }
 
 fn render_routing_confirm(f: &mut Frame, area: Rect) {
-    let v = Layout::vertical([
-        Constraint::Fill(1),
-        Constraint::Length(7),
-        Constraint::Fill(1),
-    ])
-    .split(area);
-    let h = Layout::horizontal([
-        Constraint::Percentage(25),
-        Constraint::Percentage(50),
-        Constraint::Percentage(25),
-    ])
-    .split(v[1]);
-    let pa = h[1];
+    let pa = crate::ui::app::responsive_rect(48, 7, 90, 40, area);
     f.render_widget(ratatui::widgets::Clear, pa);
 
     let block = Block::default()

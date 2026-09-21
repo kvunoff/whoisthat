@@ -57,6 +57,7 @@ pub struct App {
 
     pub collapsed_groups: HashSet<i32>,
     pub last_area: Rect,
+    pub layout: crate::ui::layout::LayoutGeometry,
 
     uri_cache: RefCell<Option<(i32, i32, ParsedUri)>>,
 }
@@ -119,6 +120,7 @@ impl App {
             test_config,
             collapsed_groups: HashSet::new(),
             last_area: Rect::default(),
+            layout: crate::ui::layout::LayoutGeometry::default(),
             uri_cache: RefCell::new(None),
         }
     }

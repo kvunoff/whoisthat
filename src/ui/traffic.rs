@@ -142,16 +142,42 @@ pub fn render_traffic_tab(
     is_tun: bool,
     tun_name: &str,
 ) {
-    let chunks = Layout::vertical([
-        Constraint::Length(4),
-        Constraint::Min(10),
-        Constraint::Length(3),
-    ])
-    .split(area);
+    let show_footer = area.height >= 18;
+    let is_compact = area.width < 85;
 
-    render_stat_cards(f, chunks[0], history, is_connected, connected_profile);
+    let cards_h = if is_compact {
+        if area.height < 18 {
+            3
+        } else {
+            5
+        }
+    } else {
+        4
+    };
+
+    let chunks = if show_footer {
+        Layout::vertical([
+            Constraint::Length(cards_h),
+            Constraint::Min(6),
+            Constraint::Length(3),
+        ])
+        .split(area)
+    } else {
+        Layout::vertical([Constraint::Length(cards_h), Constraint::Min(6)]).split(area)
+    };
+
+    render_stat_cards(
+        f,
+        chunks[0],
+        history,
+        is_connected,
+        connected_profile,
+        is_compact,
+    );
     render_traffic_chart(f, chunks[1], history);
-    render_footer(f, chunks[2], history, is_tun, tun_name);
+    if show_footer && chunks.len() > 2 {
+        render_footer(f, chunks[2], history, is_tun, tun_name);
+    }
 }
 
 fn render_stat_cards(
@@ -160,17 +186,132 @@ fn render_stat_cards(
     history: &TrafficHistory,
     is_connected: bool,
     connected_profile: Option<&str>,
+    is_compact: bool,
 ) {
+    let current = history.history.back();
+    let cur_down = current.map(|c| c.proxy_down as i64).unwrap_or(0);
+    let cur_up = current.map(|c| c.proxy_up as i64).unwrap_or(0);
+
+    if is_compact {
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(Style::default().fg(border()))
+            .title(" Traffic Stats ")
+            .style(s_bg());
+
+        let inner = block.inner(area);
+        f.render_widget(block, area);
+
+        let (status_icon, status_style) = if is_connected {
+            ("●", s_success())
+        } else {
+            ("○", s_disconnected())
+        };
+
+        if inner.height <= 1 {
+            let line = Line::from(vec![
+                Span::styled(
+                    "▼ ",
+                    Style::default()
+                        .fg(TRAFFIC_DOWN)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    format!("{}/s ", format_bytes(cur_down)),
+                    Style::default().fg(TRAFFIC_DOWN),
+                ),
+                Span::styled(
+                    "▲ ",
+                    Style::default().fg(TRAFFIC_UP).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    format!("{}/s ", format_bytes(cur_up)),
+                    Style::default().fg(TRAFFIC_UP),
+                ),
+                Span::styled(format!("│ {} ", status_icon), status_style),
+                Span::styled(
+                    format!(
+                        "↓{} ↑{}",
+                        format_bytes(history.total_proxy_down),
+                        format_bytes(history.total_proxy_up)
+                    ),
+                    s_dim(),
+                ),
+            ]);
+            f.render_widget(Paragraph::new(line), inner);
+            return;
+        }
+
+        let rows = Layout::vertical([
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+        ])
+        .split(inner);
+
+        let r0 = Line::from(vec![
+            Span::styled(
+                "▼ RX: ",
+                Style::default()
+                    .fg(TRAFFIC_DOWN)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!("{}/s ", format_bytes(cur_down)),
+                Style::default()
+                    .fg(TRAFFIC_DOWN)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!("(Peak: {}/s)", format_bytes(history.peak_down as i64)),
+                s_dim(),
+            ),
+        ]);
+        let r1 = Line::from(vec![
+            Span::styled(
+                "▲ TX: ",
+                Style::default().fg(TRAFFIC_UP).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!("{}/s ", format_bytes(cur_up)),
+                Style::default().fg(TRAFFIC_UP).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!("(Peak: {}/s)", format_bytes(history.peak_up as i64)),
+                s_dim(),
+            ),
+        ]);
+        let r2 = Line::from(vec![
+            Span::styled(format!("{} ", status_icon), status_style),
+            Span::styled("Total: ", s_dim()),
+            Span::styled(
+                format!(
+                    "↓{} ↑{}",
+                    format_bytes(history.total_proxy_down),
+                    format_bytes(history.total_proxy_up)
+                ),
+                s_text(),
+            ),
+        ]);
+        if !rows.is_empty() {
+            f.render_widget(Paragraph::new(r0), rows[0]);
+        }
+        if rows.len() > 1 {
+            f.render_widget(Paragraph::new(r1), rows[1]);
+        }
+        if rows.len() > 2 {
+            f.render_widget(Paragraph::new(r2), rows[2]);
+        }
+        return;
+    }
+
     let cards = Layout::horizontal([
         Constraint::Percentage(33),
         Constraint::Percentage(33),
         Constraint::Percentage(34),
     ])
     .split(area);
-
-    let current = history.history.back();
-    let cur_down = current.map(|c| c.proxy_down as i64).unwrap_or(0);
-    let cur_up = current.map(|c| c.proxy_up as i64).unwrap_or(0);
 
     let down_block = Block::default()
         .borders(Borders::ALL)

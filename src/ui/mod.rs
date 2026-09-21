@@ -1,4 +1,5 @@
 pub mod app;
+pub mod layout;
 pub mod logs;
 pub mod routing;
 pub mod settings;

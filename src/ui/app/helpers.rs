@@ -75,6 +75,7 @@ pub fn format_expiry(unix_ts: i64) -> String {
     }
 }
 
+#[allow(dead_code)]
 pub fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
     let popup_layout = Layout::vertical([
         Constraint::Percentage((100 - percent_y) / 2),
@@ -97,4 +98,49 @@ pub fn centered_rect_fixed(width: u16, height: u16, r: Rect) -> Rect {
     let x = r.x + (r.width.saturating_sub(w)) / 2;
     let y = r.y + (r.height.saturating_sub(h)) / 2;
     Rect::new(x, y, w, h)
+}
+
+pub fn responsive_rect(
+    preferred_w: u16,
+    preferred_h: u16,
+    max_pct_w: u16,
+    max_pct_h: u16,
+    screen: Rect,
+) -> Rect {
+    let max_w = ((screen.width as u32 * max_pct_w.clamp(10, 100) as u32) / 100) as u16;
+    let max_h = ((screen.height as u32 * max_pct_h.clamp(10, 100) as u32) / 100) as u16;
+    let available_w = screen.width.saturating_sub(2).max(1);
+    let available_h = screen.height.saturating_sub(2).max(1);
+
+    let w = preferred_w.min(max_w).min(available_w).max(1);
+    let h = preferred_h.min(max_h).min(available_h).max(1);
+
+    let x = screen.x + (screen.width.saturating_sub(w)) / 2;
+    let y = screen.y + (screen.height.saturating_sub(h)) / 2;
+    Rect::new(x, y, w, h)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_responsive_rect_large_screen() {
+        let screen = Rect::new(0, 0, 140, 50);
+        let r = responsive_rect(60, 16, 90, 80, screen);
+        assert_eq!(r.width, 60);
+        assert_eq!(r.height, 16);
+        assert_eq!(r.x, 40);
+        assert_eq!(r.y, 17);
+    }
+
+    #[test]
+    fn test_responsive_rect_small_screen() {
+        let screen = Rect::new(0, 0, 50, 15);
+        let r = responsive_rect(70, 20, 95, 90, screen);
+        assert!(r.width <= 48);
+        assert!(r.height <= 13);
+        assert!(r.x >= 1);
+        assert!(r.y >= 1);
+    }
 }

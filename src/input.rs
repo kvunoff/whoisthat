@@ -675,7 +675,7 @@ async fn handle_normal_input(
             _ => {}
         },
         Focus::RightPanel => match key.code {
-            KeyCode::Char('h') | KeyCode::Left => {
+            KeyCode::Char('h') | KeyCode::Left | KeyCode::Esc => {
                 app.focus = Focus::LeftPanel;
             }
             KeyCode::Char('c') | KeyCode::Enter => {
@@ -884,18 +884,18 @@ async fn handle_mouse_left_click(
     _cfg: &mut config::AppConfig,
     _logger: &'static FileLogger,
 ) -> bool {
-    let top_y = app.last_area.y;
-    let top_h = 4;
-
     // 1. Check click in Top Bar
-    if row >= top_y && row < top_y + top_h {
-        let total_actions_len = 62;
-        let start_x = app.last_area.x + app.last_area.width.saturating_sub(total_actions_len + 2);
+    let top_bar = app.layout.top_bar;
+    if row >= top_bar.y && row < top_bar.bottom() {
+        let is_compact = app.layout.width_tier == crate::ui::layout::WidthTier::Compact;
+        let total_actions_len = if is_compact { 28 } else { 62 };
+        let start_x = top_bar.x + top_bar.width.saturating_sub(total_actions_len + 2);
         if col >= start_x {
-            let rel_from_right = (app.last_area.x + app.last_area.width).saturating_sub(col);
-            if rel_from_right <= 18 {
+            let rel_from_right = top_bar.right().saturating_sub(col);
+            let (quit_limit, help_limit) = if is_compact { (8, 16) } else { (18, 33) };
+            if rel_from_right <= quit_limit {
                 return true;
-            } else if rel_from_right <= 33 {
+            } else if rel_from_right <= help_limit {
                 app.popup = Some(Popup::Help);
                 app.focus = Focus::Popup;
                 return false;
@@ -908,38 +908,44 @@ async fn handle_mouse_left_click(
             }
         }
 
-        // Check row 1 (status line: " WhoisThat │ ● Connected ...")
-        if row == top_y + 1 {
-            let top_x = app.last_area.x;
-            if col >= top_x + 12 && col <= top_x + 32 {
-                if app.is_connected() {
-                    let _ = client.disconnect().await;
-                    app.msg("Disconnecting...");
-                } else if let Some(p) = app.selected_profile() {
-                    let _ = client.connect(p.group_id, p.id).await;
-                    app.msg("Connecting...");
-                }
-                return false;
+        // Check click on status line
+        let top_x = top_bar.x;
+        if col >= top_x + 2 && col <= top_x + 32 {
+            if app.is_connected() {
+                let _ = client.disconnect().await;
+                app.msg("Disconnecting...");
+            } else if let Some(p) = app.selected_profile() {
+                let _ = client.connect(p.group_id, p.id).await;
+                app.msg("Connecting...");
             }
+            return false;
         }
         return false;
     }
 
     // 2. Check click in Main Area
-    let main_y = top_y + 4;
-    let main_h = app.last_area.height.saturating_sub(7);
-    if row >= main_y && row < main_y + main_h {
+    let main_area = app.layout.main_area;
+    if row >= main_area.y && row < main_area.bottom() {
         match app.tab {
             ActiveTab::Profiles => {
-                let main_w = app.last_area.width;
-                let tree_w = (main_w * 55) / 100;
-                let tree_x = app.last_area.x;
-                if col < tree_x + tree_w {
+                let tree_area = app.layout.tree_area;
+                let details_area = app.layout.details_area;
+                let in_tree = col >= tree_area.x
+                    && col < tree_area.right()
+                    && row >= tree_area.y
+                    && row < tree_area.bottom();
+                let in_details = details_area.width > 0
+                    && col >= details_area.x
+                    && col < details_area.right()
+                    && row >= details_area.y
+                    && row < details_area.bottom();
+
+                if in_tree {
                     app.focus = Focus::LeftPanel;
-                    let inner_x = tree_x + 1;
-                    let inner_y = main_y + 1;
-                    let inner_w = tree_w.saturating_sub(2);
-                    let inner_h = main_h.saturating_sub(2);
+                    let inner_x = tree_area.x + 1;
+                    let inner_y = tree_area.y + 1;
+                    let inner_w = tree_area.width.saturating_sub(2);
+                    let inner_h = tree_area.height.saturating_sub(2);
                     if col >= inner_x
                         && col < inner_x + inner_w
                         && row >= inner_y
@@ -963,14 +969,14 @@ async fn handle_mouse_left_click(
                             }
                         }
                     }
-                } else {
+                } else if in_details {
                     app.focus = Focus::RightPanel;
                 }
             }
             ActiveTab::Settings => {
                 app.focus = Focus::LeftPanel;
-                let inner_y = main_y + 1;
-                let inner_h = main_h.saturating_sub(2);
+                let inner_y = main_area.y + 1;
+                let inner_h = main_area.height.saturating_sub(2);
                 if row >= inner_y && row < inner_y + inner_h {
                     let row_offset = (row - inner_y) as usize;
                     let target_flat = app.settings_state.scroll + row_offset;
@@ -990,8 +996,12 @@ async fn handle_mouse_left_click(
             ActiveTab::Routing => {
                 app.focus = Focus::LeftPanel;
                 let is_hy2 = app.is_connected_hy2();
-                let start_row = if is_hy2 { main_y + 3 } else { main_y + 2 };
-                if row >= start_row && row < main_y + main_h.saturating_sub(2) {
+                let start_row = if is_hy2 {
+                    main_area.y + 3
+                } else {
+                    main_area.y + 2
+                };
+                if row >= start_row && row < main_area.bottom().saturating_sub(2) {
                     let rule_idx = (row - start_row) as usize;
                     if rule_idx < app.routing.rules.len() {
                         if app.routing_cursor == rule_idx {
@@ -1003,7 +1013,7 @@ async fn handle_mouse_left_click(
                             app.routing_cursor = rule_idx;
                         }
                     }
-                } else if row >= main_y + main_h.saturating_sub(2) && row < main_y + main_h {
+                } else if row >= main_area.bottom().saturating_sub(2) && row < main_area.bottom() {
                     app.routing_popup = Some(RoutingPopup::Presets { cursor: 0 });
                 }
             }
@@ -1016,10 +1026,10 @@ async fn handle_mouse_left_click(
     }
 
     // 3. Check click in Bottom Bar
-    let bot_y = app.last_area.bottom().saturating_sub(3);
-    if row >= bot_y {
-        let bot_x = app.last_area.x;
-        if col >= bot_x + 22 && col <= bot_x + 35 {
+    let bot_area = app.layout.bottom_bar;
+    if row >= bot_area.y && row < bot_area.bottom() {
+        let bot_x = bot_area.x;
+        if col >= bot_x + 12 && col <= bot_x + 35 {
             if app.tun_enabled {
                 let _ = client.disable_tun().await;
             } else {

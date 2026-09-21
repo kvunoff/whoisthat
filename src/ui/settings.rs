@@ -324,9 +324,10 @@ pub fn render_settings(
                 };
                 let prefix = if is_selected { "> " } else { "  " };
                 value_idx += 1;
+                let label_w = if content_area.width < 50 { 16 } else { 22 };
                 ListItem::new(Line::from(vec![
                     Span::styled(prefix, if is_selected { s_accent() } else { s_faint() }),
-                    Span::styled(format!("{:<22}", *label), s_dim()),
+                    Span::styled(format!("{:<width$}", *label, width = label_w), s_dim()),
                     Span::styled(val.clone(), val_style),
                     Span::styled(extra, s_faint()),
                 ]))
@@ -356,7 +357,12 @@ pub fn render_settings(
     state.scroll = list_state.offset();
     state.list_state = list_state;
 
-    let help = Paragraph::new(" j/k navigate  │  Enter/Space toggle / cycle / edit")
+    let help_text = if area.width < 60 {
+        " j/k:nav │ Enter/Space:change"
+    } else {
+        " j/k navigate  │  Enter/Space toggle / cycle / edit"
+    };
+    let help = Paragraph::new(help_text)
         .style(s_faint())
         .alignment(Alignment::Center);
     f.render_widget(help, rows[1]);

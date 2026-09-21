@@ -65,7 +65,7 @@ impl App {
     }
 
     fn render_tab_switcher_popup(&self, f: &mut Frame, cursor: usize, area: Rect) {
-        let pa = centered_rect_fixed(56, 9, area);
+        let pa = responsive_rect(56, 9, 94, 80, area);
         f.render_widget(Clear, pa);
 
         let block = Block::default()
@@ -87,6 +87,7 @@ impl App {
         ];
 
         let mut lines = Vec::new();
+        let is_compact = inner.width < 45;
         for (i, (num, name, desc)) in tabs.iter().enumerate() {
             let is_selected = i == cursor;
             let (indicator, num_style, name_style, desc_style) = if is_selected {
@@ -95,25 +96,35 @@ impl App {
                 ("   ", s_faint(), s_text(), s_dim())
             };
 
-            lines.push(Line::from(vec![
-                Span::styled(indicator, num_style),
-                Span::styled(format!("{} ", num), num_style),
-                Span::styled(format!("{:<9} ", name), name_style),
-                Span::styled(*desc, desc_style),
-            ]));
+            if is_compact {
+                lines.push(Line::from(vec![
+                    Span::styled(indicator, num_style),
+                    Span::styled(format!("{} ", num), num_style),
+                    Span::styled(*name, name_style),
+                ]));
+            } else {
+                lines.push(Line::from(vec![
+                    Span::styled(indicator, num_style),
+                    Span::styled(format!("{} ", num), num_style),
+                    Span::styled(format!("{:<9} ", name), name_style),
+                    Span::styled(*desc, desc_style),
+                ]));
+            }
         }
 
         lines.push(Line::from(""));
-        lines.push(Line::from(vec![Span::styled(
-            " [↑/↓/j/k] Navigate  ·  [1-5] Jump  ·  [Enter] Select ",
-            s_faint(),
-        )]));
+        let hint = if is_compact {
+            " [j/k] Nav · [1-5] Jump · [Enter] Select "
+        } else {
+            " [↑/↓/j/k] Navigate  ·  [1-5] Jump  ·  [Enter] Select "
+        };
+        lines.push(Line::from(vec![Span::styled(hint, s_faint())]));
 
         f.render_widget(Paragraph::new(lines).style(s_surface()), inner);
     }
 
     fn render_text_popup(&self, f: &mut Frame, title: &str, hint: &str, input: &str, area: Rect) {
-        let pa = centered_rect(70, 32, area);
+        let pa = responsive_rect(65, 8, 92, 70, area);
         f.render_widget(Clear, pa);
 
         let block = Block::default()
@@ -146,8 +157,13 @@ impl App {
             rows[1],
         );
 
+        let bottom_hint = if inner.width < 50 {
+            " Enter import | Esc cancel "
+        } else {
+            " Enter import | Esc cancel | Ctrl+V paste from clipboard "
+        };
         f.render_widget(
-            Paragraph::new(" Enter import | Esc cancel | Ctrl+V paste from clipboard ")
+            Paragraph::new(bottom_hint)
                 .style(s_dim())
                 .alignment(Alignment::Center),
             rows[2],
@@ -165,19 +181,7 @@ impl App {
         field: usize,
         area: Rect,
     ) {
-        let v = Layout::vertical([
-            Constraint::Fill(1),
-            Constraint::Length(14),
-            Constraint::Fill(1),
-        ])
-        .split(area);
-        let h = Layout::horizontal([
-            Constraint::Percentage(15),
-            Constraint::Percentage(70),
-            Constraint::Percentage(15),
-        ])
-        .split(v[1]);
-        let pa = h[1];
+        let pa = responsive_rect(65, 14, 92, 90, area);
         f.render_widget(Clear, pa);
 
         let block = Block::default()
@@ -246,7 +250,7 @@ impl App {
     }
 
     fn render_confirm_popup(&self, f: &mut Frame, kind: &str, name: &str, area: Rect) {
-        let pa = centered_rect(55, 25, area);
+        let pa = responsive_rect(50, 7, 90, 40, area);
         f.render_widget(Clear, pa);
 
         let block = Block::default()
@@ -280,7 +284,7 @@ impl App {
     }
 
     fn render_help_popup(&self, f: &mut Frame, area: Rect) {
-        let pa = centered_rect(52, 70, area);
+        let pa = responsive_rect(60, 24, 94, 90, area);
         f.render_widget(Clear, pa);
 
         let block = Block::default()
