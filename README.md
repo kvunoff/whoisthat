@@ -4,7 +4,9 @@ A modern terminal-based VPN client. Rust TUI frontend. Go engine backed by Xray-
 
 **Supports**: VLESS (Reality/xHTTP/gRPC), VMess, Trojan, Shadowsocks, SOCKS5, Hysteria2. Full TUN-mode VPN. Subscription-based profile management. HWID device identification. Optional systemd user service for boot autostart.
 
-![WhoisThat](whoisthat-screen.jpg)
+![WhoisThat — Profiles & Connection Details](screen1.png)
+
+![WhoisThat — Real-time Traffic Monitoring](screen2.png)
 
 ---
 
@@ -631,7 +633,7 @@ sudo loginctl disable-linger $USER           # revoke
 | Routing rule doesn't trigger | Disabled in the rules list, or geo files missing | Press `Space` to enable; for `geoip`/`geosite` rules check `~/.config/whoisthat/geo/*.dat` exists and is ≥10 MB; re-trigger download by removing the files and restarting |
 | Kill-switch left dangling rules after exit | `Q` full-quit killed the core before it could clean up firewall rules | Auto-healed: the next core startup reconciles orphaned `whoisthat_*` tables and `table 100`/split routing when no other core is running. To force it now, just restart the core. Manual fallback: `nft delete table inet whoisthat_ks 2>/dev/null` |
 | Settings toggle shows "Could not enable lingering" | `pkexec loginctl enable-linger $USER` failed or was cancelled | Run in a terminal: `sudo loginctl enable-linger $USER` then retry the toggle in the TUI |
-| `whoisthat-screen.jpg` doesn't exist in build artifact | Image is checked into the repo but not in `target/` — only used by the README on GitHub | Ignore — it's display-only, not a runtime asset |
+| `screen1.png` / `screen2.png` don't exist in build artifact | Screenshots are checked into the repo but not in `target/` — only used by the README on GitHub | Ignore — they're display-only, not runtime assets |
 | Logs pane is empty | No core log file, or log level filtering hides everything | Press `f` in the Logs tab to cycle the level filter; or raise log level in Settings |
 | `Cannot decrypt DB file` style errors in core log | Key file `~/.local/share/whoisthat/db/.key` was moved or deleted, but encrypted files remain | Keep the `.key` file — it's the AES-256-GCM master key, no fallback. If unsalvageable: stop core, delete `~/.local/share/whoisthat/db/`, restart to generate fresh key + empty DB |
 | `Warning: hysteria binary not installed — hysteria2:// / hy2:// profiles will not work` on TUI startup | Pre-flight check (v0.9.0+) didn't find `hysteria` on PATH | Download the precompiled binary from [Hysteria releases](https://github.com/apernet/hysteria/releases) to `/usr/local/bin/hysteria` (or run `install.sh` and answer `y` to the hysteria prompt). Same shape for `xray` / `tun2socks` / `whoisthat-parser` |
