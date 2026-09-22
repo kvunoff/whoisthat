@@ -20,17 +20,28 @@
 #   6. tun2socks (optional: official release for system-wide TUN mode)
 #   7. hysteria2 (optional: official client for hysteria2:// / hy2:// profiles)
 # =============================================================================
+# Ensure running under bash
+if [ -z "${BASH_VERSION:-}" ]; then
+    if [ -f "$0" ] && command -v bash >/dev/null 2>&1; then
+        exec bash "$0" "$@"
+    else
+        echo "[-] Error: This installer requires bash. Please run with bash (e.g. 'bash install.sh' or 'curl ... | bash')." >&2
+        exit 1
+    fi
+fi
+
 set -euo pipefail
 
 # --- version constants -------------------------------------------------------
-GO_MIN_VERSION="1.24.0"
-GO_INSTALL_VERSION="1.25.0"
+GO_MIN_VERSION="1.26.0"
+GO_INSTALL_VERSION="1.26.8"
 XRAY_VERSION="v1.8.23"
 TUN2SOCKS_VERSION="v2.5.2"
 HYSTERIA_VERSION="2.9.3"
 
 # --- configuration & defaults ------------------------------------------------
 BUILD_DIR="/tmp/whoisthat-build-$$"
+BUILD_SRC_DIR=""
 GIT_REPO="https://github.com/kvunoff/whoisthat.git"
 ASSUME_YES=false
 NONINTERACTIVE=false
@@ -40,6 +51,14 @@ TARGET_BRANCH=""
 BUILD_LOCAL=false
 UNINSTALL_MODE=false
 MODE="Install"
+ARCH_FAMILY=""
+GO_ARCH=""
+XRAY_ARCH=""
+T2S_ARCH=""
+HY_ARCH=""
+DISTRO_ID=""
+DISTRO_NAME=""
+DISTRO_LIKE=""
 
 # --- terminal styling --------------------------------------------------------
 if [ -t 1 ]; then
@@ -282,9 +301,11 @@ detect_distro() {
         . /etc/os-release
         DISTRO_ID="${ID:-unknown}"
         DISTRO_NAME="${PRETTY_NAME:-$DISTRO_ID}"
+        DISTRO_LIKE="${ID_LIKE:-}"
     else
         DISTRO_ID="unknown"
         DISTRO_NAME="Unknown Linux"
+        DISTRO_LIKE=""
     fi
     info "Distribution: ${DISTRO_NAME}"
 }
@@ -298,22 +319,44 @@ install_system_deps() {
             info "Debian/Ubuntu family — installing build-essential, git, curl, unzip, libcap2-bin"
             $SUDO apt-get update -qq
             $SUDO apt-get install -y -qq build-essential git curl unzip libcap2-bin
+            return
             ;;
         fedora|rhel|centos|rocky|almalinux)
             info "Fedora/RHEL family — installing gcc, git, curl, make, unzip, libcap"
             $SUDO dnf install -y -q gcc git curl make unzip libcap
+            return
             ;;
         arch|manjaro|endeavouros)
             info "Arch family — installing base-devel, git, curl, unzip, libcap"
             $SUDO pacman -S --noconfirm --needed base-devel git curl unzip libcap
+            return
             ;;
         alpine)
             info "Alpine — installing build-base, git, curl, unzip, libcap"
             $SUDO apk add --no-cache build-base git curl unzip libcap
+            return
             ;;
         opensuse*|suse)
             info "openSUSE — installing gcc, git, curl, make, unzip, libcap-progs"
             $SUDO zypper install -y -l gcc git curl make unzip libcap-progs
+            return
+            ;;
+    esac
+
+    # Fallback for derivative distributions via ID_LIKE
+    case "${DISTRO_LIKE}" in
+        *debian*|*ubuntu*)
+            info "Debian/Ubuntu derivative (${DISTRO_ID}) — installing build-essential, git, curl, unzip, libcap2-bin"
+            $SUDO apt-get update -qq
+            $SUDO apt-get install -y -qq build-essential git curl unzip libcap2-bin
+            ;;
+        *fedora*|*rhel*)
+            info "Fedora/RHEL derivative (${DISTRO_ID}) — installing gcc, git, curl, make, unzip, libcap"
+            $SUDO dnf install -y -q gcc git curl make unzip libcap
+            ;;
+        *arch*)
+            info "Arch derivative (${DISTRO_ID}) — installing base-devel, git, curl, unzip, libcap"
+            $SUDO pacman -S --noconfirm --needed base-devel git curl unzip libcap
             ;;
         *)
             warn "Unrecognized distribution (${DISTRO_ID})."
@@ -333,12 +376,12 @@ install_go() {
 
     if command -v go &>/dev/null; then
         local current_go
-        current_go=$(go version 2>/dev/null | awk '{print $3}' | sed 's/^go//')
-        if version_ge "$current_go" "$GO_MIN_VERSION"; then
+        current_go=$(go version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1)
+        if [ -n "$current_go" ] && version_ge "$current_go" "$GO_MIN_VERSION"; then
             info "Go ${current_go} detected (>= ${GO_MIN_VERSION}), skipping installation"
             return
         fi
-        warn "Found Go ${current_go}, but >= ${GO_MIN_VERSION} is required. Upgrading..."
+        warn "Found Go ${current_go:-unknown}, but >= ${GO_MIN_VERSION} is required. Upgrading..."
     else
         info "Go not found in PATH. Installing Go ${GO_INSTALL_VERSION}..."
     fi
@@ -416,11 +459,19 @@ build_whoisthat() {
         local tag="$TARGET_BRANCH"
         if [ -z "$tag" ]; then
             info "Looking up latest release tag from GitHub..."
-            tag=$(git ls-remote --tags --sort=-version:refname "$GIT_REPO" 'refs/tags/v*' \
+            tag=$(git ls-remote --tags --sort=-version:refname "$GIT_REPO" 'refs/tags/v*' 2>/dev/null \
                 | grep -v '\^{}' \
                 | head -1 \
                 | awk '{print $2}' \
-                | sed 's|refs/tags/||')
+                | sed 's|refs/tags/||' || true)
+            if [ -z "$tag" ]; then
+                tag=$(git ls-remote --tags "$GIT_REPO" 'refs/tags/v*' 2>/dev/null \
+                    | grep -v '\^{}' \
+                    | awk '{print $2}' \
+                    | sed 's|refs/tags/||' \
+                    | sort -V \
+                    | tail -n1 || true)
+            fi
             if [ -z "$tag" ]; then
                 warn "Could not determine latest release tag. Falling back to 'main' branch."
                 tag="main"
@@ -676,6 +727,6 @@ main() {
     print_final_message
 }
 
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+if ! (return 0 2>/dev/null); then
     main "$@"
 fi
