@@ -209,6 +209,8 @@ pub fn is_cli_command(arg: &str) -> bool {
             | "killswitch-toggle"
             | "profiles"
             | "ip"
+            | "doctor"
+            | "--doctor"
             | "version"
             | "help"
     )
@@ -217,6 +219,9 @@ pub fn is_cli_command(arg: &str) -> bool {
 pub async fn handle_cli(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let cmd = args.first().map(String::as_str).unwrap_or("help");
     match cmd {
+        // Diagnostics
+        "doctor" | "--doctor" => handle_doctor(&args[1..]).await,
+
         // Status & monitoring
         "status" | "--status" => handle_status(&args[1..]).await,
 
@@ -304,6 +309,7 @@ fn print_help() {
     println!("    -j,  --json                   Structured JSON output");
     println!("    -w,  --watch                  Stream live updates continuously per second\n");
     println!("INFORMATION & UTILITIES:");
+    println!("         doctor [--json]          Run comprehensive system & dependency diagnostics");
     println!("    -p,  --profiles [--json]      List all subscription groups and profiles");
     println!("         --ip,      ip            Fetch and print public IPv4 & IPv6");
     println!(
@@ -312,6 +318,7 @@ fn print_help() {
     println!("    -v,  --version                Print version");
     println!("    -h,  --help                   Show this help message\n");
     println!("EXAMPLES:");
+    println!("    whoisthat doctor                 # Run system health diagnostics");
     println!("    whoisthat -t                     # Toggle VPN on/off");
     println!("    whoisthat -mt                    # Toggle TUN mode");
     println!("    whoisthat run -d spotify         # Launch Spotify in background (split-tunnel)");
@@ -319,6 +326,20 @@ fn print_help() {
     println!("    whoisthat status --short         # For status bars (Waybar, Polybar, GNOME)");
     println!("    whoisthat status --watch --json  # For reactive UI widgets");
     println!("    whoisthat -st                    # Toggle autostart systemd service");
+}
+
+async fn handle_doctor(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    let is_json = args.iter().any(|a| a == "--json" || a == "-j");
+    let report = crate::doctor::run_doctor().await;
+    if is_json {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        report.print_pretty();
+    }
+    if !report.summary.is_healthy {
+        std::process::exit(1);
+    }
+    Ok(())
 }
 
 async fn handle_status(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
@@ -1027,6 +1048,8 @@ mod tests {
         assert!(is_cli_command("toggle"));
         assert!(is_cli_command("profiles"));
         assert!(is_cli_command("ip"));
+        assert!(is_cli_command("doctor"));
+        assert!(is_cli_command("--doctor"));
         assert!(is_cli_command("version"));
         assert!(!is_cli_command("arbitrary_unknown_arg"));
     }

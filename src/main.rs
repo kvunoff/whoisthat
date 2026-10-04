@@ -3,6 +3,7 @@ mod config;
 mod core_client;
 mod core_events;
 mod core_spawn;
+mod doctor;
 mod event_loop;
 mod input;
 mod launcher;

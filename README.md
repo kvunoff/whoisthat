@@ -762,6 +762,7 @@ CLI commands connect to the core over its Unix domain socket, execute instantly,
 | `whoisthat status --watch --json` | `status -w -j` | Continuous live streaming (1 update per second NDJSON for desktop widgets) |
 | `whoisthat --profiles [--json]` | `-p` | List all subscription groups and profiles |
 | `whoisthat --ip` | `ip` | Fetch and print public IPv4 and IPv6 |
+| `whoisthat doctor [--json]` | — | Run comprehensive system, capabilities, polkit, and IPC diagnostics |
 | `whoisthat run [-d] <app> [args...]` | `-b`, `--detach`, `--background` | Launch application inside split-tunnel slice (`-d` runs detached in background) |
 | `whoisthat --version` | `-v` | Display program version |
 | `whoisthat --help` | `-h` | Display full help and flag list |
@@ -798,6 +799,7 @@ When using `whoisthat status --json` (or `-j`):
 
 ```bash
 # Connection & mode toggling
+whoisthat doctor                      # Run full system & dependency diagnostics
 whoisthat -t                          # Smart-toggle VPN connection on/off
 whoisthat -c 2                        # Connect to profile #2 (or by name: whoisthat -c "Germany")
 whoisthat -mt                         # Toggle between TUN (system-wide) and Proxy modes
