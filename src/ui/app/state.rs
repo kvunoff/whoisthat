@@ -603,7 +603,6 @@ mod tests {
         assert_eq!(app.groups[0].profiles[0].tested_at, 99999);
     }
 
-
     #[test]
     fn test_collapsed_group_tree_len_and_node_at() {
         let mut app = make_app_with_profile();

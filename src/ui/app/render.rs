@@ -233,13 +233,7 @@ impl App {
             }
             ActiveTab::Routing => {
                 let focused = self.focus == Focus::LeftPanel;
-                render_routing_tab(
-                    f,
-                    area,
-                    &self.routing,
-                    self.routing_cursor,
-                    focused,
-                );
+                render_routing_tab(f, area, &self.routing, self.routing_cursor, focused);
             }
             ActiveTab::Traffic => {
                 let connected_name = self.connected_profile_name();
