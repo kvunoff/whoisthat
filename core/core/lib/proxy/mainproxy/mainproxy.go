@@ -303,6 +303,18 @@ func (p *ProxyManager) GetStatus() structs.ProxyStatus {
 	return p.status
 }
 
+func (p *ProxyManager) UpdateMovedProfile(oldId structs.ProfileID, newProfile structs.Profile) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.status.Connection == "connected" && p.status.Profile.Id == oldId.Id && p.status.Profile.GroupId == oldId.GroupId {
+		p.status.Profile = newProfile
+		select {
+		case p.StatusChanged <- p.status:
+		default:
+		}
+	}
+}
+
 func countOutbounds(configJSON []byte) int {
 	var cfg map[string]interface{}
 	if err := json.Unmarshal(configJSON, &cfg); err != nil {

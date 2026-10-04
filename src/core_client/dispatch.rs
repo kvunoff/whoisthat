@@ -38,6 +38,17 @@ pub enum CoreEvent {
     TestProgress(TestProgress),
     TestConfigUpdated(TestConfig),
     XrayProgress(XrayProgressNotification),
+    ProfilesReordered {
+        group_id: i32,
+        profile_ids: Vec<i32>,
+    },
+    GroupsReordered {
+        group_ids: Vec<i32>,
+    },
+    ProfileMoved {
+        old_profile: ProfileID,
+        new_profile: Profile,
+    },
     Reconnected,
     Disconnected,
 }
@@ -227,6 +238,29 @@ pub(crate) fn dispatch(msg: TcpMessage) -> CoreEvent {
                 CoreEvent::SubscriptionUpdated {
                     group: d.group,
                     profiles: d.profiles,
+                }
+            })
+        }
+        "profiles-reordered" => {
+            try_dispatch!(msg, "profiles-reordered", ProfilesReordered, |d| {
+                CoreEvent::ProfilesReordered {
+                    group_id: d.group_id,
+                    profile_ids: d.profile_ids,
+                }
+            })
+        }
+        "groups-reordered" => {
+            try_dispatch!(msg, "groups-reordered", GroupsReordered, |d| {
+                CoreEvent::GroupsReordered {
+                    group_ids: d.group_ids,
+                }
+            })
+        }
+        "profile-moved" => {
+            try_dispatch!(msg, "profile-moved", ProfileMoved, |d| {
+                CoreEvent::ProfileMoved {
+                    old_profile: d.old_profile,
+                    new_profile: d.new_profile,
                 }
             })
         }
@@ -633,6 +667,66 @@ mod tests {
             assert_eq!(p.total_bytes, 10000);
         } else {
             panic!("expected XrayProgress");
+        }
+    }
+
+    #[test]
+    fn test_dispatch_profiles_reordered() {
+        let event = dispatch(make_msg(
+            "profiles-reordered",
+            json!({
+                "group_id": 3,
+                "profile_ids": [10, 30, 20]
+            }),
+        ));
+        if let CoreEvent::ProfilesReordered {
+            group_id,
+            profile_ids,
+        } = event
+        {
+            assert_eq!(group_id, 3);
+            assert_eq!(profile_ids, vec![10, 30, 20]);
+        } else {
+            panic!("expected ProfilesReordered");
+        }
+    }
+
+    #[test]
+    fn test_dispatch_groups_reordered() {
+        let event = dispatch(make_msg(
+            "groups-reordered",
+            json!({
+                "group_ids": [2, 1, 3]
+            }),
+        ));
+        if let CoreEvent::GroupsReordered { group_ids } = event {
+            assert_eq!(group_ids, vec![2, 1, 3]);
+        } else {
+            panic!("expected GroupsReordered");
+        }
+    }
+
+    #[test]
+    fn test_dispatch_profile_moved() {
+        let event = dispatch(make_msg(
+            "profile-moved",
+            json!({
+                "old_profile": { "id": 5, "group_id": 1 },
+                "new_profile": { "id": 9, "group_id": 2, "name": "Moved" }
+            }),
+        ));
+        if let CoreEvent::ProfileMoved {
+            old_profile,
+            new_profile,
+        } = event
+        {
+            assert_eq!(old_profile.id, 5);
+            assert_eq!(old_profile.group_id, 1);
+            assert_eq!(new_profile.id, 9);
+            assert_eq!(new_profile.group_id, 2);
+            assert_eq!(new_profile.name, "Moved");
+        } else {
+            panic!("expected ProfileMoved");
         }
     }
 }

@@ -12,6 +12,7 @@ func newTestDB(t *testing.T) *DB {
 	t.Helper()
 	db := &DB{Path: t.TempDir()}
 	db.loadOrCreateKey()
+	db.ensureDBConfigExistance()
 	return db
 }
 
@@ -233,3 +234,136 @@ func TestProfileDecodeLegacyRowWithoutTestMetadata(t *testing.T) {
 			got.TestedAt, got.LossPct, got.JitterMs)
 	}
 }
+
+func TestReorderProfiles(t *testing.T) {
+	db := newTestDB(t)
+
+	groupAdded, err := db.AddGroup("Group A", "")
+	if err != nil {
+		t.Fatalf("AddGroup: %v", err)
+	}
+	gid := groupAdded.Id
+
+	p1, err := db.AddProfile(structs.DBAddProfileData{GroupId: gid, Name: "P1", Protocol: "vless", Uri: "vless://1"})
+	if err != nil {
+		t.Fatalf("AddProfile p1: %v", err)
+	}
+	p2, err := db.AddProfile(structs.DBAddProfileData{GroupId: gid, Name: "P2", Protocol: "vless", Uri: "vless://2"})
+	if err != nil {
+		t.Fatalf("AddProfile p2: %v", err)
+	}
+	p3, err := db.AddProfile(structs.DBAddProfileData{GroupId: gid, Name: "P3", Protocol: "vless", Uri: "vless://3"})
+	if err != nil {
+		t.Fatalf("AddProfile p3: %v", err)
+	}
+
+	// Reverse order: p3, p1, p2
+	newOrder := []int{p3.Id, p1.Id, p2.Id}
+	if err := db.ReorderProfiles(gid, newOrder); err != nil {
+		t.Fatalf("ReorderProfiles: %v", err)
+	}
+
+	groups, err := db.GetAllGroupsAndProfiles()
+	if err != nil {
+		t.Fatalf("GetAllGroupsAndProfiles: %v", err)
+	}
+	if len(groups) != 1 || len(groups[0].Profiles) != 3 {
+		t.Fatalf("unexpected groups count or profiles count: %+v", groups)
+	}
+
+	if groups[0].Profiles[0].Id != p3.Id || groups[0].Profiles[1].Id != p1.Id || groups[0].Profiles[2].Id != p2.Id {
+		t.Errorf("expected order [%d, %d, %d], got [%d, %d, %d]",
+			p3.Id, p1.Id, p2.Id,
+			groups[0].Profiles[0].Id, groups[0].Profiles[1].Id, groups[0].Profiles[2].Id)
+	}
+}
+
+func TestReorderGroups(t *testing.T) {
+	db := newTestDB(t)
+
+	g1, err := db.AddGroup("G1", "")
+	if err != nil {
+		t.Fatalf("AddGroup 1: %v", err)
+	}
+	g2, err := db.AddGroup("G2", "")
+	if err != nil {
+		t.Fatalf("AddGroup 2: %v", err)
+	}
+	g3, err := db.AddGroup("G3", "")
+	if err != nil {
+		t.Fatalf("AddGroup 3: %v", err)
+	}
+
+	newOrder := []int{g3.Id, g1.Id, g2.Id}
+	if err := db.ReorderGroups(newOrder); err != nil {
+		t.Fatalf("ReorderGroups: %v", err)
+	}
+
+	groups, err := db.GetAllGroupsAndProfiles()
+	if err != nil {
+		t.Fatalf("GetAllGroupsAndProfiles: %v", err)
+	}
+	if len(groups) != 3 {
+		t.Fatalf("expected 3 groups, got %d", len(groups))
+	}
+
+	if groups[0].Group.Id != g3.Id || groups[1].Group.Id != g1.Id || groups[2].Group.Id != g2.Id {
+		t.Errorf("expected group order [%d, %d, %d], got [%d, %d, %d]",
+			g3.Id, g1.Id, g2.Id,
+			groups[0].Group.Id, groups[1].Group.Id, groups[2].Group.Id)
+	}
+}
+
+func TestMoveProfile(t *testing.T) {
+	db := newTestDB(t)
+
+	g1, err := db.AddGroup("G1", "")
+	if err != nil {
+		t.Fatalf("AddGroup 1: %v", err)
+	}
+	g2, err := db.AddGroup("G2", "")
+	if err != nil {
+		t.Fatalf("AddGroup 2: %v", err)
+	}
+
+	p1, err := db.AddProfile(structs.DBAddProfileData{GroupId: g1.Id, Name: "Profile In G1", Protocol: "vless", Uri: "vless://p1"})
+	if err != nil {
+		t.Fatalf("AddProfile: %v", err)
+	}
+
+	moved, err := db.MoveProfile(g1.Id, g2.Id, p1.Id)
+	if err != nil {
+		t.Fatalf("MoveProfile: %v", err)
+	}
+
+	if moved.GroupId != g2.Id {
+		t.Errorf("moved.GroupId = %d, want %d", moved.GroupId, g2.Id)
+	}
+	if moved.Name != "Profile In G1" {
+		t.Errorf("moved.Name = %q, want %q", moved.Name, "Profile In G1")
+	}
+
+	// Verify old profile is gone
+	groups, err := db.GetAllGroupsAndProfiles()
+	if err != nil {
+		t.Fatalf("GetAllGroupsAndProfiles: %v", err)
+	}
+
+	var g1Found, g2Found *structs.GroupWithProfiles
+	for i := range groups {
+		if groups[i].Group.Id == g1.Id {
+			g1Found = &groups[i]
+		}
+		if groups[i].Group.Id == g2.Id {
+			g2Found = &groups[i]
+		}
+	}
+
+	if len(g1Found.Profiles) != 0 {
+		t.Errorf("expected 0 profiles in g1, got %d", len(g1Found.Profiles))
+	}
+	if len(g2Found.Profiles) != 1 || g2Found.Profiles[0].Id != moved.Id {
+		t.Errorf("expected 1 profile in g2 with id %d, got %+v", moved.Id, g2Found.Profiles)
+	}
+}
+

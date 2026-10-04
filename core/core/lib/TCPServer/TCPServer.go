@@ -251,6 +251,30 @@ func (s *Server) handleConnection(cc *clientConn, clientID string) {
 			}
 			command_handler.DeleteProfiles(data)
 
+		case "reorder-profiles":
+			var data structs.ReorderProfilesData
+			if err := json.Unmarshal(raw_tcp_message.Data, &data); err != nil {
+				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
+				return
+			}
+			command_handler.ReorderProfiles(data)
+
+		case "reorder-groups":
+			var data structs.ReorderGroupsData
+			if err := json.Unmarshal(raw_tcp_message.Data, &data); err != nil {
+				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
+				return
+			}
+			command_handler.ReorderGroups(data)
+
+		case "move-profile":
+			var data structs.MoveProfileData
+			if err := json.Unmarshal(raw_tcp_message.Data, &data); err != nil {
+				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
+				return
+			}
+			command_handler.MoveProfile(data, s.proxy_manager)
+
 		case "add-group":
 			var data structs.AddGroupData
 			if err := json.Unmarshal(raw_tcp_message.Data, &data); err != nil {

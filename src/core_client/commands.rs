@@ -219,6 +219,32 @@ impl CoreClient {
             .await
     }
 
+    pub async fn reorder_profiles(
+        &self,
+        group_id: i32,
+        profile_ids: Vec<i32>,
+    ) -> std::io::Result<()> {
+        self.writer
+            .lock()
+            .await
+            .send(
+                "reorder-profiles",
+                &ReorderProfilesData {
+                    group_id,
+                    profile_ids,
+                },
+            )
+            .await
+    }
+
+    pub async fn reorder_groups(&self, group_ids: Vec<i32>) -> std::io::Result<()> {
+        self.writer
+            .lock()
+            .await
+            .send("reorder-groups", &ReorderGroupsData { group_ids })
+            .await
+    }
+
     pub async fn delete_group(&self, id: i32) -> std::io::Result<()> {
         self.writer
             .lock()

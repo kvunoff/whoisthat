@@ -62,6 +62,21 @@ pub enum Popup {
     },
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ItemMoveAction {
+    ReorderProfiles {
+        group_id: i32,
+        profile_ids: Vec<i32>,
+        profile_name: String,
+        moved_up: bool,
+    },
+    ReorderGroups {
+        group_ids: Vec<i32>,
+        group_name: String,
+        moved_up: bool,
+    },
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TreeNode {
     Group(usize),

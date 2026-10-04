@@ -1,4 +1,4 @@
-use crossterm::event::{self, Event, KeyCode, KeyEventKind};
+use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 
 use crate::config;
 use crate::core_client::protocol::SetHwidData;
@@ -10,7 +10,7 @@ use crate::popups::{handle_popup_input, handle_routing_popup_input};
 use crate::systemd::{setup_systemd_service, teardown_systemd_service};
 use crate::testing::{build_test_list, persist_and_sync_test_config, run_test_batch};
 use crate::text_edit::{edit_text_field, read_clipboard};
-use crate::ui::app::{ActiveTab, Focus, Popup, TreeNode};
+use crate::ui::app::{ActiveTab, Focus, ItemMoveAction, Popup, TreeNode};
 use crate::ui::routing::{rule_to_form, RoutingPopup};
 use crate::ui::settings::next_split_tunnel_mode;
 use crate::ui::App;
@@ -510,170 +510,249 @@ async fn handle_normal_input(
     }
 
     match app.focus {
-        Focus::LeftPanel => match key.code {
-            KeyCode::Char('j') | KeyCode::Down => app.cursor_down(),
-            KeyCode::Char('k') | KeyCode::Up => app.cursor_up(),
-            KeyCode::Char('g') => app.cursor_top(),
-            KeyCode::Char('G') => app.cursor_bottom(),
-            KeyCode::Char('/') => {
-                app.search_mode = true;
-                app.search_input.clear();
-                app.search_query = Some(String::new());
-                app.cursor = 0;
-                return false;
-            }
-            KeyCode::Esc => {
+        Focus::LeftPanel => {
+            let is_move_down = match key.code {
+                KeyCode::Char('J') => true,
+                KeyCode::Down
+                    if key.modifiers.contains(KeyModifiers::ALT)
+                        || key.modifiers.contains(KeyModifiers::SHIFT) =>
+                {
+                    true
+                }
+                KeyCode::Char('j') if key.modifiers.contains(KeyModifiers::ALT) => true,
+                _ => false,
+            };
+            let is_move_up = match key.code {
+                KeyCode::Char('K') => true,
+                KeyCode::Up
+                    if key.modifiers.contains(KeyModifiers::ALT)
+                        || key.modifiers.contains(KeyModifiers::SHIFT) =>
+                {
+                    true
+                }
+                KeyCode::Char('k') if key.modifiers.contains(KeyModifiers::ALT) => true,
+                _ => false,
+            };
+
+            if is_move_down {
                 if app.search_query.is_some() {
-                    app.search_query = None;
-                    app.search_input.clear();
-                    app.cursor = 0;
-                    app.clamp_cursor();
-                    return false;
-                }
-            }
-            KeyCode::Char('h') | KeyCode::Left => {
-                if let Some(TreeNode::Group(gi)) = app.tree_node_at(app.cursor) {
-                    if let Some(g) = app.groups.get(gi) {
-                        app.collapse_group(g.group.id);
-                    }
-                } else if let Some(parent_pos) = app.parent_group_cursor() {
-                    app.cursor = parent_pos;
-                }
-            }
-            KeyCode::Char('l') | KeyCode::Right => {
-                if let Some(TreeNode::Group(gi)) = app.tree_node_at(app.cursor) {
-                    if let Some(g) = app.groups.get(gi) {
-                        if app.is_group_collapsed(g.group.id) {
-                            app.expand_group(g.group.id);
-                        } else if !g.profiles.is_empty() {
-                            app.cursor_down();
+                    app.msg("Cannot reorder profiles while search filter is active");
+                } else if let Some(action) = app.move_item_down() {
+                    match action {
+                        ItemMoveAction::ReorderProfiles {
+                            group_id,
+                            profile_ids,
+                            profile_name,
+                            ..
+                        } => {
+                            app.msg(format!("Moved \"{}\" down", profile_name));
+                            let _ = client.reorder_profiles(group_id, profile_ids).await;
+                        }
+                        ItemMoveAction::ReorderGroups {
+                            group_ids,
+                            group_name,
+                            ..
+                        } => {
+                            app.msg(format!("Moved group \"{}\" down", group_name));
+                            let _ = client.reorder_groups(group_ids).await;
                         }
                     }
-                } else if app.selected_profile().is_some() {
-                    app.focus = Focus::RightPanel;
                 }
+                return false;
             }
-            KeyCode::Char(' ') => {
-                if let Some(TreeNode::Group(gi)) = app.tree_node_at(app.cursor) {
-                    if let Some(g) = app.groups.get(gi) {
-                        app.toggle_group_collapsed(g.group.id);
+
+            if is_move_up {
+                if app.search_query.is_some() {
+                    app.msg("Cannot reorder profiles while search filter is active");
+                } else if let Some(action) = app.move_item_up() {
+                    match action {
+                        ItemMoveAction::ReorderProfiles {
+                            group_id,
+                            profile_ids,
+                            profile_name,
+                            ..
+                        } => {
+                            app.msg(format!("Moved \"{}\" up", profile_name));
+                            let _ = client.reorder_profiles(group_id, profile_ids).await;
+                        }
+                        ItemMoveAction::ReorderGroups {
+                            group_ids,
+                            group_name,
+                            ..
+                        } => {
+                            app.msg(format!("Moved group \"{}\" up", group_name));
+                            let _ = client.reorder_groups(group_ids).await;
+                        }
                     }
                 }
+                return false;
             }
-            KeyCode::Char('c') => {
-                if let Some(p) = app.selected_profile() {
-                    let _ = client.connect(p.group_id, p.id).await;
-                    app.msg("Connecting...");
+
+            match key.code {
+                KeyCode::Char('j') | KeyCode::Down => app.cursor_down(),
+                KeyCode::Char('k') | KeyCode::Up => app.cursor_up(),
+                KeyCode::Char('g') => app.cursor_top(),
+                KeyCode::Char('G') => app.cursor_bottom(),
+                KeyCode::Char('/') => {
+                    app.search_mode = true;
+                    app.search_input.clear();
+                    app.search_query = Some(String::new());
+                    app.cursor = 0;
+                    return false;
                 }
-            }
-            KeyCode::Enter => {
-                if let Some(p) = app.selected_profile() {
-                    let _ = client.connect(p.group_id, p.id).await;
-                    app.msg("Connecting...");
-                } else if let Some(TreeNode::Group(gi)) = app.tree_node_at(app.cursor) {
-                    if let Some(g) = app.groups.get(gi) {
-                        app.toggle_group_collapsed(g.group.id);
+                KeyCode::Esc => {
+                    if app.search_query.is_some() {
+                        app.search_query = None;
+                        app.search_input.clear();
+                        app.cursor = 0;
+                        app.clamp_cursor();
+                        return false;
                     }
                 }
-            }
-            KeyCode::Char('d') => {
-                let _ = client.disconnect().await;
-                app.msg("Disconnecting...");
-            }
-            KeyCode::Char('u') => {
-                if let Some(g) = app.current_group() {
-                    if !g.group.subscription_url.is_empty() {
-                        let _ = client.update_subscription(g.group.id).await;
-                        app.msg("Updating subscription...");
+                KeyCode::Char('h') | KeyCode::Left => {
+                    if let Some(TreeNode::Group(gi)) = app.tree_node_at(app.cursor) {
+                        if let Some(g) = app.groups.get(gi) {
+                            app.collapse_group(g.group.id);
+                        }
+                    } else if let Some(parent_pos) = app.parent_group_cursor() {
+                        app.cursor = parent_pos;
                     }
                 }
-            }
-            KeyCode::Char('e') => {
-                if app.on_group() {
+                KeyCode::Char('l') | KeyCode::Right => {
+                    if let Some(TreeNode::Group(gi)) = app.tree_node_at(app.cursor) {
+                        if let Some(g) = app.groups.get(gi) {
+                            if app.is_group_collapsed(g.group.id) {
+                                app.expand_group(g.group.id);
+                            } else if !g.profiles.is_empty() {
+                                app.cursor_down();
+                            }
+                        }
+                    } else if app.selected_profile().is_some() {
+                        app.focus = Focus::RightPanel;
+                    }
+                }
+                KeyCode::Char(' ') => {
+                    if let Some(TreeNode::Group(gi)) = app.tree_node_at(app.cursor) {
+                        if let Some(g) = app.groups.get(gi) {
+                            app.toggle_group_collapsed(g.group.id);
+                        }
+                    }
+                }
+                KeyCode::Char('c') => {
+                    if let Some(p) = app.selected_profile() {
+                        let _ = client.connect(p.group_id, p.id).await;
+                        app.msg("Connecting...");
+                    }
+                }
+                KeyCode::Enter => {
+                    if let Some(p) = app.selected_profile() {
+                        let _ = client.connect(p.group_id, p.id).await;
+                        app.msg("Connecting...");
+                    } else if let Some(TreeNode::Group(gi)) = app.tree_node_at(app.cursor) {
+                        if let Some(g) = app.groups.get(gi) {
+                            app.toggle_group_collapsed(g.group.id);
+                        }
+                    }
+                }
+                KeyCode::Char('d') => {
+                    let _ = client.disconnect().await;
+                    app.msg("Disconnecting...");
+                }
+                KeyCode::Char('u') => {
                     if let Some(g) = app.current_group() {
-                        app.popup = Some(Popup::EditSubscription {
-                            name: g.group.name.clone(),
-                            url: g.group.subscription_url.clone(),
-                            group_id: g.group.id,
-                            cursor: g.group.subscription_url.chars().count(),
-                            field: 1,
+                        if !g.group.subscription_url.is_empty() {
+                            let _ = client.update_subscription(g.group.id).await;
+                            app.msg("Updating subscription...");
+                        }
+                    }
+                }
+                KeyCode::Char('e') => {
+                    if app.on_group() {
+                        if let Some(g) = app.current_group() {
+                            app.popup = Some(Popup::EditSubscription {
+                                name: g.group.name.clone(),
+                                url: g.group.subscription_url.clone(),
+                                group_id: g.group.id,
+                                cursor: g.group.subscription_url.chars().count(),
+                                field: 1,
+                            });
+                            app.focus = Focus::Popup;
+                        }
+                    } else if let Some(p) = app.selected_profile() {
+                        app.popup = Some(Popup::EditProfileName {
+                            input: p.name.clone(),
+                            cursor: p.name.chars().count(),
+                            group_id: p.group_id,
+                            profile_id: p.id,
                         });
                         app.focus = Focus::Popup;
                     }
-                } else if let Some(p) = app.selected_profile() {
-                    app.popup = Some(Popup::EditProfileName {
-                        input: p.name.clone(),
-                        cursor: p.name.chars().count(),
-                        group_id: p.group_id,
-                        profile_id: p.id,
+                }
+                KeyCode::Char('U') => {
+                    let default_name = format!("Group {}", app.groups.len() + 1);
+                    app.popup = Some(Popup::AddGroup {
+                        name: default_name,
+                        url: String::new(),
+                        cursor: 0,
+                        field: 0,
                     });
                     app.focus = Focus::Popup;
                 }
-            }
-            KeyCode::Char('U') => {
-                let default_name = format!("Group {}", app.groups.len() + 1);
-                app.popup = Some(Popup::AddGroup {
-                    name: default_name,
-                    url: String::new(),
-                    cursor: 0,
-                    field: 0,
-                });
-                app.focus = Focus::Popup;
-            }
-            KeyCode::Char('t') => {
-                let list = build_test_list(app, false);
-                run_test_batch(app, client, &list).await;
-            }
-            KeyCode::Char('T') => {
-                let list = build_test_list(app, true);
-                run_test_batch(app, client, &list).await;
-            }
-            KeyCode::Char('C') => {
-                let _ = client.cancel_tests().await;
-                app.test_progress = None;
-                app.msg("Cancelling in-flight tests...");
-            }
-            KeyCode::Char('y') => {
-                if let Some(p) = app.selected_profile() {
-                    match arboard::Clipboard::new() {
-                        Ok(mut cb) => match cb.set_text(&p.uri) {
-                            Ok(()) => app.msg("Copied profile URI to clipboard"),
-                            Err(e) => app.msg(format!("Failed to copy URI: {e}")),
-                        },
-                        Err(e) => app.msg(format!("Clipboard unavailable: {e}")),
+                KeyCode::Char('t') => {
+                    let list = build_test_list(app, false);
+                    run_test_batch(app, client, &list).await;
+                }
+                KeyCode::Char('T') => {
+                    let list = build_test_list(app, true);
+                    run_test_batch(app, client, &list).await;
+                }
+                KeyCode::Char('C') => {
+                    let _ = client.cancel_tests().await;
+                    app.test_progress = None;
+                    app.msg("Cancelling in-flight tests...");
+                }
+                KeyCode::Char('y') => {
+                    if let Some(p) = app.selected_profile() {
+                        match arboard::Clipboard::new() {
+                            Ok(mut cb) => match cb.set_text(&p.uri) {
+                                Ok(()) => app.msg("Copied profile URI to clipboard"),
+                                Err(e) => app.msg(format!("Failed to copy URI: {e}")),
+                            },
+                            Err(e) => app.msg(format!("Clipboard unavailable: {e}")),
+                        }
                     }
                 }
-            }
-            KeyCode::Char('x') => {
-                if let Some(p) = app.selected_profile() {
-                    let name = if p.name.is_empty() {
-                        if p.address.is_empty() {
-                            "Unknown".to_string()
+                KeyCode::Char('x') => {
+                    if let Some(p) = app.selected_profile() {
+                        let name = if p.name.is_empty() {
+                            if p.address.is_empty() {
+                                "Unknown".to_string()
+                            } else {
+                                p.address.clone()
+                            }
                         } else {
-                            p.address.clone()
-                        }
-                    } else {
-                        p.name.clone()
-                    };
-                    app.popup = Some(Popup::ConfirmDelete {
-                        gid: p.group_id,
-                        pid: p.id,
-                        name,
-                    });
-                    app.focus = Focus::Popup;
+                            p.name.clone()
+                        };
+                        app.popup = Some(Popup::ConfirmDelete {
+                            gid: p.group_id,
+                            pid: p.id,
+                            name,
+                        });
+                        app.focus = Focus::Popup;
+                    }
                 }
-            }
-            KeyCode::Char('X') => {
-                if let Some(g) = app.current_group() {
-                    app.popup = Some(Popup::ConfirmDeleteGroup {
-                        gid: g.group.id,
-                        name: g.group.name.clone(),
-                    });
-                    app.focus = Focus::Popup;
+                KeyCode::Char('X') => {
+                    if let Some(g) = app.current_group() {
+                        app.popup = Some(Popup::ConfirmDeleteGroup {
+                            gid: g.group.id,
+                            name: g.group.name.clone(),
+                        });
+                        app.focus = Focus::Popup;
+                    }
                 }
+                _ => {}
             }
-            _ => {}
-        },
+        }
         Focus::RightPanel => match key.code {
             KeyCode::Char('h') | KeyCode::Left | KeyCode::Esc => {
                 app.focus = Focus::LeftPanel;

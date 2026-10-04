@@ -536,6 +536,172 @@ impl App {
         }
         None
     }
+
+    pub fn cursor_for_node(&self, target: TreeNode) -> Option<usize> {
+        if self.search_query.is_some() {
+            return None;
+        }
+        let mut pos = 0;
+        for (gi, g) in self.groups.iter().enumerate() {
+            if target == TreeNode::Group(gi) {
+                return Some(pos);
+            }
+            pos += 1;
+            let collapsed = self.collapsed_groups.contains(&g.group.id);
+            if !collapsed {
+                if let TreeNode::Profile(tgi, tpi) = target {
+                    if tgi == gi {
+                        if tpi < g.profiles.len() {
+                            return Some(pos + tpi);
+                        } else {
+                            return None;
+                        }
+                    }
+                }
+                pos += g.profiles.len();
+            }
+        }
+        None
+    }
+
+    pub fn move_item_up(&mut self) -> Option<ItemMoveAction> {
+        if self.search_query.is_some() {
+            return None;
+        }
+        match self.tree_node_at(self.cursor)? {
+            TreeNode::Group(gi) => {
+                if gi == 0 {
+                    return None;
+                }
+                self.groups.swap(gi, gi - 1);
+                if let Some(new_pos) = self.cursor_for_group(gi - 1) {
+                    self.cursor = new_pos;
+                }
+                let group_ids: Vec<i32> = self.groups.iter().map(|g| g.group.id).collect();
+                let group_name = self.groups[gi - 1].group.name.clone();
+                Some(ItemMoveAction::ReorderGroups {
+                    group_ids,
+                    group_name,
+                    moved_up: true,
+                })
+            }
+            TreeNode::Profile(gi, pi) => {
+                if pi == 0 {
+                    return None;
+                }
+                self.groups[gi].profiles.swap(pi, pi - 1);
+                if let Some(new_pos) = self.cursor_for_node(TreeNode::Profile(gi, pi - 1)) {
+                    self.cursor = new_pos;
+                }
+                let profile_ids: Vec<i32> = self.groups[gi].profiles.iter().map(|p| p.id).collect();
+                let profile_name = self.groups[gi].profiles[pi - 1].name.clone();
+                let group_id = self.groups[gi].group.id;
+                Some(ItemMoveAction::ReorderProfiles {
+                    group_id,
+                    profile_ids,
+                    profile_name,
+                    moved_up: true,
+                })
+            }
+        }
+    }
+
+    pub fn move_item_down(&mut self) -> Option<ItemMoveAction> {
+        if self.search_query.is_some() {
+            return None;
+        }
+        match self.tree_node_at(self.cursor)? {
+            TreeNode::Group(gi) => {
+                if gi + 1 >= self.groups.len() {
+                    return None;
+                }
+                self.groups.swap(gi, gi + 1);
+                if let Some(new_pos) = self.cursor_for_group(gi + 1) {
+                    self.cursor = new_pos;
+                }
+                let group_ids: Vec<i32> = self.groups.iter().map(|g| g.group.id).collect();
+                let group_name = self.groups[gi + 1].group.name.clone();
+                Some(ItemMoveAction::ReorderGroups {
+                    group_ids,
+                    group_name,
+                    moved_up: false,
+                })
+            }
+            TreeNode::Profile(gi, pi) => {
+                if pi + 1 >= self.groups[gi].profiles.len() {
+                    return None;
+                }
+                self.groups[gi].profiles.swap(pi, pi + 1);
+                if let Some(new_pos) = self.cursor_for_node(TreeNode::Profile(gi, pi + 1)) {
+                    self.cursor = new_pos;
+                }
+                let profile_ids: Vec<i32> = self.groups[gi].profiles.iter().map(|p| p.id).collect();
+                let profile_name = self.groups[gi].profiles[pi + 1].name.clone();
+                let group_id = self.groups[gi].group.id;
+                Some(ItemMoveAction::ReorderProfiles {
+                    group_id,
+                    profile_ids,
+                    profile_name,
+                    moved_up: false,
+                })
+            }
+        }
+    }
+
+    pub fn apply_profiles_reordered(&mut self, group_id: i32, profile_ids: &[i32]) {
+        self.invalidate_uri_cache();
+        if let Some(g) = self.groups.iter_mut().find(|g| g.group.id == group_id) {
+            let mut id_to_profile = std::collections::HashMap::new();
+            for p in g.profiles.drain(..) {
+                id_to_profile.insert(p.id, p);
+            }
+            for &pid in profile_ids {
+                if let Some(p) = id_to_profile.remove(&pid) {
+                    g.profiles.push(p);
+                }
+            }
+            for (_, p) in id_to_profile {
+                g.profiles.push(p);
+            }
+        }
+        self.clamp_cursor();
+    }
+
+    pub fn apply_groups_reordered(&mut self, group_ids: &[i32]) {
+        let mut id_to_group = std::collections::HashMap::new();
+        for g in self.groups.drain(..) {
+            id_to_group.insert(g.group.id, g);
+        }
+        for &gid in group_ids {
+            if let Some(g) = id_to_group.remove(&gid) {
+                self.groups.push(g);
+            }
+        }
+        for (_, g) in id_to_group {
+            self.groups.push(g);
+        }
+        self.clamp_cursor();
+    }
+
+    pub fn apply_profile_moved(&mut self, old: ProfileID, new_p: Profile) {
+        self.invalidate_uri_cache();
+        if let Some(g) = self.groups.iter_mut().find(|g| g.group.id == old.group_id) {
+            g.profiles.retain(|p| p.id != old.id);
+        }
+        if let Some(g) = self
+            .groups
+            .iter_mut()
+            .find(|g| g.group.id == new_p.group_id)
+        {
+            g.profiles.push(new_p.clone());
+        }
+        if let Some(ref mut cur_p) = self.connection_status.profile {
+            if cur_p.group_id == old.group_id && cur_p.id == old.id {
+                *cur_p = new_p.clone();
+            }
+        }
+        self.clamp_cursor();
+    }
 }
 
 #[cfg(test)]
@@ -695,5 +861,152 @@ mod tests {
         app.tab = ActiveTab::Settings;
         assert_eq!(app.tab_index(), 4);
         assert_eq!(App::tab_from_index(4), ActiveTab::Settings);
+    }
+
+    #[test]
+    fn test_move_profile_up_and_down() {
+        let mut app = make_app_with_profile();
+        app.groups[0].profiles[0].name = "P1".into();
+        app.groups[0].profiles.push(Profile {
+            id: 8,
+            group_id: 1,
+            name: "P2".into(),
+            ..Default::default()
+        });
+        app.groups[0].profiles.push(Profile {
+            id: 9,
+            group_id: 1,
+            name: "P3".into(),
+            ..Default::default()
+        });
+
+        // Profiles in Group 1: id 7 (P1), id 8 (P2), id 9 (P3)
+        // Cursor on P1 (index 1)
+        app.cursor = 1;
+        assert_eq!(app.move_item_up(), None);
+
+        // Move P1 down -> swaps with P2
+        let action = app.move_item_down().expect("should move down");
+        assert_eq!(
+            action,
+            ItemMoveAction::ReorderProfiles {
+                group_id: 1,
+                profile_ids: vec![8, 7, 9],
+                profile_name: "P1".into(),
+                moved_up: false,
+            }
+        );
+        assert_eq!(app.cursor, 2);
+        assert_eq!(app.groups[0].profiles[0].id, 8);
+        assert_eq!(app.groups[0].profiles[1].id, 7);
+        assert_eq!(app.groups[0].profiles[2].id, 9);
+
+        // Move P1 back up -> swaps back
+        let action = app.move_item_up().expect("should move up");
+        assert_eq!(
+            action,
+            ItemMoveAction::ReorderProfiles {
+                group_id: 1,
+                profile_ids: vec![7, 8, 9],
+                profile_name: "P1".into(),
+                moved_up: true,
+            }
+        );
+        assert_eq!(app.cursor, 1);
+        assert_eq!(app.groups[0].profiles[0].id, 7);
+        assert_eq!(app.groups[0].profiles[1].id, 8);
+
+        // Move to bottom profile P3 (cursor 3)
+        app.cursor = 3;
+        assert_eq!(app.move_item_down(), None);
+    }
+
+    #[test]
+    fn test_move_group_up_and_down() {
+        let mut app = make_app_with_profile();
+        app.groups.push(GroupWithProfiles {
+            group: Group {
+                id: 2,
+                name: "Group 2".into(),
+                ..Default::default()
+            },
+            profiles: vec![],
+        });
+
+        // Group 1 at cursor 0
+        app.cursor = 0;
+        assert_eq!(app.move_item_up(), None);
+
+        // Move Group 1 down -> swaps with Group 2
+        let action = app.move_item_down().expect("should move down");
+        assert_eq!(
+            action,
+            ItemMoveAction::ReorderGroups {
+                group_ids: vec![2, 1],
+                group_name: "".into(),
+                moved_up: false,
+            }
+        );
+        assert_eq!(app.groups[0].group.id, 2);
+        assert_eq!(app.groups[1].group.id, 1);
+        // Group 2 has 0 profiles (pos 0), Group 1 is at pos 1
+        assert_eq!(app.cursor, 1);
+
+        // Move Group 1 back up
+        let action = app.move_item_up().expect("should move up");
+        assert_eq!(
+            action,
+            ItemMoveAction::ReorderGroups {
+                group_ids: vec![1, 2],
+                group_name: "".into(),
+                moved_up: true,
+            }
+        );
+        assert_eq!(app.groups[0].group.id, 1);
+        assert_eq!(app.groups[1].group.id, 2);
+        assert_eq!(app.cursor, 0);
+    }
+
+    #[test]
+    fn test_move_blocked_on_search() {
+        let mut app = make_app_with_profile();
+        app.cursor = 1;
+        app.search_query = Some("test".into());
+        assert_eq!(app.move_item_up(), None);
+        assert_eq!(app.move_item_down(), None);
+    }
+
+    #[test]
+    fn test_apply_profile_moved_and_reordered() {
+        let mut app = make_app_with_profile();
+        app.groups.push(GroupWithProfiles {
+            group: Group {
+                id: 2,
+                name: "Group 2".into(),
+                ..Default::default()
+            },
+            profiles: vec![],
+        });
+
+        app.connection_status.connection = "connected".into();
+        app.connection_status.profile = Some(app.groups[0].profiles[0].clone());
+
+        let new_p = Profile {
+            id: 99,
+            group_id: 2,
+            name: "Moved P".into(),
+            ..Default::default()
+        };
+        app.apply_profile_moved(ProfileID { group_id: 1, id: 7 }, new_p);
+
+        assert_eq!(app.groups[0].profiles.len(), 0);
+        assert_eq!(app.groups[1].profiles.len(), 1);
+        assert_eq!(app.groups[1].profiles[0].id, 99);
+        assert_eq!(app.connection_status.profile.as_ref().unwrap().id, 99);
+        assert_eq!(app.connection_status.profile.as_ref().unwrap().group_id, 2);
+
+        app.apply_groups_reordered(&[2, 1]);
+        assert_eq!(app.groups[0].group.id, 2);
+        assert_eq!(app.groups[1].group.id, 1);
     }
 }

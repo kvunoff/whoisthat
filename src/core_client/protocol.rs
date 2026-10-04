@@ -55,6 +55,8 @@ pub struct Group {
     pub sub_download: i64,
     #[serde(default)]
     pub sub_total: i64,
+    #[serde(default)]
+    pub profile_order: Vec<i32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -252,6 +254,17 @@ pub struct UpdateGroupData {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReorderProfilesData {
+    pub group_id: i32,
+    pub profile_ids: Vec<i32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReorderGroupsData {
+    pub group_ids: Vec<i32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DieData {}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -317,6 +330,23 @@ pub struct SubscriptionUpdated {
     pub group_id: i32,
     pub group: Group,
     pub profiles: Vec<Profile>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProfilesReordered {
+    pub group_id: i32,
+    pub profile_ids: Vec<i32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupsReordered {
+    pub group_ids: Vec<i32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProfileMoved {
+    pub old_profile: ProfileID,
+    pub new_profile: Profile,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

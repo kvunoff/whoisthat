@@ -1,9 +1,11 @@
 package cmd
 
 import (
+	"fmt"
 	"whoisthat-core/db"
 	"whoisthat-core/lib"
 	"whoisthat-core/lib/logger"
+	"whoisthat-core/lib/proxy/mainproxy"
 	"whoisthat-core/structs"
 )
 
@@ -74,6 +76,47 @@ func (cmd *Cmd) DeleteProfiles(data structs.DeleteProfilesData) {
 		}
 	}
 	cmd.send("profiles-deleted", deleted)
+}
+
+func (cmd *Cmd) ReorderProfiles(data structs.ReorderProfilesData) {
+	err := cmd.DB.ReorderProfiles(data.GroupId, data.ProfileIds)
+	if err != nil {
+		logger.Warnf("failed to reorder profiles in group %d: %s", data.GroupId, err.Error())
+		cmd.warn("reorder-profiles-failed", "there was an error reordering profiles")
+		return
+	}
+	cmd.send("profiles-reordered", structs.ProfilesReordered{
+		GroupId:    data.GroupId,
+		ProfileIds: data.ProfileIds,
+	})
+}
+
+func (cmd *Cmd) ReorderGroups(data structs.ReorderGroupsData) {
+	err := cmd.DB.ReorderGroups(data.GroupIds)
+	if err != nil {
+		logger.Warnf("failed to reorder groups: %s", err.Error())
+		cmd.warn("reorder-groups-failed", "there was an error reordering groups")
+		return
+	}
+	cmd.send("groups-reordered", structs.GroupsReordered{
+		GroupIds: data.GroupIds,
+	})
+}
+
+func (cmd *Cmd) MoveProfile(data structs.MoveProfileData, pm *mainproxy.ProxyManager) {
+	moved, err := cmd.DB.MoveProfile(data.FromGroupId, data.ToGroupId, data.ProfileId)
+	if err != nil {
+		logger.Warnf("failed to move profile %d from %d to %d: %s", data.ProfileId, data.FromGroupId, data.ToGroupId, err.Error())
+		cmd.warn("move-profile-failed", fmt.Sprintf("failed to move profile: %s", err.Error()))
+		return
+	}
+	if pm != nil {
+		pm.UpdateMovedProfile(structs.ProfileID{GroupId: data.FromGroupId, Id: data.ProfileId}, moved)
+	}
+	cmd.send("profile-moved", structs.ProfileMoved{
+		OldProfile: structs.ProfileID{GroupId: data.FromGroupId, Id: data.ProfileId},
+		NewProfile: moved,
+	})
 }
 
 func (cmd *Cmd) warn(key string, msg string) {

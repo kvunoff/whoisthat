@@ -67,6 +67,16 @@ func (db *DB) deleteProfile(group_id int, id int) error {
 			return fmt.Errorf("Failed to delete config file %w", err)
 		}
 	}
+	if group_config, err := db.loadGroupConfig(group_id); err == nil {
+		var newOrder []int
+		for _, pid := range group_config.ProfileOrder {
+			if pid != id {
+				newOrder = append(newOrder, pid)
+			}
+		}
+		group_config.ProfileOrder = newOrder
+		_ = db.saveGroupConfig(group_config)
+	}
 	return nil
 }
 
@@ -92,12 +102,13 @@ func (db *DB) addProfile(data structs.DBAddProfileData) (structs.Profile, error)
 		return profile_added, err
 	}
 	group_data.LastId++
+	profile_id := group_data.LastId
+	group_data.ProfileOrder = append(group_data.ProfileOrder, profile_id)
 	err = db.saveGroupConfig(group_data)
 	if err != nil {
 		return profile_added, err
 	}
 
-	profile_id := group_data.LastId
 	profile_path := db.GetProfileFilePath(group_data.Id, profile_id)
 	err = os.Remove(db.GetProfileFilePath(group_data.Id, profile_id))
 	if err != nil && !os.IsNotExist(err) {

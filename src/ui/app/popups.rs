@@ -312,6 +312,7 @@ impl App {
 
         let profiles: &[(&str, &str)] = &[
             ("j/k", "Navigate cursor"),
+            ("J/K / Alt+↑/↓", "Move group/profile up/down"),
             ("Space/Enter", "Fold / unfold group"),
             ("h/l / ←/→", "Collapse/expand / panel focus"),
             ("g/G", "Top / bottom"),

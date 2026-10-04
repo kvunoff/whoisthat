@@ -200,9 +200,39 @@ type AutoconnectInfo struct {
 	Mode    string `json:"mode"`
 }
 
+type ReorderProfilesData struct {
+	GroupId    int   `json:"group_id"`
+	ProfileIds []int `json:"profile_ids"`
+}
+
+type ReorderGroupsData struct {
+	GroupIds []int `json:"group_ids"`
+}
+
+type MoveProfileData struct {
+	ProfileId   int `json:"profile_id"`
+	FromGroupId int `json:"from_group_id"`
+	ToGroupId   int `json:"to_group_id"`
+}
+
+type ProfilesReordered struct {
+	GroupId    int   `json:"group_id"`
+	ProfileIds []int `json:"profile_ids"`
+}
+
+type GroupsReordered struct {
+	GroupIds []int `json:"group_ids"`
+}
+
+type ProfileMoved struct {
+	OldProfile ProfileID `json:"old_profile"`
+	NewProfile Profile   `json:"new_profile"`
+}
+
 // general types
 type DBConfig struct {
-	LastGroupId int `json:"last_group_id"`
+	LastGroupId int   `json:"last_group_id"`
+	GroupOrder  []int `json:"group_order,omitempty"`
 }
 
 type GroupWithProfiles struct {
@@ -220,6 +250,7 @@ type Group struct {
 	SubUpload       int64  `json:"sub_upload,omitzero"`
 	SubDownload     int64  `json:"sub_download,omitzero"`
 	SubTotal        int64  `json:"sub_total,omitzero"`
+	ProfileOrder    []int  `json:"profile_order,omitempty"`
 }
 
 type Profile struct {

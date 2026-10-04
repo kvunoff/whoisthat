@@ -198,6 +198,25 @@ pub(crate) async fn handle_core_event(
             app.msg("Group updated");
         }
 
+        CoreEvent::ProfilesReordered {
+            group_id,
+            profile_ids,
+        } => {
+            app.apply_profiles_reordered(group_id, &profile_ids);
+        }
+
+        CoreEvent::GroupsReordered { group_ids } => {
+            app.apply_groups_reordered(&group_ids);
+        }
+
+        CoreEvent::ProfileMoved {
+            old_profile,
+            new_profile,
+        } => {
+            app.apply_profile_moved(old_profile, new_profile);
+            app.popup = None;
+        }
+
         CoreEvent::RoutingUpdated(cfg) => {
             app.routing = cfg;
             let len = app.routing.rules.len();

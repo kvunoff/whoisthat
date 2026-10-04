@@ -437,6 +437,8 @@ Subscription metadata (`sub_*`) is populated from the `subscription-userinfo` HT
 | --- | --- |
 | `j` / `↓` | Move cursor down |
 | `k` / `↑` | Move cursor up |
+| `J` / `Alt+↓` / `Shift+↓` / `Alt+j` | Move focused profile or group down (instant reorder, persistent) |
+| `K` / `Alt+↑` / `Shift+↑` / `Alt+k` | Move focused profile or group up (instant reorder, persistent) |
 | `h` / `←` | Collapse group (when on group header) or jump to parent group |
 | `l` / `→` | Expand group (when on group header) or switch focus to Details panel |
 | `Space` | Toggle group collapse/expand (when on group header) |
@@ -462,6 +464,7 @@ Subscription metadata (`sub_*`) is populated from the `subscription-userinfo` HT
 
 | Key | Action |
 | --- | --- |
+| `J` / `K` | Move group/profile up/down within current list |
 | `a` | Import profile URI (clipboard or manual input — vless://, vmess://, trojan://, ss://, socks://, hysteria2://, hy2://) |
 | `x` | Delete selected profile |
 | `X` | Delete current group (with confirmation) |
