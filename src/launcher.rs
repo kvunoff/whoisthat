@@ -23,10 +23,7 @@ pub fn run_in_split_slice(args: &[String]) -> i32 {
     let mut target_args = args;
 
     if let Some(first) = target_args.first() {
-        if matches!(
-            first.as_str(),
-            "-d" | "--detach" | "-b" | "--background"
-        ) {
+        if matches!(first.as_str(), "-d" | "--detach" | "-b" | "--background") {
             detach = true;
             target_args = &target_args[1..];
             if target_args.first().map(String::as_str) == Some("--") {
@@ -44,7 +41,9 @@ pub fn run_in_split_slice(args: &[String]) -> i32 {
         eprintln!("  include — only these apps use the tunnel");
         eprintln!();
         eprintln!("Options:");
-        eprintln!("  -d, --detach, -b, --background   Run in background detached from the terminal");
+        eprintln!(
+            "  -d, --detach, -b, --background   Run in background detached from the terminal"
+        );
         return 2;
     }
 
