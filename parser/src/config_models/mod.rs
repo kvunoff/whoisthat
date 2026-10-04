@@ -49,19 +49,12 @@ pub struct SocksServerObject {
 
 #[allow(non_snake_case)]
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
-pub struct Hysteria2ObfsObject {
-    pub r#type: Option<String>,
-    pub password: Option<String>,
-}
-
-#[allow(non_snake_case)]
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
-pub struct Hysteria2ServerObject {
+pub struct HysteriaOutboundSettings {
+    pub version: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub address: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub port: Option<u16>,
-    pub password: Option<String>,
-    pub level: Option<u8>,
-    pub obfs: Option<Hysteria2ObfsObject>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -89,12 +82,6 @@ pub struct SocksOutboundSettings {
     pub servers: Vec<SocksServerObject>,
 }
 
-#[allow(non_snake_case)]
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
-pub struct Hysteria2OutboundSettings {
-    pub servers: Vec<Hysteria2ServerObject>,
-}
-
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(untagged)]
 pub enum OutboundSettings {
@@ -103,7 +90,7 @@ pub enum OutboundSettings {
     Trojan(TrojanOutboundSettings),
     ShadowSocks(ShadowSocksOutboundSettings),
     Socks(SocksOutboundSettings),
-    Hysteria2(Hysteria2OutboundSettings),
+    Hysteria(HysteriaOutboundSettings),
 }
 
 #[derive(Serialize, Deserialize)]
@@ -203,6 +190,33 @@ pub struct TlsSettings {
 }
 
 #[allow(non_snake_case)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+pub struct HysteriaSettings {
+    pub version: u32,
+    pub auth: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub udpIdleTimeout: Option<u32>,
+}
+
+#[allow(non_snake_case)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+pub struct QuicParamsSettings {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub brutalUp: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub brutalDown: Option<String>,
+}
+
+#[allow(non_snake_case)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+pub struct FinalMaskSettings {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quicParams: Option<QuicParamsSettings>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub udp: Option<Vec<serde_json::Value>>,
+}
+
+#[allow(non_snake_case)]
 #[derive(Serialize, Deserialize)]
 pub struct StreamSettings {
     pub network: Option<String>,
@@ -216,6 +230,10 @@ pub struct StreamSettings {
     pub kcpSettings: Option<KCPSettings>,
     pub xhttpSettings: Option<XHTTPSettings>,
     pub httpupgradeSettings: Option<HttpUpgradeSettings>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hysteriaSettings: Option<HysteriaSettings>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub finalmask: Option<FinalMaskSettings>,
 }
 
 #[allow(non_snake_case)]
@@ -258,7 +276,7 @@ pub struct Config {
     pub inbounds: Vec<Inbound>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Default)]
 #[allow(non_snake_case)]
 pub struct RawData {
     pub remarks: String,
@@ -298,6 +316,7 @@ pub struct RawData {
     pub up: Option<String>,
     pub down: Option<String>,
     pub ports: Option<String>,
+    pub fm: Option<String>,
 }
 
 pub struct UserAddress {

@@ -35,7 +35,7 @@ A modern terminal-based VPN client. Rust TUI frontend. Go engine backed by Xray-
 curl -fsSL https://raw.githubusercontent.com/kvunoff/whoisthat/main/install.sh | bash
 ```
 
-Or unattended with all optional components (`tun2socks` and `hysteria`):
+Or unattended with optional TUN mode engine (`tun2socks`):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/kvunoff/whoisthat/main/install.sh | bash -s -- --yes
@@ -43,8 +43,8 @@ curl -fsSL https://raw.githubusercontent.com/kvunoff/whoisthat/main/install.sh |
 
 The script auto-detects your architecture (`x86_64` / `aarch64`) and distro, installs Go and Rust from official channels,
 builds everything from the latest tagged release, and copies binaries to `/usr/local/bin`.
-Precompiled Xray-core, tun2socks (TUN mode), and the official `hysteria` client
-(hysteria2 / hy2 profiles) are installed and verified automatically.
+Precompiled Xray-core (pinned v26.9.9) and tun2socks (TUN mode) are installed and verified automatically.
+Native Hysteria2 protocol support is built directly into Xray-core — no standalone hysteria client required.
 
 ### Arch Linux (AUR)
 
@@ -82,11 +82,10 @@ sudo setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep /usr/local/bin/whoisthat-c
 
 External proxy engines can be installed via precompiled official releases (or automatically via `install.sh`):
 
-- **Xray-core**: Automatically managed and pinned (v26.3.27) under `~/.local/share/whoisthat/runtimes/xray/` with background download and checksum verification. Matching system binaries in `/usr/local/bin/xray` or `/usr/bin/xray` are also detected and adopted.
+- **Xray-core**: Automatically managed and pinned (v26.9.9) under `~/.local/share/whoisthat/runtimes/xray/` with background download and checksum verification. Matching system binaries in `/usr/local/bin/xray` or `/usr/bin/xray` are also detected and adopted. Natively supports VLESS, VMess, Trojan, Shadowsocks, SOCKS5, and Hysteria2.
 - **tun2socks**: Required only for TUN mode; download from [tun2socks releases](https://github.com/xjasonlyu/tun2socks/releases) into `/usr/local/bin/tun2socks`.
-- **Hysteria client**: Required only for `hysteria2://` / `hy2://` profiles; download the standalone binary from [Hysteria releases](https://github.com/apernet/hysteria/releases) into `/usr/local/bin/hysteria`.
 
-Since v0.9.0 the core emits a startup warning to the TUI when any of these binaries are missing — see Troubleshooting.
+Since v0.9.0 the core emits a startup warning to the TUI when any required binary is missing — see Troubleshooting.
 
 ### Configuration
 
@@ -123,7 +122,7 @@ By default the TUI talks to the core over a **Unix domain socket** (see [IPC tra
   "tun-name": "whoisthattun",
   "hwid-enabled": true,
   "hwid": "1fb1e0141ab3e35a",
-  "user-agent": "whoisthat/v0.10.0",
+  "user-agent": "whoisthat/v0.11.0",
   "kill-switch-enabled": false,
   "autoconnect-enabled": false,
   "autoconnect-group-id": 0,
@@ -159,9 +158,9 @@ Encrypted at rest with AES-256-GCM — key auto-generated on first run.
 - Connect / disconnect / switch profiles
 - Full system-wide TUN-mode VPN (`tun2socks` + `iptables`/`nftables`, auto-detected)
 - **Profile testing** — three methods: TCP connect (fast prefilter), HTTP GET, HTTP HEAD via SOCKS5. Multi-sample (default 3) with median latency, jitter, and packet-loss %.
-- **Per-protocol dispatch** — xray protocols (vless/vmess/trojan/ss/socks/http) spawn a mini xray; hysteria2 profiles spawn the official `hysteria` client. No more "everything goes to xray and fails for hy2".
-- **Missing-binary UX** — on startup the core probes for xray, hysteria, tun2socks, and whoisthat-parser; each miss is unicast to the freshly-connected TUI as a `warn` with an actionable install hint. Connect-time errors also forward the real underlying `err.Error()` (no more generic "Failed to connect" hiding "binary not found").
-- **Test progress** — pending profiles show `…` immediately; in-flight batches broadcast tested/total progress. `C` cancels in-flight tests gracefully (epoch counter; no orphan subprocesses — also drops queued work before it spawns xray/hysteria). Test failures broadcast the reason as a `warn` (throttled to one per-reason per 5s so a 50-profile hy2 batch with no hysteria binary emits one warning, not fifty).
+- **Unified native protocol engine** — all protocols (VLESS, VMess, Trojan, Shadowsocks, SOCKS5, Hysteria2) run natively through Xray-core (`v26.9.9`). Standalone `hysteria` binary is no longer required; Hysteria2 profiles now fully support routing rules, live gRPC traffic statistics, and unified latency testing.
+- **Missing-binary UX** — on startup the core probes for xray, tun2socks, and whoisthat-parser; each miss is unicast to the freshly-connected TUI as a `warn` with an actionable install hint. Connect-time errors also forward the real underlying `err.Error()` (no more generic "Failed to connect" hiding "binary not found").
+- **Test progress** — pending profiles show `…` immediately; in-flight batches broadcast tested/total progress. `C` cancels in-flight tests gracefully (epoch counter; no orphan subprocesses — also drops queued work before it spawns xray). Test failures broadcast the reason as a `warn` (throttled to one per-reason per 5s so a batch with failing endpoints emits readable warnings without spam).
 - **Scan-all testing** — `t` scans all profiles across all groups with dedup; `T` tests only focused profile/subscription. Group-focused tests use the single `test-group` TCP command for efficiency.
 - **Auto-test on subscription refresh** — profiles are tested automatically after `u` so you see live latencies immediately. Toggle in Settings → Diagnostics.
 - **Responsive adaptive TUI layout** — dynamic viewport geometry engine automatically categorizes terminal dimensions into width tiers (`Compact` <80, `Medium` 80–125, `Wide` 126–160, `UltraWide` >160) and height tiers (`Tiny` <16, `Short` 16–24, `Normal` 25–42, `Tall` >42). Adapts seamlessly between side-by-side, vertical stacked, and full-screen single-panel modes (`Tab` to toggle details), with dual-column connection details on wide displays and safety screens below 45×8.
@@ -209,8 +208,8 @@ Encrypted at rest with AES-256-GCM — key auto-generated on first run.
            ▼
 ┌──────────────────────────────┐
 │  Xray-core                   │
-│  ⋅ VLESS / Reality / gRPC    │
-│  ⋅ xHTTP inbound             │
+│  ⋅ VLESS / VMess / Trojan    │
+│  ⋅ Shadowsocks / Hysteria2   │
 │  ⋅ SOCKS5 / HTTP outbound    │
 └──────────┬───────────────────┘
            │
@@ -224,9 +223,8 @@ Encrypted at rest with AES-256-GCM — key auto-generated on first run.
 
 1. **WhoisThat Core** is a long-running Go daemon. It manages VPN profiles (stored as JSON files under `~/.local/share/whoisthat/db/`), launches Xray-core as a subprocess, and controls the TUN device via `iproute2` + `tun2socks`.
 
-2. **Protocol subprocesses.** The core spawns one of two subprocesses per profile:
-   - **Xray-core** — VLESS (incl. Reality/xTLS Vision), VMess, Trojan (incl. reality/WS/gRPC), Shadowsocks, SOCKS5. xray-core JSON config is generated on-the-fly from the profile URI by the bundled `whoisthat-parser`. xray-core does **not** implement the Hysteria2 protocol.
-   - **Hysteria2 client** ([apernet/hysteria](https://github.com/apernet/hysteria), optional — installed separately by `install.sh`) — spawned only for `hysteria2://` / `hy2://` profiles. The parser emits a YAML config (server, auth, TLS, obfs/salamander, bandwidth, port-hopping) which is fed via stdin to `hysteria run -c -`. xray's stats/routing/DNS injection does not apply.
+2. **Unified core engine.** All protocols run directly through Xray-core (`v26.9.9`):
+   - **Xray-core** — VLESS (incl. Reality/xTLS Vision), VMess, Trojan (incl. reality/WS/gRPC), Shadowsocks, SOCKS5, and Hysteria2 (`hysteria2://` / `hy2://` with native QUIC, TLS, Salamander obfs, UDP port-hopping, bandwidth params, and SNI). Configuration JSON is generated on-the-fly from profile URIs by the bundled `whoisthat-parser`. All protocols benefit equally from Xray's routing rules, DNS bypass, and gRPC traffic statistics.
 
 3. **TUN mode** creates a virtual network interface (configurable name, default `whoisthattun`), sets up `iptables`/`nftables` rules (DNS hijack, MASQUERADE, auto-detected at runtime), and routes all system traffic through the Xray SOCKS5 proxy via `tun2socks`.
 
@@ -316,7 +314,7 @@ When subscription updates are fetched, the core sends HTTP headers identifying t
 | `x-device-os` | `Linux` | `runtime.GOOS` |
 | `x-ver-os` | `6.12.0-arch1-1` | `uname -r` |
 | `x-device-model` | `Arch Linux` | `/etc/os-release` PRETTY_NAME |
-| `user-agent` | `whoisthat/v0.9.4` | User-configurable (Settings) |
+| `user-agent` | `whoisthat/v0.11.0` | User-configurable (Settings) |
 
 Response headers (`x-hwid-max-devices-reached`, `x-hwid-not-supported`, `x-hwid-limit`) are inspected and trigger warnings when device limits are reached.
 
@@ -520,7 +518,7 @@ Subscription metadata (`sub_*`) is populated from the `subscription-userinfo` HT
 | HWID: Enabled | on/off | Send HWID headers with subscription requests |
 | HWID | 1fb1e0141ab3e35a | Device identifier (read-only, auto-generated) |
 | Reset HWID | ⏎ | Generate a new random HWID |
-| User-Agent | whoisthat/v0.10.0 | User-Agent header (editable — press Enter to modify) |
+| User-Agent | whoisthat/v0.11.0 | User-Agent header (editable — press Enter to modify) |
 
 Navigate with `j`/`k`, press `Enter`/`Space` to toggle, cycle values, open edit popups, or execute actions.
 
@@ -844,9 +842,7 @@ Available on:
 | `screen1.png` / `screen2.png` don't exist in build artifact | Screenshots are checked into the repo but not in `target/` — only used by the README on GitHub | Ignore — they're display-only, not runtime assets |
 | Logs pane is empty | No core log file, or log level filtering hides everything | Press `f` in the Logs tab to cycle the level filter; or raise log level in Settings |
 | `Cannot decrypt DB file` style errors in core log | Key file `~/.local/share/whoisthat/db/.key` was moved or deleted, but encrypted files remain | Keep the `.key` file — it's the AES-256-GCM master key, no fallback. If unsalvageable: stop core, delete `~/.local/share/whoisthat/db/`, restart to generate fresh key + empty DB |
-| `Warning: hysteria binary not installed — hysteria2:// / hy2:// profiles will not work` on TUI startup | Pre-flight check (v0.9.0+) didn't find `hysteria` on PATH | Download the precompiled binary from [Hysteria releases](https://github.com/apernet/hysteria/releases) to `/usr/local/bin/hysteria` (or run `install.sh` and answer `y` to the hysteria prompt). Same shape for `xray` / `tun2socks` / `whoisthat-parser` |
-| Pressing `c` on a hysteria2 profile shows `Warning: failed to start hysteria: binary "hysteria" not found` instead of the old generic "Failed to connect" | Same cause — missing hysteria binary | Same fix — install `hysteria` per the row above |
-| Testing a hy2 group shows `Warning: 🇮🇹 …: hysteria.Start failed: ... (is the binary installed?)` once even though 50 profiles failed | Throttled test-failure warn (v0.9.0+): identical reasons collapse to one broadcast per 5s to keep the status bar readable | Install `hysteria`; the remaining failures will clear on the next `t`/`T` pass |
+| Hysteria2 profile fails to connect with config error | Outdated Xray-core version (< v26.9.9) | Update Xray-core to v26.9.9 or later; WhoisThat automatically manages and updates its pinned runtime under `~/.local/share/whoisthat/runtimes/xray/` |
 | App still uses VPN (or still bypasses) when launched via `whoisthat run` | Target app is a single-instance app already running in the background (Spotify, Chrome, Discord) | Completely close/kill existing instances (`pkill -9 spotify` or `pkill -f chrome`) before launching via `whoisthat run -d` |
 | `whoisthat run` application closes when terminal is closed | App was launched in foreground mode without `-d` flag | Use `whoisthat run -d <app>` (or `-b`, `--detach`, `--background`) to launch as an independent transient systemd user service |
 | `whoisthat run: systemd-run not found` | System lacks systemd user session manager | Split tunneling requires systemd with `systemctl --user` session support |
@@ -1039,7 +1035,7 @@ whoisthat/
 
 ## Credits
 
-Powered by [Xray-core](https://github.com/XTLS/Xray-core), [tun2socks](https://github.com/xjasonlyu/tun2socks), and [Hysteria](https://github.com/apernet/hysteria).
+Powered by [Xray-core](https://github.com/XTLS/Xray-core) and [tun2socks](https://github.com/xjasonlyu/tun2socks).
 
 ---
 

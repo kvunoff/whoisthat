@@ -95,13 +95,9 @@ func main() {
 		xm.EnsureRuntimeAsync()
 	}
 
-	// Pre-flight: probe for the external binaries the core shells out to
-	// (xray, hysteria, tun2socks, whoisthat-parser). Each miss is paired
-	// with an actionable install hint and unicast as a warn to every newly
-	// connected TUI client — so the user sees "hysteria binary not installed
-	// — hy2 profiles will not work" in the status bar within ~1s of opening
-	// whoisthat, instead of discovering it the hard way via "100% loss" with
-	// no explanation.
+	// Pre-flight: probe for external binaries the core shells out to
+	// (xray, tun2socks, whoisthat-parser). Each miss is paired with an actionable
+	// install hint and unicast as a warn to every newly connected TUI client.
 	missing := TCPServer.CheckMissingBinaries()
 	for _, mb := range missing {
 		logger.Warnf("preflight: %s", mb.Hint)

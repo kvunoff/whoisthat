@@ -10,7 +10,7 @@ import (
 )
 
 // PinnedVersion specifies the exact version of Xray-core pinned to this client release.
-const PinnedVersion = "v26.3.27"
+const PinnedVersion = "v26.9.9"
 
 var versionRegex = regexp.MustCompile(`(?i)Xray\s+v?([0-9]+\.[0-9]+(?:\.[0-9]+)?)`)
 

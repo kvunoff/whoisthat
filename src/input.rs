@@ -995,12 +995,7 @@ async fn handle_mouse_left_click(
             }
             ActiveTab::Routing => {
                 app.focus = Focus::LeftPanel;
-                let is_hy2 = app.is_connected_hy2();
-                let start_row = if is_hy2 {
-                    main_area.y + 3
-                } else {
-                    main_area.y + 2
-                };
+                let start_row = main_area.y + 2;
                 if row >= start_row && row < main_area.bottom().saturating_sub(2) {
                     let rule_idx = (row - start_row) as usize;
                     if rule_idx < app.routing.rules.len() {

@@ -12,7 +12,6 @@ import (
 	"time"
 	"whoisthat-core/lib"
 	"whoisthat-core/lib/logger"
-	"whoisthat-core/lib/proxy/hysteria"
 	"whoisthat-core/lib/proxy/xray"
 	"whoisthat-core/structs"
 
@@ -292,14 +291,14 @@ func (p *ProxyManager) test(req TestRequest) pingResult {
 		// correctly. So we log the failure and proceed to the real
 		// xray-based test; if xray itself can't reach the server the
 		// samples will legitimately fail and report 100% loss then.
+		// For hysteria2 (UDP), skip the direct TCP probe.
 		if !p.serverReachable(req.Profile) {
 			logger.Warnf("test %s (gid=%d id=%d): serverReachable failed for %s://%s — proceeding anyway",
 				req.Profile.Name, req.Profile.GroupId, req.Profile.Id,
 				req.Profile.Protocol, req.Profile.Address)
 		}
-		return p.testViaXray(req.Profile, req.Method, samples)
 	}
-	return p.testViaHysteria(req.Profile, req.Method, samples)
+	return p.testViaXray(req.Profile, req.Method, samples)
 }
 
 // testTcpOnly is the legacy "raw TCP dial to server:port" measurement.
@@ -385,52 +384,6 @@ func (p *ProxyManager) testViaXray(profile structs.Profile, method string, sampl
 		logger.Warnf("test %s (gid=%d id=%d): xray SOCKS listener did not bind on port %d within 4s",
 			profile.Name, profile.GroupId, profile.Id, port)
 		return pingResult{latencyMs: -1, sampleCount: samples, lossPct: 100, failReason: fmt.Sprintf("xray SOCKS listener did not bind on port %d within 4s", port)}
-	}
-	return p.runSamples(profile, method, port, samples)
-}
-
-// testViaHysteria spawns the hysteria2 client with the profile's parsed
-// YAML and uses its SOCKS5 listener for the HTTP samples. Mirrors
-// testViaXray but calls ParseUriHysteria + HysteriaCore.
-func (p *ProxyManager) testViaHysteria(profile structs.Profile, method string, samples int) pingResult {
-	port, err := p.portPool.GetPort()
-	if err != nil {
-		logger.Warnf("test %s (gid=%d id=%d): port pool exhausted: %v",
-			profile.Name, profile.GroupId, profile.Id, err)
-		return pingResult{latencyMs: -1, sampleCount: samples, lossPct: 100, failReason: "no free test port available"}
-	}
-	defer p.portPool.ReleasePort(port)
-
-	yaml_config, err := lib.ParseUriHysteria(profile.Uri, port, -1)
-	if err != nil {
-		logger.Warnf("test %s (gid=%d id=%d): ParseUriHysteria failed for %s://%s: %v",
-			profile.Name, profile.GroupId, profile.Id,
-			profile.Protocol, profile.Address, err)
-		return pingResult{latencyMs: -1, sampleCount: samples, lossPct: 100, failReason: fmt.Sprintf("ParseUriHysteria failed: %v", err)}
-	}
-
-	hyCore := hysteria.HysteriaCore{Exited: make(chan error, 1)}
-	if err := hyCore.Start(yaml_config); err != nil {
-		// The most common cause for a silent "always error" hysteria2
-		// test result is a missing/broken hysteria binary. Surface a
-		// clear, actionable log line so the user can install it. The
-		// same text is also carried up to the TUI via failReason so the
-		// user does not have to open core.log to diagnose it.
-		reason := fmt.Sprintf("hysteria.Start failed: %v "+
-			"(is the `hysteria` binary installed in /usr/bin or /usr/local/bin?)", err)
-		logger.Warnf("test %s (gid=%d id=%d): %s",
-			profile.Name, profile.GroupId, profile.Id, reason)
-		return pingResult{latencyMs: -1, sampleCount: samples, lossPct: 100, failReason: reason}
-	}
-	defer hyCore.Stop()
-
-	if !waitForListener("tcp", fmt.Sprintf("127.0.0.1:%d", port), 8*time.Second) {
-		reason := fmt.Sprintf("hysteria SOCKS listener did not bind on port %d within 8s "+
-			"(UDP handshake to %s:%s failed? check /tmp/whoisthat-hysteria-*.log)",
-			port, profile.Address, extractPort(profile.Uri, profile.Protocol))
-		logger.Warnf("test %s (gid=%d id=%d): %s",
-			profile.Name, profile.GroupId, profile.Id, reason)
-		return pingResult{latencyMs: -1, sampleCount: samples, lossPct: 100, failReason: reason}
 	}
 	return p.runSamples(profile, method, port, samples)
 }

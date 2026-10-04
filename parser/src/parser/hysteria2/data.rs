@@ -38,29 +38,30 @@ pub fn get_data(uri: &str) -> Result<RawData, String> {
             .or_else(|| get_parameter_value(&query, "obfs_param")),
     );
 
+    let raw_fm = get_parameter_value(&query, "fm");
+    let decoded_fm = url_decode(raw_fm.map(|s| s.to_string()));
+
     // If obfs or password is not provided via direct query params, check `fm` (Finalmask JSON format)
     if obfs.is_none() || obfs_password.is_none() {
-        if let Some(fm_raw) = get_parameter_value(&query, "fm") {
-            if let Some(decoded_fm) = url_decode(Some(fm_raw.to_string())) {
-                if let Ok(val) = serde_json::from_str::<serde_json::Value>(&decoded_fm) {
-                    if let Some(udp_arr) = val
-                        .get("finalmask")
-                        .and_then(|f| f.get("udp"))
-                        .and_then(|u| u.as_array())
-                    {
-                        for item in udp_arr {
-                            if let Some(t) = item.get("type").and_then(|t| t.as_str()) {
-                                if obfs.is_none() {
-                                    obfs = Some(t.to_string());
-                                }
-                                if let Some(pw) = item
-                                    .get("settings")
-                                    .and_then(|s| s.get("password"))
-                                    .and_then(|p| p.as_str())
-                                {
-                                    if obfs_password.is_none() {
-                                        obfs_password = Some(pw.to_string());
-                                    }
+        if let Some(ref fm_str) = decoded_fm {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(fm_str) {
+                if let Some(udp_arr) = val
+                    .get("finalmask")
+                    .and_then(|f| f.get("udp"))
+                    .and_then(|u| u.as_array())
+                {
+                    for item in udp_arr {
+                        if let Some(t) = item.get("type").and_then(|t| t.as_str()) {
+                            if obfs.is_none() {
+                                obfs = Some(t.to_string());
+                            }
+                            if let Some(pw) = item
+                                .get("settings")
+                                .and_then(|s| s.get("password"))
+                                .and_then(|p| p.as_str())
+                            {
+                                if obfs_password.is_none() {
+                                    obfs_password = Some(pw.to_string());
                                 }
                             }
                         }
@@ -110,6 +111,7 @@ pub fn get_data(uri: &str) -> Result<RawData, String> {
         ports: url_decode(
             get_parameter_value(&query, "ports").or_else(|| get_parameter_value(&query, "mport")),
         ),
+        fm: decoded_fm,
     })
 }
 

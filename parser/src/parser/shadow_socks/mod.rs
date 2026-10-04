@@ -54,6 +54,7 @@ mod tests {
             up: None,
             down: None,
             ports: None,
+            fm: None,
         }
     }
 

@@ -253,17 +253,6 @@ impl App {
         self.connection_status.connection == "connected"
     }
 
-    pub fn is_connected_hy2(&self) -> bool {
-        if !self.is_connected() {
-            return false;
-        }
-        self.connection_status
-            .profile
-            .as_ref()
-            .map(|p| p.protocol == "hysteria2" || p.protocol == "hy2")
-            .unwrap_or(false)
-    }
-
     pub fn connected_id(&self) -> Option<(i32, i32)> {
         self.connection_status
             .profile
@@ -614,30 +603,6 @@ mod tests {
         assert_eq!(app.groups[0].profiles[0].tested_at, 99999);
     }
 
-    #[test]
-    fn test_is_connected_hy2() {
-        let mut app = make_app_with_profile();
-        assert!(!app.is_connected_hy2());
-
-        app.connection_status.connection = "connected".to_string();
-        app.connection_status.profile = Some(Profile {
-            protocol: "vless".to_string(),
-            ..Default::default()
-        });
-        assert!(!app.is_connected_hy2());
-
-        app.connection_status.profile = Some(Profile {
-            protocol: "hysteria2".to_string(),
-            ..Default::default()
-        });
-        assert!(app.is_connected_hy2());
-
-        app.connection_status.profile = Some(Profile {
-            protocol: "hy2".to_string(),
-            ..Default::default()
-        });
-        assert!(app.is_connected_hy2());
-    }
 
     #[test]
     fn test_collapsed_group_tree_len_and_node_at() {

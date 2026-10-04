@@ -239,7 +239,6 @@ impl App {
                     &self.routing,
                     self.routing_cursor,
                     focused,
-                    self.is_connected_hy2(),
                 );
             }
             ActiveTab::Traffic => {

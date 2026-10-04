@@ -3,26 +3,12 @@ use crate::config_models::OutboundSettings;
 use crate::config_models::RawData;
 use serde::{Deserialize, Serialize};
 
-// xray-style outbound settings — still produced for metadata/test paths that
-// expect the xray JSON shape. The actual hysteria2 client subprocess now
-// consumes `create_hysteria2_client_yaml()` output instead.
+// Native Xray hysteria outbound settings (Xray >= 26.x).
 pub fn create_outbound_settings(data: &RawData) -> OutboundSettings {
-    let obfs = match (&data.obfs, &data.obfs_password) {
-        (Some(obs_type), Some(obs_pass)) => Some(crate::config_models::Hysteria2ObfsObject {
-            r#type: Some(obs_type.clone()),
-            password: Some(obs_pass.clone()),
-        }),
-        _ => None,
-    };
-
-    OutboundSettings::Hysteria2(crate::config_models::Hysteria2OutboundSettings {
-        servers: vec![crate::config_models::Hysteria2ServerObject {
-            address: data.address.clone(),
-            port: data.port,
-            password: data.uuid.clone(),
-            level: Some(0),
-            obfs,
-        }],
+    OutboundSettings::Hysteria(crate::config_models::HysteriaOutboundSettings {
+        version: 2,
+        address: data.address.clone(),
+        port: data.port,
     })
 }
 
@@ -235,6 +221,7 @@ mod tests {
             up: None,
             down: None,
             ports: None,
+            fm: None,
         }
     }
 
@@ -242,31 +229,12 @@ mod tests {
     fn creates_hysteria2_settings() {
         let settings = create_outbound_settings(&sample_hysteria2_data());
         match settings {
-            OutboundSettings::Hysteria2(s) => {
-                assert_eq!(s.servers.len(), 1);
-                assert_eq!(s.servers[0].address, Some("example.com".to_string()));
-                assert_eq!(s.servers[0].port, Some(443));
-                assert_eq!(s.servers[0].password, Some("my-password".to_string()));
-                assert_eq!(s.servers[0].level, Some(0));
-                let obfs = s.servers[0].obfs.as_ref().unwrap();
-                assert_eq!(obfs.r#type, Some("salamander".to_string()));
-                assert_eq!(obfs.password, Some("obfs-secret".to_string()));
+            OutboundSettings::Hysteria(s) => {
+                assert_eq!(s.version, 2);
+                assert_eq!(s.address, Some("example.com".to_string()));
+                assert_eq!(s.port, Some(443));
             }
-            _ => panic!("Expected Hysteria2 settings"),
-        }
-    }
-
-    #[test]
-    fn creates_hysteria2_settings_without_obfs() {
-        let mut data = sample_hysteria2_data();
-        data.obfs = None;
-        data.obfs_password = None;
-        let settings = create_outbound_settings(&data);
-        match settings {
-            OutboundSettings::Hysteria2(s) => {
-                assert_eq!(s.servers[0].obfs, None);
-            }
-            _ => panic!("Expected Hysteria2 settings"),
+            _ => panic!("Expected Hysteria settings"),
         }
     }
 

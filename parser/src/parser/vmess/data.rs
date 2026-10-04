@@ -63,6 +63,7 @@ fn get_raw_data_from_base64(decoded_base64: &[u8]) -> Result<RawData, String> {
         up: None,
         down: None,
         ports: None,
+        fm: None,
     })
 }
 
@@ -117,6 +118,7 @@ fn get_raw_data_from_uri(data: &str) -> Result<RawData, String> {
         up: None,
         down: None,
         ports: None,
+        fm: None,
     })
 }
 

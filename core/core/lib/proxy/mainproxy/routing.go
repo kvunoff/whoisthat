@@ -168,8 +168,7 @@ func splitAndTrim(s string) []string {
 
 // ReloadRouting recompiles the routing configuration and restarts xray-core
 // with the new rules in-place, without dropping connection state or resetting
-// the TUN device. If the proxy is disconnected or running under hysteria2,
-// ReloadRouting is a no-op.
+// the TUN device. If the proxy is disconnected, ReloadRouting is a no-op.
 func (p *ProxyManager) ReloadRouting(tunName string) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -179,10 +178,6 @@ func (p *ProxyManager) ReloadRouting(tunName string) error {
 	}
 
 	profile := p.status.Profile
-	if isHysteriaProtocol(profile.Protocol) {
-		logger.Info("routing: profile is hysteria2, skipping xray routing reload")
-		return nil
-	}
 
 	app_config := appconfig.GetConfig()
 	xray_config, err := lib.ParseUri(profile.Uri, app_config.SocksPort, app_config.HttpPort)

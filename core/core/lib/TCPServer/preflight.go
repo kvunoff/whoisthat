@@ -16,15 +16,11 @@ type MissingBinary struct {
 	Hint string
 }
 
-// CheckMissingBinaries probes the four external binaries whoisthat-core
-// shells out to (parser, xray, hysteria, tun2socks) and returns the subset
-// that is not installed. Inputs are nil-safe: each probe is independent so a
-// missing hysteria binary still lets the user run vless/vmess profiles.
+// CheckMissingBinaries probes the external binaries whoisthat-core
+// shells out to (xray, tun2socks, whoisthat-parser) and returns the subset
+// that is not installed.
 //
-// Order: xray first (hardest dep — every non-hysteria protocol), then
-// hysteria (hy2), then tun2socks (TUN mode), then parser (add-profile and
-// update-subscription). The TUI receives one warn per missing binary in
-// this order.
+// Order: xray first, then tun2socks (TUN mode), then parser.
 func CheckMissingBinaries() []MissingBinary {
 	var missing []MissingBinary
 
@@ -37,12 +33,6 @@ func CheckMissingBinaries() []MissingBinary {
 		missing = append(missing, MissingBinary{
 			Name: "xray",
 			Hint: hint,
-		})
-	}
-	if _, err := utils.GetHysteriaBin(); err != nil {
-		missing = append(missing, MissingBinary{
-			Name: "hysteria",
-			Hint: "hysteria binary not installed — hysteria2:// / hy2:// profiles will not work. Install: go install github.com/apernet/hysteria2/v2@latest (or use install.sh)",
 		})
 	}
 	if _, err := utils.GetTun2socksBin(); err != nil {

@@ -35,9 +35,8 @@ set -euo pipefail
 # --- version constants -------------------------------------------------------
 GO_MIN_VERSION="1.26.0"
 GO_INSTALL_VERSION="1.26.8"
-XRAY_VERSION="v26.3.27"
+XRAY_VERSION="v26.9.9"
 TUN2SOCKS_VERSION="v2.5.2"
-HYSTERIA_VERSION="2.9.3"
 
 # --- configuration & defaults ------------------------------------------------
 BUILD_DIR="/tmp/whoisthat-build-$$"
@@ -46,7 +45,6 @@ GIT_REPO="https://github.com/kvunoff/whoisthat.git"
 ASSUME_YES=false
 NONINTERACTIVE=false
 INSTALL_TUN=true
-INSTALL_HY2=true
 TARGET_BRANCH=""
 BUILD_LOCAL=false
 UNINSTALL_MODE=false
@@ -55,7 +53,6 @@ ARCH_FAMILY=""
 GO_ARCH=""
 XRAY_ARCH=""
 T2S_ARCH=""
-HY_ARCH=""
 DISTRO_ID=""
 DISTRO_NAME=""
 DISTRO_LIKE=""
@@ -130,7 +127,6 @@ Usage:
 Options:
   -y, --yes          Automatic yes to prompts (install all optional components)
   --no-tun           Skip installation of tun2socks (TUN mode engine)
-  --no-hy2           Skip installation of hysteria2 client
   --branch <name>    Build from a specific git branch or tag (default: latest release tag)
   --local            Build directly from current repository directory instead of cloning
   --uninstall        Remove whoisthat binaries from /usr/local/bin
@@ -207,7 +203,7 @@ parse_args() {
                 shift
                 ;;
             --no-hy2)
-                INSTALL_HY2=false
+                # Deprecated: Hysteria2 is now natively supported by Xray-core
                 shift
                 ;;
             --branch)
@@ -277,14 +273,12 @@ detect_arch() {
             GO_ARCH="amd64"
             XRAY_ARCH="64"
             T2S_ARCH="amd64"
-            HY_ARCH="amd64"
             ;;
         aarch64|arm64)
             ARCH_FAMILY="arm64"
             GO_ARCH="arm64"
             XRAY_ARCH="arm64-v8a"
             T2S_ARCH="arm64"
-            HY_ARCH="arm64"
             ;;
         *)
             err "Unsupported architecture: $m"
@@ -312,7 +306,7 @@ detect_distro() {
 
 # --- step 1: system build tools ----------------------------------------------
 install_system_deps() {
-    step "Step 1/8: System prerequisites"
+    step "Step 1/7: System prerequisites"
 
     case "$DISTRO_ID" in
         debian|ubuntu|linuxmint|pop)
@@ -367,7 +361,7 @@ install_system_deps() {
 
 # --- step 2: Go toolchain ----------------------------------------------------
 install_go() {
-    step "Step 2/8: Verify Go toolchain (>= ${GO_MIN_VERSION})"
+    step "Step 2/7: Verify Go toolchain (>= ${GO_MIN_VERSION})"
 
     # Check existing environment PATH + standard /usr/local/go/bin
     if [ -d "/usr/local/go/bin" ] && [[ ":$PATH:" != *":/usr/local/go/bin:"* ]]; then
@@ -411,7 +405,7 @@ install_go() {
 
 # --- step 3: Rust toolchain --------------------------------------------------
 install_rust() {
-    step "Step 3/8: Verify Rust toolchain"
+    step "Step 3/7: Verify Rust toolchain"
 
     if [ -f "$HOME/.cargo/env" ]; then
         # shellcheck source=/dev/null
@@ -443,7 +437,7 @@ install_rust() {
 
 # --- step 4: build WhoisThat binaries ----------------------------------------
 build_whoisthat() {
-    step "Step 4/8: Build WhoisThat suite"
+    step "Step 4/7: Build WhoisThat suite"
 
     local src_dir="$BUILD_DIR"
 
@@ -505,7 +499,7 @@ build_whoisthat() {
 
 # --- step 5: install binaries & set capabilities -----------------------------
 install_binaries() {
-    step "Step 5/8: Install binaries to /usr/local/bin"
+    step "Step 5/7: Install binaries to /usr/local/bin"
 
     cd "$BUILD_SRC_DIR"
 
@@ -525,7 +519,7 @@ install_binaries() {
 
 # --- step 6: install Xray-core -----------------------------------------------
 install_xray() {
-    step "Step 6/8: Verify Xray-core (${XRAY_VERSION})"
+    step "Step 6/7: Verify Xray-core (${XRAY_VERSION})"
 
     if command -v xray &>/dev/null; then
         local current_ver
@@ -565,7 +559,7 @@ install_xray() {
 
 # --- step 7: install tun2socks (optional) ------------------------------------
 install_tun2socks() {
-    step "Step 7/8: Verify tun2socks (optional — TUN mode engine)"
+    step "Step 7/7: Verify tun2socks (optional — TUN mode engine)"
 
     if command -v tun2socks &>/dev/null; then
         info "tun2socks already installed"
@@ -603,47 +597,6 @@ install_tun2socks() {
     else
         rm -rf "$tmp_dir"
         warn "Failed to download tun2socks from ${t2s_url}"
-    fi
-}
-
-# --- step 8: install hysteria2 (optional) ------------------------------------
-install_hysteria2() {
-    step "Step 8/8: Verify hysteria2 client (optional — hysteria2:// profiles)"
-
-    if command -v hysteria &>/dev/null; then
-        local hy_ver
-        hy_ver=$(hysteria version 2>&1 | grep -m1 "Version:" | awk '{print $2}' || echo "")
-        info "hysteria already installed: ${hy_ver:-ok}"
-        return
-    fi
-
-    if [ "$INSTALL_HY2" = "false" ]; then
-        info "Skipping hysteria2 (--no-hy2 specified)"
-        return
-    fi
-
-    warn "xray-core does NOT implement the hysteria2 protocol."
-    warn "Subscriptions containing hysteria2:// / hy2:// profiles require the hysteria binary."
-    if ! prompt_yes_no "    Install hysteria2 client v${HYSTERIA_VERSION}? [y/N]" "N"; then
-        info "Skipping hysteria2"
-        warn "hysteria2:// / hy2:// profiles will not be able to connect without the hysteria binary."
-        return
-    fi
-
-    local hy_bin="hysteria-linux-${HY_ARCH}"
-    local hy_url="https://github.com/apernet/hysteria/releases/download/app%2Fv${HYSTERIA_VERSION}/${hy_bin}"
-    local tmp_bin="/tmp/whoisthat-hysteria-$$"
-
-    info "Downloading hysteria v${HYSTERIA_VERSION} (${HY_ARCH})..."
-    if curl -fsSL "$hy_url" -o "$tmp_bin"; then
-        local hy_ver
-        hy_ver=$("$tmp_bin" version 2>&1 | grep -m1 "Version:" | awk '{print $2}' || echo "v${HYSTERIA_VERSION}")
-        $SUDO install -Dm755 "$tmp_bin" /usr/local/bin/hysteria
-        rm -f "$tmp_bin"
-        info "hysteria installed: ${hy_ver}"
-    else
-        rm -f "$tmp_bin"
-        warn "Failed to download hysteria client from ${hy_url}"
     fi
 }
 
@@ -691,13 +644,6 @@ print_final_message() {
         echo -e "      source ~/.profile"
         echo
     fi
-
-    if ! command -v hysteria &>/dev/null; then
-        echo -e "  ${YELLOW}[i] hysteria2 binary not installed${NC}"
-        echo -e "      hysteria2:// / hy2:// profiles will not work without it."
-        echo -e "      Install anytime: curl -fsSL https://github.com/apernet/hysteria/releases/download/app%2Fv${HYSTERIA_VERSION}/hysteria-linux-amd64 | sudo install -Dm755 /dev/stdin /usr/local/bin/hysteria"
-        echo
-    fi
 }
 
 # --- main --------------------------------------------------------------------
@@ -730,7 +676,6 @@ main() {
     install_binaries
     install_xray
     install_tun2socks
-    install_hysteria2
     print_final_message
 }
 

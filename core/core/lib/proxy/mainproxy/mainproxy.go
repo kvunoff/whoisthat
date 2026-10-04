@@ -10,7 +10,6 @@ import (
 	appconfig "whoisthat-core/lib/AppConfig"
 	portpool "whoisthat-core/lib/PortPool"
 	"whoisthat-core/lib/logger"
-	"whoisthat-core/lib/proxy/hysteria"
 	"whoisthat-core/lib/proxy/xray"
 	"whoisthat-core/structs"
 )
@@ -187,58 +186,43 @@ func (p *ProxyManager) Connect(profile structs.Profile, tunName string) error {
 	// Default 0 → ss-based fallback. Set to a portPool port on the xray path.
 	apiPort := 0
 
-	if isHysteriaProtocol(profile.Protocol) {
-		// Hysteria2 is NOT supported by xray-core; the official hysteria2
-		// client is spawned with a YAML config produced by the parser. xray
-		// JSON-injection (stats/routing) does not apply — hysteria2 has no
-		// equivalent of xray's `outbounds`/`routing`/`stats` blocks.
-		yaml_config, err := lib.ParseUriHysteria(profile.Uri, app_config.SocksPort, app_config.HttpPort)
-		if err != nil {
-			return err
-		}
-		p.core = &hysteria.HysteriaCore{Exited: make(chan error, 1)}
-		if err := p.core.Start(yaml_config); err != nil {
-			return err
-		}
+	xray_config, err := lib.ParseUri(profile.Uri, app_config.SocksPort, app_config.HttpPort)
+	if err != nil {
+		return err
+	}
+
+	// Allocate a port for xray's gRPC StatsService listener. On failure
+	// (pool exhausted) we fall back to ss-based stats — apiPort stays 0,
+	// which disables injection of the api inbound/outbound and routes the
+	// collector to the legacy ss -tie path. The port is released in Stop().
+	allocated, apiErr := p.portPool.GetPort()
+	if apiErr != nil {
+		logger.Warnf("stats: port pool exhausted, falling back to ss -tie: %v", apiErr)
 	} else {
-		xray_config, err := lib.ParseUri(profile.Uri, app_config.SocksPort, app_config.HttpPort)
+		apiPort = allocated
+	}
+
+	// Inject stats tracking config (policy + stats counters, optional
+	// dokodemo-door API inbound when apiPort > 0).
+	xray_config, err = injectStatsConfig(xray_config, apiPort)
+	if err != nil {
+		logger.Warnf("failed to inject stats config: %v", err)
+	}
+
+	// Inject routing rules + direct/block outbounds
+	if p.DB != nil {
+		prevOutboundsCount := countOutbounds(xray_config)
+		xray_config, err = injectRoutingConfig(xray_config, p.DB)
 		if err != nil {
-			return err
+			logger.Warnf("failed to inject routing config: %v", err)
 		}
+		afterOutboundsCount := countOutbounds(xray_config)
+		logger.Infof("routing: outbounds %d → %d", prevOutboundsCount, afterOutboundsCount)
+	}
 
-		// Allocate a port for xray's gRPC StatsService listener. On failure
-		// (pool exhausted) we fall back to ss-based stats — apiPort stays 0,
-		// which disables injection of the api inbound/outbound and routes the
-		// collector to the legacy ss -tie path. The port is released in Stop().
-		allocated, apiErr := p.portPool.GetPort()
-		if apiErr != nil {
-			logger.Warnf("stats: port pool exhausted, falling back to ss -tie: %v", apiErr)
-		} else {
-			apiPort = allocated
-		}
-
-		// Inject stats tracking config (policy + stats counters, optional
-		// dokodemo-door API inbound when apiPort > 0).
-		xray_config, err = injectStatsConfig(xray_config, apiPort)
-		if err != nil {
-			logger.Warnf("failed to inject stats config: %v", err)
-		}
-
-		// Inject routing rules + direct/block outbounds
-		if p.DB != nil {
-			prevOutboundsCount := countOutbounds(xray_config)
-			xray_config, err = injectRoutingConfig(xray_config, p.DB)
-			if err != nil {
-				logger.Warnf("failed to inject routing config: %v", err)
-			}
-			afterOutboundsCount := countOutbounds(xray_config)
-			logger.Infof("routing: outbounds %d → %d", prevOutboundsCount, afterOutboundsCount)
-		}
-
-		p.core = &xray.XrayCore{Exited: make(chan error, 1)}
-		if err := p.core.Start(xray_config); err != nil {
-			return err
-		}
+	p.core = &xray.XrayCore{Exited: make(chan error, 1)}
+	if err := p.core.Start(xray_config); err != nil {
+		return err
 	}
 
 	p.proxyIPs = resolveProfileIPs(profile.Address)

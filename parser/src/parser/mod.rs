@@ -98,16 +98,23 @@ pub fn create_hysteria2_client_yaml(
 pub fn create_outbound_object(uri: &str) -> Result<config_models::Outbound, String> {
     let (name, data, outbound_settings) = get_uri_data(uri)?;
 
+    let is_hy2 = name == "hysteria2";
+
     // network defaults to "tcp" when absent (xray's default transport).
-    // Explicitly setting it helps protocols like vless+reality+vision that
-    // expect a TCP transport.
-    let network_type = data.r#type.as_deref().unwrap_or("tcp");
+    // For Hysteria2, network is "hysteria".
+    let network_type = if is_hy2 {
+        "hysteria"
+    } else {
+        data.r#type.as_deref().unwrap_or("tcp")
+    };
 
     // Trojan is TLS-by-default in xray-core: a URI without an explicit
     // `security=` parameter must still produce tlsSettings, otherwise xray
     // falls back to plaintext trojan which the server rejects.
-    // An explicit `security=none` (or any non-tls value) is still respected.
-    let effective_security = if name == "trojan" {
+    // For Hysteria2, security is always "tls".
+    let effective_security = if is_hy2 {
+        Some(String::from("tls"))
+    } else if name == "trojan" {
         data.security.clone().or_else(|| Some(String::from("tls")))
     } else {
         data.security.clone()
@@ -128,15 +135,30 @@ pub fn create_outbound_object(uri: &str) -> Result<config_models::Outbound, Stri
         })
     };
 
+    let outbound_protocol = if is_hy2 {
+        String::from("hysteria")
+    } else {
+        name
+    };
+
     let outbound = Outbound {
-        protocol: name,
+        protocol: outbound_protocol,
         tag: String::from("proxy"),
         streamSettings: StreamSettings {
             network: Some(network_type.to_string()),
             security: effective_security.clone(),
             tlsSettings: match effective_security.as_deref() {
                 Some("tls") => Some(TlsSettings {
-                    alpn: split_alpn(&data.alpn),
+                    alpn: match split_alpn(&data.alpn) {
+                        Some(a) => Some(a),
+                        None => {
+                            if is_hy2 {
+                                Some(vec!["h3".to_string()])
+                            } else {
+                                None
+                            }
+                        }
+                    },
                     rejectUnknownSni: None,
                     enableSessionResumption: None,
                     minVersion: None,
@@ -226,6 +248,74 @@ pub fn create_outbound_object(uri: &str) -> Result<config_models::Outbound, Stri
                     path: data.path.clone(),
                 }),
                 _ => None,
+            },
+            hysteriaSettings: if is_hy2 {
+                Some(config_models::HysteriaSettings {
+                    version: 2,
+                    auth: data.uuid.clone().unwrap_or_default(),
+                    udpIdleTimeout: Some(60),
+                })
+            } else {
+                None
+            },
+            finalmask: if is_hy2 {
+                let mut quic_params = if data.up.is_some() || data.down.is_some() {
+                    Some(config_models::QuicParamsSettings {
+                        brutalUp: data.up.clone(),
+                        brutalDown: data.down.clone(),
+                    })
+                } else {
+                    None
+                };
+
+                let mut udp_items = Vec::new();
+                if let Some(ref ports) = data.ports {
+                    udp_items.push(serde_json::json!({
+                        "type": "udphop",
+                        "settings": {
+                            "mode": "intervalLocal,intervalRemote",
+                            "remotePorts": ports,
+                            "interval": "5-30"
+                        }
+                    }));
+                }
+
+                if let Some(ref fm_raw) = data.fm {
+                    if let Ok(val) = serde_json::from_str::<serde_json::Value>(fm_raw) {
+                        let fm_target = val.get("finalmask").unwrap_or(&val);
+                        if let Some(fm_qp) = fm_target.get("quicParams") {
+                            if quic_params.is_none() {
+                                if let Ok(parsed_qp) = serde_json::from_value::<config_models::QuicParamsSettings>(fm_qp.clone()) {
+                                    quic_params = Some(parsed_qp);
+                                }
+                            }
+                        }
+                        if let Some(udp_arr) = fm_target.get("udp").and_then(|u| u.as_array()) {
+                            for item in udp_arr {
+                                udp_items.push(item.clone());
+                            }
+                        }
+                    }
+                } else if let Some(ref pw) = data.obfs_password {
+                    let obfs_type = data.obfs.as_deref().unwrap_or("salamander");
+                    udp_items.push(serde_json::json!({
+                        "type": obfs_type,
+                        "settings": {
+                            "password": pw
+                        }
+                    }));
+                }
+
+                if quic_params.is_some() || !udp_items.is_empty() {
+                    Some(config_models::FinalMaskSettings {
+                        quicParams: quic_params,
+                        udp: if udp_items.is_empty() { None } else { Some(udp_items) },
+                    })
+                } else {
+                    None
+                }
+            } else {
+                None
             },
         },
         settings: outbound_settings,
@@ -683,6 +773,54 @@ mod tests {
             assert!(result.is_ok());
             let outbound = result.unwrap();
             assert_eq!(outbound.streamSettings.network, Some("tcp".to_string()));
+        }
+
+        #[test]
+        fn hysteria2_generates_native_xray_outbound() {
+            let result = create_outbound_object("hysteria2://mypassword@example.com:443?sni=sni.example.com#MyNode");
+            assert!(result.is_ok());
+            let outbound = result.unwrap();
+            assert_eq!(outbound.protocol, "hysteria");
+            assert_eq!(outbound.streamSettings.network, Some("hysteria".to_string()));
+            assert_eq!(outbound.streamSettings.security, Some("tls".to_string()));
+
+            let tls = outbound.streamSettings.tlsSettings.unwrap();
+            assert_eq!(tls.serverName, Some("sni.example.com".to_string()));
+            assert_eq!(tls.alpn, Some(vec!["h3".to_string()]));
+
+            let hy = outbound.streamSettings.hysteriaSettings.unwrap();
+            assert_eq!(hy.version, 2);
+            assert_eq!(hy.auth, "mypassword");
+
+            match outbound.settings {
+                OutboundSettings::Hysteria(s) => {
+                    assert_eq!(s.version, 2);
+                    assert_eq!(s.address, Some("example.com".to_string()));
+                    assert_eq!(s.port, Some(443));
+                }
+                _ => panic!("Expected OutboundSettings::Hysteria"),
+            }
+        }
+
+        #[test]
+        fn hysteria2_with_bandwidth_udphop_and_obfs() {
+            let uri = "hysteria2://pw@example.com:443?sni=example.com&obfs=salamander&obfs-password=secret&up=100mbps&down=200mbps&ports=20000-30000";
+            let result = create_outbound_object(uri);
+            assert!(result.is_ok());
+            let outbound = result.unwrap();
+            assert_eq!(outbound.protocol, "hysteria");
+
+            let fm = outbound.streamSettings.finalmask.unwrap();
+            let qp = fm.quicParams.unwrap();
+            assert_eq!(qp.brutalUp, Some("100mbps".to_string()));
+            assert_eq!(qp.brutalDown, Some("200mbps".to_string()));
+
+            let udp = fm.udp.unwrap();
+            assert_eq!(udp.len(), 2);
+            assert_eq!(udp[0]["type"], "udphop");
+            assert_eq!(udp[0]["settings"]["remotePorts"], "20000-30000");
+            assert_eq!(udp[1]["type"], "salamander");
+            assert_eq!(udp[1]["settings"]["password"], "secret");
         }
     }
 }

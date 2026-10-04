@@ -53,6 +53,7 @@ pub fn get_data(uri: &str) -> Result<RawData, String> {
         up: None,
         down: None,
         ports: None,
+        fm: None,
     })
 }
 
