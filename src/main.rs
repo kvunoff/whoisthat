@@ -249,5 +249,11 @@ async fn main() -> io::Result<()> {
 
     config::save_config(&cfg);
 
-    res
+    match res {
+        Ok(_) => std::process::exit(0),
+        Err(e) => {
+            eprintln!("Error: {e}");
+            std::process::exit(1);
+        }
+    }
 }
