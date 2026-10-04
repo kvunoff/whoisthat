@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"whoisthat-core/lib"
 	"whoisthat-core/lib/logger"
+	"whoisthat-core/lib/xraymgr"
 	"whoisthat-core/structs"
 	"whoisthat-core/utils"
 )
@@ -27,10 +28,15 @@ type MissingBinary struct {
 func CheckMissingBinaries() []MissingBinary {
 	var missing []MissingBinary
 
-	if _, err := utils.GetXrayBin(); err != nil {
+	xmStatus := xraymgr.GetManager().GetStatus()
+	if xmStatus.Status == "missing" || xmStatus.Status == "error" {
+		hint := fmt.Sprintf("xray-core %s is %s — background download initiated", xraymgr.PinnedVersion, xmStatus.Status)
+		if xmStatus.Error != "" {
+			hint = fmt.Sprintf("xray-core %s download error: %s", xraymgr.PinnedVersion, xmStatus.Error)
+		}
 		missing = append(missing, MissingBinary{
 			Name: "xray",
-			Hint: "xray binary not installed — no non-hysteria2 profile will work. Install via your distro's package manager or https://github.com/XTLS/Xray-core",
+			Hint: hint,
 		})
 	}
 	if _, err := utils.GetHysteriaBin(); err != nil {

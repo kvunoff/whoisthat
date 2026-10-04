@@ -3,6 +3,7 @@ package TCPServer
 import (
 	"whoisthat-core/lib"
 	"whoisthat-core/lib/logger"
+	"whoisthat-core/lib/xraymgr"
 	"whoisthat-core/structs"
 )
 
@@ -24,4 +25,17 @@ func (s *Server) handleStatsChange() {
 	for stats := range s.proxy_manager.StatsChanged {
 		s.Broadcast(lib.CreateJsonNotification("traffic-stats", stats))
 	}
+}
+
+func (s *Server) handleXrayStatus() {
+	xraymgr.GetManager().SetProgressCallback(func(st structs.XrayStatusInfo) {
+		s.Broadcast(lib.CreateJsonNotification("xray-progress", structs.XrayProgressNotification{
+			Status:          st.Status,
+			Version:         st.Version,
+			Progress:        st.Progress,
+			BytesDownloaded: st.BytesDownloaded,
+			TotalBytes:      st.TotalBytes,
+			Error:           st.Error,
+		}))
+	})
 }

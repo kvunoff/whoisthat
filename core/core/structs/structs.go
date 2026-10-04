@@ -98,6 +98,25 @@ type ProfileUpdated struct {
 
 type GetApplicationStateData struct{}
 
+type XrayStatusInfo struct {
+	Version         string `json:"version"`
+	TargetVersion   string `json:"target_version"`
+	Status          string `json:"status"`   // "ready", "downloading", "missing", "error"
+	Progress        int    `json:"progress"` // 0-100
+	BytesDownloaded int64  `json:"bytes_downloaded,omitzero"`
+	TotalBytes      int64  `json:"total_bytes,omitzero"`
+	Error           string `json:"error,omitzero"`
+}
+
+type XrayProgressNotification struct {
+	Status          string `json:"status"`
+	Version         string `json:"version"`
+	Progress        int    `json:"progress"`
+	BytesDownloaded int64  `json:"bytes_downloaded,omitzero"`
+	TotalBytes      int64  `json:"total_bytes,omitzero"`
+	Error           string `json:"error,omitzero"`
+}
+
 type ApplicationState struct {
 	Groups           []GroupWithProfiles `json:"groups"`
 	ConnectionStatus ProxyStatus         `json:"connection-status"`
@@ -106,6 +125,7 @@ type ApplicationState struct {
 	KillSwitch       bool                `json:"kill_switch"`
 	SplitTunnel      string              `json:"split_tunnel"`
 	Autoconnect      AutoconnectInfo     `json:"autoconnect"`
+	XrayStatus       XrayStatusInfo      `json:"xray_status"`
 }
 
 type UpdateSubscriptionData struct {

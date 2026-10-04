@@ -93,6 +93,7 @@ func (s *Server) Start() {
 	go s.handleStatusChange()
 	go s.handleTestResults()
 	go s.handleStatsChange()
+	s.handleXrayStatus()
 
 	// clientID must be unique per connection. UDS peers all report the same
 	// (empty) RemoteAddr, so fall back to a monotonic counter when the address

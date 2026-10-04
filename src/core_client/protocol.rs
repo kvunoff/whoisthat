@@ -88,6 +88,42 @@ pub struct ApplicationState {
     pub split_tunnel: String,
     #[serde(default)]
     pub autoconnect: AutoconnectInfo,
+    #[serde(rename = "xray_status", default)]
+    pub xray_status: Option<XrayStatusInfo>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub struct XrayStatusInfo {
+    #[serde(default)]
+    pub version: String,
+    #[serde(default)]
+    pub target_version: String,
+    #[serde(default)]
+    pub status: String,
+    #[serde(default)]
+    pub progress: i32,
+    #[serde(default)]
+    pub bytes_downloaded: i64,
+    #[serde(default)]
+    pub total_bytes: i64,
+    #[serde(default)]
+    pub error: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub struct XrayProgressNotification {
+    #[serde(default)]
+    pub status: String,
+    #[serde(default)]
+    pub version: String,
+    #[serde(default)]
+    pub progress: i32,
+    #[serde(default)]
+    pub bytes_downloaded: i64,
+    #[serde(default)]
+    pub total_bytes: i64,
+    #[serde(default)]
+    pub error: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

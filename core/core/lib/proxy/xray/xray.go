@@ -11,6 +11,7 @@ import (
 	"time"
 	"whoisthat-core/lib/geo"
 	"whoisthat-core/lib/logger"
+	"whoisthat-core/lib/xraymgr"
 	"whoisthat-core/utils"
 )
 
@@ -43,9 +44,9 @@ func (x *XrayCore) Start(stdinPipe []byte) error {
 		x.channel_closed = false
 	}
 
-	xraybin, err := utils.GetXrayBin()
+	xraybin, err := xraymgr.GetManager().GetXrayBin()
 	if err != nil {
-		return fmt.Errorf("failed to start xray %w", err)
+		return fmt.Errorf("failed to start xray: %w", err)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())

@@ -58,6 +58,7 @@ pub struct App {
     pub collapsed_groups: HashSet<i32>,
     pub last_area: Rect,
     pub layout: crate::ui::layout::LayoutGeometry,
+    pub xray_status: Option<XrayStatusInfo>,
 
     uri_cache: RefCell<Option<(i32, i32, ParsedUri)>>,
 }
@@ -80,6 +81,7 @@ impl App {
                 connected_at: 0,
             },
             tun_enabled: false,
+            xray_status: None,
             last_msg: None,
             show_ip,
             log_enabled,
@@ -422,6 +424,7 @@ impl App {
         self.autoconnect_enabled = state.autoconnect.enabled;
         self.autostart_mode = state.autoconnect.mode;
         self.hwid_info = state.hwid_info;
+        self.xray_status = state.xray_status;
         self.clamp_cursor();
     }
 

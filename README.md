@@ -82,7 +82,7 @@ sudo setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep /usr/local/bin/whoisthat-c
 
 External proxy engines can be installed via precompiled official releases (or automatically via `install.sh`):
 
-- **Xray-core**: Download the official release archive from [Xray-core releases](https://github.com/XTLS/Xray-core/releases) and place `xray` into `/usr/local/bin/xray`.
+- **Xray-core**: Automatically managed and pinned (v26.3.27) under `~/.local/share/whoisthat/runtimes/xray/` with background download and checksum verification. Matching system binaries in `/usr/local/bin/xray` or `/usr/bin/xray` are also detected and adopted.
 - **tun2socks**: Required only for TUN mode; download from [tun2socks releases](https://github.com/xjasonlyu/tun2socks/releases) into `/usr/local/bin/tun2socks`.
 - **Hysteria client**: Required only for `hysteria2://` / `hy2://` profiles; download the standalone binary from [Hysteria releases](https://github.com/apernet/hysteria/releases) into `/usr/local/bin/hysteria`.
 
@@ -123,7 +123,7 @@ By default the TUI talks to the core over a **Unix domain socket** (see [IPC tra
   "tun-name": "whoisthattun",
   "hwid-enabled": true,
   "hwid": "1fb1e0141ab3e35a",
-  "user-agent": "whoisthat/v0.9.11",
+  "user-agent": "whoisthat/v0.10.0",
   "kill-switch-enabled": false,
   "autoconnect-enabled": false,
   "autoconnect-group-id": 0,
@@ -520,7 +520,7 @@ Subscription metadata (`sub_*`) is populated from the `subscription-userinfo` HT
 | HWID: Enabled | on/off | Send HWID headers with subscription requests |
 | HWID | 1fb1e0141ab3e35a | Device identifier (read-only, auto-generated) |
 | Reset HWID | ⏎ | Generate a new random HWID |
-| User-Agent | whoisthat/v0.9.11 | User-Agent header (editable — press Enter to modify) |
+| User-Agent | whoisthat/v0.10.0 | User-Agent header (editable — press Enter to modify) |
 
 Navigate with `j`/`k`, press `Enter`/`Space` to toggle, cycle values, open edit popups, or execute actions.
 

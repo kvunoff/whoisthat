@@ -19,6 +19,7 @@ import (
 	"whoisthat-core/lib/logger"
 	proxy "whoisthat-core/lib/proxy/mainproxy"
 	tunmode "whoisthat-core/lib/proxy/tun"
+	"whoisthat-core/lib/xraymgr"
 	"whoisthat-core/structs"
 	"whoisthat-core/utils"
 )
@@ -84,6 +85,15 @@ func main() {
 	})
 	tun_manager := tunmode.TunModeManager{}
 	tun_manager.Init()
+
+	xm := xraymgr.GetManager()
+	if err := xm.Init(); err != nil {
+		logger.Warnf("main: xraymgr init: %v", err)
+	}
+	if xm.GetStatus().Status != "ready" {
+		logger.Infof("main: xray status is %s, ensuring runtime in background", xm.GetStatus().Status)
+		xm.EnsureRuntimeAsync()
+	}
 
 	// Pre-flight: probe for the external binaries the core shells out to
 	// (xray, hysteria, tun2socks, whoisthat-parser). Each miss is paired

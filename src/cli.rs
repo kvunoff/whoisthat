@@ -25,6 +25,8 @@ pub struct CliStatus {
     pub profile_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub protocol: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub xray_version: Option<String>,
     pub rx_speed_bytes: i64,
     pub tx_speed_bytes: i64,
     pub rx_speed_human: String,
@@ -44,6 +46,7 @@ impl CliStatus {
             profile_id: None,
             profile_name: None,
             protocol: None,
+            xray_version: None,
             rx_speed_bytes: 0,
             tx_speed_bytes: 0,
             rx_speed_human: "0 B/s".to_string(),
@@ -92,6 +95,16 @@ impl CliStatus {
             }
         }
 
+        let xray_version = state.xray_status.as_ref().and_then(|x| {
+            if !x.version.is_empty() {
+                Some(x.version.clone())
+            } else if !x.target_version.is_empty() {
+                Some(x.target_version.clone())
+            } else {
+                None
+            }
+        });
+
         Self {
             core_running: true,
             connected: is_conn,
@@ -103,6 +116,7 @@ impl CliStatus {
             profile_id,
             profile_name,
             protocol,
+            xray_version,
             rx_speed_bytes: 0,
             tx_speed_bytes: 0,
             rx_speed_human: "0 B/s".to_string(),
@@ -979,6 +993,7 @@ mod tests {
             profile_id: Some(42),
             profile_name: Some("Server-1".to_string()),
             protocol: Some("vless".to_string()),
+            xray_version: Some("v26.3.27".to_string()),
             rx_speed_bytes: 1000,
             tx_speed_bytes: 500,
             rx_speed_human: "1000 B/s".to_string(),
@@ -990,6 +1005,7 @@ mod tests {
         assert!(json.contains("\"connected\":true"));
         assert!(json.contains("\"mode\":\"tun\""));
         assert!(json.contains("\"profile_name\":\"Server-1\""));
+        assert!(json.contains("\"xray_version\":\"v26.3.27\""));
     }
 
     #[test]

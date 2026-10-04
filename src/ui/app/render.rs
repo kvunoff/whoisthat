@@ -294,10 +294,24 @@ impl App {
             inner
         };
 
+        let xray_label = if let Some(ref x) = self.xray_status {
+            if x.status == "downloading" {
+                format!(" · xray dl ({}%)", x.progress)
+            } else if !x.version.is_empty() {
+                format!(" · xray {}", x.version)
+            } else if !x.target_version.is_empty() {
+                format!(" · xray {}", x.target_version)
+            } else {
+                " · xray-core".to_string()
+            }
+        } else {
+            " · xray-core".to_string()
+        };
+
         let left_str = if is_compact {
             format!(" v{}", env!("CARGO_PKG_VERSION"))
         } else {
-            format!(" WhoisThat v{} · xray-core", env!("CARGO_PKG_VERSION"))
+            format!(" WhoisThat v{}{}", env!("CARGO_PKG_VERSION"), xray_label)
         };
         let left = Span::styled(left_str, s_faint());
         let left_w = left.width();

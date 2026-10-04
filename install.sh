@@ -35,7 +35,7 @@ set -euo pipefail
 # --- version constants -------------------------------------------------------
 GO_MIN_VERSION="1.26.0"
 GO_INSTALL_VERSION="1.26.8"
-XRAY_VERSION="v1.8.23"
+XRAY_VERSION="v26.3.27"
 TUN2SOCKS_VERSION="v2.5.2"
 HYSTERIA_VERSION="2.9.3"
 
@@ -528,8 +528,15 @@ install_xray() {
     step "Step 6/8: Verify Xray-core (${XRAY_VERSION})"
 
     if command -v xray &>/dev/null; then
-        info "xray already installed: $(xray version 2>&1 | head -1)"
-        return
+        local current_ver
+        current_ver="$(xray version 2>&1 | head -1)"
+        info "Found existing xray: ${current_ver}"
+        if echo "$current_ver" | grep -q "${XRAY_VERSION#v}"; then
+            info "Xray-core matches pinned version ${XRAY_VERSION}"
+            return
+        else
+            info "Existing xray differs from pinned ${XRAY_VERSION}, updating..."
+        fi
     fi
 
     local xray_zip="Xray-linux-${XRAY_ARCH}.zip"

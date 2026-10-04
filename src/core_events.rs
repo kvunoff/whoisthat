@@ -258,6 +258,39 @@ pub(crate) async fn handle_core_event(
         CoreEvent::TestConfigUpdated(c) => {
             app.test_config = c;
         }
+        CoreEvent::XrayProgress(p) => {
+            let ver = if p.version.is_empty() {
+                "core"
+            } else {
+                &p.version
+            };
+            if p.status == "downloading" {
+                app.msg(format!("Downloading Xray {} ({}%)...", ver, p.progress));
+            } else if p.status == "ready" {
+                app.msg(format!("Xray {} ready", ver));
+            } else if p.status == "error" && !p.error.is_empty() {
+                app.msg(format!("Xray download error: {}", p.error));
+            }
+
+            if let Some(ref mut st) = app.xray_status {
+                st.status = p.status;
+                st.version = p.version;
+                st.progress = p.progress;
+                st.bytes_downloaded = p.bytes_downloaded;
+                st.total_bytes = p.total_bytes;
+                st.error = p.error;
+            } else {
+                app.xray_status = Some(crate::core_client::protocol::XrayStatusInfo {
+                    status: p.status,
+                    version: p.version,
+                    progress: p.progress,
+                    bytes_downloaded: p.bytes_downloaded,
+                    total_bytes: p.total_bytes,
+                    error: p.error,
+                    ..Default::default()
+                });
+            }
+        }
     }
     false
 }

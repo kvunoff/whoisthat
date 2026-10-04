@@ -37,6 +37,7 @@ pub enum CoreEvent {
     AutoconnectUpdated(AutoconnectInfo),
     TestProgress(TestProgress),
     TestConfigUpdated(TestConfig),
+    XrayProgress(XrayProgressNotification),
     Reconnected,
     Disconnected,
 }
@@ -270,6 +271,11 @@ pub(crate) fn dispatch(msg: TcpMessage) -> CoreEvent {
         "test-config-updated" => {
             try_dispatch!(msg, "test-config-updated", TestConfigUpdated, |d| {
                 CoreEvent::TestConfigUpdated(d.config)
+            })
+        }
+        "xray-progress" => {
+            try_dispatch!(msg, "xray-progress", XrayProgressNotification, |d| {
+                CoreEvent::XrayProgress(d)
             })
         }
         other => {
@@ -604,6 +610,29 @@ mod tests {
             assert_eq!(p.loss_pct, 0);
         } else {
             panic!("expected ProfileUpdated");
+        }
+    }
+
+    #[test]
+    fn test_dispatch_xray_progress() {
+        let event = dispatch(make_msg(
+            "xray-progress",
+            json!({
+                "status": "downloading",
+                "version": "v26.3.27",
+                "progress": 42,
+                "bytes_downloaded": 4200,
+                "total_bytes": 10000
+            }),
+        ));
+        if let CoreEvent::XrayProgress(p) = event {
+            assert_eq!(p.status, "downloading");
+            assert_eq!(p.version, "v26.3.27");
+            assert_eq!(p.progress, 42);
+            assert_eq!(p.bytes_downloaded, 4200);
+            assert_eq!(p.total_bytes, 10000);
+        } else {
+            panic!("expected XrayProgress");
         }
     }
 }
