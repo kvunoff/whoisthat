@@ -14,9 +14,9 @@ A modern terminal-based VPN client. Rust TUI frontend. Go engine backed by Xray-
 
 - [Installation](#installation) — quick install, AUR, manual build, configuration
 - [Features](#features)
-- [Architecture](#architecture) — how it works, IPC transport, routing rules, HWID
+- [Architecture](#architecture) — how it works, IPC transport, routing rules, split tunnel, HWID
 - [TCP API Protocol](#tcp-api-protocol) — wire format, commands, notifications, structures
-- [Usage](#usage) — keybindings, settings, TUN mode, systemd, subscriptions
+- [Usage](#usage) — keybindings, settings, TUN mode, split tunnel, systemd, subscriptions
 - [CLI & Desktop Integration](#cli--desktop-integration) — command-line flags, quick toggles, desktop widgets & status streaming
 - [Troubleshooting](#troubleshooting)
 - [Testing](#testing)
@@ -123,7 +123,7 @@ By default the TUI talks to the core over a **Unix domain socket** (see [IPC tra
   "tun-name": "whoisthattun",
   "hwid-enabled": true,
   "hwid": "1fb1e0141ab3e35a",
-  "user-agent": "whoisthat/v0.9.10",
+  "user-agent": "whoisthat/v0.9.11",
   "kill-switch-enabled": false,
   "autoconnect-enabled": false,
   "autoconnect-group-id": 0,
@@ -170,7 +170,7 @@ Encrypted at rest with AES-256-GCM — key auto-generated on first run.
 - **Custom routing rules** — domain, IP, protocol, port, geoip, geosite → proxy/direct/block (`2` or `r` tab). `direct` outbound works correctly in TUN mode via SO_MARK + fwmark routing (no root required). Use ←/→ to cycle type/outbound in the form.
 - **Routing presets catalog & live hot-reload** — 1-click presets catalog (`p` key in Routing) for blocking ads & telemetry, bypassing domestic (RU) / LAN traffic, and routing media (YouTube/Twitch/Discord), Telegram, AI services (OpenAI/Claude), and social platforms. Routing edits apply instantly without restarting the proxy.
 - **Kill-switch** — When enabled, blocks all non-VPN traffic if the connection drops. Uses a dedicated firewall table (`whoisthat_ks`, `whoisthat_ks_v6`) entirely independent of TUN rules — safe to combine with any routing setup. Works in both SOCKS and TUN modes. Toggle in Settings. Orphaned tables from a crashed session are auto-reconciled on next core startup.
-- **Split tunnel** — route specific apps differently from the rest of the system. `exclude` mode makes launched apps bypass the tunnel (everything else is protected); `include` mode routes *only* launched apps through the tunnel (everything else goes direct). Launch an app into the split slice with `whoisthat run <app>`. Uses cgroup v2 socket matching + fwmark routing. Set the mode in Settings → Network.
+- **Split tunnel** — route specific apps differently from the rest of the system. `exclude` mode makes launched apps bypass the tunnel (everything else is protected); `include` mode routes *only* launched apps through the tunnel (everything else goes direct). Launch apps interactively with `whoisthat run <app>` or in the background with `whoisthat run -d <app>` (`-b`, `--detach`, `--background`). Uses cgroup v2 socket matching, policy routing, postrouting SNAT, and dual-stack IPv6 leak prevention. Set the mode in Settings → Network.
 - **Collapsible group folding** — fold and unfold subscription groups (`Space`, `Enter`, `h`/`l`) with persistent tree state, clean arrow indicators (`▼`/`▶`), and automatic cursor clamping.
 - **Full mouse interaction** — click to select and connect profiles, toggle group folding, switch tabs, toggle routing rules, toggle TUN mode from the bottom bar, and navigate settings. Mouse hit-testing dynamically synchronizes with responsive layout coordinates.
 - **Compact tab switcher** — press `Tab` to summon a lightweight modal switcher with numeric direct jumps (`1` Profiles, `2` Routing, `3` Traffic, `4` Logs, `5` Settings).
@@ -293,6 +293,18 @@ The verification pass adds ~5s to first startup. Set `XRAY_LOCATION_ASSET` manua
 - User applications retain their normal routing and stay under TUN protection
 - This ensures `direct` outbound connections from xray bypass TUN while all user traffic stays protected
 - **Incoming connections to local services** (e.g., a web or game server) are also handled correctly via conntrack-based reply routing: incoming flows on the physical interface are tagged in the connection tracker, and reply packets are marked with `fwmark 1` to bypass TUN and exit through the physical gateway. Works for both host-local servers and Docker-published ports, in both nftables and iptables backends
+
+**Split tunnel architecture:**
+
+- **cgroup v2 isolation**: Applications launched via `whoisthat run` are placed into a transient systemd user slice named `whoisthat_split.slice` (`user.slice/user-<uid>.slice/user@<uid>.service/whoisthat_split.slice`).
+- **nftables socket classification**: The dedicated table `inet whoisthat_split` installs an `output` chain hook (`type route hook output priority -150`). It matches outgoing sockets by `socket cgroupv2 level 4` against the slice cgroup path. Packets generated by processes inside the slice are marked with a dedicated firewall mark:
+  - `fwmark 1` in **exclude** mode
+  - `fwmark 2` in **include** mode
+- **Policy routing**:
+  - `exclude` mode: `ip rule fwmark 1 table 100` directs traffic to routing table 100 (which routes default via the physical gateway).
+  - `include` mode: `ip rule fwmark 2 table 200` directs traffic to routing table 200 (which routes default via `whoisthattun`), while the main system routing table continues using the physical gateway.
+- **Postrouting NAT masquerading**: Because local sockets may initially bind to the default interface IP (`198.18.0.1` on TUN) before packet output routing hooks execute, the core installs an nftables `postrouting` NAT rule (`masquerade`) on physical egress for marked packets. This guarantees correct source IP headers without connection timeouts on physical LANs.
+- **IPv6 dual-stack leak prevention**: If the local network has no IPv6 gateway but the VPN tunnel has IPv6, dual-stack apps (e.g. Spotify, browsers) attempting Happy Eyeballs connections would fall back to the tunnel. In `exclude` mode, table 100 installs an unreachable default route for IPv6 (`ip -6 route replace unreachable default table 100`), instantly dropping IPv6 and forcing immediate fallback to physical IPv4.
 
 ### HWID (Device Identification)
 
@@ -504,10 +516,11 @@ Subscription metadata (`sub_*`) is populated from the `subscription-userinfo` HT
 | Auto-test on refresh | on/off | Automatically test profiles after a successful `u` subscription refresh |
 | TUN name | editable text | TUN interface name (1-15 chars, letters/digits/underscore/dash, default `whoisthattun`) |
 | Kill Switch | on/off | Block all non-VPN traffic on connection drop (dedicated firewall table, works in both SOCKS and TUN modes) |
+| Split tunnel | off / exclude / include | Route specific apps via cgroup v2. `exclude` = launched apps bypass VPN; `include` = only launched apps use VPN |
 | HWID: Enabled | on/off | Send HWID headers with subscription requests |
 | HWID | 1fb1e0141ab3e35a | Device identifier (read-only, auto-generated) |
 | Reset HWID | ⏎ | Generate a new random HWID |
-| User-Agent | whoisthat/v0.9.10 | User-Agent header (editable — press Enter to modify) |
+| User-Agent | whoisthat/v0.9.11 | User-Agent header (editable — press Enter to modify) |
 
 Navigate with `j`/`k`, press `Enter`/`Space` to toggle, cycle values, open edit popups, or execute actions.
 
@@ -531,26 +544,123 @@ For debugging or manual setup: `sudo setcap cap_net_admin,cap_net_raw,cap_setpca
 
 ### Split Tunnel
 
-Split tunnel routes a chosen set of apps differently from the rest of the system. Set the mode in **Settings → Network → Split tunnel** (cycle `off` / `exclude` / `include`), then launch apps into the split slice:
+Split tunnel allows routing specific applications differently from the rest of the system without requiring third-party network namespaces or separate proxy clients.
+
+You configure the operating mode in the TUI under **Settings → Network → Split tunnel** (press `Enter` or `Space` to cycle `off` / `exclude` / `include`), and launch target applications using the `whoisthat run` CLI command:
 
 ```bash
-whoisthat run firefox              # launch an app into the split slice
-whoisthat run curl https://…       # any command + args works
+whoisthat run -d spotify           # launch Spotify in background (bypassing or including VPN)
+whoisthat run curl 2ip.io          # run attached in terminal to verify external IP
 ```
 
-Two modes:
+#### Modes
 
-- **`exclude`** — launched apps **bypass** the tunnel; everything else stays protected. Example: "route everything through the VPN *except* Firefox."
-- **`include`** — **only** launched apps use the tunnel; everything else goes direct. Example: "route *only* Firefox through the VPN."
+- **`exclude`** *(Default / Recommended)* — The entire operating system is protected by the VPN, but applications launched via `whoisthat run` **bypass the tunnel** and route directly through your physical gateway.
+  - *Best for*: Spotify, domestic banking, Russian web services (`.ru`/Госуслуги), online gaming (Steam, Discord voice), torrent clients, and local network services.
+- **`include`** — The entire operating system connects directly via your physical gateway (no system-wide default TUN route is installed). **Only** applications launched via `whoisthat run` are routed through the VPN tunnel.
+  - *Best for*: Dedicated private browsing (e.g. running only a specific browser through the VPN), web scraping, or testing foreign endpoints without changing system-wide network routing.
 
-**How it works.** `whoisthat run` drops the app into a transient systemd `--user` scope under `whoisthat-split.slice` (via `systemd-run`). The core installs an nftables rule (`whoisthat_split` table, `route` output hook) that matches sockets by **cgroup v2 membership** (`socket cgroupv2`) and sets an fwmark. Policy routing then sends marked packets down the right path:
+> [!WARNING]
+> **Security note:** In `include` mode, only applications explicitly launched via `whoisthat run` are protected by the VPN. All other applications and background traffic connect unprotected over your physical connection.
 
-- exclude → mark 1 → table 100 (physical gateway — the same bypass table xray's `direct` outbound already uses)
-- include → mark 2 → table 200 (default `dev <tun>`); in include mode the system-wide default TUN route is **not** installed, so unmarked traffic uses the physical gateway
+#### Launching Applications (`whoisthat run`)
 
-Changing the mode while TUN is up reconciles the live rules immediately (no reconnect needed). Requires cgroup v2 (the default on modern systemd distros) and a `systemctl --user` session.
+The `whoisthat run` command supports two execution styles:
 
-> **Security note.** In `include` mode, only apps launched via `whoisthat run` are protected — all other traffic goes direct, unprotected. This is intentional (that is what "only these apps" means), but it is the inverse of the usual whole-system VPN posture, so double-check what you launch.
+##### 1. Background / Detached Mode (`-d`, `--detach`, `-b`, `--background`)
+
+When launching GUI applications (Spotify, Chrome, Telegram, Steam), you usually want them to run independently of your terminal session so you can keep working or close the terminal entirely:
+
+```bash
+# Launch Spotify in the background
+whoisthat run -d spotify
+
+# Launch Google Chrome / Chromium in the background
+whoisthat run -d google-chrome-stable
+
+# Launch Telegram Desktop in the background
+whoisthat run -b telegram-desktop
+```
+
+- Spawns the application as an independent transient systemd user service (`systemd-run --user --slice=whoisthat_split.slice --same-dir`).
+- Automatically preserves and forwards graphical session environment variables (`DISPLAY`, `WAYLAND_DISPLAY`, `XDG_CURRENT_DESKTOP`).
+- The command returns immediately. **The application continues running even after you close the terminal or log out of the shell.**
+
+##### 2. Interactive / Foreground Mode
+
+When running terminal commands, scripts, or CLI utilities where you need to see standard output, provide input, or capture exit codes:
+
+```bash
+# Check external IP directly from terminal to verify bypass/tunneling
+whoisthat run curl 2ip.io
+
+# Play a stream or video in mpv
+whoisthat run mpv "https://example.com/video.mp4"
+```
+
+- Runs inside a transient systemd user scope (`systemd-run --user --scope --slice=whoisthat_split.slice`).
+- Connects directly to terminal standard I/O (stdin, stdout, stderr) and propagates the process exit code.
+
+#### Important: Single-Instance Applications (Spotify, Chrome, Discord)
+
+Many Linux desktop applications (notably **Spotify**, **Chromium/Chrome**, **Discord**, **Telegram**, **Slack**) enforce a single running instance. When you execute `spotify` while an instance is already running (e.g. minimized to tray or running in the background):
+
+1. The new process detects the existing instance and forwards arguments to it via D-Bus / IPC.
+2. The existing instance opens or focuses a window, and the newly launched process exits immediately.
+3. Because the existing instance was started *outside* the split-tunnel slice, it **remains in its original cgroup and continues using the VPN!**
+
+**How to properly launch single-instance apps in Split Tunnel:**
+
+1. **Quit the existing instance completely**:
+   ```bash
+   pkill -9 spotify
+   # or for Chrome / Discord:
+   pkill -f chrome
+   pkill -f discord
+   ```
+2. **Launch via `whoisthat run -d`**:
+   ```bash
+   whoisthat run -d spotify
+   ```
+3. *(Alternative for Chromium/Chrome)*: If you want to run Chrome through the VPN and simultaneously run another Chrome instance bypassing the VPN, launch the split instance with a separate user data directory:
+   ```bash
+   whoisthat run -d google-chrome-stable --user-data-dir="$HOME/.config/chrome-split"
+   ```
+
+#### Desktop Application Integration (`.desktop` files)
+
+You can configure desktop apps to **always** start through Split Tunneling when launched from your application menu, application runner, or dock (GNOME, KDE, Rofi, Wofi, dmenu):
+
+1. Copy the system desktop entry to your user directory:
+   ```bash
+   cp /usr/share/applications/spotify.desktop ~/.local/share/applications/
+   ```
+2. Open `~/.local/share/applications/spotify.desktop` in your editor and prefix the `Exec=` line with `whoisthat run -d`:
+   ```ini
+   # Original:
+   Exec=spotify %U
+
+   # Updated:
+   Exec=whoisthat run -d spotify %U
+   ```
+3. Update your desktop database:
+   ```bash
+   update-desktop-database ~/.local/share/applications
+   ```
+Now clicking the app icon in your desktop launcher or application dock will launch it directly into the split-tunnel slice without opening any terminal window.
+
+#### Technical Implementation Details
+
+WhoisThat uses pure kernel mechanisms for split tunneling without requiring root privileges:
+
+- **cgroup v2 isolation**: Processes run in `whoisthat_split.slice` under the user systemd session (`user.slice/user-<uid>.slice/user@<uid>.service/whoisthat_split.slice`, level 4 below cgroup root).
+- **nftables socket classification**: Core installs table `inet whoisthat_split` with a route-priority `output` hook (`priority -150`). It matches outgoing sockets by `socket cgroupv2 level 4` and assigns fwmark (`1` for exclude, `2` for include). The `type route` hook triggers an immediate re-routing of the packet.
+- **Policy routing**:
+  - `exclude`: fwmark 1 routes via `table 100` (physical gateway bypass table).
+  - `include`: fwmark 2 routes via `table 200` (`dev <tun>`), while unmarked traffic falls through to the physical main table.
+- **Postrouting NAT Masquerade**: Outbound sockets may initially bind to the TUN IP (`198.18.0.1`) before the `output` hook applies fwmark rerouting. An nftables `postrouting` masquerade rule dynamically rewrites the source IP on physical interface egress so LAN routers and external hosts accept the traffic.
+- **IPv6 Dual-Stack / Happy Eyeballs Protection**: If the physical connection has no IPv6 default gateway but the TUN interface provides IPv6, dual-stack apps (e.g. Spotify, modern browsers) could inadvertently leak traffic through the VPN's default IPv6 route. In `exclude` mode, an unreachable route (`ip -6 route replace unreachable default table 100`) is installed in table 100. This causes dual-stack apps to fail fast on IPv6 and instantly fall back to IPv4 on the physical gateway without delays or VPN leaks.
+- **Live Reconciliation**: Changing split mode in Settings while TUN is active immediately reapplies all routing and firewall rules on the fly without needing to disconnect.
 
 ### Systemd Integration
 
@@ -651,7 +761,7 @@ CLI commands connect to the core over its Unix domain socket, execute instantly,
 | `whoisthat status --watch --json` | `status -w -j` | Continuous live streaming (1 update per second NDJSON for desktop widgets) |
 | `whoisthat --profiles [--json]` | `-p` | List all subscription groups and profiles |
 | `whoisthat --ip` | `ip` | Fetch and print public IPv4 and IPv6 |
-| `whoisthat run <app> [args...]` | — | Launch application inside the split-tunnel cgroup slice |
+| `whoisthat run [-d] <app> [args...]` | `-b`, `--detach`, `--background` | Launch application inside split-tunnel slice (`-d` runs detached in background) |
 | `whoisthat --version` | `-v` | Display program version |
 | `whoisthat --help` | `-h` | Display full help and flag list |
 
@@ -681,6 +791,28 @@ When using `whoisthat status --json` (or `-j`):
   "rx_speed_human": "1.2 MB/s",
   "tx_speed_human": "340.0 KB/s"
 }
+```
+
+### CLI Usage Examples
+
+```bash
+# Connection & mode toggling
+whoisthat -t                          # Smart-toggle VPN connection on/off
+whoisthat -c 2                        # Connect to profile #2 (or by name: whoisthat -c "Germany")
+whoisthat -mt                         # Toggle between TUN (system-wide) and Proxy modes
+whoisthat -kt                         # Toggle kill-switch firewall protection
+whoisthat --ip                        # Print public IPv4 and IPv6
+
+# Split Tunnel execution
+whoisthat run curl 2ip.io             # Run attached in terminal (verify bypass/tunneling)
+whoisthat run -d spotify              # Launch Spotify detached in background
+whoisthat run -d google-chrome-stable # Launch Chrome detached in background
+whoisthat run -b telegram-desktop     # Launch Telegram detached in background
+
+# Live monitoring & Desktop widgets
+whoisthat status --short              # Compact output for Waybar / Polybar / scripts
+whoisthat status --watch --json       # Real-time NDJSON stream for reactive applets
+whoisthat -st                         # Toggle boot autostart systemd user service
 ```
 
 ### GNOME Shell Extension
@@ -715,6 +847,9 @@ Available on:
 | `Warning: hysteria binary not installed — hysteria2:// / hy2:// profiles will not work` on TUI startup | Pre-flight check (v0.9.0+) didn't find `hysteria` on PATH | Download the precompiled binary from [Hysteria releases](https://github.com/apernet/hysteria/releases) to `/usr/local/bin/hysteria` (or run `install.sh` and answer `y` to the hysteria prompt). Same shape for `xray` / `tun2socks` / `whoisthat-parser` |
 | Pressing `c` on a hysteria2 profile shows `Warning: failed to start hysteria: binary "hysteria" not found` instead of the old generic "Failed to connect" | Same cause — missing hysteria binary | Same fix — install `hysteria` per the row above |
 | Testing a hy2 group shows `Warning: 🇮🇹 …: hysteria.Start failed: ... (is the binary installed?)` once even though 50 profiles failed | Throttled test-failure warn (v0.9.0+): identical reasons collapse to one broadcast per 5s to keep the status bar readable | Install `hysteria`; the remaining failures will clear on the next `t`/`T` pass |
+| App still uses VPN (or still bypasses) when launched via `whoisthat run` | Target app is a single-instance app already running in the background (Spotify, Chrome, Discord) | Completely close/kill existing instances (`pkill -9 spotify` or `pkill -f chrome`) before launching via `whoisthat run -d` |
+| `whoisthat run` application closes when terminal is closed | App was launched in foreground mode without `-d` flag | Use `whoisthat run -d <app>` (or `-b`, `--detach`, `--background`) to launch as an independent transient systemd user service |
+| `whoisthat run: systemd-run not found` | System lacks systemd user session manager | Split tunneling requires systemd with `systemctl --user` session support |
 
 **If you hit something not listed here:** `tail -f ~/.config/whoisthat/core.log whoisthat.log` and reproduce. Both logs are the first place to look — not the source code.
 
@@ -730,7 +865,7 @@ The project has unit tests for both the Rust TUI and the Go core. No external de
 cargo test
 ```
 
-Covers (88 unit tests):
+Covers (93 unit tests):
 
 - **Message dispatch** (`src/core_client/dispatch.rs`) — all notification message types (22), unknown type handling, malformed JSON
 - **Responsive layout geometry** (`src/ui/layout.rs`, `src/ui/app/helpers.rs`) — width/height tier categorization, threshold warnings (<45x8), responsive rect auto-bounding, side-by-side vs stacked splits, traffic card responsive modes
@@ -740,13 +875,14 @@ Covers (88 unit tests):
 - **Tree state & navigation** (`src/ui/app/state.rs`) — group collapse/expansion, cursor clamping, test pending markers
 - **Settings layout** (`src/ui/settings.rs`) — grouped layout, cursor navigation skipping headers, scroll clamping
 - **Text editor** (`src/text_edit.rs`) — `edit_text_field`: insert, backspace, delete, cursor movement, Home/End boundary conditions, Cyrillic UTF-8 editing
-- **Split-tunnel launcher** (`src/launcher.rs`) — `whoisthat run` usage-code path and PATH lookup
+- **CLI & Status formatting** (`src/cli.rs`) — CLI subcommands, offline and connected status JSON serialization, human-readable speed formatting
+- **Split-tunnel launcher** (`src/launcher.rs`) — `whoisthat run` usage code paths, foreground/background flag parsing (`-d`, `--detach`, `-b`), and PATH lookup
 
 ### Go
 
 ```bash
 cd core/core
-go test ./lib/crypto/... ./lib/AppConfig/... ./db/...
+go test ./...
 ```
 
 Covers:
@@ -755,7 +891,7 @@ Covers:
 - **Config** (`lib/AppConfig`) — default port values, DNS servers, HWID format (16 lowercase hex chars), HWID randomness, IPC socket-path resolution
 - **Database** (`db`) — path helpers, encrypt/decrypt round-trip via `writeEncryptedJSON`/`readEncryptedJSON`, encrypted file detection, key file creation and reuse across instances
 - **Network reconcile** (`lib/proxy/tun`) — startup orphan-rule teardown script covers every `whoisthat_*` table and is idempotent
-- **Split tunnel** (`lib/proxy/tun`) — generated exclude/include nftables `socket cgroupv2` + fwmark routing scripts, teardown idempotency
+- **Split tunnel** (`lib/proxy/tun`) — generated exclude/include nftables `socket cgroupv2` + fwmark routing scripts, cgroup level matching, postrouting NAT masquerading, IPv6 unreachable fallback, teardown idempotency
 - **TCP/UDS server** (`lib/TCPServer`) — length-prefixed framing round-trip over a Unix domain socket pair
 
 ---

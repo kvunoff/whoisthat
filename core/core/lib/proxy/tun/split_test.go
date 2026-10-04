@@ -5,21 +5,27 @@ import (
 	"testing"
 )
 
-// The cgroup path and its nftables "level" must stay in sync: level is the depth
+// The cgroup paths and their nftables "level" must stay in sync: level is the depth
 // of the slice dir below the cgroup root, so it equals the number of path
 // components. If the layout changes, level must track it automatically.
 func TestSplitCgroupLevelMatchesPathDepth(t *testing.T) {
-	rel := splitCgroupRelPath(1000)
-	// user.slice/user-1000.slice/user@1000.service/whoisthat-split.slice
-	wantComponents := strings.Count(rel, "/") + 1
-	if got := splitCgroupLevel(rel); got != wantComponents {
-		t.Errorf("splitCgroupLevel(%q) = %d, want %d", rel, got, wantComponents)
+	paths := splitCgroupRelPaths(1000)
+	if len(paths) != 2 {
+		t.Fatalf("expected 2 split cgroup candidate paths, got %d", len(paths))
 	}
-	if !strings.Contains(rel, "user-1000.slice") || !strings.Contains(rel, "user@1000.service") {
-		t.Errorf("cgroup path missing uid-scoped components: %q", rel)
+
+	// 1. whoisthat_split.slice (level 4, no hyphens, top-level user slice)
+	relUnderscore := paths[0]
+	wantComponentsUnderscore := strings.Count(relUnderscore, "/") + 1
+	if got := splitCgroupLevel(relUnderscore); got != wantComponentsUnderscore || got != 4 {
+		t.Errorf("splitCgroupLevel(%q) = %d, want %d (level 4)", relUnderscore, got, wantComponentsUnderscore)
 	}
-	if !strings.HasSuffix(rel, splitSliceName) {
-		t.Errorf("cgroup path %q must end in the split slice %q", rel, splitSliceName)
+
+	// 2. whoisthat.slice/whoisthat-split.slice (level 5, subslice)
+	relHyphen := paths[1]
+	wantComponentsHyphen := strings.Count(relHyphen, "/") + 1
+	if got := splitCgroupLevel(relHyphen); got != wantComponentsHyphen || got != 5 {
+		t.Errorf("splitCgroupLevel(%q) = %d, want %d (level 5)", relHyphen, got, wantComponentsHyphen)
 	}
 }
 
@@ -39,12 +45,33 @@ func TestSplitExcludeModeReusesTable100(t *testing.T) {
 	if !strings.Contains(script, "meta mark set 1") {
 		t.Errorf("exclude script must set mark %d, script: %s", splitExcludeMark, script)
 	}
+	if !strings.Contains(script, "nft 'add rule inet whoisthat_split output socket cgroupv2 level 4 \"user.slice/user-1000.slice/user@1000.service/whoisthat_split.slice\" meta mark set 1'") {
+		t.Errorf("exclude script missing level 4 rule: %s", script)
+	}
+	if !strings.Contains(script, "nft 'add rule inet whoisthat_split output socket cgroupv2 level 5 \"user.slice/user-1000.slice/user@1000.service/whoisthat.slice/whoisthat-split.slice\" meta mark set 1'") {
+		t.Errorf("exclude script missing level 5 rule: %s", script)
+	}
+	if !strings.Contains(script, "nft 'add rule inet whoisthat_split postrouting meta mark 1 oifname != \"whoisthattun\" oifname != \"lo\" masquerade'") {
+		t.Errorf("exclude script missing masquerade rule: %s", script)
+	}
 	// Exclude mode must not create its own routing table — it piggybacks on 100.
 	if strings.Contains(script, "table 200") {
 		t.Error("exclude script must not reference the include-mode table 200")
 	}
 	if strings.Contains(script, "ip rule add fwmark") {
 		t.Error("exclude script must not add its own fwmark rule (reuses table 100)")
+	}
+}
+
+// When physical interface lacks IPv6, exclude mode must blackhole mark 1 IPv6
+// so dual-stack apps immediately fall back to physical IPv4 instead of leaking to TUN.
+func TestSplitExcludeModeFallbackV6WhenAbsent(t *testing.T) {
+	script := buildSplitSetupScript("exclude", 1000, "whoisthattun", false)
+	if !strings.Contains(script, "ip -6 rule add fwmark 1 table 100") {
+		t.Errorf("exclude script must add fwmark 1 v6 rule when hasV6=false, script: %s", script)
+	}
+	if !strings.Contains(script, "ip -6 route replace unreachable default table 100") {
+		t.Errorf("exclude script must add unreachable v6 route when hasV6=false, script: %s", script)
 	}
 }
 
@@ -55,6 +82,9 @@ func TestSplitIncludeModeInstallsTunTable(t *testing.T) {
 
 	if !strings.Contains(script, "meta mark set 2") {
 		t.Errorf("include script must set mark %d", splitIncludeMark)
+	}
+	if !strings.Contains(script, "nft 'add rule inet whoisthat_split postrouting meta mark 2 oifname \"whoisthattun\" masquerade'") {
+		t.Errorf("include script missing include masquerade rule: %s", script)
 	}
 	if !strings.Contains(script, "ip rule add fwmark 2 table 200") {
 		t.Error("include script must route mark 2 via table 200")

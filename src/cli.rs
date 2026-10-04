@@ -292,12 +292,13 @@ fn print_help() {
     println!("INFORMATION & UTILITIES:");
     println!("    -p,  --profiles [--json]      List all subscription groups and profiles");
     println!("         --ip,      ip            Fetch and print public IPv4 & IPv6");
-    println!("         run <app> [args...]      Launch app into split-tunnel cgroup slice");
+    println!("         run [-d] <app> [args...] Launch app into split-tunnel slice (-d for background)");
     println!("    -v,  --version                Print version");
     println!("    -h,  --help                   Show this help message\n");
     println!("EXAMPLES:");
     println!("    whoisthat -t                     # Toggle VPN on/off");
     println!("    whoisthat -mt                    # Toggle TUN mode");
+    println!("    whoisthat run -d spotify         # Launch Spotify in background (split-tunnel)");
     println!("    whoisthat --start 2              # Connect to profile #2");
     println!("    whoisthat status --short         # For status bars (Waybar, Polybar, GNOME)");
     println!("    whoisthat status --watch --json  # For reactive UI widgets");

@@ -17,13 +17,21 @@ pub(crate) fn spawn_core(log_level: &str) -> io::Result<()> {
 }
 
 pub(crate) fn find_core_binary() -> String {
+    if let Some(path) = std::env::var_os("PATH") {
+        for dir in std::env::split_paths(&path) {
+            let candidate = dir.join("whoisthat-core");
+            if candidate.is_file() {
+                return candidate.to_string_lossy().into_owned();
+            }
+        }
+    }
+
     let candidates = [
-        "whoisthat-core",
         "./whoisthat-core",
         "./core/core/whoisthat-core",
         "./bin/whoisthat-core",
-        "/usr/bin/whoisthat-core",
         "/usr/local/bin/whoisthat-core",
+        "/usr/bin/whoisthat-core",
     ];
     for c in candidates {
         if std::path::Path::new(c).exists() {

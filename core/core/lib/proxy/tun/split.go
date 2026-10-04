@@ -25,24 +25,24 @@ import (
 //	          table (physical) — so in include mode NO system-wide default TUN
 //	          route is installed (see TunModeManager.Start).
 const (
-	splitSliceName    = "whoisthat-split.slice"
-	splitExcludeMark  = 1
-	splitExcludeTable = 100
-	splitIncludeMark  = 2
-	splitIncludeTable = 200
+	splitSliceNameUnderscore = "whoisthat_split.slice"
+	splitSliceNameHyphen     = "whoisthat-split.slice"
+	splitExcludeMark         = 1
+	splitExcludeTable        = 100
+	splitIncludeMark         = 2
+	splitIncludeTable        = 200
 )
 
-// splitCgroupRelPath is the cgroup v2 path (relative to the cgroup root — the
-// form nftables `socket cgroupv2` matches on) of the slice that `whoisthat run`
-// launches apps into. systemd nests a --user manager's slices under
-// user.slice/user-<uid>.slice/user@<uid>.service, and our transient scopes sit
-// one level below the slice, so a match on the slice catches every launched app.
-func splitCgroupRelPath(uid int) string {
-	return fmt.Sprintf("user.slice/user-%d.slice/user@%d.service/%s", uid, uid, splitSliceName)
-}
-
-func splitCgroupAbsPath(uid int) string {
-	return "/sys/fs/cgroup/" + splitCgroupRelPath(uid)
+// splitCgroupRelPaths returns the candidate cgroup v2 paths (relative to the
+// cgroup root) where systemd may place apps launched by `whoisthat run`:
+// 1. whoisthat_split.slice (level 4, no hyphens, directly under user@<uid>.service)
+// 2. whoisthat-split.slice (level 5, systemd treats hyphens as sub-slice hierarchy: whoisthat.slice/whoisthat-split.slice)
+// We install rules for both so both slice naming conventions work transparently.
+func splitCgroupRelPaths(uid int) []string {
+	return []string{
+		fmt.Sprintf("user.slice/user-%d.slice/user@%d.service/%s", uid, uid, splitSliceNameUnderscore),
+		fmt.Sprintf("user.slice/user-%d.slice/user@%d.service/whoisthat.slice/%s", uid, uid, splitSliceNameHyphen),
+	}
 }
 
 // splitCgroupLevel is the nftables cgroupv2 "level" of relPath: the depth of the
@@ -56,9 +56,7 @@ func splitCgroupLevel(relPath string) int {
 // marking + routing for the given mode. Returns "" for "off"/unknown modes.
 // Pure text so it is unit-testable without root or a live cgroup tree.
 func buildSplitSetupScript(mode string, uid int, tunName string, hasV6 bool) string {
-	rel := splitCgroupRelPath(uid)
-	abs := splitCgroupAbsPath(uid)
-	level := splitCgroupLevel(rel)
+	paths := splitCgroupRelPaths(uid)
 
 	var mark int
 	switch mode {
@@ -72,9 +70,12 @@ func buildSplitSetupScript(mode string, uid int, tunName string, hasV6 bool) str
 
 	var b strings.Builder
 	b.WriteString("set -e\n")
-	// Pre-create the slice cgroup so the nft rule can reference it before any app
-	// has been launched into it. systemd-run --user --slice adopts it later.
-	fmt.Fprintf(&b, "mkdir -p %q 2>/dev/null || true\n", abs)
+	// Pre-create the slice cgroups so nft rules can reference them before any app
+	// has been launched into them. systemd-run --user --slice adopts them later.
+	for _, rel := range paths {
+		abs := "/sys/fs/cgroup/" + rel
+		fmt.Fprintf(&b, "mkdir -p %q 2>/dev/null || true\n", abs)
+	}
 
 	// Mark packets from sockets in the split slice (and its descendant scopes).
 	// A `route` hook is required so setting the mark triggers a re-route of
@@ -82,7 +83,20 @@ func buildSplitSetupScript(mode string, uid int, tunName string, hasV6 bool) str
 	b.WriteString("nft add table inet whoisthat_split 2>/dev/null || true\n")
 	b.WriteString("nft 'add chain inet whoisthat_split output { type route hook output priority -150; policy accept; }' 2>/dev/null || true\n")
 	b.WriteString("nft flush chain inet whoisthat_split output\n")
-	fmt.Fprintf(&b, "nft add rule inet whoisthat_split output socket cgroupv2 level %d %q meta mark set %d\n", level, rel, mark)
+	for _, rel := range paths {
+		level := splitCgroupLevel(rel)
+		fmt.Fprintf(&b, "nft 'add rule inet whoisthat_split output socket cgroupv2 level %d \"%s\" meta mark set %d'\n", level, rel, mark)
+	}
+
+	// Sockets bound to the wrong source IP before output routing must be
+	// masqueraded on the egress interface so upstream routers/gateways accept them.
+	b.WriteString("nft 'add chain inet whoisthat_split postrouting { type nat hook postrouting priority 100; policy accept; }' 2>/dev/null || true\n")
+	b.WriteString("nft flush chain inet whoisthat_split postrouting\n")
+	if mode == "exclude" {
+		fmt.Fprintf(&b, "nft 'add rule inet whoisthat_split postrouting meta mark %d oifname != %q oifname != \"lo\" masquerade'\n", mark, tunName)
+	} else if mode == "include" {
+		fmt.Fprintf(&b, "nft 'add rule inet whoisthat_split postrouting meta mark %d oifname %q masquerade'\n", mark, tunName)
+	}
 
 	if mode == "include" {
 		// Marked traffic -> table 200 -> default dev tun. Unmarked traffic falls
@@ -93,9 +107,15 @@ func buildSplitSetupScript(mode string, uid int, tunName string, hasV6 bool) str
 			fmt.Fprintf(&b, "ip -6 rule add fwmark %d table %d 2>/dev/null || true\n", mark, splitIncludeTable)
 			fmt.Fprintf(&b, "ip -6 route replace default dev %s table %d\n", tunName, splitIncludeTable)
 		}
+	} else if mode == "exclude" {
+		if !hasV6 {
+			// Physical interface has no IPv6 default gateway. Excluded apps must NOT
+			// leak into the tunnel's default IPv6 route. Route mark 1 IPv6 packets
+			// to unreachable so dual-stack apps fall back cleanly to IPv4 (physical).
+			b.WriteString("ip -6 rule add fwmark 1 table 100 2>/dev/null || true\n")
+			b.WriteString("ip -6 route replace unreachable default table 100 2>/dev/null || true\n")
+		}
 	}
-	// exclude mode needs no extra routing: mark 1 already resolves to table 100
-	// (addFwmarkRouting -> physical gateway), installed during TUN start.
 
 	return b.String()
 }
@@ -109,7 +129,9 @@ ip rule del fwmark %d table %d 2>/dev/null || true
 ip route flush table %d 2>/dev/null || true
 ip -6 rule del fwmark %d table %d 2>/dev/null || true
 ip -6 route flush table %d 2>/dev/null || true
-`, splitIncludeMark, splitIncludeTable, splitIncludeTable, splitIncludeMark, splitIncludeTable, splitIncludeTable)
+ip -6 rule del fwmark %d table 100 2>/dev/null || true
+ip -6 route flush table 100 2>/dev/null || true
+`, splitIncludeMark, splitIncludeTable, splitIncludeTable, splitIncludeMark, splitIncludeTable, splitIncludeTable, splitExcludeMark)
 }
 
 func (t *TunModeManager) applySplitRules() error {
