@@ -10,14 +10,13 @@
 #
 # Components:
 #   1. System prerequisites (build-essential/base-devel, git, curl, unzip, libcap)
-#   2. Go 1.24+ (official go.dev distribution)
+#   2. Go 1.26+ (official go.dev distribution)
 #   3. Rust stable (official rustup.rs distribution)
 #   4. WhoisThat suite:
 #        - whoisthat-core   (Go VPN daemon with ambient Linux capabilities & native URI parser)
 #        - whoisthat        (Ratatui Rust TUI client)
-#   5. Xray-core (official release: xray, geoip.dat, geosite.dat)
-#   6. tun2socks (optional: official release for system-wide TUN mode)
-#   7. hysteria2 (optional: official client for hysteria2:// / hy2:// profiles)
+#   5. Isolated Xray-core runtime (v26.9.9: ~/.local/share/whoisthat/runtimes/xray/)
+#   6. Isolated tun2socks runtime (v2.7.0: ~/.local/share/whoisthat/runtimes/tun2socks/)
 # =============================================================================
 # Ensure running under bash
 if [ -z "${BASH_VERSION:-}" ]; then
@@ -37,6 +36,10 @@ GO_INSTALL_VERSION="1.26.8"
 XRAY_VERSION="v26.9.9"
 TUN2SOCKS_VERSION="v2.7.0"
 
+# Pinned SHA-256 hashes for tun2socks release archives (v2.7.0)
+TUN2SOCKS_SHA_AMD64="a612baa287a3b6de6221f74fd02b442a50888508227ecf51e1288a5ccbb77381"
+TUN2SOCKS_SHA_ARM64="3931476c9cfa8fa236d23aeaf36767df0eb27cc11ecaab699faba57744450f49"
+
 # --- configuration & defaults ------------------------------------------------
 BUILD_DIR="/tmp/whoisthat-build-$$"
 BUILD_SRC_DIR=""
@@ -55,6 +58,19 @@ T2S_ARCH=""
 DISTRO_ID=""
 DISTRO_NAME=""
 DISTRO_LIKE=""
+
+# Target regular user and home directory for isolated runtimes and configs
+if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ]; then
+    TARGET_USER="$SUDO_USER"
+    TARGET_HOME="$(getent passwd "$SUDO_USER" 2>/dev/null | cut -d: -f6)"
+    [ -z "$TARGET_HOME" ] && TARGET_HOME="$HOME"
+else
+    TARGET_USER="${USER:-$(id -un)}"
+    TARGET_HOME="$HOME"
+fi
+
+RUNTIMES_DIR="${TARGET_HOME}/.local/share/whoisthat/runtimes"
+CONFIG_GEO_DIR="${TARGET_HOME}/.config/whoisthat/geo"
 
 # --- terminal styling --------------------------------------------------------
 if [ -t 1 ]; then
@@ -124,8 +140,8 @@ Usage:
   curl -fsSL https://raw.githubusercontent.com/kvunoff/whoisthat/main/install.sh | bash -s -- [options]
 
 Options:
-  -y, --yes          Automatic yes to prompts (install all optional components)
-  --no-tun           Skip installation of tun2socks (TUN mode engine)
+  -y, --yes          Automatic yes to prompts (install all components)
+  --no-tun           Skip downloading isolated tun2socks runtime (TUN mode engine)
   --branch <name>    Build from a specific git branch or tag (default: latest release tag)
   --local            Build directly from current repository directory instead of cloning
   --uninstall        Remove whoisthat binaries from /usr/local/bin
@@ -183,6 +199,27 @@ extract_zip() {
         err "Neither 'unzip' nor 'python3' is available to extract $zip_file"
         return 1
     fi
+}
+
+ensure_user_dir() {
+    local dir="$1"
+    mkdir -p "$dir"
+    if [ "$(id -u)" -eq 0 ] && [ "$TARGET_USER" != "root" ]; then
+        chown -R "${TARGET_USER}:" "$dir" 2>/dev/null || true
+    fi
+}
+
+download_file_with_fallback() {
+    local dest="$1"
+    shift
+    for url in "$@"; do
+        info "Downloading ${url}..."
+        if curl -fsSL --connect-timeout 15 "$url" -o "$dest"; then
+            return 0
+        fi
+        warn "Failed to download from ${url}, trying fallback mirror..."
+    done
+    return 1
 }
 
 # --- argument parsing --------------------------------------------------------
@@ -255,8 +292,8 @@ uninstall_whoisthat() {
     fi
 
     echo
-    warn "User configuration (~/.config/whoisthat) and database (~/.local/share/whoisthat) were preserved."
-    warn "To completely delete all user data and credentials, run:"
+    warn "User configuration (~/.config/whoisthat) and database/runtimes (~/.local/share/whoisthat) were preserved."
+    warn "To completely delete all user data, credentials, and isolated runtimes, run:"
     echo -e "    ${YELLOW}rm -rf ~/.config/whoisthat ~/.local/share/whoisthat${NC}"
     echo
     exit 0
@@ -441,7 +478,7 @@ build_whoisthat() {
     local src_dir="$BUILD_DIR"
 
     # Option to build in-place if running directly from local repo clone
-    if [ "$BUILD_LOCAL" = "true" ] || ([ -f "./Cargo.toml" ] && [ -d "./core/core" ] && [ -d "./parser" ] && [ -z "$TARGET_BRANCH" ]); then
+    if [ "$BUILD_LOCAL" = "true" ] || ([ -f "./Cargo.toml" ] && [ -d "./core/core" ] && [ -z "$TARGET_BRANCH" ]); then
         info "Building directly from current directory: $(pwd)"
         src_dir="$(pwd)"
         SKIP_CLEANUP=true
@@ -501,6 +538,12 @@ install_binaries() {
     $SUDO install -Dm755 target/release/whoisthat              /usr/local/bin/whoisthat
     $SUDO install -Dm755 core/core/whoisthat-core               /usr/local/bin/whoisthat-core
 
+    # Clean up legacy parser binary if present from earlier versions (< v0.11.5)
+    if [ -f "/usr/local/bin/whoisthat-parser" ]; then
+        info "Removing obsolete /usr/local/bin/whoisthat-parser (parser is now embedded in whoisthat-core)..."
+        $SUDO rm -f "/usr/local/bin/whoisthat-parser"
+    fi
+
     info "Granting network capabilities to whoisthat-core..."
     if $SUDO setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep /usr/local/bin/whoisthat-core 2>/dev/null; then
         info "Capabilities configured: cap_net_admin, cap_net_raw, cap_setpcap"
@@ -512,91 +555,195 @@ install_binaries() {
 
 # --- step 6: install Xray-core -----------------------------------------------
 install_xray() {
-    step "Step 6/7: Verify Xray-core (${XRAY_VERSION})"
+    step "Step 6/7: Isolated Xray-core runtime (${XRAY_VERSION})"
 
-    if command -v xray &>/dev/null; then
+    local xray_dir="${RUNTIMES_DIR}/xray/${XRAY_VERSION}"
+    local xray_bin="${xray_dir}/xray"
+
+    ensure_user_dir "$xray_dir"
+    ensure_user_dir "$CONFIG_GEO_DIR"
+
+    # 1. Check if already installed in isolated runtime directory
+    if [ -x "$xray_bin" ]; then
         local current_ver
-        current_ver="$(xray version 2>&1 | head -1)"
-        info "Found existing xray: ${current_ver}"
+        current_ver="$("$xray_bin" version 2>&1 | head -1)"
         if echo "$current_ver" | grep -q "${XRAY_VERSION#v}"; then
-            info "Xray-core matches pinned version ${XRAY_VERSION}"
+            info "Xray-core matches pinned version ${XRAY_VERSION} in isolated runtime (${xray_bin})"
             return
         else
-            info "Existing xray differs from pinned ${XRAY_VERSION}, updating..."
+            info "Existing isolated xray differs from pinned ${XRAY_VERSION}, updating..."
         fi
     fi
 
+    # 2. Check if a system binary matches pinned version and can be adopted
+    local sys_xray=""
+    for candidate in /usr/local/bin/xray /usr/bin/xray; do
+        if [ -x "$candidate" ]; then
+            local cand_ver
+            cand_ver="$("$candidate" version 2>&1 | head -1)"
+            if echo "$cand_ver" | grep -q "${XRAY_VERSION#v}"; then
+                sys_xray="$candidate"
+                break
+            fi
+        fi
+    done
+
+    if [ -n "$sys_xray" ]; then
+        info "Found matching system xray at ${sys_xray}, adopting into isolated runtime..."
+        cp -f "$sys_xray" "$xray_bin"
+        chmod 0755 "$xray_bin"
+        # Also copy geo assets if available on system
+        for geo_src in /usr/share/xray /usr/local/share/xray; do
+            [ -f "${geo_src}/geoip.dat" ] && cp -f "${geo_src}/geoip.dat" "${xray_dir}/" && cp -f "${geo_src}/geoip.dat" "${CONFIG_GEO_DIR}/" 2>/dev/null || true
+            [ -f "${geo_src}/geosite.dat" ] && cp -f "${geo_src}/geosite.dat" "${xray_dir}/" && cp -f "${geo_src}/geosite.dat" "${CONFIG_GEO_DIR}/" 2>/dev/null || true
+        done
+        if [ "$(id -u)" -eq 0 ] && [ "$TARGET_USER" != "root" ]; then
+            chown -R "${TARGET_USER}:" "$xray_dir" "$CONFIG_GEO_DIR" 2>/dev/null || true
+        fi
+        info "Xray-core ready: $("$xray_bin" version 2>&1 | head -1)"
+        return
+    fi
+
+    # 3. Download official precompiled release into isolated runtime
     local xray_zip="Xray-linux-${XRAY_ARCH}.zip"
-    local xray_url="https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}/${xray_zip}"
+    local xray_url1="https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}/${xray_zip}"
+    local xray_url2="https://ghfast.top/https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}/${xray_zip}"
     local tmp_dir="/tmp/whoisthat-xray-$$"
 
     info "Downloading precompiled Xray-core ${XRAY_VERSION} (${XRAY_ARCH})..."
     mkdir -p "$tmp_dir"
-    if curl -fsSL "$xray_url" -o "${tmp_dir}/${xray_zip}"; then
-        extract_zip "${tmp_dir}/${xray_zip}" "$tmp_dir"
-        $SUDO install -Dm755 "${tmp_dir}/xray" /usr/local/bin/xray
+    if download_file_with_fallback "${tmp_dir}/${xray_zip}" "$xray_url1" "$xray_url2"; then
+        # Verify SHA-256 via .dgst if sha256sum is available
+        if command -v sha256sum &>/dev/null; then
+            local dgst_file="${tmp_dir}/${xray_zip}.dgst"
+            if curl -fsSL --connect-timeout 10 "https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}/${xray_zip}.dgst" -o "$dgst_file" 2>/dev/null || \
+               curl -fsSL --connect-timeout 10 "https://ghfast.top/https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}/${xray_zip}.dgst" -o "$dgst_file" 2>/dev/null; then
+                local expected_sha
+                expected_sha=$(grep -i "SHA2-256" "$dgst_file" | grep -oE '[a-fA-F0-9]{64}' | head -1 | tr '[:upper:]' '[:lower:]' || true)
+                if [ -n "$expected_sha" ]; then
+                    local actual_sha
+                    actual_sha=$(sha256sum "${tmp_dir}/${xray_zip}" | awk '{print $1}')
+                    if [ "$actual_sha" = "$expected_sha" ]; then
+                        info "Xray-core SHA-256 checksum verified OK"
+                    else
+                        warn "Xray-core checksum mismatch: expected $expected_sha, got $actual_sha"
+                    fi
+                fi
+            fi
+        fi
 
-        # Install bundled geo assets for fallback routing
-        $SUDO mkdir -p /usr/local/share/xray
-        [ -f "${tmp_dir}/geoip.dat" ] && $SUDO install -Dm644 "${tmp_dir}/geoip.dat" /usr/local/share/xray/geoip.dat
-        [ -f "${tmp_dir}/geosite.dat" ] && $SUDO install -Dm644 "${tmp_dir}/geosite.dat" /usr/local/share/xray/geosite.dat
+        extract_zip "${tmp_dir}/${xray_zip}" "$tmp_dir"
+        install -Dm755 "${tmp_dir}/xray" "$xray_bin"
+
+        # Install bundled geo assets into isolated runtime & config geo directory
+        [ -f "${tmp_dir}/geoip.dat" ] && cp -f "${tmp_dir}/geoip.dat" "${xray_dir}/geoip.dat" && cp -f "${tmp_dir}/geoip.dat" "${CONFIG_GEO_DIR}/geoip.dat"
+        [ -f "${tmp_dir}/geosite.dat" ] && cp -f "${tmp_dir}/geosite.dat" "${xray_dir}/geosite.dat" && cp -f "${tmp_dir}/geosite.dat" "${CONFIG_GEO_DIR}/geosite.dat"
+
+        if [ "$(id -u)" -eq 0 ] && [ "$TARGET_USER" != "root" ]; then
+            chown -R "${TARGET_USER}:" "$xray_dir" "$CONFIG_GEO_DIR" 2>/dev/null || true
+        fi
 
         rm -rf "$tmp_dir"
-        info "Xray-core installed: $(xray version 2>&1 | head -1)"
+        info "Isolated Xray-core installed: $("$xray_bin" version 2>&1 | head -1)"
     else
         rm -rf "$tmp_dir"
-        err "Failed to download Xray-core from ${xray_url}"
-        exit 1
+        warn "Failed to download Xray-core archive."
+        warn "WhoisThat core will attempt automatic background download upon startup."
     fi
 }
 
 # --- step 7: install tun2socks (optional) ------------------------------------
 install_tun2socks() {
-    step "Step 7/7: Verify tun2socks (optional — TUN mode engine)"
+    step "Step 7/7: Isolated tun2socks runtime (${TUN2SOCKS_VERSION})"
 
-    if command -v tun2socks &>/dev/null; then
+    local t2s_dir="${RUNTIMES_DIR}/tun2socks/${TUN2SOCKS_VERSION}"
+    local t2s_bin="${t2s_dir}/tun2socks"
+
+    ensure_user_dir "$t2s_dir"
+
+    # 1. Check if already installed in isolated runtime directory
+    if [ -x "$t2s_bin" ]; then
         local current_ver
-        current_ver="$(tun2socks --version 2>&1 | head -1)"
-        info "Found existing tun2socks: ${current_ver}"
+        current_ver="$("$t2s_bin" --version 2>&1 | head -1 || "$t2s_bin" -v 2>&1 | head -1)"
         if echo "$current_ver" | grep -q "${TUN2SOCKS_VERSION#v}"; then
-            info "tun2socks matches pinned version ${TUN2SOCKS_VERSION}"
+            info "tun2socks matches pinned version ${TUN2SOCKS_VERSION} in isolated runtime (${t2s_bin})"
             return
         else
-            info "Existing tun2socks differs from pinned ${TUN2SOCKS_VERSION}, updating..."
+            info "Existing isolated tun2socks differs from pinned ${TUN2SOCKS_VERSION}, updating..."
         fi
     fi
 
+    # 2. Check if a system binary matches pinned version and can be adopted
+    local sys_t2s=""
+    for candidate in /usr/local/bin/tun2socks /usr/bin/tun2socks; do
+        if [ -x "$candidate" ]; then
+            local cand_ver
+            cand_ver="$("$candidate" --version 2>&1 | head -1 || "$candidate" -v 2>&1 | head -1)"
+            if echo "$cand_ver" | grep -q "${TUN2SOCKS_VERSION#v}"; then
+                sys_t2s="$candidate"
+                break
+            fi
+        fi
+    done
+
+    if [ -n "$sys_t2s" ]; then
+        info "Found matching system tun2socks at ${sys_t2s}, adopting into isolated runtime..."
+        cp -f "$sys_t2s" "$t2s_bin"
+        chmod 0755 "$t2s_bin"
+        if [ "$(id -u)" -eq 0 ] && [ "$TARGET_USER" != "root" ]; then
+            chown -R "${TARGET_USER}:" "$t2s_dir" 2>/dev/null || true
+        fi
+        info "tun2socks ready: $("$t2s_bin" --version 2>&1 | head -1 || echo "${TUN2SOCKS_VERSION}")"
+        return
+    fi
+
     if [ "$INSTALL_TUN" = "false" ]; then
-        info "Skipping tun2socks (--no-tun specified)"
+        info "Skipping tun2socks (--no-tun specified; WhoisThat can download it on demand later)"
         return
     fi
 
-    warn "tun2socks enables transparent system-wide TUN mode."
-    if ! prompt_yes_no "    Install tun2socks ${TUN2SOCKS_VERSION}? [y/N]" "N"; then
-        info "Skipping tun2socks"
-        return
-    fi
-
+    # 3. Download official precompiled release into isolated runtime
     local t2s_zip="tun2socks-linux-${T2S_ARCH}.zip"
-    local t2s_url="https://github.com/xjasonlyu/tun2socks/releases/download/${TUN2SOCKS_VERSION}/${t2s_zip}"
+    local t2s_url1="https://github.com/xjasonlyu/tun2socks/releases/download/${TUN2SOCKS_VERSION}/${t2s_zip}"
+    local t2s_url2="https://ghfast.top/https://github.com/xjasonlyu/tun2socks/releases/download/${TUN2SOCKS_VERSION}/${t2s_zip}"
     local tmp_dir="/tmp/whoisthat-tun2socks-$$"
 
-    info "Downloading tun2socks ${TUN2SOCKS_VERSION} (${T2S_ARCH})..."
+    info "Downloading precompiled tun2socks ${TUN2SOCKS_VERSION} (${T2S_ARCH})..."
     mkdir -p "$tmp_dir"
-    if curl -fsSL "$t2s_url" -o "${tmp_dir}/${t2s_zip}"; then
+    if download_file_with_fallback "${tmp_dir}/${t2s_zip}" "$t2s_url1" "$t2s_url2"; then
+        # Verify SHA-256 if sha256sum is available
+        if command -v sha256sum &>/dev/null; then
+            local expected_sha=""
+            [ "$ARCH_FAMILY" = "amd64" ] && expected_sha="$TUN2SOCKS_SHA_AMD64"
+            [ "$ARCH_FAMILY" = "arm64" ] && expected_sha="$TUN2SOCKS_SHA_ARM64"
+            if [ -n "$expected_sha" ]; then
+                local actual_sha
+                actual_sha=$(sha256sum "${tmp_dir}/${t2s_zip}" | awk '{print $1}')
+                if [ "$actual_sha" = "$expected_sha" ]; then
+                    info "tun2socks SHA-256 checksum verified OK"
+                else
+                    warn "tun2socks checksum mismatch: expected $expected_sha, got $actual_sha"
+                fi
+            fi
+        fi
+
         extract_zip "${tmp_dir}/${t2s_zip}" "$tmp_dir"
-        local bin
-        bin=$(find "$tmp_dir" -type f -name "tun2socks*" | head -1)
-        if [ -n "$bin" ]; then
-            $SUDO install -Dm755 "$bin" /usr/local/bin/tun2socks
-            info "tun2socks installed successfully"
+        local extracted_bin
+        extracted_bin=$(find "$tmp_dir" -type f -name "tun2socks*" ! -name "*.zip" | head -1)
+        if [ -n "$extracted_bin" ]; then
+            install -Dm755 "$extracted_bin" "$t2s_bin"
+            if [ "$(id -u)" -eq 0 ] && [ "$TARGET_USER" != "root" ]; then
+                chown -R "${TARGET_USER}:" "$t2s_dir" 2>/dev/null || true
+            fi
+            info "Isolated tun2socks installed: $("$t2s_bin" --version 2>&1 | head -1 || echo "${TUN2SOCKS_VERSION}")"
         else
             warn "tun2socks binary not found in downloaded archive"
         fi
         rm -rf "$tmp_dir"
     else
         rm -rf "$tmp_dir"
-        warn "Failed to download tun2socks from ${t2s_url}"
+        warn "Failed to download tun2socks archive."
+        warn "WhoisThat core will attempt automatic background download when TUN mode is activated."
     fi
 }
 
@@ -634,9 +781,13 @@ print_final_message() {
     echo -e "    ${BOLD}q${NC}              — detach (VPN keeps running in background)"
     echo -e "    ${BOLD}Q / Ctrl+C${NC}     — full quit (stops VPN and exits)"
     echo
-    echo -e "  Configuration:"
+    echo -e "  Configuration & Data:"
     echo -e "    Config:    ~/.config/whoisthat/"
     echo -e "    Database:  ~/.local/share/whoisthat/db/ (AES-256-GCM encrypted)"
+    echo -e "    Runtimes:  ~/.local/share/whoisthat/runtimes/ (isolated Xray & tun2socks)"
+    echo
+    echo -e "  Diagnostics:"
+    echo -e "    Run '${BOLD}whoisthat doctor${NC}' to inspect system health and runtime status"
     echo
 
     if [ -d "/usr/local/go/bin" ] && ! grep -q '/usr/local/go/bin' "$HOME/.profile" 2>/dev/null; then
@@ -659,6 +810,8 @@ main() {
         local cur
         cur=$(whoisthat --version 2>/dev/null || echo "detected")
         info "Existing whoisthat installation found (${cur}) -> Upgrading"
+        # Gracefully stop running instance before replacing binaries
+        whoisthat --stop &>/dev/null || true
     fi
 
     echo
