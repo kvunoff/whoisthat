@@ -7,7 +7,6 @@ import (
 	"whoisthat-core/lib/tunmgr"
 	"whoisthat-core/lib/xraymgr"
 	"whoisthat-core/structs"
-	"whoisthat-core/utils"
 )
 
 // MissingBinary pairs a binary name with the actionable install hint the user
@@ -17,11 +16,8 @@ type MissingBinary struct {
 	Hint string
 }
 
-// CheckMissingBinaries probes the external binaries whoisthat-core
-// shells out to (xray, tun2socks, whoisthat-parser) and returns the subset
-// that is not installed.
-//
-// Order: xray first, then tun2socks (TUN mode), then parser.
+// CheckMissingBinaries probes the external runtimes whoisthat-core
+// manages (xray, tun2socks) and returns the subset that is not installed.
 func CheckMissingBinaries() []MissingBinary {
 	var missing []MissingBinary
 
@@ -45,12 +41,6 @@ func CheckMissingBinaries() []MissingBinary {
 		missing = append(missing, MissingBinary{
 			Name: "tun2socks",
 			Hint: hint,
-		})
-	}
-	if _, err := utils.GetParserBin(); err != nil {
-		missing = append(missing, MissingBinary{
-			Name: "parser",
-			Hint: "whoisthat-parser binary not found — add-profiles and update-subscription will fail. Reinstall whoisthat or place whoisthat-parser in /usr/bin or /usr/local/bin",
 		})
 	}
 	return missing

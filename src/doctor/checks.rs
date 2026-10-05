@@ -54,26 +54,7 @@ fn check_binaries() -> CheckCategory {
         ));
     }
 
-    // 3. whoisthat-parser
-    let parser_bin = find_binary(
-        "whoisthat-parser",
-        &[
-            "/usr/bin/whoisthat-parser",
-            "/usr/local/bin/whoisthat-parser",
-            "./parser/target/release/whoisthat-parser",
-        ],
-    );
-    if let Some(path) = parser_bin {
-        items.push(CheckItem::pass("whoisthat-parser", path));
-    } else {
-        items.push(CheckItem::fail(
-            "whoisthat-parser",
-            "parser binary not found — profile import and subscriptions will fail",
-            Some("sudo install -Dm755 parser/target/release/whoisthat-parser /usr/bin/whoisthat-parser".into()),
-        ));
-    }
-
-    // 4. xray (Xray-core)
+    // 3. xray (Xray-core)
     let xray_info = probe_xray();
     match xray_info {
         Some((path, ver)) => {
@@ -173,7 +154,6 @@ fn check_capabilities() -> CheckCategory {
 
         if has_net_admin && has_net_raw && has_setpcap {
             let caps_str = caps_output
-                .trim()
                 .split_whitespace()
                 .last()
                 .unwrap_or("verified");
@@ -738,7 +718,7 @@ fn probe_tun2socks() -> Option<(String, String)> {
                 if dir
                     .file_name()
                     .and_then(|n| n.to_str())
-                    .map_or(false, |s| s.contains(".tmp-"))
+                    .is_some_and(|s| s.contains(".tmp-"))
                 {
                     continue;
                 }

@@ -7,10 +7,6 @@ import (
 	"strconv"
 )
 
-func GetParserBin() (string, error) {
-	return GetBinPath("whoisthat-parser")
-}
-
 func GetTun2socksBin() (string, error) {
 	return GetBinPath("tun2socks")
 }

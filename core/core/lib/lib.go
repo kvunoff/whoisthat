@@ -2,23 +2,14 @@ package lib
 
 import (
 	"encoding/base64"
-	"encoding/json"
-	"fmt"
-	"github.com/matoous/go-nanoid/v2"
-	"os/exec"
 	"strings"
 	"unicode/utf8"
-	"whoisthat-core/db"
-	"whoisthat-core/structs"
-	"whoisthat-core/utils"
-)
 
-type profileMetaData struct {
-	Name     string `json:"name"`
-	Protocol string `json:"protocol"`
-	Address  string `json:"address,omitzero"`
-	Host     string `json:"host,omitzero"`
-}
+	"github.com/matoous/go-nanoid/v2"
+	"whoisthat-core/db"
+	"whoisthat-core/lib/parser"
+	"whoisthat-core/structs"
+)
 
 func AddProfiles(DB *db.DB, data structs.AddProfilesData) structs.ProfilesAdded {
 	profiles_data := GetDBAddProfileDatasFromStr(data.Uris, data.GroupId)
@@ -32,14 +23,6 @@ func AddProfiles(DB *db.DB, data structs.AddProfilesData) structs.ProfilesAdded 
 	return structs.ProfilesAdded{
 		Profiles: profiles,
 	}
-}
-
-type batchProfileMetaData struct {
-	Uri      string `json:"uri"`
-	Name     string `json:"name"`
-	Protocol string `json:"protocol"`
-	Address  string `json:"address,omitzero"`
-	Host     string `json:"host,omitzero"`
 }
 
 func GetDBAddProfileDatasFromStr(str string, group_id int) []structs.DBAddProfileData {
@@ -62,31 +45,27 @@ func GetDBAddProfileDatasFromStr(str string, group_id int) []structs.DBAddProfil
 }
 
 func getDBAddProfileDatasFromStrBatch(str string, group_id int) ([]structs.DBAddProfileData, error) {
-	parserbin, err := utils.GetParserBin()
+	batchItems, err := parser.GetMetadataBatch(strings.NewReader(str))
 	if err != nil {
-		return nil, fmt.Errorf("failed to find parser bin: %w", err)
-	}
-
-	cmd := exec.Command(parserbin, "--get-metadata-batch")
-	cmd.Stdin = strings.NewReader(str)
-	out, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("batch metadata failed: %w", err)
-	}
-
-	var batchItems []batchProfileMetaData
-	if err := json.Unmarshal(out, &batchItems); err != nil {
-		return nil, fmt.Errorf("unmarshaling batch metadata: %w", err)
+		return nil, err
 	}
 
 	profiles := make([]structs.DBAddProfileData, 0, len(batchItems))
 	for _, item := range batchItems {
+		addr := ""
+		if item.Address != nil {
+			addr = *item.Address
+		}
+		host := ""
+		if item.Host != nil {
+			host = *item.Host
+		}
 		profiles = append(profiles, structs.DBAddProfileData{
 			Protocol: item.Protocol,
 			Name:     item.Name,
-			Address:  item.Address,
-			Host:     item.Host,
-			Uri:      item.Uri,
+			Address:  addr,
+			Host:     host,
+			Uri:      item.URI,
 			GroupId:  group_id,
 			NanoID:   generateNanoID(),
 		})
@@ -95,27 +74,25 @@ func getDBAddProfileDatasFromStrBatch(str string, group_id int) ([]structs.DBAdd
 }
 
 func getDBAddProfileDataFromURI(uri string, group_id int) (structs.DBAddProfileData, error) {
-	var profile_data structs.DBAddProfileData
-	parserbin, err := utils.GetParserBin()
+	meta, err := parser.GetMetadata(uri)
 	if err != nil {
-		return profile_data, fmt.Errorf("failed to find parser bin: %w", err)
-	}
-	parser_metadata_cmd := exec.Command(parserbin, uri, "--get-metadata")
-	metadata_output, err := parser_metadata_cmd.Output()
-	if err != nil {
-		return profile_data, fmt.Errorf("getting metadata failed: %w (output: %s)", err, string(metadata_output))
+		return structs.DBAddProfileData{}, err
 	}
 
-	var profile_metadata profileMetaData
-	if err := json.Unmarshal(metadata_output, &profile_metadata); err != nil {
-		return profile_data, fmt.Errorf("err unmarshaling metadata output: %w", err)
+	addr := ""
+	if meta.Address != nil {
+		addr = *meta.Address
+	}
+	host := ""
+	if meta.Host != nil {
+		host = *meta.Host
 	}
 
-	profile_data = structs.DBAddProfileData{
-		Protocol: profile_metadata.Protocol,
-		Name:     profile_metadata.Name,
-		Address:  profile_metadata.Address,
-		Host:     profile_metadata.Host,
+	profile_data := structs.DBAddProfileData{
+		Protocol: meta.Protocol,
+		Name:     meta.Name,
+		Address:  addr,
+		Host:     host,
 		Uri:      uri,
 		GroupId:  group_id,
 		NanoID:   generateNanoID(),

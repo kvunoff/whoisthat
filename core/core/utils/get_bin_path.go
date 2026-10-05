@@ -15,8 +15,6 @@ func GetBinPath(name string) (string, error) {
 	paths := []string{
 		"./" + name,
 		filepath.Join(".", "bin", name),
-		filepath.Join("parser", "target", "release", name),
-		filepath.Join("..", "..", "parser", "target", "release", name),
 		filepath.Join("/usr/local/bin", name),
 		filepath.Join("/usr/bin", name),
 	}

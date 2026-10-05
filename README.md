@@ -62,9 +62,6 @@ Prerequisites: **Rust** 1.80+, **Go** 1.25+, **git**, **curl**, a C compiler.
 git clone https://github.com/kvunoff/whoisthat.git
 cd whoisthat
 
-# Parser (standalone Rust binary — URI → Xray JSON)
-cd parser && cargo build --release && cd ..
-
 # Core (Go daemon — VPN engine)
 cd core/core && go build -o whoisthat-core && cd ../..
 
@@ -72,9 +69,8 @@ cd core/core && go build -o whoisthat-core && cd ../..
 cargo build --release
 
 # Install
-sudo install -Dm755 target/release/whoisthat              /usr/local/bin/whoisthat
-sudo install -Dm755 core/core/whoisthat-core               /usr/local/bin/whoisthat-core
-sudo install -Dm755 parser/target/release/whoisthat-parser /usr/local/bin/whoisthat-parser
+sudo install -Dm755 target/release/whoisthat /usr/local/bin/whoisthat
+sudo install -Dm755 core/core/whoisthat-core  /usr/local/bin/whoisthat-core
 
 # TUN mode capability setup (one-time, optional — TUI auto-prompts if skipped)
 sudo setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep /usr/local/bin/whoisthat-core
@@ -159,7 +155,7 @@ Encrypted at rest with AES-256-GCM — key auto-generated on first run.
 - Full system-wide TUN-mode VPN (`tun2socks` + `iptables`/`nftables`, auto-detected)
 - **Profile testing** — three methods: TCP connect (fast prefilter), HTTP GET, HTTP HEAD via SOCKS5. Multi-sample (default 3) with median latency, jitter, and packet-loss %.
 - **Unified native protocol engine** — all protocols (VLESS, VMess, Trojan, Shadowsocks, SOCKS5, Hysteria2) run natively through Xray-core (`v26.9.9`). Standalone `hysteria` binary is no longer required; Hysteria2 profiles now fully support routing rules, live gRPC traffic statistics, and unified latency testing.
-- **Missing-binary UX** — on startup the core probes for xray, tun2socks, and whoisthat-parser; each miss is unicast to the freshly-connected TUI as a `warn` with an actionable install hint. Connect-time errors also forward the real underlying `err.Error()` (no more generic "Failed to connect" hiding "binary not found").
+- **Missing-binary UX** — on startup the core probes for managed runtimes xray and tun2socks; each miss is unicast to the freshly-connected TUI as a `warn` with an actionable install hint. Connect-time errors also forward the real underlying `err.Error()` (no more generic "Failed to connect" hiding "binary not found").
 - **Test progress** — pending profiles show `…` immediately; in-flight batches broadcast tested/total progress. `C` cancels in-flight tests gracefully (epoch counter; no orphan subprocesses — also drops queued work before it spawns xray). Test failures broadcast the reason as a `warn` (throttled to one per-reason per 5s so a batch with failing endpoints emits readable warnings without spam).
 - **Scan-all testing** — `t` scans all profiles across all groups with dedup; `T` tests only focused profile/subscription. Group-focused tests use the single `test-group` TCP command for efficiency.
 - **Auto-test on subscription refresh** — profiles are tested automatically after `u` so you see live latencies immediately. Toggle in Settings → Diagnostics.
@@ -224,7 +220,7 @@ Encrypted at rest with AES-256-GCM — key auto-generated on first run.
 1. **WhoisThat Core** is a long-running Go daemon. It manages VPN profiles (stored as JSON files under `~/.local/share/whoisthat/db/`), launches Xray-core as a subprocess, and controls the TUN device via `iproute2` + `tun2socks`.
 
 2. **Unified core engine.** All protocols run directly through Xray-core (`v26.9.9`):
-   - **Xray-core** — VLESS (incl. Reality/xTLS Vision), VMess, Trojan (incl. reality/WS/gRPC), Shadowsocks, SOCKS5, and Hysteria2 (`hysteria2://` / `hy2://` with native QUIC, TLS, Salamander obfs, UDP port-hopping, bandwidth params, and SNI). Configuration JSON is generated on-the-fly from profile URIs by the bundled `whoisthat-parser`. All protocols benefit equally from Xray's routing rules, DNS bypass, and gRPC traffic statistics.
+   - **Xray-core** — VLESS (incl. Reality/xTLS Vision), VMess, Trojan (incl. reality/WS/gRPC), Shadowsocks, SOCKS5, and Hysteria2 (`hysteria2://` / `hy2://` with native QUIC, TLS, Salamander obfs, UDP port-hopping, bandwidth params, and SNI). Configuration JSON is generated on-the-fly from profile URIs directly in-memory by the core's native parser package. All protocols benefit equally from Xray's routing rules, DNS bypass, and gRPC traffic statistics.
 
 3. **TUN mode** creates a virtual network interface (configurable name, default `whoisthattun`), sets up `iptables`/`nftables` rules (DNS hijack, MASQUERADE, auto-detected at runtime), and routes all system traffic through the Xray SOCKS5 proxy via `tun2socks`.
 
@@ -907,9 +903,6 @@ No install step needed during development — `cargo run` plus a `go build` in `
 # Build core (must be first — TUI spawns this binary)
 cd core/core && go build -o whoisthat-core && cd ../..
 
-# Build parser (used by core at runtime)
-cd parser && cargo build --release && cd ..
-
 # Run TUI
 cargo run
 ```
@@ -1011,10 +1004,7 @@ whoisthat/
 │       ├── routing.rs  ← Routing rules tab + presets catalog + popups
 │       ├── traffic.rs  ← Real-time traffic monitoring tab (Braille charts + live transfer stats)
 │       ├── logs.rs     ← Log viewer (live tail + auto-scroll + level filter)
-│       ├── uri.rs      ← URI detail parser (VLESS/VMess/Trojan/SS/SOCKS/Hysteria2)
-├── parser/             ← whoisthat-parser — URI → Xray JSON (standalone Rust binary)
-│   ├── Cargo.toml
-│   └── src/
+│       └── uri.rs      ← URI detail parser (VLESS/VMess/Trojan/SS/SOCKS/Hysteria2)
 ├── core/               ← WhoisThat Core (Go VPN engine)
 │   └── core/
 │       ├── main.go     ← Daemon entry point; RaiseAmbientCaps() before everything
@@ -1024,6 +1014,7 @@ whoisthat/
 │       ├── db/         ← JSON file-based profile DB + readEncryptedJSON / MigrateToEncrypted
 │       ├── utils/      ← caps.go (RaiseAmbientCaps, CanTun), user.go (UIDs)
 │       └── lib/        ← Core libraries
+│           ├── parser/      ← Native in-memory URI parser & Xray JSON generator
 │           ├── logger/      ← Structured logger (lumberjack rotation, 20 MB)
 │           ├── TCPServer/  ← IPC server + dispatcher (Unix socket / TCP, length-prefixed JSON)
 │           ├── AppConfig/  ← Core configuration, defaults, HWID gen

@@ -105,8 +105,8 @@ func main() {
 		tm.EnsureRuntimeAsync()
 	}
 
-	// Pre-flight: probe for external binaries the core shells out to
-	// (xray, tun2socks, whoisthat-parser). Each miss is paired with an actionable
+	// Pre-flight: probe for external runtimes the core manages
+	// (xray, tun2socks). Each miss is paired with an actionable
 	// install hint and unicast as a warn to every newly connected TUI client.
 	missing := TCPServer.CheckMissingBinaries()
 	for _, mb := range missing {

@@ -13,8 +13,7 @@
 #   2. Go 1.24+ (official go.dev distribution)
 #   3. Rust stable (official rustup.rs distribution)
 #   4. WhoisThat suite:
-#        - whoisthat-parser (standalone Rust URI -> Xray JSON generator)
-#        - whoisthat-core   (Go VPN daemon with ambient Linux capabilities)
+#        - whoisthat-core   (Go VPN daemon with ambient Linux capabilities & native URI parser)
 #        - whoisthat        (Ratatui Rust TUI client)
 #   5. Xray-core (official release: xray, geoip.dat, geosite.dat)
 #   6. tun2socks (optional: official release for system-wide TUN mode)
@@ -478,18 +477,13 @@ build_whoisthat() {
 
     cd "$src_dir"
 
-    # 1. whoisthat-parser (Rust)
-    info "1/3 Building whoisthat-parser..."
-    cargo build --release --manifest-path parser/Cargo.toml
-    [ -f parser/target/release/whoisthat-parser ] || { err "whoisthat-parser build failed"; exit 1; }
-
-    # 2. whoisthat-core (Go)
-    info "2/3 Building whoisthat-core..."
+    # 1. whoisthat-core (Go)
+    info "1/2 Building whoisthat-core..."
     (cd core/core && go build -o whoisthat-core)
     [ -f core/core/whoisthat-core ] || { err "whoisthat-core build failed"; exit 1; }
 
-    # 3. whoisthat TUI (Rust)
-    info "3/3 Building whoisthat TUI..."
+    # 2. whoisthat TUI (Rust)
+    info "2/2 Building whoisthat TUI..."
     cargo build --release
     [ -f target/release/whoisthat ] || { err "whoisthat TUI build failed"; exit 1; }
 
@@ -503,10 +497,9 @@ install_binaries() {
 
     cd "$BUILD_SRC_DIR"
 
-    info "Installing whoisthat, whoisthat-core, whoisthat-parser..."
+    info "Installing whoisthat and whoisthat-core..."
     $SUDO install -Dm755 target/release/whoisthat              /usr/local/bin/whoisthat
     $SUDO install -Dm755 core/core/whoisthat-core               /usr/local/bin/whoisthat-core
-    $SUDO install -Dm755 parser/target/release/whoisthat-parser /usr/local/bin/whoisthat-parser
 
     info "Granting network capabilities to whoisthat-core..."
     if $SUDO setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep /usr/local/bin/whoisthat-core 2>/dev/null; then

@@ -20,12 +20,6 @@ jobs:
         run: cargo fmt --all --check
       - name: clippy
         run: cargo clippy --all-targets --no-deps
-      - name: Build parser
-        working-directory: parser
-        run: cargo build --release
-      - name: clippy parser
-        working-directory: parser
-        run: cargo clippy --all-targets --no-deps
       - name: Test
         run: cargo test
 
@@ -37,6 +31,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.25"
+        # Note: Go 1.25+ recommended
       - name: vet
         working-directory: core/core
         run: go vet ./...
@@ -45,4 +40,4 @@ jobs:
         run: go build ./...
       - name: Test
         working-directory: core/core
-        run: go test ./lib/crypto/... ./lib/AppConfig/... ./db/...
+        run: go test ./lib/parser/... ./lib/crypto/... ./lib/AppConfig/... ./db/...

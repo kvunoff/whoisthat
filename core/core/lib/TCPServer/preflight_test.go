@@ -107,7 +107,7 @@ func TestCheckMissingBinaries_Structure(t *testing.T) {
 		}
 		// The hint should be actionable — include the install command or
 		// at least mention the binary name.
-		if !strings.Contains(mb.Hint, mb.Name) && !strings.Contains(mb.Hint, "parser") {
+		if !strings.Contains(mb.Hint, mb.Name) {
 			t.Errorf("MissingBinary(%s).Hint does not reference the binary name: %q", mb.Name, mb.Hint)
 		}
 	}
