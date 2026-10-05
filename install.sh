@@ -36,7 +36,7 @@ set -euo pipefail
 GO_MIN_VERSION="1.26.0"
 GO_INSTALL_VERSION="1.26.8"
 XRAY_VERSION="v26.9.9"
-TUN2SOCKS_VERSION="v2.5.2"
+TUN2SOCKS_VERSION="v2.7.0"
 
 # --- configuration & defaults ------------------------------------------------
 BUILD_DIR="/tmp/whoisthat-build-$$"
@@ -562,8 +562,15 @@ install_tun2socks() {
     step "Step 7/7: Verify tun2socks (optional — TUN mode engine)"
 
     if command -v tun2socks &>/dev/null; then
-        info "tun2socks already installed"
-        return
+        local current_ver
+        current_ver="$(tun2socks --version 2>&1 | head -1)"
+        info "Found existing tun2socks: ${current_ver}"
+        if echo "$current_ver" | grep -q "${TUN2SOCKS_VERSION#v}"; then
+            info "tun2socks matches pinned version ${TUN2SOCKS_VERSION}"
+            return
+        else
+            info "Existing tun2socks differs from pinned ${TUN2SOCKS_VERSION}, updating..."
+        fi
     fi
 
     if [ "$INSTALL_TUN" = "false" ]; then

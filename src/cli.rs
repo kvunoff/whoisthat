@@ -27,6 +27,8 @@ pub struct CliStatus {
     pub protocol: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub xray_version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tun2socks_version: Option<String>,
     pub rx_speed_bytes: i64,
     pub tx_speed_bytes: i64,
     pub rx_speed_human: String,
@@ -47,6 +49,7 @@ impl CliStatus {
             profile_name: None,
             protocol: None,
             xray_version: None,
+            tun2socks_version: None,
             rx_speed_bytes: 0,
             tx_speed_bytes: 0,
             rx_speed_human: "0 B/s".to_string(),
@@ -105,6 +108,16 @@ impl CliStatus {
             }
         });
 
+        let tun2socks_version = state.tun2socks_status.as_ref().and_then(|x| {
+            if !x.version.is_empty() {
+                Some(x.version.clone())
+            } else if !x.target_version.is_empty() {
+                Some(x.target_version.clone())
+            } else {
+                None
+            }
+        });
+
         Self {
             core_running: true,
             connected: is_conn,
@@ -117,6 +130,7 @@ impl CliStatus {
             profile_name,
             protocol,
             xray_version,
+            tun2socks_version,
             rx_speed_bytes: 0,
             tx_speed_bytes: 0,
             rx_speed_human: "0 B/s".to_string(),
@@ -1015,6 +1029,7 @@ mod tests {
             profile_name: Some("Server-1".to_string()),
             protocol: Some("vless".to_string()),
             xray_version: Some("v26.3.27".to_string()),
+            tun2socks_version: Some("v2.7.0".to_string()),
             rx_speed_bytes: 1000,
             tx_speed_bytes: 500,
             rx_speed_human: "1000 B/s".to_string(),
@@ -1027,6 +1042,7 @@ mod tests {
         assert!(json.contains("\"mode\":\"tun\""));
         assert!(json.contains("\"profile_name\":\"Server-1\""));
         assert!(json.contains("\"xray_version\":\"v26.3.27\""));
+        assert!(json.contains("\"tun2socks_version\":\"v2.7.0\""));
     }
 
     #[test]

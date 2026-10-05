@@ -3,11 +3,12 @@ package tunmode
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"sync"
 	"syscall"
 	"whoisthat-core/lib/logger"
-	"whoisthat-core/utils"
+	"whoisthat-core/lib/tunmgr"
 
 	"golang.org/x/sys/unix"
 )
@@ -34,23 +35,34 @@ func (n *Tun2Socks) Start(tun_name string, port int) error {
 		n.channel_closed = false
 	}
 
-	tun2socksbin, err := utils.GetTun2socksBin()
+	tun2socksbin, err := tunmgr.GetManager().GetTun2socksBin()
 	if err != nil {
 		return fmt.Errorf("failed to start tun: %w", err)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	socks_proxy := fmt.Sprintf("socks5://127.0.0.1:%d", port)
-	cmd := exec.CommandContext(ctx, tun2socksbin, "-device", tun_name, "-proxy", socks_proxy)
+	cmd := exec.CommandContext(ctx, tun2socksbin, "--device", tun_name, "--proxy", socks_proxy)
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		AmbientCaps: []uintptr{unix.CAP_NET_ADMIN},
 	}
 
 	cmd.Stdout = nil
-	cmd.Stderr = nil
+	t2sLog, err := os.CreateTemp("", "whoisthat-tun2socks-*.log")
+	if err == nil {
+		cmd.Stderr = t2sLog
+		logger.Infof("tun2socks stderr -> %s", t2sLog.Name())
+	} else {
+		t2sLog = nil
+		cmd.Stderr = nil
+	}
 
 	if err := cmd.Start(); err != nil {
 		cancel()
+		if t2sLog != nil {
+			_ = t2sLog.Close()
+			_ = os.Remove(t2sLog.Name())
+		}
 		return err
 	}
 
@@ -60,6 +72,14 @@ func (n *Tun2Socks) Start(tun_name string, port int) error {
 
 	go func() {
 		err := cmd.Wait()
+		if t2sLog != nil {
+			_ = t2sLog.Close()
+			if err == nil && ctx.Err() == nil {
+				_ = os.Remove(t2sLog.Name())
+			} else {
+				logger.Warnf("tun2socks exited; stderr retained at %s (err=%v)", t2sLog.Name(), err)
+			}
+		}
 		n.mu.Lock()
 		defer n.mu.Unlock()
 		if ctx.Err() == nil {

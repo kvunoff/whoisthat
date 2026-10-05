@@ -177,6 +177,7 @@ func (t *TunModeManager) Start(proxy_ipv4s []string, proxy_ipv6s []string, dns s
 	}
 
 	if err := t.tun2socks.Start(t.tun_name, appconfig.GetConfig().SocksPort); err != nil {
+		t.clearNetworkRules()
 		return err
 	}
 	logger.Info("tun: tun2socks started")

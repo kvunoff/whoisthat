@@ -43,7 +43,7 @@ curl -fsSL https://raw.githubusercontent.com/kvunoff/whoisthat/main/install.sh |
 
 The script auto-detects your architecture (`x86_64` / `aarch64`) and distro, installs Go and Rust from official channels,
 builds everything from the latest tagged release, and copies binaries to `/usr/local/bin`.
-Precompiled Xray-core (pinned v26.9.9) and tun2socks (TUN mode) are installed and verified automatically.
+Precompiled Xray-core (pinned v26.9.9) and tun2socks (pinned v2.7.0, TUN mode) are installed and verified automatically.
 Native Hysteria2 protocol support is built directly into Xray-core — no standalone hysteria client required.
 
 ### Arch Linux (AUR)
@@ -83,7 +83,7 @@ sudo setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep /usr/local/bin/whoisthat-c
 External proxy engines can be installed via precompiled official releases (or automatically via `install.sh`):
 
 - **Xray-core**: Automatically managed and pinned (v26.9.9) under `~/.local/share/whoisthat/runtimes/xray/` with background download and checksum verification. Matching system binaries in `/usr/local/bin/xray` or `/usr/bin/xray` are also detected and adopted. Natively supports VLESS, VMess, Trojan, Shadowsocks, SOCKS5, and Hysteria2.
-- **tun2socks**: Required only for TUN mode; download from [tun2socks releases](https://github.com/xjasonlyu/tun2socks/releases) into `/usr/local/bin/tun2socks`.
+- **tun2socks**: Required only for TUN mode; automatically managed and pinned (v2.7.0) under `~/.local/share/whoisthat/runtimes/tun2socks/` with background download and checksum verification. Matching system binaries in `/usr/local/bin/tun2socks` or `/usr/bin/tun2socks` are also detected and adopted.
 
 Since v0.9.0 the core emits a startup warning to the TUI when any required binary is missing — see Troubleshooting.
 

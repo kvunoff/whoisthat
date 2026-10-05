@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"whoisthat-core/lib"
 	"whoisthat-core/lib/logger"
+	"whoisthat-core/lib/tunmgr"
 	"whoisthat-core/lib/xraymgr"
 	"whoisthat-core/structs"
 	"whoisthat-core/utils"
@@ -35,10 +36,15 @@ func CheckMissingBinaries() []MissingBinary {
 			Hint: hint,
 		})
 	}
-	if _, err := utils.GetTun2socksBin(); err != nil {
+	tmStatus := tunmgr.GetManager().GetStatus()
+	if tmStatus.Status == "missing" || tmStatus.Status == "error" {
+		hint := fmt.Sprintf("tun2socks %s is %s — background download initiated", tunmgr.PinnedVersion, tmStatus.Status)
+		if tmStatus.Error != "" {
+			hint = fmt.Sprintf("tun2socks %s download error: %s", tunmgr.PinnedVersion, tmStatus.Error)
+		}
 		missing = append(missing, MissingBinary{
 			Name: "tun2socks",
-			Hint: "tun2socks binary not installed — TUN mode will not be available. Install 'tun2socks' or 'tun2socks-bin' from your distro's package manager",
+			Hint: hint,
 		})
 	}
 	if _, err := utils.GetParserBin(); err != nil {

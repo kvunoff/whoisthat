@@ -310,6 +310,32 @@ pub(crate) async fn handle_core_event(
                 });
             }
         }
+        CoreEvent::Tun2socksProgress(p) => {
+            if p.status == "ready" {
+                app.msg(format!("tun2socks {} downloaded and ready", p.version));
+            } else if p.status == "error" && !p.error.is_empty() {
+                app.msg(format!("tun2socks download error: {}", p.error));
+            }
+
+            if let Some(ref mut st) = app.tun2socks_status {
+                st.status = p.status;
+                st.version = p.version;
+                st.progress = p.progress;
+                st.bytes_downloaded = p.bytes_downloaded;
+                st.total_bytes = p.total_bytes;
+                st.error = p.error;
+            } else {
+                app.tun2socks_status = Some(crate::core_client::protocol::Tun2socksStatusInfo {
+                    status: p.status,
+                    version: p.version,
+                    progress: p.progress,
+                    bytes_downloaded: p.bytes_downloaded,
+                    total_bytes: p.total_bytes,
+                    error: p.error,
+                    ..Default::default()
+                });
+            }
+        }
     }
     false
 }

@@ -92,6 +92,8 @@ pub struct ApplicationState {
     pub autoconnect: AutoconnectInfo,
     #[serde(rename = "xray_status", default)]
     pub xray_status: Option<XrayStatusInfo>,
+    #[serde(rename = "tun2socks_status", default)]
+    pub tun2socks_status: Option<Tun2socksStatusInfo>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
@@ -114,6 +116,40 @@ pub struct XrayStatusInfo {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct XrayProgressNotification {
+    #[serde(default)]
+    pub status: String,
+    #[serde(default)]
+    pub version: String,
+    #[serde(default)]
+    pub progress: i32,
+    #[serde(default)]
+    pub bytes_downloaded: i64,
+    #[serde(default)]
+    pub total_bytes: i64,
+    #[serde(default)]
+    pub error: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub struct Tun2socksStatusInfo {
+    #[serde(default)]
+    pub version: String,
+    #[serde(default)]
+    pub target_version: String,
+    #[serde(default)]
+    pub status: String,
+    #[serde(default)]
+    pub progress: i32,
+    #[serde(default)]
+    pub bytes_downloaded: i64,
+    #[serde(default)]
+    pub total_bytes: i64,
+    #[serde(default)]
+    pub error: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub struct Tun2socksProgressNotification {
     #[serde(default)]
     pub status: String,
     #[serde(default)]
