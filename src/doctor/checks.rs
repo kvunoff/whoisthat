@@ -153,10 +153,7 @@ fn check_capabilities() -> CheckCategory {
         let has_setpcap = caps_output.contains("cap_setpcap");
 
         if has_net_admin && has_net_raw && has_setpcap {
-            let caps_str = caps_output
-                .split_whitespace()
-                .last()
-                .unwrap_or("verified");
+            let caps_str = caps_output.split_whitespace().last().unwrap_or("verified");
             items.push(CheckItem::pass(
                 "whoisthat-core caps",
                 format!("{} ({})", core_bin, caps_str),
