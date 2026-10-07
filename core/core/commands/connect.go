@@ -53,7 +53,7 @@ func (cmd *Cmd) Connect(data structs.ConnectData, proxy_manager *proxy.ProxyMana
 		}
 	}
 
-	if err := proxy_manager.Connect(profile, tunName); err != nil {
+	if err := proxy_manager.Connect(profile, tunName, was_tun_enabled); err != nil {
 		logger.Warn("connect failed:", err)
 		cmd.warn("connect-failed", err.Error())
 		return
@@ -73,6 +73,6 @@ func (cmd *Cmd) Connect(data structs.ConnectData, proxy_manager *proxy.ProxyMana
 	}
 
 	if was_tun_enabled {
-		cmd.enableTun(profile, tun_manager)
+		cmd.enableTun(profile, proxy_manager, tun_manager)
 	}
 }

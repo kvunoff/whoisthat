@@ -81,34 +81,7 @@ fn check_binaries() -> CheckCategory {
         }
     }
 
-    // 5. tun2socks
-    let t2s_info = probe_tun2socks();
-    match t2s_info {
-        Some((path, ver)) => {
-            let msg = format!("{} ({})", path, ver);
-            if ver.contains("2.7.0") {
-                items.push(CheckItem::pass("tun2socks", msg));
-            } else {
-                items.push(CheckItem::warn(
-                    "tun2socks",
-                    format!("{} (recommended pinned version: v2.7.0)", msg),
-                    Some("WhoisThat will auto-download pinned v2.7.0 into ~/.local/share/whoisthat/runtimes/tun2socks/".into()),
-                ));
-            }
-        }
-        None => {
-            items.push(CheckItem::warn(
-                "tun2socks",
-                "tun2socks binary not found in PATH or managed runtimes",
-                Some(
-                    "Install 'tun2socks' or run WhoisThat to trigger automatic download of v2.7.0"
-                        .into(),
-                ),
-            ));
-        }
-    }
-
-    // 6. System CLI tools
+    // 5. System CLI tools
     let mut missing_tools = Vec::new();
     let mut found_tools = Vec::new();
     for tool in ["ip", "getcap", "setcap", "pkexec"] {
@@ -688,75 +661,6 @@ fn probe_xray() -> Option<(String, String)> {
                 }
 
                 if found_ver.contains("26.9.9") {
-                    return Some((bin, found_ver));
-                }
-
-                if first_working.is_none() {
-                    first_working = Some((bin, found_ver));
-                }
-            }
-        }
-    }
-
-    first_working
-}
-
-fn probe_tun2socks() -> Option<(String, String)> {
-    let mut candidates = Vec::new();
-
-    // Check managed runtime directories
-    let data_dir = config::data_dir();
-    let runtime_dir = data_dir.join("runtimes").join("tun2socks");
-    if runtime_dir.exists() {
-        if let Ok(entries) = fs::read_dir(&runtime_dir) {
-            let mut dirs: Vec<_> = entries.flatten().map(|e| e.path()).collect();
-            dirs.sort_by(|a, b| b.cmp(a)); // descending order so v2.7.0 precedes older versions
-            for dir in dirs {
-                if dir
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .is_some_and(|s| s.contains(".tmp-"))
-                {
-                    continue;
-                }
-                let bin = dir.join("tun2socks");
-                if bin.exists() {
-                    candidates.push(bin.to_string_lossy().to_string());
-                }
-            }
-        }
-    }
-
-    // Check system binaries
-    if let Some(sys) = find_binary("tun2socks", &[]) {
-        candidates.push(sys);
-    }
-    for sys_path in ["/usr/local/bin/tun2socks", "/usr/bin/tun2socks"] {
-        if Path::new(sys_path).exists() && !candidates.contains(&sys_path.to_string()) {
-            candidates.push(sys_path.to_string());
-        }
-    }
-
-    let mut first_working = None;
-
-    for bin in candidates {
-        let output = Command::new(&bin)
-            .arg("--version")
-            .output()
-            .or_else(|_| Command::new(&bin).arg("-v").output());
-        if let Ok(output) = output {
-            if output.status.success() {
-                let text = String::from_utf8_lossy(&output.stdout);
-                let mut found_ver = "version unknown".to_string();
-                for line in text.lines() {
-                    let trimmed = line.trim();
-                    if trimmed.starts_with("tun2socks") {
-                        found_ver = trimmed.to_string();
-                        break;
-                    }
-                }
-
-                if found_ver.contains("2.7.0") {
                     return Some((bin, found_ver));
                 }
 

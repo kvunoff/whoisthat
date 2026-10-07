@@ -91,9 +91,8 @@ func TestWarnThrottle_ConcurrentSafe(t *testing.T) {
 }
 
 // TestCheckMissingBinaries_ReturnsExpectedNames verifies the pre-flight check
-// returns entries named exactly "xray", "hysteria", "tun2socks", "parser" when
-// those binaries are missing. We can't fake a missing binary on a CI/dev
-// host where they may all be installed, so we only assert the structural
+// returns entries when binaries are missing. We can't fake a missing binary
+// on a CI/dev host where it may be installed, so we only assert the structural
 // invariant of the result (each entry has a non-empty Name+Hint). When
 // everything is installed the result is empty and that's a valid pass too.
 func TestCheckMissingBinaries_Structure(t *testing.T) {
@@ -137,7 +136,7 @@ func TestSendMissingBinaryWarnings_Unicast(t *testing.T) {
 
 	missing := []MissingBinary{
 		{Name: "hysteria", Hint: "hysteria binary not installed"},
-		{Name: "tun2socks", Hint: "tun2socks binary not installed"},
+		{Name: "xray", Hint: "xray binary not installed"},
 	}
 	sendMissingBinaryWarnings(cc, missing)
 

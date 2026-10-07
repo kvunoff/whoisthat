@@ -3,7 +3,6 @@ package tunmode
 import (
 	"errors"
 	"fmt"
-	"os/exec"
 	"sync"
 	appconfig "whoisthat-core/lib/AppConfig"
 	"whoisthat-core/lib/logger"
@@ -12,7 +11,6 @@ import (
 
 type TunModeManager struct {
 	mu                     sync.Mutex
-	tun2socks              Tun2Socks
 	tun_name               string
 	tun_ip                 string
 	tun_ipv6               string
@@ -32,9 +30,6 @@ func (t *TunModeManager) Init() {
 	t.tun_ip = "198.18.0.1"
 	t.tun_ipv6 = "fd00::1"
 	t.StatusChanged = make(chan bool)
-	t.tun2socks = Tun2Socks{
-		Exited: make(chan error),
-	}
 }
 
 func (t *TunModeManager) IsEnabledLocked() bool {
@@ -163,45 +158,9 @@ func (t *TunModeManager) Start(proxy_ipv4s []string, proxy_ipv6s []string, dns s
 		return fmt.Errorf("there was an error applying split tunnel rules %w", err)
 	}
 
-	if t.tun2socks.IsRunning() {
-		t.tun2socks.Stop()
-	}
-
-	t.tun2socks = Tun2Socks{
-		Exited: make(chan error),
-	}
-
-	if t.IsEnabled {
-		t.IsEnabled = false
-		t.StatusChanged <- t.IsEnabled
-	}
-
-	if err := t.tun2socks.Start(t.tun_name, appconfig.GetConfig().SocksPort); err != nil {
-		t.clearNetworkRules()
-		return err
-	}
-	logger.Info("tun: tun2socks started")
-
 	t.IsEnabled = true
 	t.StatusChanged <- t.IsEnabled
-	logger.Info("tun: enabled")
-
-	go func() {
-		for {
-			_, ok := <-t.tun2socks.Exited
-			if !ok {
-				return
-			}
-			t.mu.Lock()
-			if t.IsEnabled {
-				logger.Warn("tun: tun2socks exited unexpectedly, clearing network rules")
-				t.clearNetworkRules()
-				t.IsEnabled = false
-				t.StatusChanged <- t.IsEnabled
-			}
-			t.mu.Unlock()
-		}
-	}()
+	logger.Info("tun: network rules enabled")
 
 	return nil
 }
@@ -214,15 +173,11 @@ func (t *TunModeManager) Stop() {
 	}
 	logger.Info("tun: disabling...")
 	t.clearNetworkRules()
-	t.tun2socks.Stop()
 	t.IsEnabled = false
 	t.StatusChanged <- t.IsEnabled
 }
 
 func (t *TunModeManager) clearNetworkRules() error {
-	// Kill any leftover tun2socks that might be holding the TUN interface
-	exec.Command("pkill", "-9", "tun2socks").Run()
-
 	errs := []error{
 		deleteTunIpRoute(t.tun_name, t.tun_ip),
 		deleteTunIpRoute6(t.tun_name, t.tun_ipv6),

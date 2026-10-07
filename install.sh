@@ -16,7 +16,6 @@
 #        - whoisthat-core   (Go VPN daemon with ambient Linux capabilities & native URI parser)
 #        - whoisthat        (Ratatui Rust TUI client)
 #   5. Isolated Xray-core runtime (v26.9.9: ~/.local/share/whoisthat/runtimes/xray/)
-#   6. Isolated tun2socks runtime (v2.7.0: ~/.local/share/whoisthat/runtimes/tun2socks/)
 # =============================================================================
 # Ensure running under bash
 if [ -z "${BASH_VERSION:-}" ]; then
@@ -34,11 +33,6 @@ set -euo pipefail
 GO_MIN_VERSION="1.26.0"
 GO_INSTALL_VERSION="1.26.8"
 XRAY_VERSION="v26.9.9"
-TUN2SOCKS_VERSION="v2.7.0"
-
-# Pinned SHA-256 hashes for tun2socks release archives (v2.7.0)
-TUN2SOCKS_SHA_AMD64="a612baa287a3b6de6221f74fd02b442a50888508227ecf51e1288a5ccbb77381"
-TUN2SOCKS_SHA_ARM64="3931476c9cfa8fa236d23aeaf36767df0eb27cc11ecaab699faba57744450f49"
 
 # --- configuration & defaults ------------------------------------------------
 BUILD_DIR="/tmp/whoisthat-build-$$"
@@ -141,7 +135,6 @@ Usage:
 
 Options:
   -y, --yes          Automatic yes to prompts (install all components)
-  --no-tun           Skip downloading isolated tun2socks runtime (TUN mode engine)
   --branch <name>    Build from a specific git branch or tag (default: latest release tag)
   --local            Build directly from current repository directory instead of cloning
   --uninstall        Remove whoisthat binaries from /usr/local/bin
@@ -235,7 +228,7 @@ parse_args() {
                 shift
                 ;;
             --no-tun)
-                INSTALL_TUN=false
+                # Deprecated: TUN mode is now natively supported by Xray-core
                 shift
                 ;;
             --no-hy2)
@@ -342,7 +335,7 @@ detect_distro() {
 
 # --- step 1: system build tools ----------------------------------------------
 install_system_deps() {
-    step "Step 1/7: System prerequisites"
+    step "Step 1/6: System prerequisites"
 
     case "$DISTRO_ID" in
         debian|ubuntu|linuxmint|pop)
@@ -397,7 +390,7 @@ install_system_deps() {
 
 # --- step 2: Go toolchain ----------------------------------------------------
 install_go() {
-    step "Step 2/7: Verify Go toolchain (>= ${GO_MIN_VERSION})"
+    step "Step 2/6: Verify Go toolchain (>= ${GO_MIN_VERSION})"
 
     # Check existing environment PATH + standard /usr/local/go/bin
     if [ -d "/usr/local/go/bin" ] && [[ ":$PATH:" != *":/usr/local/go/bin:"* ]]; then
@@ -441,7 +434,7 @@ install_go() {
 
 # --- step 3: Rust toolchain --------------------------------------------------
 install_rust() {
-    step "Step 3/7: Verify Rust toolchain"
+    step "Step 3/6: Verify Rust toolchain"
 
     if [ -f "$HOME/.cargo/env" ]; then
         # shellcheck source=/dev/null
@@ -473,7 +466,7 @@ install_rust() {
 
 # --- step 4: build WhoisThat binaries ----------------------------------------
 build_whoisthat() {
-    step "Step 4/7: Build WhoisThat suite"
+    step "Step 4/6: Build WhoisThat suite"
 
     local src_dir="$BUILD_DIR"
 
@@ -530,7 +523,7 @@ build_whoisthat() {
 
 # --- step 5: install binaries & set capabilities -----------------------------
 install_binaries() {
-    step "Step 5/7: Install binaries to /usr/local/bin"
+    step "Step 5/6: Install binaries to /usr/local/bin"
 
     cd "$BUILD_SRC_DIR"
 
@@ -555,7 +548,7 @@ install_binaries() {
 
 # --- step 6: install Xray-core -----------------------------------------------
 install_xray() {
-    step "Step 6/7: Isolated Xray-core runtime (${XRAY_VERSION})"
+    step "Step 6/6: Isolated Xray-core runtime (${XRAY_VERSION})"
 
     local xray_dir="${RUNTIMES_DIR}/xray/${XRAY_VERSION}"
     local xray_bin="${xray_dir}/xray"
@@ -652,101 +645,6 @@ install_xray() {
     fi
 }
 
-# --- step 7: install tun2socks (optional) ------------------------------------
-install_tun2socks() {
-    step "Step 7/7: Isolated tun2socks runtime (${TUN2SOCKS_VERSION})"
-
-    local t2s_dir="${RUNTIMES_DIR}/tun2socks/${TUN2SOCKS_VERSION}"
-    local t2s_bin="${t2s_dir}/tun2socks"
-
-    ensure_user_dir "$t2s_dir"
-
-    # 1. Check if already installed in isolated runtime directory
-    if [ -x "$t2s_bin" ]; then
-        local current_ver
-        current_ver="$("$t2s_bin" --version 2>&1 | head -1 || "$t2s_bin" -v 2>&1 | head -1)"
-        if echo "$current_ver" | grep -q "${TUN2SOCKS_VERSION#v}"; then
-            info "tun2socks matches pinned version ${TUN2SOCKS_VERSION} in isolated runtime (${t2s_bin})"
-            return
-        else
-            info "Existing isolated tun2socks differs from pinned ${TUN2SOCKS_VERSION}, updating..."
-        fi
-    fi
-
-    # 2. Check if a system binary matches pinned version and can be adopted
-    local sys_t2s=""
-    for candidate in /usr/local/bin/tun2socks /usr/bin/tun2socks; do
-        if [ -x "$candidate" ]; then
-            local cand_ver
-            cand_ver="$("$candidate" --version 2>&1 | head -1 || "$candidate" -v 2>&1 | head -1)"
-            if echo "$cand_ver" | grep -q "${TUN2SOCKS_VERSION#v}"; then
-                sys_t2s="$candidate"
-                break
-            fi
-        fi
-    done
-
-    if [ -n "$sys_t2s" ]; then
-        info "Found matching system tun2socks at ${sys_t2s}, adopting into isolated runtime..."
-        cp -f "$sys_t2s" "$t2s_bin"
-        chmod 0755 "$t2s_bin"
-        if [ "$(id -u)" -eq 0 ] && [ "$TARGET_USER" != "root" ]; then
-            chown -R "${TARGET_USER}:" "$t2s_dir" 2>/dev/null || true
-        fi
-        info "tun2socks ready: $("$t2s_bin" --version 2>&1 | head -1 || echo "${TUN2SOCKS_VERSION}")"
-        return
-    fi
-
-    if [ "$INSTALL_TUN" = "false" ]; then
-        info "Skipping tun2socks (--no-tun specified; WhoisThat can download it on demand later)"
-        return
-    fi
-
-    # 3. Download official precompiled release into isolated runtime
-    local t2s_zip="tun2socks-linux-${T2S_ARCH}.zip"
-    local t2s_url1="https://github.com/xjasonlyu/tun2socks/releases/download/${TUN2SOCKS_VERSION}/${t2s_zip}"
-    local t2s_url2="https://ghfast.top/https://github.com/xjasonlyu/tun2socks/releases/download/${TUN2SOCKS_VERSION}/${t2s_zip}"
-    local tmp_dir="/tmp/whoisthat-tun2socks-$$"
-
-    info "Downloading precompiled tun2socks ${TUN2SOCKS_VERSION} (${T2S_ARCH})..."
-    mkdir -p "$tmp_dir"
-    if download_file_with_fallback "${tmp_dir}/${t2s_zip}" "$t2s_url1" "$t2s_url2"; then
-        # Verify SHA-256 if sha256sum is available
-        if command -v sha256sum &>/dev/null; then
-            local expected_sha=""
-            [ "$ARCH_FAMILY" = "amd64" ] && expected_sha="$TUN2SOCKS_SHA_AMD64"
-            [ "$ARCH_FAMILY" = "arm64" ] && expected_sha="$TUN2SOCKS_SHA_ARM64"
-            if [ -n "$expected_sha" ]; then
-                local actual_sha
-                actual_sha=$(sha256sum "${tmp_dir}/${t2s_zip}" | awk '{print $1}')
-                if [ "$actual_sha" = "$expected_sha" ]; then
-                    info "tun2socks SHA-256 checksum verified OK"
-                else
-                    warn "tun2socks checksum mismatch: expected $expected_sha, got $actual_sha"
-                fi
-            fi
-        fi
-
-        extract_zip "${tmp_dir}/${t2s_zip}" "$tmp_dir"
-        local extracted_bin
-        extracted_bin=$(find "$tmp_dir" -type f -name "tun2socks*" ! -name "*.zip" | head -1)
-        if [ -n "$extracted_bin" ]; then
-            install -Dm755 "$extracted_bin" "$t2s_bin"
-            if [ "$(id -u)" -eq 0 ] && [ "$TARGET_USER" != "root" ]; then
-                chown -R "${TARGET_USER}:" "$t2s_dir" 2>/dev/null || true
-            fi
-            info "Isolated tun2socks installed: $("$t2s_bin" --version 2>&1 | head -1 || echo "${TUN2SOCKS_VERSION}")"
-        else
-            warn "tun2socks binary not found in downloaded archive"
-        fi
-        rm -rf "$tmp_dir"
-    else
-        rm -rf "$tmp_dir"
-        warn "Failed to download tun2socks archive."
-        warn "WhoisThat core will attempt automatic background download when TUN mode is activated."
-    fi
-}
-
 # --- final banner & instructions ---------------------------------------------
 print_final_message() {
     local action="installed"
@@ -784,7 +682,7 @@ print_final_message() {
     echo -e "  Configuration & Data:"
     echo -e "    Config:    ~/.config/whoisthat/"
     echo -e "    Database:  ~/.local/share/whoisthat/db/ (AES-256-GCM encrypted)"
-    echo -e "    Runtimes:  ~/.local/share/whoisthat/runtimes/ (isolated Xray & tun2socks)"
+    echo -e "    Runtimes:  ~/.local/share/whoisthat/runtimes/ (isolated Xray-core)"
     echo
     echo -e "  Diagnostics:"
     echo -e "    Run '${BOLD}whoisthat doctor${NC}' to inspect system health and runtime status"
@@ -828,7 +726,6 @@ main() {
     build_whoisthat
     install_binaries
     install_xray
-    install_tun2socks
     print_final_message
 }
 

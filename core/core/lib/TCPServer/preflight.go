@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"whoisthat-core/lib"
 	"whoisthat-core/lib/logger"
-	"whoisthat-core/lib/tunmgr"
 	"whoisthat-core/lib/xraymgr"
 	"whoisthat-core/structs"
 )
@@ -17,7 +16,7 @@ type MissingBinary struct {
 }
 
 // CheckMissingBinaries probes the external runtimes whoisthat-core
-// manages (xray, tun2socks) and returns the subset that is not installed.
+// manages (xray) and returns the subset that is not installed.
 func CheckMissingBinaries() []MissingBinary {
 	var missing []MissingBinary
 
@@ -29,17 +28,6 @@ func CheckMissingBinaries() []MissingBinary {
 		}
 		missing = append(missing, MissingBinary{
 			Name: "xray",
-			Hint: hint,
-		})
-	}
-	tmStatus := tunmgr.GetManager().GetStatus()
-	if tmStatus.Status == "missing" || tmStatus.Status == "error" {
-		hint := fmt.Sprintf("tun2socks %s is %s — background download initiated", tunmgr.PinnedVersion, tmStatus.Status)
-		if tmStatus.Error != "" {
-			hint = fmt.Sprintf("tun2socks %s download error: %s", tunmgr.PinnedVersion, tmStatus.Error)
-		}
-		missing = append(missing, MissingBinary{
-			Name: "tun2socks",
 			Hint: hint,
 		})
 	}

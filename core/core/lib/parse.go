@@ -10,6 +10,11 @@ func ParseUri(uri string, socksport int, httpport int) ([]byte, error) {
 	return parser.ParseUri(uri, socksport, httpport)
 }
 
+// ParseUriWithTun parses a proxy URI and optionally includes a native TUN inbound.
+func ParseUriWithTun(uri string, socksport int, httpport int, tunName string) ([]byte, error) {
+	return parser.ParseUriWithTun(uri, socksport, httpport, tunName)
+}
+
 // ParseUriHysteria returns a YAML config that the official hysteria2 client
 // (github.com/apernet/hysteria2) understands. Only valid for hysteria2:// / hy2:// URIs.
 func ParseUriHysteria(uri string, socksport int, httpport int) ([]byte, error) {

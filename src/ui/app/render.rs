@@ -309,15 +309,7 @@ impl App {
         let left = Span::styled(left_str, s_faint());
         let left_w = left.width();
 
-        let tun = if let Some(ref t) = self.tun2socks_status {
-            if t.status == "downloading" {
-                Span::styled(format!(" [TUN dl {}%]", t.progress), s_warn())
-            } else if self.tun_enabled {
-                Span::styled(" [TUN]", s_success())
-            } else {
-                Span::styled("", s_dim())
-            }
-        } else if self.tun_enabled {
+        let tun = if self.tun_enabled {
             Span::styled(" [TUN]", s_success())
         } else {
             Span::styled("", s_dim())

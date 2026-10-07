@@ -13,6 +13,8 @@ import (
 	"whoisthat-core/lib/logger"
 	"whoisthat-core/lib/xraymgr"
 	"whoisthat-core/utils"
+
+	"golang.org/x/sys/unix"
 )
 
 type XrayCore struct {
@@ -68,16 +70,18 @@ func (x *XrayCore) Start(stdinPipe []byte) error {
 		cmd.Stderr = nil
 	}
 
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		AmbientCaps: []uintptr{unix.CAP_NET_ADMIN, unix.CAP_NET_RAW},
+	}
+
 	if uid := utils.DedicatedUid(); uid > 0 {
 		gid := utils.DedicatedGid()
 		if gid == 0 {
 			gid = uid
 		}
-		cmd.SysProcAttr = &syscall.SysProcAttr{
-			Credential: &syscall.Credential{
-				Uid: uint32(uid),
-				Gid: uint32(gid),
-			},
+		cmd.SysProcAttr.Credential = &syscall.Credential{
+			Uid: uint32(uid),
+			Gid: uint32(gid),
 		}
 		logger.Infof("xray will run as uid=%d gid=%d", uid, gid)
 	}

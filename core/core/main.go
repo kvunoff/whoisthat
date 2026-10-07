@@ -19,7 +19,6 @@ import (
 	"whoisthat-core/lib/logger"
 	proxy "whoisthat-core/lib/proxy/mainproxy"
 	tunmode "whoisthat-core/lib/proxy/tun"
-	"whoisthat-core/lib/tunmgr"
 	"whoisthat-core/lib/xraymgr"
 	"whoisthat-core/structs"
 	"whoisthat-core/utils"
@@ -96,17 +95,8 @@ func main() {
 		xm.EnsureRuntimeAsync()
 	}
 
-	tm := tunmgr.GetManager()
-	if err := tm.Init(); err != nil {
-		logger.Warnf("main: tunmgr init: %v", err)
-	}
-	if tm.GetStatus().Status != "ready" {
-		logger.Infof("main: tun2socks status is %s, ensuring runtime in background", tm.GetStatus().Status)
-		tm.EnsureRuntimeAsync()
-	}
-
 	// Pre-flight: probe for external runtimes the core manages
-	// (xray, tun2socks). Each miss is paired with an actionable
+	// (xray). Each miss is paired with an actionable
 	// install hint and unicast as a warn to every newly connected TUI client.
 	missing := TCPServer.CheckMissingBinaries()
 	for _, mb := range missing {
@@ -232,7 +222,7 @@ func bootAutoconnect(database *db.DB, proxy_manager *proxy.ProxyManager, tun_man
 			return
 		}
 		logger.Infof("boot-autoconnect: tun attempt %d", attempt+1)
-		command_handler.EnableTunForProfile(profile, tun_manager)
+		command_handler.EnableTunForProfile(profile, proxy_manager, tun_manager)
 		if tun_manager.IsEnabledLocked() {
 			logger.Info("boot-autoconnect: tun mode enabled")
 			return

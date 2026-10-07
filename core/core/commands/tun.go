@@ -12,11 +12,16 @@ import (
 	"whoisthat-core/utils"
 )
 
-func (cmd *Cmd) DisableTun(data structs.DisableTunData, tun_manager *tunmode.TunModeManager) {
+func (cmd *Cmd) DisableTun(data structs.DisableTunData, proxy_manager *proxy.ProxyManager, tun_manager *tunmode.TunModeManager) {
 	ConnectionMutex.Lock()
 	defer ConnectionMutex.Unlock()
 
 	tun_manager.Stop()
+	if proxy_manager != nil {
+		if err := proxy_manager.SetTunMode(appconfig.GetConfig().TunName, false); err != nil {
+			logger.Warn("tun: failed to remove tun inbound from proxy:", err)
+		}
+	}
 }
 
 func (cmd *Cmd) EnableTun(data structs.EnableTunData, proxy_manager *proxy.ProxyManager, tun_manager *tunmode.TunModeManager) {
@@ -33,16 +38,16 @@ func (cmd *Cmd) EnableTun(data structs.EnableTunData, proxy_manager *proxy.Proxy
 		return
 	}
 
-	cmd.enableTun(status.Profile, tun_manager)
+	cmd.enableTun(status.Profile, proxy_manager, tun_manager)
 }
 
-func (cmd *Cmd) EnableTunForProfile(profile structs.Profile, tun_manager *tunmode.TunModeManager) {
+func (cmd *Cmd) EnableTunForProfile(profile structs.Profile, proxy_manager *proxy.ProxyManager, tun_manager *tunmode.TunModeManager) {
 	ConnectionMutex.Lock()
 	defer ConnectionMutex.Unlock()
 	if tun_manager.IsEnabledLocked() {
 		return
 	}
-	cmd.enableTun(profile, tun_manager)
+	cmd.enableTun(profile, proxy_manager, tun_manager)
 }
 
 func pickDns(dnsServers []string) (dns4, dns6 string) {
@@ -73,7 +78,7 @@ func pickDns(dnsServers []string) (dns4, dns6 string) {
 	return
 }
 
-func (cmd *Cmd) enableTun(profile structs.Profile, tun_manager *tunmode.TunModeManager) {
+func (cmd *Cmd) enableTun(profile structs.Profile, proxy_manager *proxy.ProxyManager, tun_manager *tunmode.TunModeManager) {
 	resolved, err := resolveHostAndAddress(profile, appconfig.GetConfig().DnsServers)
 	if err != nil {
 		logger.Warn("tun: failed to resolve:", err)
@@ -89,6 +94,15 @@ func (cmd *Cmd) enableTun(profile structs.Profile, tun_manager *tunmode.TunModeM
 		logger.Warn("tun: failed to start:", err)
 		cmd.warn("enable-tun-failed", err.Error())
 		return
+	}
+
+	if proxy_manager != nil {
+		if err := proxy_manager.SetTunMode(appconfig.GetConfig().TunName, true); err != nil {
+			logger.Warn("tun: failed to enable tun inbound in proxy:", err)
+			tun_manager.Stop()
+			cmd.warn("enable-tun-failed", fmt.Sprintf("failed to reload proxy with tun: %v", err))
+			return
+		}
 	}
 }
 

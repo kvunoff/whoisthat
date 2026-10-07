@@ -35,7 +35,7 @@ A modern terminal-based VPN client. Rust TUI frontend. Go engine backed by Xray-
 curl -fsSL https://raw.githubusercontent.com/kvunoff/whoisthat/main/install.sh | bash
 ```
 
-Or unattended with optional TUN mode engine (`tun2socks`):
+Or unattended installation:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/kvunoff/whoisthat/main/install.sh | bash -s -- --yes
@@ -43,7 +43,7 @@ curl -fsSL https://raw.githubusercontent.com/kvunoff/whoisthat/main/install.sh |
 
 The script auto-detects your architecture (`x86_64` / `aarch64`) and distro, installs Go and Rust from official channels,
 builds everything from the latest tagged release, and copies binaries to `/usr/local/bin`.
-Precompiled Xray-core (pinned v26.9.9) and tun2socks (pinned v2.7.0, TUN mode) are installed and verified automatically.
+Precompiled Xray-core (pinned v26.9.9) is installed and verified automatically (provides both proxy and native TUN mode).
 Native Hysteria2 protocol support is built directly into Xray-core — no standalone hysteria client required.
 
 ### Arch Linux (AUR)
@@ -78,10 +78,9 @@ sudo setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep /usr/local/bin/whoisthat-c
 
 External proxy engines can be installed via precompiled official releases (or automatically via `install.sh`):
 
-- **Xray-core**: Automatically managed and pinned (v26.9.9) under `~/.local/share/whoisthat/runtimes/xray/` with background download and checksum verification. Matching system binaries in `/usr/local/bin/xray` or `/usr/bin/xray` are also detected and adopted. Natively supports VLESS, VMess, Trojan, Shadowsocks, SOCKS5, and Hysteria2.
-- **tun2socks**: Required only for TUN mode; automatically managed and pinned (v2.7.0) under `~/.local/share/whoisthat/runtimes/tun2socks/` with background download and checksum verification. Matching system binaries in `/usr/local/bin/tun2socks` or `/usr/bin/tun2socks` are also detected and adopted.
+- **Xray-core**: Automatically managed and pinned (v26.9.9) under `~/.local/share/whoisthat/runtimes/xray/` with background download and checksum verification. Matching system binaries in `/usr/local/bin/xray` or `/usr/bin/xray` are also detected and adopted. Natively supports VLESS, VMess, Trojan, Shadowsocks, SOCKS5, Hysteria2, and native TUN inbound routing.
 
-Since v0.9.0 the core emits a startup warning to the TUI when any required binary is missing — see Troubleshooting.
+The core emits a startup warning to the TUI when Xray-core is missing — see Troubleshooting.
 
 ### Configuration
 
@@ -152,10 +151,10 @@ Encrypted at rest with AES-256-GCM — key auto-generated on first run.
 - **Group management** — add, rename, edit subscription URL, delete entire groups
 - **Profile import** — VLESS, VMess, Trojan, Shadowsocks, SOCKS5, Hysteria2 URIs (paste, clipboard, or subscription refresh)
 - Connect / disconnect / switch profiles
-- Full system-wide TUN-mode VPN (`tun2socks` + `iptables`/`nftables`, auto-detected)
+- Full system-wide TUN-mode VPN (native Xray-core TUN inbound + `iptables`/`nftables`, auto-detected)
 - **Profile testing** — three methods: TCP connect (fast prefilter), HTTP GET, HTTP HEAD via SOCKS5. Multi-sample (default 3) with median latency, jitter, and packet-loss %.
 - **Unified native protocol engine** — all protocols (VLESS, VMess, Trojan, Shadowsocks, SOCKS5, Hysteria2) run natively through Xray-core (`v26.9.9`). Standalone `hysteria` binary is no longer required; Hysteria2 profiles now fully support routing rules, live gRPC traffic statistics, and unified latency testing.
-- **Missing-binary UX** — on startup the core probes for managed runtimes xray and tun2socks; each miss is unicast to the freshly-connected TUI as a `warn` with an actionable install hint. Connect-time errors also forward the real underlying `err.Error()` (no more generic "Failed to connect" hiding "binary not found").
+- **Missing-binary UX** — on startup the core probes for managed runtime xray; misses are unicast to the freshly-connected TUI as a `warn` with an actionable install hint. Connect-time errors also forward the real underlying `err.Error()` (no more generic "Failed to connect" hiding "binary not found").
 - **Test progress** — pending profiles show `…` immediately; in-flight batches broadcast tested/total progress. `C` cancels in-flight tests gracefully (epoch counter; no orphan subprocesses — also drops queued work before it spawns xray). Test failures broadcast the reason as a `warn` (throttled to one per-reason per 5s so a batch with failing endpoints emits readable warnings without spam).
 - **Scan-all testing** — `t` scans all profiles across all groups with dedup; `T` tests only focused profile/subscription. Group-focused tests use the single `test-group` TCP command for efficiency.
 - **Auto-test on subscription refresh** — profiles are tested automatically after `u` so you see live latencies immediately. Toggle in Settings → Diagnostics.
@@ -206,23 +205,23 @@ Encrypted at rest with AES-256-GCM — key auto-generated on first run.
 │  Xray-core                   │
 │  ⋅ VLESS / VMess / Trojan    │
 │  ⋅ Shadowsocks / Hysteria2   │
-│  ⋅ SOCKS5 / HTTP outbound    │
+│  ⋅ SOCKS5 / HTTP / TUN       │
 └──────────┬───────────────────┘
            │
      ┌─────┴─────┐
      ▼           ▼
    TUN device   DNS routing
-   (tun2socks)  (iptables/nftables)
+  (native Xray) (iptables/nftables)
 ```
 
 ### How it works
 
-1. **WhoisThat Core** is a long-running Go daemon. It manages VPN profiles (stored as JSON files under `~/.local/share/whoisthat/db/`), launches Xray-core as a subprocess, and controls the TUN device via `iproute2` + `tun2socks`.
+1. **WhoisThat Core** is a long-running Go daemon. It manages VPN profiles (stored as JSON files under `~/.local/share/whoisthat/db/`), launches Xray-core as a subprocess, and controls the TUN device via `iproute2` + Xray native TUN inbound.
 
 2. **Unified core engine.** All protocols run directly through Xray-core (`v26.9.9`):
    - **Xray-core** — VLESS (incl. Reality/xTLS Vision), VMess, Trojan (incl. reality/WS/gRPC), Shadowsocks, SOCKS5, and Hysteria2 (`hysteria2://` / `hy2://` with native QUIC, TLS, Salamander obfs, UDP port-hopping, bandwidth params, and SNI). Configuration JSON is generated on-the-fly from profile URIs directly in-memory by the core's native parser package. All protocols benefit equally from Xray's routing rules, DNS bypass, and gRPC traffic statistics.
 
-3. **TUN mode** creates a virtual network interface (configurable name, default `whoisthattun`), sets up `iptables`/`nftables` rules (DNS hijack, MASQUERADE, auto-detected at runtime), and routes all system traffic through the Xray SOCKS5 proxy via `tun2socks`.
+3. **TUN mode** creates a virtual network interface (configurable name, default `whoisthattun`), sets up `iptables`/`nftables` rules (DNS hijack, MASQUERADE, auto-detected at runtime), and routes all system traffic directly through Xray-core via its native TUN inbound.
 
 4. **WhoisThat TUI** (this Rust binary) connects to the core over a Unix domain socket (`$XDG_RUNTIME_DIR/whoisthat/core.sock`, mode `0600`) by default, or legacy TCP on `127.0.0.1:4897` when `tcp-enabled` is set in the core config and `use_tcp` in the TUI config. It sends commands and receives asynchronous notifications. The TUI never touches networking directly — all VPN logic lives in the core.
 
@@ -281,7 +280,7 @@ The verification pass adds ~5s to first startup. Set `XRAY_LOCATION_ASSET` manua
 
 **TUN mode:**
 
-- The TUN default route sends ALL system traffic through `tun2socks` → SOCKS5 → xray. Without special handling, xray's own `freedom` outbound traffic would loop back into TUN
+- The TUN default route sends ALL system traffic through the TUN device into Xray-core. Without special handling, xray's own `freedom` outbound traffic would loop back into TUN
 - **Root mode:** Xray runs under a dedicated UID (61000+ range). `ip rule uidrange` + table 100 routes xray traffic through the physical gateway, bypassing TUN
 - **Capability mode (no root):** Freedom outbound sets `SO_MARK` via xray's `sockopt.mark`. `ip rule fwmark 1 table 100` routes marked packets through the physical gateway. Works under file capabilities — no root needed
 - User applications retain their normal routing and stay under TUN protection
@@ -532,7 +531,7 @@ TUN mode creates a virtual interface (configurable in Settings, default `whoisth
 - `whoisthat-core` has `cap_net_admin,cap_net_raw,cap_setpcap=+ep` set on its binary
 - At startup, the core uses `capset(2)` to move permitted capabilities into the inheritable set (`CAP_SETPCAP` enables this)
 - `prctl(PR_CAP_AMBIENT_RAISE)` promotes them to the ambient set
-- All subprocesses (`sh`, `ip`, `iptables`/`nftables`, `tun2socks`) automatically inherit the capabilities
+- All subprocesses (`sh`, `ip`, `iptables`/`nftables`, `xray`) automatically inherit the capabilities
 - No `sudo`, no root, no setuid — pure Linux capabilities
 
 For debugging or manual setup: `sudo setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep /path/to/whoisthat-core`.
@@ -1031,7 +1030,7 @@ whoisthat/
 
 ## Credits
 
-Powered by [Xray-core](https://github.com/XTLS/Xray-core) and [tun2socks](https://github.com/xjasonlyu/tun2socks).
+Powered by [Xray-core](https://github.com/XTLS/Xray-core).
 
 ---
 

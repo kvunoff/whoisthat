@@ -7,10 +7,6 @@ import (
 	"strconv"
 )
 
-func GetTun2socksBin() (string, error) {
-	return GetBinPath("tun2socks")
-}
-
 func GetXrayBin() (string, error) {
 	return GetBinPath("xray")
 }

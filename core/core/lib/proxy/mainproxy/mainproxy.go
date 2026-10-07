@@ -42,6 +42,8 @@ type ProxyManager struct {
 	statsApiPort      int
 	DB                *db.DB
 	proxyIPs          []string
+	tunEnabled        bool
+	tunName           string
 
 	// Per-group batch progress tracker. SeedTestProgress initializes a
 	// group's (tested, total) tuple; IncrementTestProgress atomically
@@ -158,9 +160,12 @@ func isHysteriaProtocol(protocol string) bool {
 	return protocol == "hysteria2" || protocol == "hy2"
 }
 
-func (p *ProxyManager) Connect(profile structs.Profile, tunName string) error {
+func (p *ProxyManager) Connect(profile structs.Profile, tunName string, tunEnabled bool) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+
+	p.tunEnabled = tunEnabled
+	p.tunName = tunName
 
 	if p.core.IsRunning() {
 		p.core.Stop()
@@ -186,7 +191,11 @@ func (p *ProxyManager) Connect(profile structs.Profile, tunName string) error {
 	// Default 0 → ss-based fallback. Set to a portPool port on the xray path.
 	apiPort := 0
 
-	xray_config, err := lib.ParseUri(profile.Uri, app_config.SocksPort, app_config.HttpPort)
+	tunArg := ""
+	if tunEnabled {
+		tunArg = tunName
+	}
+	xray_config, err := lib.ParseUriWithTun(profile.Uri, app_config.SocksPort, app_config.HttpPort, tunArg)
 	if err != nil {
 		return err
 	}
@@ -266,10 +275,26 @@ func (p *ProxyManager) Connect(profile structs.Profile, tunName string) error {
 	return nil
 }
 
+// SetTunMode updates the TUN mode status and hot-reloads Xray if currently connected.
+func (p *ProxyManager) SetTunMode(tunName string, enabled bool) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	p.tunEnabled = enabled
+	p.tunName = tunName
+
+	if p.status.Connection != "connected" || p.core == nil || !p.core.IsRunning() {
+		return nil
+	}
+
+	return p.reloadCoreLocked(tunName)
+}
+
 func (p *ProxyManager) Stop() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	logger.Info("disconnecting")
+	p.tunEnabled = false
 	// Retire the Exited-watcher goroutine.
 	p.retireExitWatcher()
 	if p.statsCancel != nil {

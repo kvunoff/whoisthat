@@ -395,3 +395,46 @@ func TestURLDecode(t *testing.T) {
 		t.Errorf("failed invalid hex")
 	}
 }
+
+func TestParseUriWithTun(t *testing.T) {
+	uri := "vless://uuid@example.com:443?type=tcp&security=tls#TestTun"
+	configBytes, err := ParseUriWithTun(uri, 3090, 3091, "whoisthattun")
+	if err != nil {
+		t.Fatalf("ParseUriWithTun failed: %v", err)
+	}
+
+	var cfg Config
+	if err := json.Unmarshal(configBytes, &cfg); err != nil {
+		t.Fatalf("failed to unmarshal generated json: %v", err)
+	}
+
+	if len(cfg.Inbounds) != 3 {
+		t.Fatalf("expected 3 inbounds (socks, http, tun), got %d", len(cfg.Inbounds))
+	}
+
+	tunFound := false
+	for _, ib := range cfg.Inbounds {
+		if ib.Protocol == "tun" {
+			tunFound = true
+			if ib.Tag != "tun-in" {
+				t.Errorf("expected tag tun-in, got %s", ib.Tag)
+			}
+			if ib.Port != 0 {
+				t.Errorf("expected port 0 for tun, got %d", ib.Port)
+			}
+		}
+	}
+	if !tunFound {
+		t.Errorf("tun inbound not found in generated config")
+	}
+
+	// Verify JSON does not contain "port": 0 for tun
+	jsonStr := string(configBytes)
+	if !strings.Contains(jsonStr, `"protocol":"tun"`) {
+		t.Errorf("json does not contain protocol tun: %s", jsonStr)
+	}
+	if !strings.Contains(jsonStr, `"name":"whoisthattun"`) {
+		t.Errorf("json does not contain tun name: %s", jsonStr)
+	}
+}
+

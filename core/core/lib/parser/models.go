@@ -16,17 +16,24 @@ type Outbound struct {
 
 // Inbound defines an inbound proxy listener in Xray.
 type Inbound struct {
-	Listen   string            `json:"listen"`
-	Port     uint16            `json:"port"`
+	Listen   string            `json:"listen,omitempty"`
+	Port     uint16            `json:"port,omitempty"`
 	Protocol string            `json:"protocol"`
 	Tag      string            `json:"tag"`
-	Settings *InboundSettings  `json:"settings,omitempty"`
+	Settings any               `json:"settings,omitempty"`
 	Sniffing *SniffingSettings `json:"sniffing,omitempty"`
 }
 
 // InboundSettings specifies inbound protocol options.
 type InboundSettings struct {
 	UDP bool `json:"udp"`
+}
+
+// TunSettings specifies native TUN inbound options in Xray.
+type TunSettings struct {
+	Name      string `json:"name"`
+	MTU       int    `json:"MTU,omitempty"`
+	UserLevel int    `json:"userLevel,omitempty"`
 }
 
 // SniffingSettings configures protocol sniffing on inbounds.

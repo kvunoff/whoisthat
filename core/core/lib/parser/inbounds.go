@@ -12,6 +12,39 @@ func GenerateInboundConfig(socksPort, httpPort int) []Inbound {
 	return inbounds
 }
 
+// GenerateInboundConfigWithTun generates inbounds with an optional native TUN inbound.
+func GenerateInboundConfigWithTun(socksPort, httpPort int, tunName string) []Inbound {
+	inbounds := GenerateInboundConfig(socksPort, httpPort)
+	if tunName != "" {
+		inbounds = append(inbounds, GenerateTunInbound(tunName, 1500))
+	}
+	return inbounds
+}
+
+// GenerateTunInbound generates an Xray native TUN inbound.
+func GenerateTunInbound(tunName string, mtu int) Inbound {
+	enabled := true
+	routeOnly := false
+	metadataOnly := false
+	if mtu <= 0 {
+		mtu = 1500
+	}
+	return Inbound{
+		Protocol: "tun",
+		Tag:      "tun-in",
+		Settings: &TunSettings{
+			Name: tunName,
+			MTU:  mtu,
+		},
+		Sniffing: &SniffingSettings{
+			Enabled:      &enabled,
+			RouteOnly:    &routeOnly,
+			MetadataOnly: &metadataOnly,
+			DestOverride: []string{"http", "tls", "quic"},
+		},
+	}
+}
+
 func generateHTTPInbound(port uint16) Inbound {
 	enabled := true
 	routeOnly := true

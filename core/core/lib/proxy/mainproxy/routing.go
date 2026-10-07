@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"syscall"
 	"time"
 	"whoisthat-core/db"
 	"whoisthat-core/lib"
@@ -15,8 +16,11 @@ import (
 	"whoisthat-core/lib/geo"
 	"whoisthat-core/lib/logger"
 	"whoisthat-core/lib/proxy/xray"
+	"whoisthat-core/lib/xraymgr"
 	"whoisthat-core/structs"
 	"whoisthat-core/utils"
+
+	"golang.org/x/sys/unix"
 )
 
 func injectRoutingConfig(configJSON []byte, database *db.DB) ([]byte, error) {
@@ -167,6 +171,7 @@ func splitAndTrim(s string) []string {
 }
 
 // ReloadRouting recompiles the routing configuration and restarts xray-core
+// ReloadRouting hot-reloads the running xray-core instance
 // with the new rules in-place, without dropping connection state or resetting
 // the TUN device. If the proxy is disconnected, ReloadRouting is a no-op.
 func (p *ProxyManager) ReloadRouting(tunName string) error {
@@ -177,10 +182,20 @@ func (p *ProxyManager) ReloadRouting(tunName string) error {
 		return nil
 	}
 
+	return p.reloadCoreLocked(tunName)
+}
+
+// reloadCoreLocked regenerates xray configuration with current routing and tun settings,
+// pre-flight tests it, and swaps the active core instance. Caller must hold p.mu.
+func (p *ProxyManager) reloadCoreLocked(tunName string) error {
 	profile := p.status.Profile
 
 	app_config := appconfig.GetConfig()
-	xray_config, err := lib.ParseUri(profile.Uri, app_config.SocksPort, app_config.HttpPort)
+	tunArg := ""
+	if p.tunEnabled {
+		tunArg = tunName
+	}
+	xray_config, err := lib.ParseUriWithTun(profile.Uri, app_config.SocksPort, app_config.HttpPort, tunArg)
 	if err != nil {
 		return fmt.Errorf("failed to parse profile uri: %w", err)
 	}
@@ -211,13 +226,37 @@ func (p *ProxyManager) ReloadRouting(tunName string) error {
 	// Pre-flight test the new configuration before terminating the active core.
 	// If xray detects an invalid rule (e.g. malformed geoip/geosite or syntax),
 	// the running connection is preserved intact.
-	if xraybin, err := utils.GetXrayBin(); err == nil {
+	// We test using the base config (without the tun inbound) to validate routing,
+	// domains, and syntax without contending on the TUN device or capabilities.
+	testConfigBytes := xray_config
+	if p.tunEnabled {
+		if testBase, err := lib.ParseUriWithTun(profile.Uri, app_config.SocksPort, app_config.HttpPort, ""); err == nil {
+			if testBase, err = injectStatsConfig(testBase, apiPort); err == nil {
+				if p.DB != nil {
+					if testBase, err = injectRoutingConfig(testBase, p.DB); err == nil {
+						testConfigBytes = testBase
+					}
+				} else {
+					testConfigBytes = testBase
+				}
+			}
+		}
+	}
+
+	xraybin, err := xraymgr.GetManager().GetXrayBin()
+	if err != nil {
+		xraybin, _ = utils.GetXrayBin()
+	}
+	if xraybin != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		cmd := exec.CommandContext(ctx, xraybin, "run", "-test")
+		cmd.SysProcAttr = &syscall.SysProcAttr{
+			AmbientCaps: []uintptr{unix.CAP_NET_ADMIN, unix.CAP_NET_RAW},
+		}
 		if ad := geo.AssetDir(); ad != "" {
 			cmd.Env = append(os.Environ(), "XRAY_LOCATION_ASSET="+ad)
 		}
-		cmd.Stdin = bytes.NewReader(xray_config)
+		cmd.Stdin = bytes.NewReader(testConfigBytes)
 		out, testErr := cmd.CombinedOutput()
 		cancel()
 		if testErr != nil {
@@ -257,6 +296,6 @@ func (p *ProxyManager) ReloadRouting(tunName string) error {
 
 	p.startExitWatcher()
 
-	logger.Infof("routing: reloaded successfully for %s", profile.Name)
+	logger.Infof("core reloaded successfully for %s (tun=%v)", profile.Name, p.tunEnabled)
 	return nil
 }

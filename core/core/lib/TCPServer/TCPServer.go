@@ -94,7 +94,6 @@ func (s *Server) Start() {
 	go s.handleTestResults()
 	go s.handleStatsChange()
 	s.handleXrayStatus()
-	s.handleTun2socksStatus()
 
 	// clientID must be unique per connection. UDS peers all report the same
 	// (empty) RemoteAddr, so fall back to a monotonic counter when the address
@@ -370,7 +369,7 @@ func (s *Server) handleConnection(cc *clientConn, clientID string) {
 				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
-			command_handler.DisableTun(data, s.tun_manager)
+			command_handler.DisableTun(data, s.proxy_manager, s.tun_manager)
 
 		case "is-root":
 			var data structs.IsRootData

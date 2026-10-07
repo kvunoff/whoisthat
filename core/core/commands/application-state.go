@@ -5,7 +5,6 @@ import (
 	"whoisthat-core/lib/logger"
 	proxy "whoisthat-core/lib/proxy/mainproxy"
 	tunmode "whoisthat-core/lib/proxy/tun"
-	"whoisthat-core/lib/tunmgr"
 	"whoisthat-core/lib/xraymgr"
 	"whoisthat-core/structs"
 )
@@ -29,8 +28,7 @@ func (cmd *Cmd) GetApplicationState(data structs.GetApplicationStateData, proxy_
 			Enabled: appconfig.GetConfig().AutoconnectEnabled,
 			Mode:    appconfig.GetConfig().AutoconnectMode,
 		},
-		XrayStatus:      xraymgr.GetManager().GetStatus(),
-		Tun2socksStatus: tunmgr.GetManager().GetStatus(),
+		XrayStatus: xraymgr.GetManager().GetStatus(),
 	}
 
 	cmd.send("application-state", application_state)

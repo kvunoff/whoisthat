@@ -38,7 +38,6 @@ pub enum CoreEvent {
     TestProgress(TestProgress),
     TestConfigUpdated(TestConfig),
     XrayProgress(XrayProgressNotification),
-    Tun2socksProgress(Tun2socksProgressNotification),
     ProfilesReordered {
         group_id: i32,
         profile_ids: Vec<i32>,
@@ -312,14 +311,6 @@ pub(crate) fn dispatch(msg: TcpMessage) -> CoreEvent {
             try_dispatch!(msg, "xray-progress", XrayProgressNotification, |d| {
                 CoreEvent::XrayProgress(d)
             })
-        }
-        "tun2socks-progress" => {
-            try_dispatch!(
-                msg,
-                "tun2socks-progress",
-                Tun2socksProgressNotification,
-                |d| { CoreEvent::Tun2socksProgress(d) }
-            )
         }
         other => {
             warn!("Unknown message type: {}", other);
@@ -676,29 +667,6 @@ mod tests {
             assert_eq!(p.total_bytes, 10000);
         } else {
             panic!("expected XrayProgress");
-        }
-    }
-
-    #[test]
-    fn test_dispatch_tun2socks_progress() {
-        let event = dispatch(make_msg(
-            "tun2socks-progress",
-            json!({
-                "status": "downloading",
-                "version": "v2.7.0",
-                "progress": 55,
-                "bytes_downloaded": 5500,
-                "total_bytes": 10000
-            }),
-        ));
-        if let CoreEvent::Tun2socksProgress(p) = event {
-            assert_eq!(p.status, "downloading");
-            assert_eq!(p.version, "v2.7.0");
-            assert_eq!(p.progress, 55);
-            assert_eq!(p.bytes_downloaded, 5500);
-            assert_eq!(p.total_bytes, 10000);
-        } else {
-            panic!("expected Tun2socksProgress");
         }
     }
 
