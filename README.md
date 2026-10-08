@@ -56,7 +56,7 @@ yay -S whoisthat
 
 ### Manual build
 
-Prerequisites: **Rust** 1.80+, **Go** 1.25+, **git**, **curl**, a C compiler.
+Prerequisites: **Rust** 1.80+, **Go** 1.26+, **git**, **curl**, a C compiler.
 
 ```bash
 git clone https://github.com/kvunoff/whoisthat.git
@@ -113,11 +113,11 @@ By default the TUI talks to the core over a **Unix domain socket** (see [IPC tra
   "http-port": 3091,
   "core-tcp-port": 4897,
   "test-port-range": { "start": 3095, "end": 30120 },
-  "dns-servers": ["1.1.1.1", "8.8.8.8"],
+  "dns-servers": ["1.1.1.1", "8.8.8.8", "2606:4700:4700::1111", "2001:4860:4860::8888"],
   "tun-name": "whoisthattun",
   "hwid-enabled": true,
   "hwid": "1fb1e0141ab3e35a",
-  "user-agent": "whoisthat/v0.11.0",
+  "user-agent": "whoisthat/v0.12.0",
   "kill-switch-enabled": false,
   "autoconnect-enabled": false,
   "autoconnect-group-id": 0,
@@ -309,7 +309,7 @@ When subscription updates are fetched, the core sends HTTP headers identifying t
 | `x-device-os` | `Linux` | `runtime.GOOS` |
 | `x-ver-os` | `6.12.0-arch1-1` | `uname -r` |
 | `x-device-model` | `Arch Linux` | `/etc/os-release` PRETTY_NAME |
-| `user-agent` | `whoisthat/v0.11.0` | User-configurable (Settings) |
+| `user-agent` | `whoisthat/v0.12.0` | User-configurable (Settings) |
 
 Response headers (`x-hwid-max-devices-reached`, `x-hwid-not-supported`, `x-hwid-limit`) are inspected and trigger warnings when device limits are reached.
 
@@ -516,7 +516,7 @@ Subscription metadata (`sub_*`) is populated from the `subscription-userinfo` HT
 | HWID: Enabled | on/off | Send HWID headers with subscription requests |
 | HWID | 1fb1e0141ab3e35a | Device identifier (read-only, auto-generated) |
 | Reset HWID | ⏎ | Generate a new random HWID |
-| User-Agent | whoisthat/v0.11.0 | User-Agent header (editable — press Enter to modify) |
+| User-Agent | whoisthat/v0.12.0 | User-Agent header (editable — press Enter to modify) |
 
 Navigate with `j`/`k`, press `Enter`/`Space` to toggle, cycle values, open edit popups, or execute actions.
 
@@ -861,18 +861,20 @@ The project has unit tests for both the Rust TUI and the Go core. No external de
 cargo test
 ```
 
-Covers (93 unit tests):
+Covers (102 unit tests):
 
-- **Message dispatch** (`src/core_client/dispatch.rs`) — all notification message types (22), unknown type handling, malformed JSON
+- **Message dispatch** (`src/core_client/dispatch.rs`) — all notification message types (22+), unknown type handling, malformed JSON, profile reordering & moving, Xray progress
+- **Diagnostics & Doctor** (`src/doctor/checks.rs`, `src/doctor/types.rs`) — report item counting, status classification (pass/warn/fail/info), JSON serialization & deserialization
 - **Responsive layout geometry** (`src/ui/layout.rs`, `src/ui/app/helpers.rs`) — width/height tier categorization, threshold warnings (<45x8), responsive rect auto-bounding, side-by-side vs stacked splits, traffic card responsive modes
 - **Routing & Presets logic** (`src/ui/routing.rs`) — `form_to_rule` / `rule_to_form` for all 6 match types and 3 outbounds, preset definitions, idempotent preset application & toggling
 - **Traffic monitoring & history** (`src/ui/traffic.rs`) — ring buffer history initialization, rolling push, dynamic max-Y chart scaling
 - **Theme system** (`src/ui/theme.rs`) — theme selection, live cycling across all 8 curated palettes, persistence
-- **Tree state & navigation** (`src/ui/app/state.rs`) — group collapse/expansion, cursor clamping, test pending markers
+- **Tree state & navigation** (`src/ui/app/state.rs`) — group collapse/expansion, cursor clamping, test pending markers, profile moving and reordering
 - **Settings layout** (`src/ui/settings.rs`) — grouped layout, cursor navigation skipping headers, scroll clamping
 - **Text editor** (`src/text_edit.rs`) — `edit_text_field`: insert, backspace, delete, cursor movement, Home/End boundary conditions, Cyrillic UTF-8 editing
 - **CLI & Status formatting** (`src/cli.rs`) — CLI subcommands, offline and connected status JSON serialization, human-readable speed formatting
 - **Split-tunnel launcher** (`src/launcher.rs`) — `whoisthat run` usage code paths, foreground/background flag parsing (`-d`, `--detach`, `-b`), and PATH lookup
+- **URI parsing & decoding** (`src/ui/uri.rs`) — Hysteria2 URI parsing, query parameter extraction, percent-decoding for UTF-8 and special characters
 
 ### Go
 
@@ -886,6 +888,12 @@ Covers:
 - **Crypto** (`lib/crypto`) — AES-256-GCM encrypt/decrypt round-trip, base64 wrappers, wrong key, short ciphertext, empty plaintext, nonce randomness
 - **Config** (`lib/AppConfig`) — default port values, DNS servers, HWID format (16 lowercase hex chars), HWID randomness, IPC socket-path resolution
 - **Database** (`db`) — path helpers, encrypt/decrypt round-trip via `writeEncryptedJSON`/`readEncryptedJSON`, encrypted file detection, key file creation and reuse across instances
+- **URI & Inbound Parser** (`lib/parser`) — URI protocol detection, VLESS/VMess/Trojan/Shadowsocks/SOCKS/Hysteria2 parsing, stream settings (Reality/Vision/TLS/xHTTP/gRPC/WS), Xray config generation, native TUN inbound injection
+- **Xray Runtime Manager** (`lib/xraymgr`) — pinned version resolution, architecture matching, SHA256 checksum parsing and verification, archive unpacking, background ensure
+- **Dynamic Port Pool** (`lib/PortPool`) — concurrent allocation and release of ephemeral ports for testing and stats API
+- **Traffic Statistics** (`lib/proxy/mainproxy`) — sysfs network interface reader, gRPC query error handling
+- **Latency Tester** (`lib/proxy/mainproxy`) — test request deduplication, multi-sample latency/jitter/loss calculation, epoch cancellation
+- **Preflight Checks** (`lib/TCPServer`) — detection of missing runtime binaries with actionable hints
 - **Network reconcile** (`lib/proxy/tun`) — startup orphan-rule teardown script covers every `whoisthat_*` table and is idempotent
 - **Split tunnel** (`lib/proxy/tun`) — generated exclude/include nftables `socket cgroupv2` + fwmark routing scripts, cgroup level matching, postrouting NAT masquerading, IPv6 unreachable fallback, teardown idempotency
 - **TCP/UDS server** (`lib/TCPServer`) — length-prefixed framing round-trip over a Unix domain socket pair
@@ -955,17 +963,20 @@ nft list table 2> /dev/null || iptables -L -n # active firewall rules
 ip link show whoisthattun                     # the TUN interface
 ```
 
-### Continuous Integration (AUR autoupdate)
+### Continuous Integration
 
-File: `.github/workflows/aur-publish.yml` — triggers on every `v*` tag push.
+- **CI Workflow** (`.github/workflows/ci.yml`) — runs on push and PRs targeting `main`:
+  - **Rust**: `cargo fmt --all --check`, `cargo clippy --all-targets --no-deps`, `cargo test`
+  - **Go**: `go vet ./...`, `go build ./...`, `go test ./...`
+- **AUR Publish Workflow** (`.github/workflows/aur-publish.yml`) — triggers on every `v*` tag push:
+  1. Parse version from the tag
+  2. Clone the live AUR repo
+  3. Compute `pkgrel` (increment if `pkgver` matches latest AUR, otherwise reset to 1)
+  4. Regenerate `PKGBUILD` and `.SRCINFO` **in CI** (the files in the repo are reference-only)
+  5. Push to AUR using the `AUR_SSH_KEY` secret
 
-1. Parse the version from the tag
-2. Clone the live AUR repo
-3. Compute `pkgrel` (increment if `pkgver` matches latest AUR, otherwise reset to 1)
-4. Regenerate the `PKGBUILD` and `.SRCINFO` **in CI** (the files in the repo are reference-only)
-5. Push to AUR using the `AUR_SSH_KEY` secret
-
-So `pkgrel` in `pkg/aur/PKGBUILD` is reference-only — never hand-bump it for releases. See `UPDATE.md` for the full release procedure.
+> [!NOTE]
+> `pkgrel` in `pkg/aur/PKGBUILD` is reference-only — never hand-bump it for releases. To publish a release, tag the commit and push the tag (`git tag v0.12.x && git push origin v0.12.x`).
 
 ---
 
@@ -973,30 +984,35 @@ So `pkgrel` in `pkg/aur/PKGBUILD` is reference-only — never hand-bump it for r
 
 ```text
 whoisthat/
-├── Cargo.toml          ← Rust project manifest (TUI)
-├── README.md / AGENTS.md / UPDATE.md
+├── Cargo.toml          ← Rust project manifest (TUI & CLI)
+├── README.md           ← Complete documentation and reference guide
 ├── install.sh          ← Universal installer / updater
-├── src/                ← Rust TUI source
-│   ├── main.rs         ← Entry point only: init logger, spawn core, terminal setup/teardown
-│   ├── event_loop.rs   ← AppEvent enum + run_loop (tokio::select! core_rx ↔ input_rx)
-│   ├── core_events.rs  ← handle_core_event — dispatches 22 CoreEvent broadcasts
-│   ├── input.rs        ← handle_input + handle_normal_input — key dispatch by tab/focus
-│   ├── popups.rs       ← Modal + routing popup key handlers, two-field forms
+├── src/                ← Rust TUI & CLI source
+│   ├── main.rs         ← Entry point: CLI routing, core daemon spawn/re-attach, terminal lifecycle
+│   ├── cli.rs          ← CLI subcommands & shorthand flags, status monitoring, JSON/NDJSON streams
+│   ├── doctor/         ← System & capability diagnostics (`whoisthat doctor`)
+│   │   ├── mod.rs      ← Module entry point
+│   │   ├── types.rs    ← Diagnostic models, pass/warn/fail statuses, reports
+│   │   └── checks.rs   ← Diagnostic checks: binaries, capabilities, polkit, IPC, config/storage
+│   ├── event_loop.rs   ← AppEvent enum + run_loop (tokio::select! core_rx ↔ input_rx ↔ ticks)
+│   ├── core_events.rs  ← handle_core_event — dispatches 22+ CoreEvent broadcasts
+│   ├── input.rs        ← handle_input + handle_normal_input — keyboard & mouse dispatch by tab/focus
+│   ├── popups.rs       ← Modal dialogs & routing popup key handlers, two-field forms
 │   ├── testing.rs      ← build_test_list, run_test_batch, persist_and_sync_test_config
-│   ├── text_edit.rs    ← edit_text_field line editor + clipboard paste + 15 tests
+│   ├── text_edit.rs    ← edit_text_field line editor + clipboard paste + UTF-8/Cyrillic support
 │   ├── logger.rs       ← FileLogger (custom) + init/configure logger
-│   ├── core_spawn.rs   ← spawn_core, find_core_binary, ensure_core_caps (pkexec)
+│   ├── core_spawn.rs   ← spawn_core, find_core_binary, ensure_core_caps (pkexec fallback)
 │   ├── systemd.rs      ← Unit-file generation, linger, enable/disable service
 │   ├── net_info.rs     ← fetch_public_ip / fetch_public_ipv6 (raw TCP to ipify)
-│   ├── launcher.rs     ← `whoisthat run <app>` — launch into split-tunnel slice
+│   ├── launcher.rs     ← `whoisthat run <app>` — launch into split-tunnel slice (foreground/background)
 │   ├── config.rs       ← Config loader (~/.config/whoisthat/config.toml)
-│   ├── core_client/    ← IPC client for the Go core (Unix socket / TCP)
+│   ├── core_client/    ← IPC client for the Go core (Unix domain socket / TCP)
 │   │   ├── protocol.rs ← All serde types mirroring Go structs
 │   │   ├── connection.rs ← UDS/TCP transport + 4-byte length framing
 │   │   ├── dispatch.rs ← Read loop → typed event channel
 │   │   └── commands.rs ← High-level async send functions
 │   └── ui/             ← ratatui components
-│       ├── app/        ← Main app state + rendering (mod, types, state, render, tree, details, popups, helpers)
+│       ├── app/        ← Main app state & rendering (state, tree, details, popups, helpers)
 │       ├── layout.rs   ← Responsive layout geometry engine (width/height tiers, adaptive splits)
 │       ├── theme.rs    ← Curated color palettes (8 dark themes: Tokyo Night, Catppuccin, Nord, etc.)
 │       ├── settings.rs ← Settings screen
@@ -1008,21 +1024,23 @@ whoisthat/
 │   └── core/
 │       ├── main.go     ← Daemon entry point; RaiseAmbientCaps() before everything
 │       ├── go.mod
-│       ├── commands/   ← TCP command handlers (connect, test, groups, subscription, split, ...)
+│       ├── commands/   ← IPC command handlers (connect, test, groups, subscription, split, ...)
 │       ├── structs/    ← Shared data types (mirror of src/core_client/protocol.rs)
-│       ├── db/         ← JSON file-based profile DB + readEncryptedJSON / MigrateToEncrypted
-│       ├── utils/      ← caps.go (RaiseAmbientCaps, CanTun), user.go (UIDs)
+│       ├── db/         ← Encrypted JSON profile DB (AES-256-GCM) + auto-migration
+│       ├── utils/      ← caps.go (RaiseAmbientCaps, CanTun), user.go (UIDs), resolve.go
 │       └── lib/        ← Core libraries
-│           ├── parser/      ← Native in-memory URI parser & Xray JSON generator
+│           ├── parser/      ← Native in-memory URI parser & Xray JSON config generator
+│           ├── xraymgr/     ← Pinned Xray-core runtime manager (v26.9.9 download & checksum verification)
 │           ├── logger/      ← Structured logger (lumberjack rotation, 20 MB)
-│           ├── TCPServer/  ← IPC server + dispatcher (Unix socket / TCP, length-prefixed JSON)
-│           ├── AppConfig/  ← Core configuration, defaults, HWID gen
-│           ├── PortPool/   ← Dynamic port allocator for test/profile instances
-│           ├── crypto/     ← AES-256-GCM encrypt/decrypt for DB files
-│           ├── geo/        ← Auto-download + verify geoip.dat / geosite.dat from v2fly
-│           └── proxy/      ← mainproxy (connect/stop/status), xray wrapper, TUN manager + scripts, routing
-├── pkg/aur/            ← AUR packaging (PKGBUILD + .SRCINFO)
+│           ├── TCPServer/   ← IPC server + dispatcher (Unix socket / TCP, length-prefixed JSON)
+│           ├── AppConfig/   ← Core configuration, defaults, HWID gen
+│           ├── PortPool/    ← Dynamic port allocator for test/profile instances
+│           ├── crypto/      ← AES-256-GCM encrypt/decrypt for DB files
+│           ├── geo/         ← Auto-download + verify geoip.dat / geosite.dat from v2fly
+│           └── proxy/       ← mainproxy (connect/stop/status), xray wrapper, TUN manager + scripts, routing
+├── pkg/aur/            ← AUR packaging (PKGBUILD + .SRCINFO + whoisthat.install)
 └── .github/workflows/
+    ├── ci.yml          ← Automated CI: Rust (fmt/clippy/test) + Go (vet/build/test)
     └── aur-publish.yml ← Tag-triggered CI: pushes updated PKGBUILD to AUR
 ```
 
