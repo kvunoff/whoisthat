@@ -92,7 +92,16 @@ pub struct ApplicationState {
     pub autoconnect: AutoconnectInfo,
     #[serde(rename = "xray_status", default)]
     pub xray_status: Option<XrayStatusInfo>,
+    #[serde(rename = "core_version", default)]
+    pub core_version: String,
+    #[serde(rename = "protocol_version", default)]
+    pub protocol_version: u32,
 }
+
+/// IPC contract version expected by this TUI. Must match
+/// `core/core/lib/version/version.go:ProtocolVersion`.
+/// A running core is reused while versions match; on mismatch it is restarted.
+pub const EXPECTED_CORE_PROTOCOL_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct XrayStatusInfo {

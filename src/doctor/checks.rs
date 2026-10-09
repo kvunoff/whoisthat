@@ -19,13 +19,25 @@ pub async fn run_doctor() -> DoctorReport {
     let cat_ipc = check_ipc_and_daemon(&cfg).await;
     let cat_config = check_config_and_storage(&cfg);
 
-    DoctorReport::new(vec![
+    let mut report = DoctorReport::new(vec![
         cat_binaries,
         cat_capabilities,
         cat_polkit,
         cat_ipc,
         cat_config,
-    ])
+    ]);
+    if let Some((cv, proto)) = crate::cli::fetch_core_version_ipc().await {
+        report.core_version = Some(cv);
+        report.core_protocol_version = Some(proto);
+    } else {
+        // Offline: never execute the core binary (old binaries ignore
+        // --version and boot a daemon). Use last-seen version from config.
+        let last_seen = cfg.core_version.clone();
+        if !last_seen.is_empty() {
+            report.core_version = Some(last_seen);
+        }
+    }
+    report
 }
 
 fn check_binaries() -> CheckCategory {
@@ -42,6 +54,8 @@ fn check_binaries() -> CheckCategory {
     ));
 
     // 2. whoisthat-core (daemon)
+    // NOTE: existence check only — never execute the binary here, old
+    // binaries ignore --version and boot a daemon instead.
     let core_bin = find_core_binary();
     let core_path = Path::new(&core_bin);
     if core_path.exists() {

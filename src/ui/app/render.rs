@@ -301,10 +301,24 @@ impl App {
             " · xray-core".to_string()
         };
 
-        let left_str = if is_compact {
-            format!(" v{}", env!("CARGO_PKG_VERSION"))
+        // Live versions: TUI version is compile-time, core version arrives
+        // dynamically via `application-state` (never hardcoded in the TUI).
+        // Single faint style for the whole left part — no highlighting.
+        let tui_version = env!("CARGO_PKG_VERSION");
+        let base_str = if is_compact {
+            format!(" v{tui_version}")
         } else {
-            format!(" WhoisThat v{}{}", env!("CARGO_PKG_VERSION"), xray_label)
+            format!(" WhoisThat v{tui_version}")
+        };
+        let core_str = if self.core_version.is_empty() {
+            " · core …".to_string()
+        } else {
+            format!(" · core v{}", self.core_version)
+        };
+        let left_str = if is_compact {
+            format!("{base_str}{core_str}")
+        } else {
+            format!("{base_str}{core_str}{xray_label}")
         };
         let left = Span::styled(left_str, s_faint());
         let left_w = left.width();
@@ -349,5 +363,70 @@ impl App {
 
         let spans = vec![left, tun, uptime, Span::raw(" ".repeat(gap)), right];
         f.render_widget(Paragraph::new(Line::from(spans)), inner);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core_client::protocol::TestConfig;
+    use ratatui::backend::TestBackend;
+    use ratatui::Terminal;
+
+    fn test_app() -> App {
+        App::new(
+            false,
+            false,
+            "warn".to_string(),
+            "http-get".to_string(),
+            "whoisthattun".to_string(),
+            false,
+            TestConfig {
+                concurrency: 16,
+                timeout_seconds: 5,
+                samples_per_test: 3,
+                test_endpoint: "https://example.com".to_string(),
+                auto_test_on_subscribe: false,
+            },
+        )
+    }
+
+    fn render_text(app: &mut App, w: u16, h: u16) -> String {
+        let backend = TestBackend::new(w, h);
+        let mut term = Terminal::new(backend).unwrap();
+        term.draw(|f| app.render(f)).unwrap();
+        term.backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|c| c.symbol().to_string())
+            .collect::<Vec<_>>()
+            .join("")
+    }
+
+    #[test]
+    fn bottom_bar_shows_live_core_version_wide() {
+        let mut app = test_app();
+        // Deliberately fictional version: proves the value comes from
+        // live state (IPC), not from a hardcoded constant in the TUI.
+        app.core_version = "9.9.9-test".to_string();
+        let text = render_text(&mut app, 120, 30);
+        assert!(text.contains("core v9.9.9-test"), "footer: {text}");
+    }
+
+    #[test]
+    fn bottom_bar_shows_live_core_version_compact() {
+        let mut app = test_app();
+        app.core_version = "9.9.9-test".to_string();
+        let text = render_text(&mut app, 70, 20);
+        assert!(text.contains("core v9.9.9-test"), "footer: {text}");
+    }
+
+    #[test]
+    fn bottom_bar_shows_placeholder_before_handshake() {
+        let mut app = test_app();
+        assert!(app.core_version.is_empty());
+        let text = render_text(&mut app, 120, 30);
+        assert!(text.contains("core"), "footer: {text}");
     }
 }

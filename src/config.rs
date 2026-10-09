@@ -13,6 +13,10 @@ pub struct AppConfig {
     pub last_group_id: i32,
     #[serde(default)]
     pub last_profile_id: i32,
+    /// Last seen whoisthat-core version (from `core_version` in application-state).
+    /// This is the real daemon version (core-vX.Y.Z), NOT the TUI version.
+    /// Legacy configs may hold a TUI version here (pre-split); it is
+    /// overwritten on the next successful handshake.
     #[serde(default)]
     pub core_version: String,
     #[serde(default = "default_true")]

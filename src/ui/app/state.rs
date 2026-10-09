@@ -59,6 +59,8 @@ pub struct App {
     pub last_area: Rect,
     pub layout: crate::ui::layout::LayoutGeometry,
     pub xray_status: Option<XrayStatusInfo>,
+    pub core_version: String,
+    pub core_protocol_version: u32,
 
     uri_cache: RefCell<Option<(i32, i32, ParsedUri)>>,
 }
@@ -81,7 +83,6 @@ impl App {
                 connected_at: 0,
             },
             tun_enabled: false,
-            xray_status: None,
             last_msg: None,
             show_ip,
             log_enabled,
@@ -123,6 +124,9 @@ impl App {
             collapsed_groups: HashSet::new(),
             last_area: Rect::default(),
             layout: crate::ui::layout::LayoutGeometry::default(),
+            xray_status: None,
+            core_version: String::new(),
+            core_protocol_version: 0,
             uri_cache: RefCell::new(None),
         }
     }
@@ -414,6 +418,12 @@ impl App {
         self.autostart_mode = state.autoconnect.mode;
         self.hwid_info = state.hwid_info;
         self.xray_status = state.xray_status;
+        if !state.core_version.is_empty() {
+            self.core_version = state.core_version;
+        }
+        if state.protocol_version != 0 {
+            self.core_protocol_version = state.protocol_version;
+        }
         self.clamp_cursor();
     }
 

@@ -342,6 +342,33 @@ mod tests {
             }),
         ));
         assert!(matches!(event, CoreEvent::ApplicationState(_)));
+        // Legacy core without version fields defaults to 0/empty.
+        if let CoreEvent::ApplicationState(s) = event {
+            assert_eq!(s.protocol_version, 0);
+            assert!(s.core_version.is_empty());
+        } else {
+            panic!("expected ApplicationState");
+        }
+    }
+
+    #[test]
+    fn test_dispatch_application_state_with_core_version() {
+        let event = dispatch(make_msg(
+            "application-state",
+            json!({
+                "groups": [],
+                "connection-status": { "connection": "disconnected", "connected_at": 0 },
+                "tun-status": false,
+                "core_version": "0.1.0",
+                "protocol_version": 1
+            }),
+        ));
+        if let CoreEvent::ApplicationState(s) = event {
+            assert_eq!(s.core_version, "0.1.0");
+            assert_eq!(s.protocol_version, 1);
+        } else {
+            panic!("expected ApplicationState");
+        }
     }
 
     #[test]

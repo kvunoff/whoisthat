@@ -91,6 +91,10 @@ pub struct DoctorSummary {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DoctorReport {
     pub version: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub core_version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub core_protocol_version: Option<u32>,
     pub categories: Vec<CheckCategory>,
     pub summary: DoctorSummary,
 }
@@ -124,6 +128,8 @@ impl DoctorReport {
 
         Self {
             version: env!("CARGO_PKG_VERSION").to_string(),
+            core_version: None,
+            core_protocol_version: None,
             categories,
             summary,
         }
@@ -142,7 +148,11 @@ impl DoctorReport {
 
         println!(
             "{bold}WhoisThat Doctor v{} — System Diagnostics{reset}\n",
-            self.version
+            match (&self.core_version, &self.core_protocol_version) {
+                (Some(cv), Some(p)) => format!("{} / core v{} (protocol {})", self.version, cv, p),
+                (Some(cv), None) => format!("{} / core v{}", self.version, cv),
+                _ => self.version.clone(),
+            }
         );
 
         for cat in &self.categories {

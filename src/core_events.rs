@@ -23,6 +23,10 @@ pub(crate) async fn handle_core_event(
         CoreEvent::ApplicationState(s) => {
             let was_connected = s.connection_status.connection == "connected";
             let already_migrated = app.autoconnect_enabled;
+            if !s.core_version.is_empty() && cfg.core_version != s.core_version {
+                cfg.core_version = s.core_version.clone();
+                config::save_config(cfg);
+            }
             app.apply_state(*s);
             if *first_state {
                 *first_state = false;

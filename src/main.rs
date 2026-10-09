@@ -27,7 +27,9 @@ use io::Write;
 use ratatui::backend::CrosstermBackend;
 use tokio::sync::mpsc;
 
-use core_client::protocol::{DieData, TestConfig};
+use core_client::protocol::{
+    ApplicationState, DieData, GetApplicationStateData, TestConfig, EXPECTED_CORE_PROTOCOL_VERSION,
+};
 use core_client::{CoreClient, CoreConnection};
 use event_loop::{run_loop, AppEvent};
 use logger::{configure_logger, init_logger};
@@ -60,29 +62,47 @@ async fn main() -> io::Result<()> {
     let mut cfg = config::load_config();
     ui::theme::set_theme(&cfg.theme);
     configure_logger(logger, cfg.log_enabled, &cfg.log_level);
-    let current_version = env!("CARGO_PKG_VERSION").to_string();
+    let tui_version = env!("CARGO_PKG_VERSION").to_string();
 
     let endpoint = cfg.endpoint();
     log::info!("Core IPC endpoint: {}", endpoint.describe());
 
     let mut core_alive = false;
-    if let Ok(mut conn) = CoreConnection::connect_endpoint(&endpoint).await {
-        if cfg.core_version != current_version {
-            log::info!(
-                "Core version mismatch (cfg='{}' current='{current_version}'), restarting",
-                cfg.core_version
-            );
-            let _ = conn.send("die", &DieData {}).await;
-            drop(conn);
-            tokio::time::sleep(Duration::from_millis(500)).await;
-        } else {
-            log::info!("Reattaching to existing core v{current_version}");
-            core_alive = true;
+    match query_core_state(&endpoint).await {
+        Some(state) => {
+            if state.protocol_version == EXPECTED_CORE_PROTOCOL_VERSION
+                && state.protocol_version != 0
+            {
+                log::info!(
+                    "Reattaching to core v{} (protocol {}), tui v{}",
+                    state.core_version,
+                    state.protocol_version,
+                    tui_version
+                );
+                if !state.core_version.is_empty() && cfg.core_version != state.core_version {
+                    cfg.core_version = state.core_version;
+                    config::save_config(&cfg);
+                }
+                core_alive = true;
+            } else {
+                log::info!(
+                    "Core protocol mismatch (got {}, expected {}), restarting core",
+                    state.protocol_version,
+                    EXPECTED_CORE_PROTOCOL_VERSION
+                );
+                if let Ok(mut conn) = CoreConnection::connect_endpoint(&endpoint).await {
+                    let _ = conn.send("die", &DieData {}).await;
+                }
+                tokio::time::sleep(Duration::from_millis(500)).await;
+            }
+        }
+        None => {
+            log::info!("No reachable core, will spawn fresh");
         }
     }
 
     if !core_alive {
-        log::info!("Spawning fresh core v{current_version}");
+        log::info!("Spawning fresh core for tui v{tui_version}");
         core_spawn::ensure_core_caps(&core_spawn::find_core_binary());
         core_spawn::spawn_core(&cfg.log_level)?;
         let mut retries = 0u32;
@@ -99,8 +119,12 @@ async fn main() -> io::Result<()> {
             }
             tokio::time::sleep(Duration::from_millis(1000)).await;
         }
-        cfg.core_version = current_version;
-        config::save_config(&cfg);
+        if let Some(state) = query_core_state(&endpoint).await {
+            if !state.core_version.is_empty() {
+                cfg.core_version = state.core_version;
+                config::save_config(&cfg);
+            }
+        }
     }
     let (read_half, write_half) = CoreConnection::connect_split(&endpoint)
         .await
@@ -257,4 +281,25 @@ async fn main() -> io::Result<()> {
             std::process::exit(1);
         }
     }
+}
+
+/// Query a running core for its full application-state (one-shot).
+/// Returns None when no core is reachable or the handshake times out.
+/// Used at startup to check `protocol_version` before deciding to reattach.
+async fn query_core_state(
+    endpoint: &core_client::connection::Endpoint,
+) -> Option<ApplicationState> {
+    let (mut read_half, mut write_half) = CoreConnection::connect_split(endpoint).await.ok()?;
+    write_half
+        .send("get-application-state", &GetApplicationStateData {})
+        .await
+        .ok()?;
+    let msg = tokio::time::timeout(Duration::from_secs(2), read_half.recv())
+        .await
+        .ok()?
+        .ok()?;
+    if msg.msg != "application-state" {
+        return None;
+    }
+    serde_json::from_value(msg.data).ok()
 }

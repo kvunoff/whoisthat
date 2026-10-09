@@ -19,12 +19,19 @@ import (
 	"whoisthat-core/lib/logger"
 	proxy "whoisthat-core/lib/proxy/mainproxy"
 	tunmode "whoisthat-core/lib/proxy/tun"
+	"whoisthat-core/lib/version"
 	"whoisthat-core/lib/xraymgr"
 	"whoisthat-core/structs"
 	"whoisthat-core/utils"
 )
 
 func main() {
+	for _, arg := range os.Args[1:] {
+		if arg == "--version" || arg == "-v" || arg == "version" || arg == "--help" || arg == "-h" {
+			fmt.Printf("whoisthat-core v%s (protocol %d)\n", version.CoreVersion, version.ProtocolVersion)
+			return
+		}
+	}
 	configDir, err := os.UserConfigDir()
 	if err != nil {
 		configDir = filepath.Join(os.Getenv("HOME"), ".config")

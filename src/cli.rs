@@ -259,10 +259,7 @@ pub async fn handle_cli(args: &[String]) -> Result<(), Box<dyn std::error::Error
         "ip" | "--ip" => handle_ip().await,
 
         // Version & help
-        "version" | "--version" | "-v" => {
-            println!("whoisthat v{}", env!("CARGO_PKG_VERSION"));
-            Ok(())
-        }
+        "version" | "--version" | "-v" => handle_version().await,
         "-h" | "--help" | "help" => {
             print_help();
             Ok(())
@@ -959,6 +956,49 @@ async fn handle_profiles(args: &[String]) -> Result<(), Box<dyn std::error::Erro
     }
 
     Ok(())
+}
+
+async fn handle_version() -> Result<(), Box<dyn std::error::Error>> {
+    let tui_version = env!("CARGO_PKG_VERSION");
+    if let Some((core_ver, proto)) = fetch_core_version_ipc().await {
+        println!("whoisthat (tui) v{tui_version}");
+        println!("whoisthat-core v{core_ver} (protocol {proto})");
+        return Ok(());
+    }
+    // Offline: NEVER execute the core binary here (old binaries ignore
+    // --version and boot a daemon instead). Use last-seen version from config.
+    let last_seen = config::load_config().core_version;
+    println!("whoisthat (tui) v{tui_version}");
+    if last_seen.is_empty() {
+        println!("whoisthat-core offline (version unknown)");
+    } else {
+        println!("whoisthat-core v{last_seen} (offline, last seen)");
+    }
+    Ok(())
+}
+
+/// Query a running core over IPC for its version. None when offline.
+pub async fn fetch_core_version_ipc() -> Option<(String, u32)> {
+    let cfg = config::load_config();
+    let endpoint = cfg.endpoint();
+    let conn = CoreConnection::connect_endpoint(&endpoint).await.ok()?;
+    let (mut read_half, mut write_half) = conn.into_split();
+    write_half
+        .send("get-application-state", &GetApplicationStateData {})
+        .await
+        .ok()?;
+    let msg = tokio::time::timeout(Duration::from_secs(2), read_half.recv())
+        .await
+        .ok()?
+        .ok()?;
+    if msg.msg != "application-state" {
+        return None;
+    }
+    let state: ApplicationState = serde_json::from_value(msg.data).ok()?;
+    if state.core_version.is_empty() {
+        return None;
+    }
+    Some((state.core_version, state.protocol_version))
 }
 
 #[cfg(test)]

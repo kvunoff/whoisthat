@@ -126,6 +126,8 @@ type ApplicationState struct {
 	SplitTunnel      string              `json:"split_tunnel"`
 	Autoconnect      AutoconnectInfo     `json:"autoconnect"`
 	XrayStatus       XrayStatusInfo      `json:"xray_status"`
+	CoreVersion      string              `json:"core_version,omitzero"`
+	ProtocolVersion  int                 `json:"protocol_version,omitzero"`
 }
 
 type UpdateSubscriptionData struct {

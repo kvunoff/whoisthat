@@ -14,6 +14,7 @@ import (
 	"runtime"
 	"strings"
 	"whoisthat-core/lib/logger"
+	"whoisthat-core/lib/version"
 	"whoisthat-core/utils"
 )
 
@@ -80,7 +81,7 @@ func defaultConfig() AppConfig {
 		DnsServers:      []string{"1.1.1.1", "8.8.8.8", "2606:4700:4700::1111", "2001:4860:4860::8888"},
 		TunName:         "whoisthattun",
 		HwidEnabled:     true,
-		UserAgent:       "whoisthat/v0.12.0",
+		UserAgent:       "whoisthat-core/v" + version.CoreVersion,
 		AutoconnectMode: "proxy",
 		TestConfig: TestConfig{
 			Concurrency:    16,
