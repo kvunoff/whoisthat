@@ -281,7 +281,7 @@ func (s *Server) handleConnection(cc *clientConn, clientID string) {
 				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
-			command_handler.AddGroup(data)
+			command_handler.AddGroup(data, s.proxy_manager)
 
 		case "delete-group":
 			var data structs.DeleteGroupData
@@ -409,7 +409,7 @@ func (s *Server) handleConnection(cc *clientConn, clientID string) {
 				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
-			command_handler.UpdateGroup(data)
+			command_handler.UpdateGroup(data, s.proxy_manager)
 
 		case "set-kill-switch":
 			var data structs.SetKillSwitchData

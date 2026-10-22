@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 	"whoisthat-core/db"
 	"whoisthat-core/lib"
 	"whoisthat-core/lib/logger"
@@ -27,7 +28,7 @@ func (cmd *Cmd) DeleteGroup(data structs.DeleteGroupData) {
 	cmd.send("group-deleted", group_deleted)
 }
 
-func (cmd *Cmd) AddGroup(data structs.AddGroupData) {
+func (cmd *Cmd) AddGroup(data structs.AddGroupData, proxy_manager *mainproxy.ProxyManager) {
 	group_added, err := cmd.DB.AddGroup(data.Name, data.SubscriptionUrl)
 	if err != nil {
 		logger.Warnf("failed to add group: %s", err.Error())
@@ -35,6 +36,10 @@ func (cmd *Cmd) AddGroup(data structs.AddGroupData) {
 		return
 	}
 	cmd.send("group-added", group_added)
+
+	if strings.TrimSpace(data.SubscriptionUrl) != "" && proxy_manager != nil {
+		go cmd.UpdateSubscription(structs.UpdateSubscriptionData{GroupId: group_added.Id}, proxy_manager)
+	}
 }
 
 func (cmd *Cmd) AddProfiles(data structs.AddProfilesData) {
@@ -55,7 +60,8 @@ func (cmd *Cmd) UpdateProfile(data structs.UpdateProfileData) {
 	cmd.send("profile-updated", profile_updated)
 }
 
-func (cmd *Cmd) UpdateGroup(data structs.UpdateGroupData) {
+func (cmd *Cmd) UpdateGroup(data structs.UpdateGroupData, proxy_manager *mainproxy.ProxyManager) {
+	oldGroup, _ := cmd.DB.LoadGroupConfig(data.Id)
 	group, err := cmd.DB.UpdateGroupConfig(data.Id, data.Name, data.SubscriptionUrl)
 	if err != nil {
 		logger.Warnf("failed to update group %d: %s", data.Id, err.Error())
@@ -63,6 +69,11 @@ func (cmd *Cmd) UpdateGroup(data structs.UpdateGroupData) {
 		return
 	}
 	cmd.send("group-updated", group)
+
+	trimmedSub := strings.TrimSpace(data.SubscriptionUrl)
+	if trimmedSub != "" && trimmedSub != strings.TrimSpace(oldGroup.SubscriptionUrl) && proxy_manager != nil {
+		go cmd.UpdateSubscription(structs.UpdateSubscriptionData{GroupId: data.Id}, proxy_manager)
+	}
 }
 
 func (cmd *Cmd) DeleteProfiles(data structs.DeleteProfilesData) {
