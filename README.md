@@ -17,6 +17,7 @@ A modern terminal-based VPN client. Rust TUI frontend. Go engine backed by Xray-
 - [Architecture](#architecture) — how it works, IPC transport, routing rules, split tunnel, HWID
 - [TCP API Protocol](#tcp-api-protocol) — wire format, commands, notifications, structures
 - [Usage](#usage) — keybindings, settings, TUN mode, split tunnel, systemd, subscriptions
+- [Deep Links & Browser Integration (`wit://`)](#deep-links--browser-integration-wit) — 1-click subscription and profile imports from web browsers
 - [CLI & Desktop Integration](#cli--desktop-integration) — command-line flags, quick toggles, desktop widgets & status streaming
 - [Troubleshooting](#troubleshooting)
 - [Testing](#testing)
@@ -146,7 +147,8 @@ Encrypted at rest with AES-256-GCM — key auto-generated on first run.
 
 ## Features
 
-- **Subscription support** — add groups with subscription URLs, refresh profiles, view metadata (traffic used/limit, expiry)
+- **Subscription support & auto-refresh** — add groups with subscription URLs (profiles are fetched and parsed automatically upon adding or editing), refresh profiles on demand, view metadata (traffic used/limit, expiry)
+- **Deep links (`wit://`) & 1-click browser import** — register the `wit://` protocol handler to import subscriptions or single profiles directly from web browsers (Chrome, Firefox, Brave) and web portals with a single click. Supports auto-refreshing subscriptions, profile import, connection toggles, and direct proxy URIs (`whoisthat register-deeplink`)
 - **HWID device identification** — auto-generated hardware ID sent with subscription requests (Remnawave-compatible x-hwid headers). Configurable: toggle on/off, reset, custom user-agent. Respects `x-hwid-max-devices-reached` and other HWID response headers from the subscription server.
 - **Group management** — add, rename, edit subscription URL, delete entire groups
 - **Profile import** — VLESS, VMess, Trojan, Shadowsocks, SOCKS5, Hysteria2 URIs (paste, clipboard, or subscription refresh)
@@ -722,11 +724,79 @@ sudo loginctl disable-linger $USER           # revoke
 
 ### Subscription Workflow
 
-1. Press `U` to add a new group — enter a name and subscription URL
-2. Press `u` with the group selected to fetch and parse profiles from the URL (sends HWID headers if enabled)
+1. Press `U` to add a new group — enter a name and subscription URL. Profiles are automatically fetched, parsed, and latency-tested immediately upon creation!
+2. Press `u` with the group selected to manually re-fetch and update profiles at any time (sends HWID headers if enabled)
 3. The details panel shows subscription metadata when available (traffic used, expiry, last updated)
-4. Press `e` to edit the group name or subscription URL at any time
+4. Press `e` to edit the group name or subscription URL (saving an updated URL triggers an automatic profile update immediately)
 5. Press `X` to delete the entire group and its profiles
+
+> [!TIP]
+> You can also add subscriptions headlessly via the CLI (`whoisthat add-sub <url> [name]`), or directly from your web browser with a single click using deep links (`wit://sub?url=...`).
+
+---
+
+## Deep Links & Browser Integration (`wit://`)
+
+WhoisThat supports desktop deep linking via the custom URL scheme `wit://`. This allows web dashboards, VPN provider portals, and personal subscription links to import profiles or entire subscriptions with a single click in any web browser (Google Chrome, Firefox, Brave, etc.), as well as trigger quick actions.
+
+### Registering Protocol Handler
+
+The deep link protocol handler is registered via an XDG desktop entry (`whoisthat.desktop`) associating the `x-scheme-handler/wit` MIME type. It is configured **automatically in the background whenever you launch the WhoisThat TUI**, as well as by `install.sh` and AUR packages.
+
+You can also register or refresh it manually at any time via the CLI:
+
+```bash
+whoisthat register-deeplink
+```
+
+This writes `~/.local/share/applications/whoisthat.desktop` and executes:
+```bash
+xdg-mime default whoisthat.desktop x-scheme-handler/wit
+```
+
+### Supported URL Schemes & Formats
+
+#### 1. Subscriptions (`sub` / `subscription`)
+Imports a subscription URL, creates a subscription group, and automatically fetches all profiles immediately:
+
+- **Query parameter format**:
+  - `wit://sub?url=https%3A%2F%2Fexample.com%2Fsub%2Fmytoken&name=Premium`
+  - `wit://subscription?url=https%3A%2F%2Fexample.com%2Fsub`
+- **Path format**:
+  - `wit://sub/https://example.com/sub/mytoken`
+- **Direct HTTPS prefix**:
+  - `wit://https://example.com/sub/mytoken`
+
+#### 2. Single Profile Import (`import`)
+Imports an individual proxy profile into a group:
+
+- **Query parameter format**:
+  - `wit://import?uri=vless%3A%2F%2F...&name=Frankfurt-01&group=MyServers`
+- **Direct proxy URI prefix**:
+  - `wit://vless://...`
+  - `wit://vmess://...`
+  - `wit://trojan://...`
+  - `wit://ss://...`
+  - `wit://hy2://...` or `wit://hysteria2://...`
+
+#### 3. Quick Actions
+Control the VPN directly via browser links or shell launchers:
+- `wit://connect?profile=1` or `wit://connect?name=Frankfurt-01`
+- `wit://disconnect`
+- `wit://toggle`
+
+### Testing Deep Links Locally
+
+You can test any deep link using either the CLI subcommand or your system's `xdg-open`:
+
+```bash
+# Via whoisthat CLI
+whoisthat handle-url "wit://sub?url=https%3A%2F%2Fexample.com%2Fsub&name=Testing"
+whoisthat "wit://toggle"
+
+# Via system URL opener (simulates clicking a browser link)
+xdg-open "wit://sub?url=https%3A%2F%2Fexample.com%2Fsub&name=Testing"
+```
 
 ---
 
@@ -759,6 +829,9 @@ CLI commands connect to the core over its Unix domain socket, execute instantly,
 | `whoisthat --ip` | `ip` | Fetch and print public IPv4 and IPv6 |
 | `whoisthat doctor [--json]` | — | Run comprehensive system, capabilities, polkit, and IPC diagnostics |
 | `whoisthat run [-d] <app> [args...]` | `-b`, `--detach`, `--background` | Launch application inside split-tunnel slice (`-d` runs detached in background) |
+| `whoisthat add-sub <url> [name]` | — | Add a subscription group by URL and immediately fetch & test its profiles |
+| `whoisthat handle-url <url>` | `<url>` | Handle a `wit://` deep link or import URL from browser or CLI |
+| `whoisthat register-deeplink` | — | Register `wit://` protocol handler (`.desktop` entry & `xdg-mime`) |
 | `whoisthat --version` | `-v` | Display program version |
 | `whoisthat --help` | `-h` | Display full help and flag list |
 
@@ -811,6 +884,11 @@ whoisthat run -b telegram-desktop     # Launch Telegram detached in background
 whoisthat status --short              # Compact output for Waybar / Polybar / scripts
 whoisthat status --watch --json       # Real-time NDJSON stream for reactive applets
 whoisthat -st                         # Toggle boot autostart systemd user service
+
+# Subscriptions & Deep Links
+whoisthat add-sub "https://example.com/sub" "Premium"   # Add subscription and auto-fetch profiles
+whoisthat handle-url "wit://sub?url=https%3A%2F%2F..."  # Handle deep link from browser or CLI
+whoisthat register-deeplink                             # Register wit:// scheme handler in desktop environment
 ```
 
 ### GNOME Shell Extension
@@ -861,7 +939,7 @@ The project has unit tests for both the Rust TUI and the Go core. No external de
 cargo test
 ```
 
-Covers (102 unit tests):
+Covers (114 unit tests):
 
 - **Message dispatch** (`src/core_client/dispatch.rs`) — all notification message types (22+), unknown type handling, malformed JSON, profile reordering & moving, Xray progress
 - **Diagnostics & Doctor** (`src/doctor/checks.rs`, `src/doctor/types.rs`) — report item counting, status classification (pass/warn/fail/info), JSON serialization & deserialization
@@ -875,6 +953,7 @@ Covers (102 unit tests):
 - **CLI & Status formatting** (`src/cli.rs`) — CLI subcommands, offline and connected status JSON serialization, human-readable speed formatting
 - **Split-tunnel launcher** (`src/launcher.rs`) — `whoisthat run` usage code paths, foreground/background flag parsing (`-d`, `--detach`, `-b`), and PATH lookup
 - **URI parsing & decoding** (`src/ui/uri.rs`) — Hysteria2 URI parsing, query parameter extraction, percent-decoding for UTF-8 and special characters
+- **Deep links & URL handling** (`src/deeplink.rs`) — parsing `wit://` protocols (subscriptions with encoded or path URLs, direct HTTPS, profile imports, connect/disconnect/toggle actions, percent-decoding)
 
 ### Go
 
@@ -1004,6 +1083,7 @@ whoisthat/
 │   ├── core_spawn.rs   ← spawn_core, find_core_binary, ensure_core_caps (pkexec fallback)
 │   ├── systemd.rs      ← Unit-file generation, linger, enable/disable service
 │   ├── net_info.rs     ← fetch_public_ip / fetch_public_ipv6 (raw TCP to ipify)
+│   ├── deeplink.rs     ← Deep link routing (wit:// scheme parser, subscription & profile import, action execution)
 │   ├── launcher.rs     ← `whoisthat run <app>` — launch into split-tunnel slice (foreground/background)
 │   ├── config.rs       ← Config loader (~/.config/whoisthat/config.toml)
 │   ├── core_client/    ← IPC client for the Go core (Unix domain socket / TCP)
@@ -1038,7 +1118,9 @@ whoisthat/
 │           ├── crypto/      ← AES-256-GCM encrypt/decrypt for DB files
 │           ├── geo/         ← Auto-download + verify geoip.dat / geosite.dat from v2fly
 │           └── proxy/       ← mainproxy (connect/stop/status), xray wrapper, TUN manager + scripts, routing
-├── pkg/aur/            ← AUR packaging (PKGBUILD + .SRCINFO + whoisthat.install)
+├── pkg/
+│   ├── whoisthat.desktop ← Desktop launcher entry & x-scheme-handler/wit MIME association
+│   └── aur/              ← AUR packaging (PKGBUILD + .SRCINFO + whoisthat.install)
 └── .github/workflows/
     ├── ci.yml          ← Automated CI: Rust (fmt/clippy/test) + Go (vet/build/test)
     └── aur-publish.yml ← Tag-triggered CI: pushes updated PKGBUILD to AUR

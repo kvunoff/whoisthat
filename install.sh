@@ -530,6 +530,12 @@ install_binaries() {
     info "Installing whoisthat and whoisthat-core..."
     $SUDO install -Dm755 target/release/whoisthat              /usr/local/bin/whoisthat
     $SUDO install -Dm755 core/core/whoisthat-core               /usr/local/bin/whoisthat-core
+    if [ -f "pkg/whoisthat.desktop" ]; then
+        $SUDO install -Dm644 pkg/whoisthat.desktop              /usr/share/applications/whoisthat.desktop
+        if command -v update-desktop-database >/dev/null 2>&1; then
+            $SUDO update-desktop-database /usr/share/applications 2>/dev/null || true
+        fi
+    fi
 
     # Clean up legacy parser binary if present from earlier versions (< v0.11.5)
     if [ -f "/usr/local/bin/whoisthat-parser" ]; then

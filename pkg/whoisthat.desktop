@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=WhoisThat
+GenericName=VPN Client
+Comment=Modern terminal-based VPN client with Xray-core backend
+Exec=whoisthat handle-url %u
+Icon=preferences-system-network
+Terminal=false
+Type=Application
+Categories=Network;VPN;ConsoleOnly;
+MimeType=x-scheme-handler/wit;
+Keywords=vpn;proxy;xray;vless;vmess;hysteria;

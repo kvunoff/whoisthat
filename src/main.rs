@@ -3,6 +3,7 @@ mod config;
 mod core_client;
 mod core_events;
 mod core_spawn;
+mod deeplink;
 mod doctor;
 mod event_loop;
 mod input;
@@ -46,6 +47,16 @@ async fn main() -> io::Result<()> {
     }
 
     if let Some(cmd) = argv.get(1).map(String::as_str) {
+        if cmd.starts_with("wit://") || cmd.starts_with("wit:") {
+            match deeplink::run_deeplink(cmd).await {
+                Ok(_) => std::process::exit(0),
+                Err(e) => {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
+            }
+        }
+
         if cli::is_cli_command(cmd) {
             match cli::handle_cli(&argv[1..]).await {
                 Ok(_) => std::process::exit(0),
@@ -63,6 +74,9 @@ async fn main() -> io::Result<()> {
     ui::theme::set_theme(&cfg.theme);
     configure_logger(logger, cfg.log_enabled, &cfg.log_level);
     let tui_version = env!("CARGO_PKG_VERSION").to_string();
+
+    // Auto-register wit:// desktop scheme handler in background
+    deeplink::ensure_desktop_registered();
 
     let endpoint = cfg.endpoint();
     log::info!("Core IPC endpoint: {}", endpoint.describe());

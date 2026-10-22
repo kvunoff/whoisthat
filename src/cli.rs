@@ -213,12 +213,42 @@ pub fn is_cli_command(arg: &str) -> bool {
             | "--doctor"
             | "version"
             | "help"
+            | "handle-url"
+            | "url"
+            | "add-sub"
+            | "add-subscription"
+            | "register-deeplink"
+            | "setup-desktop"
     )
 }
 
 pub async fn handle_cli(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let cmd = args.first().map(String::as_str).unwrap_or("help");
     match cmd {
+        // Deep links & URL handlers
+        "handle-url" | "url" => {
+            let url = args.get(1).map(String::as_str).unwrap_or("");
+            if url.is_empty() {
+                return Err("Usage: whoisthat handle-url <URL>".into());
+            }
+            crate::deeplink::run_deeplink(url).await
+        }
+        "add-sub" | "add-subscription" => {
+            let url = args.get(1).map(String::as_str).unwrap_or("");
+            if url.is_empty() {
+                return Err("Usage: whoisthat add-sub <URL> [NAME]".into());
+            }
+            let name = args.get(2).map(String::as_str);
+            let action = crate::deeplink::DeepLinkAction::AddSubscription {
+                name: name
+                    .map(String::from)
+                    .unwrap_or_else(|| crate::deeplink::url_decode(url)),
+                url: url.to_string(),
+            };
+            crate::deeplink::run_deeplink_action(action).await
+        }
+        "register-deeplink" | "setup-desktop" => crate::deeplink::register_desktop_handler(),
+
         // Diagnostics
         "doctor" | "--doctor" => handle_doctor(&args[1..]).await,
 
@@ -305,6 +335,12 @@ fn print_help() {
     );
     println!("    -j,  --json                   Structured JSON output");
     println!("    -w,  --watch                  Stream live updates continuously per second\n");
+    println!("DEEP LINKS & SUBSCRIPTIONS:");
+    println!(
+        "         handle-url <URL>         Handle wit:// deep link or subscription/profile URL"
+    );
+    println!("         add-sub <URL> [NAME]     Add subscription URL and auto-update profiles");
+    println!("         register-deeplink        Register wit:// handler in ~/.local/share/applications\n");
     println!("INFORMATION & UTILITIES:");
     println!("         doctor [--json]          Run comprehensive system & dependency diagnostics");
     println!("    -p,  --profiles [--json]      List all subscription groups and profiles");
@@ -315,14 +351,21 @@ fn print_help() {
     println!("    -v,  --version                Print version");
     println!("    -h,  --help                   Show this help message\n");
     println!("EXAMPLES:");
-    println!("    whoisthat doctor                 # Run system health diagnostics");
-    println!("    whoisthat -t                     # Toggle VPN on/off");
-    println!("    whoisthat -mt                    # Toggle TUN mode");
-    println!("    whoisthat run -d spotify         # Launch Spotify in background (split-tunnel)");
-    println!("    whoisthat --start 2              # Connect to profile #2");
-    println!("    whoisthat status --short         # For status bars (Waybar, Polybar, GNOME)");
-    println!("    whoisthat status --watch --json  # For reactive UI widgets");
-    println!("    whoisthat -st                    # Toggle autostart systemd service");
+    println!("    whoisthat \"wit://sub?url=https://...&name=VPN\" # Import subscription link");
+    println!(
+        "    whoisthat add-sub https://example.com/sub       # Add subscription from terminal"
+    );
+    println!("    whoisthat register-deeplink                     # Enable browser deep link integration");
+    println!("    whoisthat doctor                                # Run system health diagnostics");
+    println!("    whoisthat -t                                    # Toggle VPN on/off");
+    println!("    whoisthat -mt                                   # Toggle TUN mode");
+    println!("    whoisthat run -d spotify                        # Launch Spotify in background (split-tunnel)");
+    println!("    whoisthat --start 2                             # Connect to profile #2");
+    println!("    whoisthat status --short                        # For status bars (Waybar, Polybar, GNOME)");
+    println!("    whoisthat status --watch --json                 # For reactive UI widgets");
+    println!(
+        "    whoisthat -st                                   # Toggle autostart systemd service"
+    );
 }
 
 async fn handle_doctor(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
@@ -481,7 +524,7 @@ async fn handle_status(args: &[String]) -> Result<(), Box<dyn std::error::Error>
     Ok(())
 }
 
-async fn handle_toggle() -> Result<(), Box<dyn std::error::Error>> {
+pub(crate) async fn handle_toggle() -> Result<(), Box<dyn std::error::Error>> {
     let mut cfg = config::load_config();
     let endpoint = cfg.endpoint();
     let conn = CoreConnection::connect_endpoint(&endpoint)
@@ -564,7 +607,7 @@ async fn handle_toggle() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn handle_connect(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+pub(crate) async fn handle_connect(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let mut cfg = config::load_config();
     let target = args.first().map(|s| s.trim()).filter(|s| !s.is_empty());
 
@@ -691,7 +734,7 @@ async fn handle_connect(args: &[String]) -> Result<(), Box<dyn std::error::Error
     Ok(())
 }
 
-async fn handle_disconnect() -> Result<(), Box<dyn std::error::Error>> {
+pub(crate) async fn handle_disconnect() -> Result<(), Box<dyn std::error::Error>> {
     let cfg = config::load_config();
     let endpoint = cfg.endpoint();
     let conn = CoreConnection::connect_endpoint(&endpoint)
@@ -1091,6 +1134,9 @@ mod tests {
         assert!(is_cli_command("doctor"));
         assert!(is_cli_command("--doctor"));
         assert!(is_cli_command("version"));
+        assert!(is_cli_command("handle-url"));
+        assert!(is_cli_command("add-sub"));
+        assert!(is_cli_command("register-deeplink"));
         assert!(!is_cli_command("arbitrary_unknown_arg"));
     }
 }
