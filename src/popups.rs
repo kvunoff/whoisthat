@@ -233,8 +233,13 @@ pub(crate) async fn handle_popup_input(
             let consumed =
                 handle_two_field_popup(&mut name, &mut url, &mut cursor, &mut field, key);
             if consumed {
+                let has_sub = !url.trim().is_empty();
                 let _ = client.update_group(group_id, &name, &url).await;
-                app.msg("Updating group...");
+                if has_sub {
+                    app.msg("Updating group and subscription...");
+                } else {
+                    app.msg("Updating group...");
+                }
                 app.focus = Focus::LeftPanel;
             } else if key.code == KeyCode::Esc {
                 app.popup = None;
@@ -258,8 +263,13 @@ pub(crate) async fn handle_popup_input(
             let consumed =
                 handle_two_field_popup(&mut name, &mut url, &mut cursor, &mut field, key);
             if consumed {
+                let has_sub = !url.trim().is_empty();
                 let _ = client.add_group(&name, &url).await;
-                app.msg("Adding group...");
+                if has_sub {
+                    app.msg("Adding group and updating subscription...");
+                } else {
+                    app.msg("Adding group...");
+                }
                 app.focus = Focus::LeftPanel;
             } else if key.code == KeyCode::Esc {
                 app.popup = None;

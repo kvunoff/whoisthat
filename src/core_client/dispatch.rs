@@ -359,12 +359,12 @@ mod tests {
                 "groups": [],
                 "connection-status": { "connection": "disconnected", "connected_at": 0 },
                 "tun-status": false,
-                "core_version": "0.1.0",
+                "core_version": "0.1.1",
                 "protocol_version": 1
             }),
         ));
         if let CoreEvent::ApplicationState(s) = event {
-            assert_eq!(s.core_version, "0.1.0");
+            assert_eq!(s.core_version, "0.1.1");
             assert_eq!(s.protocol_version, 1);
         } else {
             panic!("expected ApplicationState");
