@@ -50,6 +50,10 @@ This document provides a complete technical specification for the length-prefixe
 | `test-group` | `{"group_id": int, "method": "string"}` | `test-progress` & `profile-updated` |
 | `cancel-tests` | `{}` | Cancels all active and pending latency tests. |
 | `set-test-config` | `{"method": "str", "samples": int, "concurrency": int, "timeout": int, "endpoint": "str", "auto_test": bool}` | `test-config-updated` |
+| `import-happ-routing` | `{"group_id": int, "link": "string"}` | `subscription-updated` or `warn` |
+| `set-group-routing-mode` | `{"group_id": int, "mode": "auto" \| "manual" \| "subscription"}` | `group-updated` |
+| `set-active-routing-profile` | `{"group_id": int, "profile_id": "string"}` | `group-updated` & live hot-reload |
+| `delete-routing-profile` | `{"group_id": int, "profile_id": "string"}` | `subscription-updated` |
 
 ---
 
