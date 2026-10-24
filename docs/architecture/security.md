@@ -1,0 +1,80 @@
+# Security & Cryptography
+
+Security in WhoisThat is designed around the principle of **least privilege**: minimizing root exposure, encrypting persistent state at rest, preventing traffic and DNS leaks, and isolating IPC channels.
+
+---
+
+## 1. Encrypted Database at Rest (AES-256-GCM)
+
+All subscription credentials, server hostnames, tokens, and routing configurations are stored locally on disk under:
+
+```
+~/.local/share/whoisthat/db/
+```
+
+### Encryption Architecture
+
+1. **Master Key Generation**: On first launch, the daemon generates a 32-byte cryptographically secure random key using Linux kernel entropy (`crypto/rand`).
+2. **File Permissions**: The key is written to `~/.local/share/whoisthat/db/.key` with strict Unix permissions `0600` (readable and writable only by the user account).
+3. **AEAD Cipher**: Data is encrypted using **AES-256-GCM** (Galois/Counter Mode), providing both confidentiality and cryptographic integrity verification.
+4. **Encrypted JSON Storage**: Files on disk are stored with an encrypted wrapper:
+   ```json
+   {
+     "ciphertext": "<base64-encoded nonce + ciphertext + GCM tag>"
+   }
+   ```
+5. **Tamper Detection**: If any encrypted file is modified externally or corrupted, decryption fails cleanly with an integrity authentication error, preventing invalid state injection.
+
+---
+
+## 2. Rootless Network Management (Capabilities)
+
+Traditionally, Linux VPN clients require `sudo`, setuid binaries, or a persistent root daemon. WhoisThat eliminates root privilege escalation entirely through **Linux File Capabilities**:
+
+```
+cap_net_admin,cap_net_raw,cap_setpcap=+ep
+```
+
+### How Ambient Capabilities Work:
+
+```
+[whoisthat-core binary]  (Has +ep capabilities on disk)
+       │
+       ▼
+  capset(2)              (Moves CAP_SETPCAP into inheritable set)
+       │
+       ▼
+  prctl(PR_CAP_AMBIENT_RAISE)  (Promotes caps to Ambient set)
+       │
+       ▼
+  fork() & execve()      (Child processes automatically inherit caps)
+       │
+       ├─► ip tuntap add dev whoisthattun mode tun
+       ├─► nft / iptables rules
+       └─► xray-core (raw socket binding)
+```
+
+* **No setuid**: No binary runs with effective UID 0 (`root`).
+* **Inherited Subprocesses**: The core process runs as your normal unprivileged user while granting child network utilities just enough authority to manage network interfaces.
+* **Functional Verification**: The TUI tests real capability functioning by creating and destroying a transient test adapter (`wt-capcheck`), guaranteeing capabilities work before initiating connections.
+
+---
+
+## 3. Leak Prevention Architecture
+
+### A. System-Wide DNS Hijacking
+In TUN mode, misconfigured DNS servers or local resolvers can lead to DNS leaks. WhoisThat prevents this via kernel-level DNAT rules:
+* All outbound UDP and TCP traffic on destination port 53 is intercepted.
+* Queries are redirected through Xray's internal DNS resolver over the encrypted VPN outbound.
+* Domain names are resolved remotely by the VPN server, preventing local ISP tracking.
+
+### B. Independent Kill-Switch (`whoisthat_ks`)
+When the Kill-Switch setting is enabled:
+* A dedicated firewall table (`inet whoisthat_ks` / `ip6 whoisthat_ks`) is installed.
+* All non-VPN traffic is unconditionally blocked on connection drops.
+* Works independently of TUN routing rules.
+
+### C. IPv6 Leak Prevention (Happy Eyeballs)
+Modern operating systems and browsers implement the Happy Eyeballs algorithm (RFC 8305), attempting dual-stack IPv4 and IPv6 connections simultaneously.
+* If a physical LAN lacks IPv6 but the VPN tunnel provides IPv6, applications in Split Tunnel `exclude` mode could inadvertently leak traffic through the tunnel's IPv6 default gateway.
+* WhoisThat prevents this by installing an **unreachable route** for IPv6 in Table 100 (`ip -6 route replace unreachable default table 100`). This immediately fails IPv6 attempts, forcing instant fallback to physical IPv4.

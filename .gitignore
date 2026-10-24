@@ -5,3 +5,6 @@ target/
 *.log
 whoisthat-core
 .local/
+node_modules/
+docs/.vitepress/dist/
+docs/.vitepress/cache/
