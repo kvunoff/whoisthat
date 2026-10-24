@@ -135,9 +135,10 @@ type UpdateSubscriptionData struct {
 }
 
 type SubscriptionUpdated struct {
-	GroupId  int       `json:"group_id"`
-	Group    Group     `json:"group"`
-	Profiles []Profile `json:"profiles"`
+	GroupId         int                  `json:"group_id"`
+	Group           Group                `json:"group"`
+	Profiles        []Profile            `json:"profiles"`
+	RoutingProfiles []RoutingProfileInfo `json:"routing_profiles,omitzero"`
 }
 
 type Warning struct {
@@ -238,21 +239,25 @@ type DBConfig struct {
 }
 
 type GroupWithProfiles struct {
-	Group    Group     `json:"group"`
-	Profiles []Profile `json:"profiles"`
+	Group           Group                `json:"group"`
+	Profiles        []Profile            `json:"profiles"`
+	RoutingProfiles []RoutingProfileInfo `json:"routing_profiles,omitzero"`
 }
 
 type Group struct {
-	Id              int    `json:"id"`
-	SubscriptionUrl string `json:"subscription_url"`
-	Name            string `json:"name"`
-	LastId          int    `json:"last_id"`
-	SubLastUpdated  int64  `json:"sub_last_updated,omitzero"`
-	SubExpires      int64  `json:"sub_expires,omitzero"`
-	SubUpload       int64  `json:"sub_upload,omitzero"`
-	SubDownload     int64  `json:"sub_download,omitzero"`
-	SubTotal        int64  `json:"sub_total,omitzero"`
-	ProfileOrder    []int  `json:"profile_order,omitempty"`
+	Id                            int    `json:"id"`
+	SubscriptionUrl               string `json:"subscription_url"`
+	Name                          string `json:"name"`
+	LastId                        int    `json:"last_id"`
+	SubLastUpdated                int64  `json:"sub_last_updated,omitzero"`
+	SubExpires                    int64  `json:"sub_expires,omitzero"`
+	SubUpload                     int64  `json:"sub_upload,omitzero"`
+	SubDownload                   int64  `json:"sub_download,omitzero"`
+	SubTotal                      int64  `json:"sub_total,omitzero"`
+	ProfileOrder                  []int  `json:"profile_order,omitempty"`
+	RoutingMode                   string `json:"routing_mode,omitzero"`
+	ActiveRoutingProfileId        string `json:"active_routing_profile_id,omitzero"`
+	PendingActiveRoutingProfileId string `json:"pending_active_routing_profile_id,omitzero"`
 }
 
 type Profile struct {
@@ -305,6 +310,8 @@ type TrafficStats struct {
 	DirectDown int64 `json:"direct_down"`
 }
 
+const LANRuleIP = "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7,fe80::/10,::1/128"
+
 // routing types
 type RoutingRule struct {
 	Type        string `json:"type"`
@@ -312,6 +319,7 @@ type RoutingRule struct {
 	IP          string `json:"ip,omitzero"`
 	Protocol    string `json:"protocol,omitzero"`
 	Port        string `json:"port,omitzero"`
+	Network     string `json:"network,omitzero"`
 	OutboundTag string `json:"outbound_tag"`
 	Enabled     bool   `json:"enabled"`
 }
@@ -329,3 +337,65 @@ type UpdateRoutingData struct {
 type RoutingUpdated struct {
 	Config RoutingConfig `json:"config"`
 }
+
+type RoutingProfile struct {
+	Id             string          `json:"id"`
+	GroupId        int             `json:"group_id"`
+	Name           string          `json:"name"`
+	Source         string          `json:"source"` // "happ"
+	State          string          `json:"state"`  // "ready" | "updating" | "error"
+	LastError      string          `json:"last_error,omitzero"`
+
+	RawJSON        json.RawMessage `json:"raw_json,omitzero"`
+	Rules          []RoutingRule   `json:"rules,omitzero"`
+	DomainStrategy string          `json:"domain_strategy,omitzero"`
+	GlobalProxy    bool            `json:"global_proxy"`
+
+	GeoDir         string          `json:"geo_dir,omitzero"` // relative path from DB.Path
+	LastUpdated    int64           `json:"last_updated,omitzero"`
+	GeoUpdatedAt   int64           `json:"geo_updated_at,omitzero"`
+	CreatedAt      int64           `json:"created_at,omitzero"`
+	UpdatedAt      int64           `json:"updated_at,omitzero"`
+}
+
+type RoutingProfileInfo struct {
+	Id             string `json:"id"`
+	Name           string `json:"name"`
+	State          string `json:"state"`
+	LastError      string `json:"last_error,omitzero"`
+	Active         bool   `json:"active"`
+	RulesCount     int    `json:"rules_count"`
+	GlobalProxy    bool   `json:"global_proxy"`
+	DomainStrategy string `json:"domain_strategy"`
+	LastUpdated    int64  `json:"last_updated,omitzero"`
+	GeoUpdatedAt   int64  `json:"geo_updated_at,omitzero"`
+}
+
+type RoutingSelection struct {
+	Config    RoutingConfig
+	Source    string // "manual" | "happ"
+	ProfileId string
+	GeoDir    string // absolute path or ""
+}
+
+type ImportHappRoutingData struct {
+	GroupId int    `json:"group_id"`
+	Link    string `json:"link"`
+}
+
+type SetGroupRoutingModeData struct {
+	GroupId int    `json:"group_id"`
+	Mode    string `json:"mode"`
+}
+
+type SetActiveRoutingProfileData struct {
+	GroupId   int    `json:"group_id"`
+	ProfileId string `json:"profile_id"`
+}
+
+type DeleteRoutingProfileData struct {
+	GroupId   int    `json:"group_id"`
+	ProfileId string `json:"profile_id"`
+}
+
+

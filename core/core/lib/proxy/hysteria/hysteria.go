@@ -38,7 +38,7 @@ func (h *HysteriaCore) ExitedCh() chan error {
 // Start launches `hysteria client -c <config.yaml>` with the given YAML bytes.
 // The config is written to a temporary file with 0600 permissions. The subprocess
 // drops privileges to the dedicated uid/gid if configured (same as xray).
-func (h *HysteriaCore) Start(stdinPipe []byte) error {
+func (h *HysteriaCore) Start(stdinPipe []byte, assetDir string) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 

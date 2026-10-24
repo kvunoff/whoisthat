@@ -373,7 +373,7 @@ func (p *ProxyManager) testViaXray(profile structs.Profile, method string, sampl
 	}
 
 	xray_core := xray.XrayCore{Exited: make(chan error, 1)}
-	if err := xray_core.Start(parsed); err != nil {
+	if err := xray_core.Start(parsed, ""); err != nil {
 		logger.Warnf("test %s (gid=%d id=%d): xray.Start failed: %v",
 			profile.Name, profile.GroupId, profile.Id, err)
 		return pingResult{latencyMs: -1, sampleCount: samples, lossPct: 100, failReason: fmt.Sprintf("xray.Start failed: %v", err)}

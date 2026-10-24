@@ -11,10 +11,7 @@ func (db *DB) GetRoutingFilePath() string {
 	return filepath.Join(db.Path, "routing.json")
 }
 
-func (db *DB) LoadRouting() (structs.RoutingConfig, error) {
-	db.mu.Lock()
-	defer db.mu.Unlock()
-
+func (db *DB) loadRouting() (structs.RoutingConfig, error) {
 	var cfg structs.RoutingConfig
 
 	path := db.GetRoutingFilePath()
@@ -27,6 +24,12 @@ func (db *DB) LoadRouting() (structs.RoutingConfig, error) {
 	}
 
 	return cfg, nil
+}
+
+func (db *DB) LoadRouting() (structs.RoutingConfig, error) {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+	return db.loadRouting()
 }
 
 func (db *DB) SaveRouting(cfg structs.RoutingConfig) error {

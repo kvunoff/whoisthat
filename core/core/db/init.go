@@ -9,14 +9,15 @@ import (
 )
 
 func (db *DB) Initialize() {
-	homeDir, err := utils.GetHomeDir()
-	if err != nil {
-		logger.Fatal("cannot get user home directory")
+	if db.Path == "" {
+		homeDir, err := utils.GetHomeDir()
+		if err != nil {
+			logger.Fatal("cannot get user home directory")
+		}
+		db.Path = filepath.Join(homeDir, ".local", "share", "whoisthat", "db")
 	}
-	var db_path = filepath.Join(homeDir, ".local", "share", "whoisthat", "db")
-	db.Path = db_path
-	if err := os.MkdirAll(db_path, 0700); err != nil {
-		logger.Fatal("failed to create database directory " + db_path + ": " + err.Error())
+	if err := os.MkdirAll(db.Path, 0700); err != nil {
+		logger.Fatal("failed to create database directory " + db.Path + ": " + err.Error())
 	}
 	db.loadOrCreateKey()
 	db.ensureDBConfigExistance()

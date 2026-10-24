@@ -23,7 +23,7 @@ import (
 // (vless/vmess/trojan/ss/socks) or the official hysteria2 client subprocess.
 // Both xray.XrayCore and hysteria.HysteriaCore satisfy this interface.
 type coreProc interface {
-	Start(stdinConfig []byte) error
+	Start(stdinConfig []byte, assetDir string) error
 	Stop()
 	IsRunning() bool
 	ExitedCh() chan error
@@ -218,19 +218,27 @@ func (p *ProxyManager) Connect(profile structs.Profile, tunName string, tunEnabl
 		logger.Warnf("failed to inject stats config: %v", err)
 	}
 
-	// Inject routing rules + direct/block outbounds
+	var selection structs.RoutingSelection
 	if p.DB != nil {
+		sel, selErr := p.DB.ResolveRouting(profile.GroupId)
+		if selErr != nil {
+			logger.Warnf("failed to resolve routing for group %d: %v", profile.GroupId, selErr)
+			selection = structs.RoutingSelection{Source: "manual"}
+		} else {
+			selection = sel
+		}
+
 		prevOutboundsCount := countOutbounds(xray_config)
-		xray_config, err = injectRoutingConfig(xray_config, p.DB)
+		xray_config, err = injectRoutingConfig(xray_config, selection)
 		if err != nil {
 			logger.Warnf("failed to inject routing config: %v", err)
 		}
 		afterOutboundsCount := countOutbounds(xray_config)
-		logger.Infof("routing: outbounds %d → %d", prevOutboundsCount, afterOutboundsCount)
+		logger.Infof("routing: outbounds %d → %d (source=%s)", prevOutboundsCount, afterOutboundsCount, selection.Source)
 	}
 
 	p.core = &xray.XrayCore{Exited: make(chan error, 1)}
-	if err := p.core.Start(xray_config); err != nil {
+	if err := p.core.Start(xray_config, selection.GeoDir); err != nil {
 		return err
 	}
 

@@ -451,6 +451,38 @@ func (s *Server) handleConnection(cc *clientConn, clientID string) {
 			}
 			command_handler.UpdateRouting(data, s.proxy_manager)
 
+		case "import-happ-routing":
+			var data structs.ImportHappRoutingData
+			if err := json.Unmarshal(raw_tcp_message.Data, &data); err != nil {
+				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
+				return
+			}
+			command_handler.ImportHappRouting(data, s.proxy_manager)
+
+		case "set-group-routing-mode":
+			var data structs.SetGroupRoutingModeData
+			if err := json.Unmarshal(raw_tcp_message.Data, &data); err != nil {
+				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
+				return
+			}
+			command_handler.SetGroupRoutingMode(data, s.proxy_manager)
+
+		case "set-active-routing-profile":
+			var data structs.SetActiveRoutingProfileData
+			if err := json.Unmarshal(raw_tcp_message.Data, &data); err != nil {
+				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
+				return
+			}
+			command_handler.SetActiveRoutingProfile(data, s.proxy_manager)
+
+		case "delete-routing-profile":
+			var data structs.DeleteRoutingProfileData
+			if err := json.Unmarshal(raw_tcp_message.Data, &data); err != nil {
+				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
+				return
+			}
+			command_handler.DeleteRoutingProfile(data, s.proxy_manager)
+
 		default:
 			logger.Warn("Unknown message:", raw_tcp_message.Msg)
 		}

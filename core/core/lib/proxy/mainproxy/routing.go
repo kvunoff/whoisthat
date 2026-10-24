@@ -10,7 +10,6 @@ import (
 	"strings"
 	"syscall"
 	"time"
-	"whoisthat-core/db"
 	"whoisthat-core/lib"
 	appconfig "whoisthat-core/lib/AppConfig"
 	"whoisthat-core/lib/geo"
@@ -23,21 +22,15 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func injectRoutingConfig(configJSON []byte, database *db.DB) ([]byte, error) {
+func injectRoutingConfig(configJSON []byte, selection structs.RoutingSelection) ([]byte, error) {
 	var config map[string]interface{}
 	if err := json.Unmarshal(configJSON, &config); err != nil {
 		return configJSON, err
 	}
 
-	routingCfg, err := database.LoadRouting()
-	if err != nil {
-		logger.Warnf("failed to load routing config, skipping injection: %v", err)
-		return configJSON, nil
-	}
-
 	// Build routing rules from config, skipping disabled ones
 	var rules []map[string]interface{}
-	for _, r := range routingCfg.Rules {
+	for _, r := range selection.Config.Rules {
 		if !r.Enabled {
 			continue
 		}
@@ -56,6 +49,9 @@ func injectRoutingConfig(configJSON []byte, database *db.DB) ([]byte, error) {
 		}
 		if r.Port != "" {
 			rule["port"] = r.Port
+		}
+		if r.Network != "" {
+			rule["network"] = r.Network
 		}
 		rules = append(rules, rule)
 	}
@@ -84,8 +80,13 @@ func injectRoutingConfig(configJSON []byte, database *db.DB) ([]byte, error) {
 		"outboundTag": "proxy",
 	}}, rules...)
 
+	domainStrategy := selection.Config.DomainStrategy
+	if domainStrategy == "" {
+		domainStrategy = "IPIfNonMatch"
+	}
+
 	config["routing"] = map[string]interface{}{
-		"domainStrategy": routingCfg.DomainStrategy,
+		"domainStrategy": domainStrategy,
 		"rules":          rules,
 	}
 
@@ -213,14 +214,25 @@ func (p *ProxyManager) reloadCoreLocked(tunName string) error {
 		logger.Warnf("failed to inject stats config: %v", err)
 	}
 
+	var selection structs.RoutingSelection
+	if p.DB != nil {
+		var selErr error
+		selection, selErr = p.DB.ResolveRouting(profile.GroupId)
+		if selErr != nil {
+			logger.Warnf("reloadCoreLocked: failed to resolve routing for group %d: %v", profile.GroupId, selErr)
+		}
+	} else {
+		selection = structs.RoutingSelection{Source: "manual"}
+	}
+
 	if p.DB != nil {
 		prevOutboundsCount := countOutbounds(xray_config)
-		xray_config, err = injectRoutingConfig(xray_config, p.DB)
+		xray_config, err = injectRoutingConfig(xray_config, selection)
 		if err != nil {
 			return fmt.Errorf("failed to inject routing config: %w", err)
 		}
 		afterOutboundsCount := countOutbounds(xray_config)
-		logger.Infof("routing: reload outbounds %d → %d", prevOutboundsCount, afterOutboundsCount)
+		logger.Infof("routing: reload outbounds %d → %d (source=%s)", prevOutboundsCount, afterOutboundsCount, selection.Source)
 	}
 
 	// Pre-flight test the new configuration before terminating the active core.
@@ -233,7 +245,7 @@ func (p *ProxyManager) reloadCoreLocked(tunName string) error {
 		if testBase, err := lib.ParseUriWithTun(profile.Uri, app_config.SocksPort, app_config.HttpPort, ""); err == nil {
 			if testBase, err = injectStatsConfig(testBase, apiPort); err == nil {
 				if p.DB != nil {
-					if testBase, err = injectRoutingConfig(testBase, p.DB); err == nil {
+					if testBase, err = injectRoutingConfig(testBase, selection); err == nil {
 						testConfigBytes = testBase
 					}
 				} else {
@@ -253,7 +265,11 @@ func (p *ProxyManager) reloadCoreLocked(tunName string) error {
 		cmd.SysProcAttr = &syscall.SysProcAttr{
 			AmbientCaps: []uintptr{unix.CAP_NET_ADMIN, unix.CAP_NET_RAW},
 		}
-		if ad := geo.AssetDir(); ad != "" {
+		ad := selection.GeoDir
+		if ad == "" {
+			ad = geo.AssetDir()
+		}
+		if ad != "" {
 			cmd.Env = append(os.Environ(), "XRAY_LOCATION_ASSET="+ad)
 		}
 		cmd.Stdin = bytes.NewReader(testConfigBytes)
@@ -271,7 +287,7 @@ func (p *ProxyManager) reloadCoreLocked(tunName string) error {
 	time.Sleep(30 * time.Millisecond)
 
 	newCore := &xray.XrayCore{Exited: make(chan error, 1)}
-	if err := newCore.Start(xray_config); err != nil {
+	if err := newCore.Start(xray_config, selection.GeoDir); err != nil {
 		p.core = newCore
 		p.status = structs.ProxyStatus{
 			Connection: "disconnected",

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"time"
 	"whoisthat-core/lib"
 	appconfig "whoisthat-core/lib/AppConfig"
+	"whoisthat-core/lib/happ"
 	"whoisthat-core/lib/logger"
 	proxy "whoisthat-core/lib/proxy/mainproxy"
 	"whoisthat-core/structs"
@@ -37,6 +39,10 @@ func (cmd *Cmd) UpdateSubscription(data structs.UpdateSubscriptionData, proxy_ma
 		return
 	}
 
+	// Extract Happ routing links from response headers and body
+	happLinks := happ.ExtractLinksFromResponse(resp)
+	happLinks = append(happLinks, happ.ExtractLinks([]byte(subscription_content))...)
+
 	// Parse subscription-userinfo header (traffic / expiry)
 	parseSubUserInfo(resp, &group)
 	group.SubLastUpdated = time.Now().Unix()
@@ -60,8 +66,72 @@ func (cmd *Cmd) UpdateSubscription(data structs.UpdateSubscriptionData, proxy_ma
 		cmd.warn("update-subscription-failed", "Failed to add new subscription content to database")
 		return
 	}
-	logger.Infof("subscription %s: %d profiles", group.Name, len(profiles))
-	cmd.send("subscription-updated", structs.SubscriptionUpdated{GroupId: data.GroupId, Group: group, Profiles: profiles})
+
+	// Upsert extracted Happ routing profiles
+	now := time.Now().Unix()
+	var profilesNeedingGeo []structs.RoutingProfile
+	happRoutingMutex.Lock()
+	for _, link := range happLinks {
+		rp, isOff, err := happ.UpsertFromLink(cmd.DB, data.GroupId, link, now)
+		if err != nil {
+			logger.Warnf("update-subscription: failed to import happ routing link: %v", err)
+			continue
+		}
+		if !isOff && rp.State == "updating" {
+			profilesNeedingGeo = append(profilesNeedingGeo, rp)
+		}
+	}
+	happRoutingMutex.Unlock()
+
+	// Refresh group configuration after Happ link updates
+	if refreshedGroup, err := cmd.DB.LoadGroupConfig(data.GroupId); err == nil {
+		group = refreshedGroup
+	}
+
+	routingProfiles, _ := cmd.DB.ListRoutingProfileInfos(data.GroupId, group.ActiveRoutingProfileId)
+	logger.Infof("subscription %s: %d profiles, %d routing profiles", group.Name, len(profiles), len(routingProfiles))
+	cmd.send("subscription-updated", structs.SubscriptionUpdated{
+		GroupId:         data.GroupId,
+		Group:           group,
+		Profiles:        profiles,
+		RoutingProfiles: routingProfiles,
+	})
+
+	if len(profilesNeedingGeo) > 0 {
+		go func(gID int, profs []structs.RoutingProfile) {
+			for _, p := range profs {
+				ctx, cancel := context.WithTimeout(context.Background(), 7*time.Minute)
+				err := happ.EnsureProfileGeo(ctx, cmd.DB, &p)
+				cancel()
+				if err != nil {
+					logger.Warnf("async geo download failed for profile %s: %v", p.Name, err)
+				}
+				happRoutingMutex.Lock()
+				grp, err := cmd.DB.LoadGroupConfig(gID)
+				if err == nil {
+					if grp.PendingActiveRoutingProfileId == p.Id && p.State == "ready" {
+						_ = cmd.DB.SetActiveRoutingProfile(gID, p.Id)
+						grp.ActiveRoutingProfileId = p.Id
+					}
+					if proxy_manager != nil {
+						st := proxy_manager.GetStatus()
+						if st.Connection == "connected" && st.Profile.GroupId == gID && grp.ActiveRoutingProfileId == p.Id {
+							_ = proxy_manager.ReloadRouting(appconfig.GetConfig().TunName)
+						}
+					}
+					rProfiles, _ := cmd.DB.ListRoutingProfileInfos(gID, grp.ActiveRoutingProfileId)
+					groupWithProfiles, _ := cmd.DB.GetGroupDataAndProfiles(gID)
+					cmd.send("subscription-updated", structs.SubscriptionUpdated{
+						GroupId:         gID,
+						Group:           grp,
+						Profiles:        groupWithProfiles.Profiles,
+						RoutingProfiles: rProfiles,
+					})
+				}
+				happRoutingMutex.Unlock()
+			}
+		}(data.GroupId, profilesNeedingGeo)
+	}
 
 	// Auto-test the freshly-imported profiles so users see live latencies
 	// immediately after `u`. Skip if disabled in core config; skip if

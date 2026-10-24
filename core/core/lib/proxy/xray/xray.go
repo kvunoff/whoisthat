@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -33,7 +34,18 @@ func (x *XrayCore) ExitedCh() chan error {
 	return x.Exited
 }
 
-func (x *XrayCore) Start(stdinPipe []byte) error {
+func setOrReplaceEnv(env []string, key, val string) []string {
+	prefix := key + "="
+	var res []string
+	for _, e := range env {
+		if !strings.HasPrefix(e, prefix) {
+			res = append(res, e)
+		}
+	}
+	return append(res, prefix+val)
+}
+
+func (x *XrayCore) Start(stdinPipe []byte, assetDir string) error {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 
@@ -86,14 +98,21 @@ func (x *XrayCore) Start(stdinPipe []byte) error {
 		logger.Infof("xray will run as uid=%d gid=%d", uid, gid)
 	}
 
-	if ad := geo.AssetDir(); ad != "" {
-		geo.WaitReady(3 * time.Second)
-		if geo.IsReady() {
-			cmd.Env = append(os.Environ(), "XRAY_LOCATION_ASSET="+ad)
-			logger.Infof("xray XRAY_LOCATION_ASSET=%s", ad)
-		} else if _, err := os.Stat(filepath.Join(ad, "geoip.dat")); err == nil {
-			cmd.Env = append(os.Environ(), "XRAY_LOCATION_ASSET="+ad)
-			logger.Infof("xray XRAY_LOCATION_ASSET=%s (fallback: files exist)", ad)
+	targetAssetDir := assetDir
+	if targetAssetDir == "" {
+		targetAssetDir = geo.AssetDir()
+	}
+
+	if targetAssetDir != "" {
+		if assetDir == "" {
+			geo.WaitReady(3 * time.Second)
+		}
+		if assetDir != "" || geo.IsReady() {
+			cmd.Env = setOrReplaceEnv(os.Environ(), "XRAY_LOCATION_ASSET", targetAssetDir)
+			logger.Infof("xray XRAY_LOCATION_ASSET=%s", targetAssetDir)
+		} else if _, err := os.Stat(filepath.Join(targetAssetDir, "geoip.dat")); err == nil {
+			cmd.Env = setOrReplaceEnv(os.Environ(), "XRAY_LOCATION_ASSET", targetAssetDir)
+			logger.Infof("xray XRAY_LOCATION_ASSET=%s (fallback: files exist)", targetAssetDir)
 		} else {
 			logger.Warn("xray: geo assets not ready, skipping XRAY_LOCATION_ASSET")
 		}

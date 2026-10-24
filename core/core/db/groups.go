@@ -141,6 +141,12 @@ func (db *DB) GetAllGroupsAndProfiles() ([]structs.GroupWithProfiles, error) {
 	return groups_with_profiles, nil
 }
 
+func (db *DB) GetGroupDataAndProfiles(groupID int) (structs.GroupWithProfiles, error) {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+	return db.getGroupDataAndProfiles(groupID)
+}
+
 func (db *DB) getGroupDataAndProfiles(group_id int) (structs.GroupWithProfiles, error) {
 	var group_with_profiles structs.GroupWithProfiles = structs.GroupWithProfiles{
 		Profiles: []structs.Profile{},
@@ -196,6 +202,8 @@ func (db *DB) getGroupDataAndProfiles(group_id int) (structs.GroupWithProfiles, 
 	}
 
 	group_with_profiles.Group.ProfileOrder = effectiveOrder
+	routingProfiles, _ := db.listRoutingProfileInfos(group_id, group_config.ActiveRoutingProfileId)
+	group_with_profiles.RoutingProfiles = routingProfiles
 	return group_with_profiles, nil
 }
 

@@ -15,7 +15,7 @@ auth: test
 socks5:
   listen: 127.0.0.1:49998
 `)
-	if err := hy.Start(dummyYaml); err != nil {
+	if err := hy.Start(dummyYaml, ""); err != nil {
 		if _, binErr := utils.GetHysteriaBin(); binErr != nil {
 			t.Skip("hysteria binary not found, skipping test")
 		}

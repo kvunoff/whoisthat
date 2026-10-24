@@ -14,7 +14,7 @@ A modern terminal-based VPN client. Rust TUI frontend. Go engine backed by Xray-
 
 - [Installation](#installation) — quick install, AUR, manual build, configuration
 - [Features](#features)
-- [Architecture](#architecture) — how it works, IPC transport, routing rules, split tunnel, HWID
+- [Architecture](#architecture) — how it works, IPC transport, routing rules, Happ routing, split tunnel, HWID
 - [TCP API Protocol](#tcp-api-protocol) — wire format, commands, notifications, structures
 - [Usage](#usage) — keybindings, settings, TUN mode, split tunnel, systemd, subscriptions
 - [Deep Links & Browser Integration (`wit://`)](#deep-links--browser-integration-wit) — 1-click subscription and profile imports from web browsers
@@ -118,7 +118,7 @@ By default the TUI talks to the core over a **Unix domain socket** (see [IPC tra
   "tun-name": "whoisthattun",
   "hwid-enabled": true,
   "hwid": "1fb1e0141ab3e35a",
-  "user-agent": "whoisthat-core/v0.1.1",
+  "user-agent": "whoisthat-core/v0.2.0",
   "kill-switch-enabled": false,
   "autoconnect-enabled": false,
   "autoconnect-group-id": 0,
@@ -274,6 +274,43 @@ Press `p` in the Routing tab (`2` or `r`) to access pre-configured rule collecti
 
 The verification pass adds ~5s to first startup. Set `XRAY_LOCATION_ASSET` manually to point xray at a custom asset directory.
 
+### Happ Routing & Per-Group Routing Profiles
+
+WhoisThat fully supports **Happ routing profiles** (`happ://routing/add/{base64}`, `happ://routing/onadd/{base64}`, `happ://routing/off`). Providers and subscription servers can bundle rich routing policies with thousands of domain/IP rules directly in the subscription response (`routing` HTTP header or body links).
+
+#### Group Routing Modes
+
+Each group maintains its own routing policy mode:
+- **`auto` (default)**: Uses the active Happ routing profile if present and ready. If no profile exists, or if the profile encountered a download/parsing error, it transparently falls back to user manual rules.
+- **`manual`**: Strictly enforces user manual routing rules and presets, ignoring any Happ routing profiles in the group.
+- **`subscription`**: Strictly enforces the active Happ routing profile from the subscription. If no active profile is available or ready, traffic falls back to direct/LAN without exposing manual rules.
+
+Press `m` in the Routing tab to cycle the mode for the currently selected group (`auto` → `manual` → `subscription` → `auto`).
+
+#### Rule Priority & Execution Order
+
+When a Happ routing profile is applied, Xray rules are compiled and injected using strict precedence:
+1. **LAN / Private Subnet Bypass** (`direct`): RFC1918 subnets (`127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16`, `::1/128`, `fc00::/7`, `fe80::/10`) are guaranteed direct access first.
+2. **Block Rules** (`block`): `BlockSites` and `BlockIp` are blackholed.
+3. **Direct Rules** (`direct`): `DirectSites` and `DirectIp` are routed directly to bypass the proxy.
+4. **Proxy Rules** (`proxy`): `ProxySites` and `ProxyIp` are routed through the active proxy outbound.
+5. **Catch-all Fallback**:
+   - If `GlobalProxy == false`: traffic not matched above defaults to `direct` (`network: tcp,udp -> direct`).
+   - If `GlobalProxy == true`: traffic not matched above defaults to `proxy`.
+
+#### Isolated Per-Profile Geo Assets
+
+If a Happ profile specifies custom `Geoipurl` or `Geositeurl`, WhoisThat downloads and maintains these assets in an isolated, versioned directory (`~/.local/share/whoisthat/geo/groups/<gid>/<profile_id>/v<N>/`).
+- **Safety guarantees**: 3-minute strict download timeout, HTTPS-only validation, 100 MiB payload cap, and weekly update gate.
+- **Resilience**: An asset download failure never disrupts an active connection; previous verified files or global geo assets are retained as fallback.
+
+#### Deep Links, Clipboard Import & URI Scheme
+
+- **In TUI**: Press `H` in the Routing tab to open the Happ Profiles popup (switch profiles, view rule counts, deactivate with `o`, or delete with `d`/`x`). Press `i` to import a `happ://routing/...` link directly from your system clipboard into the active group.
+- **Via CLI**: Run `whoisthat handle-url <URL> [--group <id|name>]` to import links from the terminal or shell scripts.
+- **System registration**: To maintain privacy and security, the `happ://` protocol is **not** registered system-wide on the desktop by default.
+- **DNS / FakeDNS**: Happ DNS and FakeDNS blocks are preserved in encrypted JSON storage for future releases but are not applied to system or TUN DNS in this version.
+
 **Proxy mode (SOCKS5):**
 
 - DNS queries (UDP port 53) always go through `proxy` — this prevents user domain rules from interfering with DNS resolution
@@ -311,7 +348,7 @@ When subscription updates are fetched, the core sends HTTP headers identifying t
 | `x-device-os` | `Linux` | `runtime.GOOS` |
 | `x-ver-os` | `6.12.0-arch1-1` | `uname -r` |
 | `x-device-model` | `Arch Linux` | `/etc/os-release` PRETTY_NAME |
-| `user-agent` | `whoisthat-core/v0.1.1` | User-configurable (Settings) |
+| `user-agent` | `whoisthat-core/v0.2.0` | User-configurable (Settings) |
 
 Response headers (`x-hwid-max-devices-reached`, `x-hwid-not-supported`, `x-hwid-limit`) are inspected and trigger warnings when device limits are reached.
 
@@ -475,11 +512,15 @@ Subscription metadata (`sub_*`) is populated from the `subscription-userinfo` HT
 
 | Key | Action |
 | --- | --- |
+| `←` / `→` | Switch selected group for routing |
+| `H` / `h` | Open Happ Routing Profiles popup (view, activate, deactivate `o`, delete `d`/`x`) |
+| `m` | Cycle group routing mode (`auto` → `manual` → `subscription` → `auto`) |
+| `i` | Import Happ routing link (`happ://routing/...`) from clipboard into selected group |
 | `p` / `P` | Open Presets catalog (Ads & Trackers, Bypass RU/LAN, Media, Telegram, AI, Socials) |
-| `a` | Add new routing rule |
+| `a` | Add new manual routing rule |
 | `Space` | Toggle rule enabled/disabled (live hot-reload) |
-| `e` | Edit selected rule |
-| `x` | Delete selected rule |
+| `e` / `Enter` | Edit selected rule |
+| `x` / `Delete` | Delete selected rule |
 
 ### Tabs & Quit
 
@@ -518,7 +559,7 @@ Subscription metadata (`sub_*`) is populated from the `subscription-userinfo` HT
 | HWID: Enabled | on/off | Send HWID headers with subscription requests |
 | HWID | 1fb1e0141ab3e35a | Device identifier (read-only, auto-generated) |
 | Reset HWID | ⏎ | Generate a new random HWID |
-| User-Agent | whoisthat-core/v0.1.1 | User-Agent header (editable — press Enter to modify) |
+| User-Agent | whoisthat-core/v0.2.0 | User-Agent header (editable — press Enter to modify) |
 
 Navigate with `j`/`k`, press `Enter`/`Space` to toggle, cycle values, open edit popups, or execute actions.
 
@@ -779,7 +820,17 @@ Imports an individual proxy profile into a group:
   - `wit://ss://...`
   - `wit://hy2://...` or `wit://hysteria2://...`
 
-#### 3. Quick Actions
+#### 3. Happ Routing Import
+Imports a Happ routing profile into a specified or auto-detected group:
+- **Direct Happ URI**:
+  - `happ://routing/add/{base64}`
+  - `happ://routing/onadd/{base64}`
+  - `happ://routing/off`
+- **Wrapped within `wit://`**:
+  - `wit://happ://routing/add/{base64}`
+  - `wit://routing?link=happ%3A%2F%2Frouting%2Fadd%2F...&group=MyServers`
+
+#### 4. Quick Actions
 Control the VPN directly via browser links or shell launchers:
 - `wit://connect?profile=1` or `wit://connect?name=Frankfurt-01`
 - `wit://disconnect`
@@ -792,6 +843,7 @@ You can test any deep link using either the CLI subcommand or your system's `xdg
 ```bash
 # Via whoisthat CLI
 whoisthat handle-url "wit://sub?url=https%3A%2F%2Fexample.com%2Fsub&name=Testing"
+whoisthat handle-url "happ://routing/add/..." --group "MyServers"
 whoisthat "wit://toggle"
 
 # Via system URL opener (simulates clicking a browser link)
@@ -830,7 +882,7 @@ CLI commands connect to the core over its Unix domain socket, execute instantly,
 | `whoisthat doctor [--json]` | — | Run comprehensive system, capabilities, polkit, and IPC diagnostics |
 | `whoisthat run [-d] <app> [args...]` | `-b`, `--detach`, `--background` | Launch application inside split-tunnel slice (`-d` runs detached in background) |
 | `whoisthat add-sub <url> [name]` | — | Add a subscription group by URL and immediately fetch & test its profiles |
-| `whoisthat handle-url <url>` | `<url>` | Handle a `wit://` deep link or import URL from browser or CLI |
+| `whoisthat handle-url <url> [--group <id|name>]` | `<url>` | Handle a `wit://` or `happ://` deep link or import URL from browser or CLI |
 | `whoisthat register-deeplink` | — | Register `wit://` protocol handler (`.desktop` entry & `xdg-mime`) |
 | `whoisthat --version` | `-v` | Display program version |
 | `whoisthat --help` | `-h` | Display full help and flag list |
