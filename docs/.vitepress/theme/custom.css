@@ -1,0 +1,146 @@
+/**
+ * Graphite (Black-Gray-White) Custom Theme for WhoisThat Docs
+ */
+
+:root {
+  /* Light theme: Crisp monochrome & platinum */
+  --vp-c-brand-1: #18181b;
+  --vp-c-brand-2: #27272a;
+  --vp-c-brand-3: #3f3f46;
+  --vp-c-brand-soft: rgba(24, 24, 27, 0.08);
+
+  --vp-c-bg: #fafafa;
+  --vp-c-bg-alt: #f4f4f5;
+  --vp-c-bg-elv: #ffffff;
+  --vp-c-bg-soft: #f4f4f5;
+
+  --vp-c-border: #e4e4e7;
+  --vp-c-divider: #e4e4e7;
+  --vp-c-gutter: #e4e4e7;
+
+  --vp-c-text-1: #18181b;
+  --vp-c-text-2: #52525b;
+  --vp-c-text-3: #a1a1aa;
+
+  --vp-home-hero-name-color: transparent;
+  --vp-home-hero-name-background: linear-gradient(135deg, #18181b 0%, #52525b 50%, #71717a 100%);
+  --vp-home-hero-image-background-image: radial-gradient(circle, rgba(0, 0, 0, 0.06) 0%, transparent 70%);
+
+  --vp-button-brand-border: #18181b;
+  --vp-button-brand-text: #ffffff;
+  --vp-button-brand-bg: #18181b;
+  --vp-button-brand-hover-border: #27272a;
+  --vp-button-brand-hover-text: #ffffff;
+  --vp-button-brand-hover-bg: #27272a;
+
+  --vp-button-alt-border: #e4e4e7;
+  --vp-button-alt-text: #18181b;
+  --vp-button-alt-bg: #ffffff;
+  --vp-button-alt-hover-border: #d4d4d8;
+  --vp-button-alt-hover-bg: #f4f4f5;
+}
+
+/* Dark theme: Deep Matte Graphite, Charcoal & Silver */
+.dark {
+  --vp-c-brand-1: #ffffff;
+  --vp-c-brand-2: #e4e4e7;
+  --vp-c-brand-3: #a1a1aa;
+  --vp-c-brand-soft: rgba(255, 255, 255, 0.08);
+
+  /* Graphite palette backgrounds */
+  --vp-c-bg: #0f0f11;
+  --vp-c-bg-alt: #141417;
+  --vp-c-bg-elv: #18181c;
+  --vp-c-bg-soft: #17171b;
+
+  /* Borders & Dividers */
+  --vp-c-border: #26262c;
+  --vp-c-divider: #222227;
+  --vp-c-gutter: #0f0f11;
+
+  /* High-contrast silver & zinc text */
+  --vp-c-text-1: #f4f4f6;
+  --vp-c-text-2: #a1a1aa;
+  --vp-c-text-3: #71717a;
+
+  /* Hero title & glow */
+  --vp-home-hero-name-color: transparent;
+  --vp-home-hero-name-background: linear-gradient(135deg, #ffffff 0%, #d4d4d8 40%, #71717a 100%);
+  --vp-home-hero-image-background-image: radial-gradient(circle, rgba(255, 255, 255, 0.1) 0%, transparent 65%);
+  --vp-home-hero-image-filter: blur(40px);
+
+  /* Action Buttons */
+  --vp-button-brand-border: #ffffff;
+  --vp-button-brand-text: #09090b;
+  --vp-button-brand-bg: #ffffff;
+  --vp-button-brand-hover-border: #e4e4e7;
+  --vp-button-brand-hover-text: #09090b;
+  --vp-button-brand-hover-bg: #e4e4e7;
+
+  --vp-button-alt-border: #27272c;
+  --vp-button-alt-text: #f4f4f6;
+  --vp-button-alt-bg: #161619;
+  --vp-button-alt-hover-border: #3f3f46;
+  --vp-button-alt-hover-text: #ffffff;
+  --vp-button-alt-hover-bg: #1e1e23;
+
+  /* Code Blocks */
+  --vp-code-block-bg: #131316;
+  --vp-code-line-highlight-color: rgba(255, 255, 255, 0.05);
+
+  /* Feature cards & boxes */
+  --vp-c-default-soft: #17171b;
+
+  /* Custom Callout Blocks in Graphite */
+  --vp-custom-block-tip-border: #3f3f46;
+  --vp-custom-block-tip-text: #f4f4f6;
+  --vp-custom-block-tip-bg: #151518;
+
+  --vp-custom-block-info-border: #383840;
+  --vp-custom-block-info-text: #f4f4f6;
+  --vp-custom-block-info-bg: #151518;
+
+  --vp-custom-block-warning-border: #71717a;
+  --vp-custom-block-warning-text: #f4f4f6;
+  --vp-custom-block-warning-bg: #18181c;
+
+  /* Navigation & Sidebar */
+  --vp-nav-bg-color: rgba(15, 15, 17, 0.85);
+  --vp-sidebar-bg-color: #0f0f11;
+}
+
+/* Feature cards graphite styling */
+.VPFeature {
+  border: 1px solid var(--vp-c-border) !important;
+  background-color: var(--vp-c-bg-soft) !important;
+  transition: border-color 0.25s, transform 0.25s !important;
+}
+
+.VPFeature:hover {
+  border-color: #52525b !important;
+  transform: translateY(-2px);
+}
+
+/* Image preview framing */
+img {
+  border-radius: 8px;
+}
+
+/* Modern minimalist scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #27272a;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #3f3f46;
+}

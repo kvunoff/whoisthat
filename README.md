@@ -1,1191 +1,141 @@
-# WhoisThat
+<div align="center">
+  <img src="docs/public/logo.svg" alt="WhoisThat Logo" width="100" height="100" />
+  <h1>WhoisThat</h1>
+  <p><strong>Modern terminal-based VPN client for Linux.</strong></p>
+  <p>High-performance Rust TUI frontend paired with an autonomous Go engine backed by Xray-core.</p>
 
-A modern terminal-based VPN client. Rust TUI frontend. Go engine backed by Xray-core.
+  <p>
+    <a href="https://docs.tuqise.com/"><img src="https://img.shields.io/badge/Documentation-VitePress-black?style=for-the-badge&logo=vitepress" alt="Documentation" /></a>
+    <a href="https://aur.archlinux.org/packages/whoisthat"><img src="https://img.shields.io/aur/version/whoisthat?color=black&label=AUR&style=for-the-badge&logo=archlinux" alt="AUR" /></a>
+    <a href="https://extensions.gnome.org/extension/10998/whoisthat-vpn-indicator/"><img src="https://img.shields.io/badge/GNOME-Extension-black?style=for-the-badge&logo=gnome" alt="GNOME Extension" /></a>
+    <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-black?style=for-the-badge" alt="License" /></a>
+  </p>
 
-**Supports**: VLESS (Reality/xHTTP/gRPC), VMess, Trojan, Shadowsocks, SOCKS5, Hysteria2. Full TUN-mode VPN. Subscription-based profile management. HWID device identification. Optional systemd user service for boot autostart.
-
-![WhoisThat — Profiles & Connection Details](screen1.png)
-
-![WhoisThat — Real-time Traffic Monitoring](screen2.png)
-
----
-
-## Table of Contents
-
-- [Installation](#installation) — quick install, AUR, manual build, configuration
-- [Features](#features)
-- [Architecture](#architecture) — how it works, IPC transport, routing rules, Happ routing, split tunnel, HWID
-- [TCP API Protocol](#tcp-api-protocol) — wire format, commands, notifications, structures
-- [Usage](#usage) — keybindings, settings, TUN mode, split tunnel, systemd, subscriptions
-- [Deep Links & Browser Integration (`wit://`)](#deep-links--browser-integration-wit) — 1-click subscription and profile imports from web browsers
-- [CLI & Desktop Integration](#cli--desktop-integration) — command-line flags, quick toggles, desktop widgets & status streaming
-- [Troubleshooting](#troubleshooting)
-- [Testing](#testing)
-- [Development](#development) — dev loop, logs, debugging, CI
-- [File Structure](#file-structure)
-- [Credits](#credits)
-- [License](#license)
+  <p>
+    <a href="#quick-installation">Installation</a> •
+    <a href="#key-features">Features</a> •
+    <a href="#quick-start">Quick Start</a> •
+    <a href="https://docs.tuqise.com/"><strong>Full Documentation ↗</strong></a>
+  </p>
+</div>
 
 ---
 
-## Installation
+## Overview
 
-### Quick install (any Linux distribution)
+**WhoisThat** brings ergonomic terminal interaction to modern proxy circumvention and system-wide VPN networking. It eliminates the need for bulky Electron apps while delivering full rootless TUN routing, application-level split tunneling via cgroup v2, real-time Braille bandwidth graphs, and comprehensive provider subscription management.
 
+<div align="center">
+  <img src="screen1.png" alt="WhoisThat Profiles & Details" width="100%" />
+  <br/><br/>
+  <img src="screen2.png" alt="WhoisThat Real-Time Traffic Monitoring" width="100%" />
+</div>
+
+---
+
+## Key Features
+
+- **Unified Multi-Protocol Engine**: Native support for VLESS (Reality, Vision, xHTTP, gRPC, WebSocket), VMess, Trojan, Shadowsocks (2022 specs), SOCKS5, and Hysteria2 via pinned Xray-core (`v26.9.9`).
+- **Rootless System-Wide TUN**: Full OS-level VPN routing via Linux file capabilities (`cap_net_admin,cap_net_raw,cap_setpcap`) without root privileges or setuid binaries.
+- **cgroup v2 Split Tunneling**: Selectively bypass or enforce VPN routing per application (`whoisthat run <app>`) using transient systemd slices and policy routing.
+- **Fail-Safe Kill-Switch**: Independent nftables firewall protection blocks non-VPN traffic if the connection drops unexpectedly.
+- **Happ Routing & Presets**: Ingests provider Happ routing profiles (`happ://routing/...`) with per-group modes (`auto`, `manual`, `subscription`) and 1-click preset rules (ad blocking, domestic bypass, media, AI).
+- **Encrypted State at Rest**: Credentials, subscriptions, and custom rules are encrypted locally with AES-256-GCM.
+- **Real-Time Traffic Monitoring**: Unicode Braille bandwidth monitor (RX/TX), dynamic scaling, and interface health metrics.
+- **Desktop & Ecosystem Integration**: 1-click browser imports (`wit://`), official GNOME Shell extension, and continuous NDJSON streaming for Waybar and Polybar.
+
+---
+
+## Quick Installation
+
+### One-Line Install Script (Any Linux Distro)
 ```bash
 curl -fsSL https://raw.githubusercontent.com/kvunoff/whoisthat/main/install.sh | bash
 ```
 
-Or unattended installation:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/kvunoff/whoisthat/main/install.sh | bash -s -- --yes
-```
-
-The script auto-detects your architecture (`x86_64` / `aarch64`) and distro, installs Go and Rust from official channels,
-builds everything from the latest tagged release, and copies binaries to `/usr/local/bin`.
-Precompiled Xray-core (pinned v26.9.9) is installed and verified automatically (provides both proxy and native TUN mode).
-Native Hysteria2 protocol support is built directly into Xray-core — no standalone hysteria client required.
-
 ### Arch Linux (AUR)
-
 ```bash
 paru -S whoisthat
 # or
 yay -S whoisthat
 ```
 
-### Manual build
-
-Prerequisites: **Rust** 1.80+, **Go** 1.26+, **git**, **curl**, a C compiler.
-
+### Build from Source
 ```bash
-git clone https://github.com/kvunoff/whoisthat.git
-cd whoisthat
-
-# Core (Go daemon — VPN engine)
+# Build Go daemon
 cd core/core && go build -o whoisthat-core && cd ../..
 
-# TUI (Rust — terminal interface)
+# Build Rust TUI
 cargo build --release
 
-# Install
+# Install & set capabilities
 sudo install -Dm755 target/release/whoisthat /usr/local/bin/whoisthat
 sudo install -Dm755 core/core/whoisthat-core  /usr/local/bin/whoisthat-core
-
-# TUN mode capability setup (one-time, optional — TUI auto-prompts if skipped)
 sudo setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep /usr/local/bin/whoisthat-core
 ```
 
-External proxy engines can be installed via precompiled official releases (or automatically via `install.sh`):
-
-- **Xray-core**: Automatically managed and pinned (v26.9.9) under `~/.local/share/whoisthat/runtimes/xray/` with background download and checksum verification. Matching system binaries in `/usr/local/bin/xray` or `/usr/bin/xray` are also detected and adopted. Natively supports VLESS, VMess, Trojan, Shadowsocks, SOCKS5, Hysteria2, and native TUN inbound routing.
-
-The core emits a startup warning to the TUI when Xray-core is missing — see Troubleshooting.
-
-### Configuration
-
-**TUI config** — `~/.config/whoisthat/config.toml`:
-
-```toml
-core_tcp_port = 4897
-core_host = "127.0.0.1"
-autoconnect = false
-last_group_id = 0
-last_profile_id = 0
-show_ip = true
-theme = "tokyo-night"                          # tokyo-night, catppuccin-mocha, nord, dracula, gruvbox-dark, solarized-dark, cyberpunk, monokai-pro
-log_enabled = false
-log_level = "warn"
-test_method = "http-get"
-tun_name = "whoisthattun"                  # mirrors core's `tun-name` — kept in sync by the TUI
-kill_switch_enabled = false
-ipc_socket_path = ""                       # blank = derive from XDG_RUNTIME_DIR (must match core)
-use_tcp = false                            # reach the core over legacy TCP instead of the Unix socket
-```
-
-By default the TUI talks to the core over a **Unix domain socket** (see [IPC transport](#ipc-transport)). Set `use_tcp = true` (and `tcp-enabled` on the core) only for remote/advanced setups.
-
-**Core config** — `~/.config/whoisthat/config.json` (auto-generated):
-
-```json
-{
-  "socks-port": 3090,
-  "http-port": 3091,
-  "core-tcp-port": 4897,
-  "test-port-range": { "start": 3095, "end": 30120 },
-  "dns-servers": ["1.1.1.1", "8.8.8.8", "2606:4700:4700::1111", "2001:4860:4860::8888"],
-  "tun-name": "whoisthattun",
-  "hwid-enabled": true,
-  "hwid": "1fb1e0141ab3e35a",
-  "user-agent": "whoisthat-core/v0.2.0",
-  "kill-switch-enabled": false,
-  "autoconnect-enabled": false,
-  "autoconnect-group-id": 0,
-  "autoconnect-profile-id": 0,
-  "autoconnect-mode": "proxy",
-  "split-tunnel": { "mode": "off" },
-  "ipc-socket-path": "",
-  "tcp-enabled": false
-}
-```
-
-`split-tunnel.mode` is `off`, `exclude`, or `include` (see [Split tunnel](#split-tunnel)). `ipc-socket-path` overrides the Unix domain socket location (blank = derive from `XDG_RUNTIME_DIR`); `tcp-enabled` additionally opens the legacy TCP listener on `core-tcp-port` (see [IPC transport](#ipc-transport)).
-
-`dns-servers` is a list of DNS server IPs used in three contexts:
-
-- **Profile resolution** — resolving proxy hostnames to IPs (all servers queried, results merged)
-- **Xray direct outbound** — DNS servers injected into xray's config for `freedom` (direct) outbound domain resolution
-- **TUN mode** — the first server in the list is used for system-wide DNS hijack via iptables/nftables DNAT rules
-
-`socks-port` and `http-port` set the local SOCKS5/HTTP proxy ports. `test-port-range` defines the port pool for latency testing (spawns temporary xray instances).
-
-Profile data is stored under `~/.local/share/whoisthat/db/`.
-Encrypted at rest with AES-256-GCM — key auto-generated on first run.
-
 ---
 
-## Features
+## Quick Start
 
-- **Subscription support & auto-refresh** — add groups with subscription URLs (profiles are fetched and parsed automatically upon adding or editing), refresh profiles on demand, view metadata (traffic used/limit, expiry)
-- **Deep links (`wit://`) & 1-click browser import** — register the `wit://` protocol handler to import subscriptions or single profiles directly from web browsers (Chrome, Firefox, Brave) and web portals with a single click. Supports auto-refreshing subscriptions, profile import, connection toggles, and direct proxy URIs (`whoisthat register-deeplink`)
-- **HWID device identification** — auto-generated hardware ID sent with subscription requests (Remnawave-compatible x-hwid headers). Configurable: toggle on/off, reset, custom user-agent. Respects `x-hwid-max-devices-reached` and other HWID response headers from the subscription server.
-- **Group management** — add, rename, edit subscription URL, delete entire groups
-- **Profile import** — VLESS, VMess, Trojan, Shadowsocks, SOCKS5, Hysteria2 URIs (paste, clipboard, or subscription refresh)
-- Connect / disconnect / switch profiles
-- Full system-wide TUN-mode VPN (native Xray-core TUN inbound + `iptables`/`nftables`, auto-detected)
-- **Profile testing** — three methods: TCP connect (fast prefilter), HTTP GET, HTTP HEAD via SOCKS5. Multi-sample (default 3) with median latency, jitter, and packet-loss %.
-- **Unified native protocol engine** — all protocols (VLESS, VMess, Trojan, Shadowsocks, SOCKS5, Hysteria2) run natively through Xray-core (`v26.9.9`). Standalone `hysteria` binary is no longer required; Hysteria2 profiles now fully support routing rules, live gRPC traffic statistics, and unified latency testing.
-- **Missing-binary UX** — on startup the core probes for managed runtime xray; misses are unicast to the freshly-connected TUI as a `warn` with an actionable install hint. Connect-time errors also forward the real underlying `err.Error()` (no more generic "Failed to connect" hiding "binary not found").
-- **Test progress** — pending profiles show `…` immediately; in-flight batches broadcast tested/total progress. `C` cancels in-flight tests gracefully (epoch counter; no orphan subprocesses — also drops queued work before it spawns xray). Test failures broadcast the reason as a `warn` (throttled to one per-reason per 5s so a batch with failing endpoints emits readable warnings without spam).
-- **Scan-all testing** — `t` scans all profiles across all groups with dedup; `T` tests only focused profile/subscription. Group-focused tests use the single `test-group` TCP command for efficiency.
-- **Auto-test on subscription refresh** — profiles are tested automatically after `u` so you see live latencies immediately. Toggle in Settings → Diagnostics.
-- **Responsive adaptive TUI layout** — dynamic viewport geometry engine automatically categorizes terminal dimensions into width tiers (`Compact` <80, `Medium` 80–125, `Wide` 126–160, `UltraWide` >160) and height tiers (`Tiny` <16, `Short` 16–24, `Normal` 25–42, `Tall` >42). Adapts seamlessly between side-by-side, vertical stacked, and full-screen single-panel modes (`Tab` to toggle details), with dual-column connection details on wide displays and safety screens below 45×8.
-- **Curated color themes** — 8 high-contrast dark palettes: Tokyo Night, Catppuccin Mocha, Nord, Dracula, Gruvbox Dark, Solarized Dark, Cyberpunk, and Monokai Pro. Switch live in Settings with instant preview; saved persistently to `config.toml`.
-- **Real-time traffic monitoring tab** — dedicated dashboard (`3` or `m`) with high-resolution Braille bandwidth charts (RX green, TX red), dynamic Y-axis scaling, peak speeds, session data totals, and interface diagnostics.
-- **Custom routing rules** — domain, IP, protocol, port, geoip, geosite → proxy/direct/block (`2` or `r` tab). `direct` outbound works correctly in TUN mode via SO_MARK + fwmark routing (no root required). Use ←/→ to cycle type/outbound in the form.
-- **Routing presets catalog & live hot-reload** — 1-click presets catalog (`p` key in Routing) for blocking ads & telemetry, bypassing domestic (RU) / LAN traffic, and routing media (YouTube/Twitch/Discord), Telegram, AI services (OpenAI/Claude), and social platforms. Routing edits apply instantly without restarting the proxy.
-- **Kill-switch** — When enabled, blocks all non-VPN traffic if the connection drops. Uses a dedicated firewall table (`whoisthat_ks`, `whoisthat_ks_v6`) entirely independent of TUN rules — safe to combine with any routing setup. Works in both SOCKS and TUN modes. Toggle in Settings. Orphaned tables from a crashed session are auto-reconciled on next core startup.
-- **Split tunnel** — route specific apps differently from the rest of the system. `exclude` mode makes launched apps bypass the tunnel (everything else is protected); `include` mode routes *only* launched apps through the tunnel (everything else goes direct). Launch apps interactively with `whoisthat run <app>` or in the background with `whoisthat run -d <app>` (`-b`, `--detach`, `--background`). Uses cgroup v2 socket matching, policy routing, postrouting SNAT, and dual-stack IPv6 leak prevention. Set the mode in Settings → Network.
-- **Collapsible group folding** — fold and unfold subscription groups (`Space`, `Enter`, `h`/`l`) with persistent tree state, clean arrow indicators (`▼`/`▶`), and automatic cursor clamping.
-- **Full mouse interaction** — click to select and connect profiles, toggle group folding, switch tabs, toggle routing rules, toggle TUN mode from the bottom bar, and navigate settings. Mouse hit-testing dynamically synchronizes with responsive layout coordinates.
-- **Compact tab switcher** — press `Tab` to summon a lightweight modal switcher with numeric direct jumps (`1` Profiles, `2` Routing, `3` Traffic, `4` Logs, `5` Settings).
-- **Log viewer** — live tail from core log, auto-scroll, [WARN]/[ERRO] highlighting (`4` or `l`)
-- **Configurable** — DNS servers, proxy ports, log level, test method, HWID, user-agent via settings and config files
-- **Authenticated IPC** — the TUI ↔ core channel is a Unix domain socket (mode `0600`, owned by the invoking user) under `$XDG_RUNTIME_DIR/whoisthat/`, so other local users can't command the capability-holding core. Legacy TCP on `127.0.0.1:4897` is opt-in (`tcp-enabled` in core config)
-- **Detach/reattach** — `q` leaves VPN running in background, reopen TUI to reattach
-- **Boot autostart** — autoconnect on startup with configurable mode (proxy or TUN); optional systemd user service for starting VPN at boot (before login via lingering)
-- **Profile search** — `/` to filter profiles by name, protocol, address, or host
-- Public IP display (auto-refreshed every 30s and on connect/disconnect/TUN-toggle)
-- Keyboard-driven with optional full mouse navigation
-- **Comprehensive CLI & Linux desktop integration** — first-class non-TUI subcommands and shorthand flags for quick toggles and external desktop widgets (GNOME Shell Extension, Waybar, Polybar, scripts). Instant connection toggle (`whoisthat -t`), TUN mode toggle (`whoisthat -mt`), systemd user service management (`whoisthat -st`), kill-switch control (`whoisthat -kt`), public IP check (`whoisthat --ip`), and live status monitoring (`whoisthat status --short` or continuous reactive streaming `whoisthat status --watch --json`).
-- **Official GNOME Shell Extension** — live top-bar status indicator, real-time speed monitor, and quick control dropdown menu ([GNOME Extensions](https://extensions.gnome.org/extension/10998/whoisthat-vpn-indicator/) / [GitHub](https://github.com/kvunoff/whoisthat-extension))
-
----
-
-## Architecture
-
-```text
-┌──────────────────────────────┐
-│  WhoisThat (Rust TUI)        │  ratatui + crossterm
-│  ⋅ Profiles ⋅ Logs ⋅ Settings│
-└──────────┬───────────────────┘
-           │  Unix domain socket / JSON (TCP opt-in)
-           │  4-byte big-endian length prefix + JSON payload
-           │  $XDG_RUNTIME_DIR/whoisthat/core.sock
-           ▼
-┌──────────────────────────────┐
-│  WhoisThat Core (Go daemon)  │
-│  ⋅ Profile DB (JSON files)   │
-│  ⋅ Proxy manager             │
-│  ⋅ TUN manager               │
-│  ⋅ TCP server (commands)     │
-└──────────┬───────────────────┘
-           │  subprocess (stdin JSON config)
-           ▼
-┌──────────────────────────────┐
-│  Xray-core                   │
-│  ⋅ VLESS / VMess / Trojan    │
-│  ⋅ Shadowsocks / Hysteria2   │
-│  ⋅ SOCKS5 / HTTP / TUN       │
-└──────────┬───────────────────┘
-           │
-     ┌─────┴─────┐
-     ▼           ▼
-   TUN device   DNS routing
-  (native Xray) (iptables/nftables)
+Launch the interactive interface:
+```bash
+whoisthat
 ```
 
-### How it works
-
-1. **WhoisThat Core** is a long-running Go daemon. It manages VPN profiles (stored as JSON files under `~/.local/share/whoisthat/db/`), launches Xray-core as a subprocess, and controls the TUN device via `iproute2` + Xray native TUN inbound.
-
-2. **Unified core engine.** All protocols run directly through Xray-core (`v26.9.9`):
-   - **Xray-core** — VLESS (incl. Reality/xTLS Vision), VMess, Trojan (incl. reality/WS/gRPC), Shadowsocks, SOCKS5, and Hysteria2 (`hysteria2://` / `hy2://` with native QUIC, TLS, Salamander obfs, UDP port-hopping, bandwidth params, and SNI). Configuration JSON is generated on-the-fly from profile URIs directly in-memory by the core's native parser package. All protocols benefit equally from Xray's routing rules, DNS bypass, and gRPC traffic statistics.
-
-3. **TUN mode** creates a virtual network interface (configurable name, default `whoisthattun`), sets up `iptables`/`nftables` rules (DNS hijack, MASQUERADE, auto-detected at runtime), and routes all system traffic directly through Xray-core via its native TUN inbound.
-
-4. **WhoisThat TUI** (this Rust binary) connects to the core over a Unix domain socket (`$XDG_RUNTIME_DIR/whoisthat/core.sock`, mode `0600`) by default, or legacy TCP on `127.0.0.1:4897` when `tcp-enabled` is set in the core config and `use_tcp` in the TUI config. It sends commands and receives asynchronous notifications. The TUI never touches networking directly — all VPN logic lives in the core.
-
-### IPC Transport
-
-The TUI and core communicate using length-prefixed JSON framing:
-
-- **Unix Domain Socket (default)** — `$XDG_RUNTIME_DIR/whoisthat/core.sock` (mode `0600`, owned by the invoking user). Ensures only authorized local processes can command the capability-holding VPN core.
-- **TCP listener (opt-in)** — `127.0.0.1:4897`. Enabled by setting `tcp-enabled: true` in `config.json` and `use_tcp = true` in `config.toml` (useful for development, containers, or headless setups).
-- **Wire framing** — 4-byte big-endian `uint32` length prefix followed by UTF-8 JSON payload. Both client requests and core notifications use the identical wire format.
-
-### Routing rules
-
-Custom routing rules can redirect traffic to `proxy`, `direct`, or `block` outbounds. Six match types are supported:
-
-| Type | Stored as | Example |
-| -------- | ---------- | -------- |
-| `domain` | `rule.domain` | `example.com` |
-| `ip` | `rule.ip` | `1.2.3.4` or `10.0.0.0/8` |
-| `protocol` | `rule.protocol` | `bittorrent` |
-| `port` | `rule.port` | `443` |
-| `geoip` | `rule.ip` prefixed `geoip:` | `geoip:private` |
-| `geosite` | `rule.domain` prefixed `geosite:` | `geosite:category-ads` |
-
-Rules are stored in `~/.local/share/whoisthat/db/routing.json` and injected into xray's JSON config on every connect (DNS-bypass rule first, then user rules in order, disabled rules skipped). Modifying or toggling rules applies immediately via live hot-reload without restarting the proxy.
-
-**Routing Presets Catalog:**
-
-Press `p` in the Routing tab (`2` or `r`) to access pre-configured rule collections that can be enabled or disabled with a single keystroke:
-
-- 🇷🇺 **Bypass Russia** — direct access to Russian domains (`geosite:category-ru`) and IPs (`geoip:ru`)
-- 🛡️ **Block Ads & Trackers** — global ad, tracker, and telemetry blocking (`geosite:category-ads-all` → `block`)
-- 🏠 **Bypass LAN / Local** — direct access to RFC1918 private subnets (`geoip:private` → `direct`)
-- 📺 **Proxy Media** — route YouTube, Discord, and Twitch through the proxy
-- 💬 **Proxy Telegram** — route Telegram domains and official CIDRs (`geosite:telegram`, `geoip:telegram`)
-- 🤖 **Proxy AI Services** — route OpenAI and Anthropic / Claude platforms through the proxy
-- 📸 **Proxy Blocked Socials** — route Twitter/X, Instagram, and Meta platforms through the proxy
-
-**Default rule:** private IP ranges → direct, hardcoded as CIDR (not `geoip:private`) so it works even when geo files aren't available.
-
-**GeoIP / GeoSite support** — `geoip.dat` and `geosite.dat` are auto-downloaded from [v2fly GitHub releases](https://github.com/v2fly/domain-list-community/releases) on first startup to `~/.config/whoisthat/geo/`. The download pipeline:
-
-1. If a valid `geoip.dat` (≥10 MB) already exists locally → skip download
-2. Fall back to system paths (`/usr/share/xray`, etc.) → copy if found
-3. Otherwise download from v2fly with retry (3 attempts, exponential backoff)
-4. **Verify** by running xray with a `geoip:private` test rule — broken files trigger re-download
-5. If all downloads fail → `XRAY_LOCATION_ASSET` is not set; xray uses bundled geo data (if any) or ignores geo rules
-
-The verification pass adds ~5s to first startup. Set `XRAY_LOCATION_ASSET` manually to point xray at a custom asset directory.
-
-### Happ Routing & Per-Group Routing Profiles
-
-WhoisThat fully supports **Happ routing profiles** (`happ://routing/add/{base64}`, `happ://routing/onadd/{base64}`, `happ://routing/off`). Providers and subscription servers can bundle rich routing policies with thousands of domain/IP rules directly in the subscription response (`routing` HTTP header or body links).
-
-#### Group Routing Modes
-
-Each group maintains its own routing policy mode:
-- **`auto` (default)**: Uses the active Happ routing profile if present and ready. If no profile exists, or if the profile encountered a download/parsing error, it transparently falls back to user manual rules.
-- **`manual`**: Strictly enforces user manual routing rules and presets, ignoring any Happ routing profiles in the group.
-- **`subscription`**: Strictly enforces the active Happ routing profile from the subscription. If no active profile is available or ready, traffic falls back to direct/LAN without exposing manual rules.
-
-Press `m` in the Routing tab to cycle the mode for the currently selected group (`auto` → `manual` → `subscription` → `auto`).
-
-#### Rule Priority & Execution Order
-
-When a Happ routing profile is applied, Xray rules are compiled and injected using strict precedence:
-1. **LAN / Private Subnet Bypass** (`direct`): RFC1918 subnets (`127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16`, `::1/128`, `fc00::/7`, `fe80::/10`) are guaranteed direct access first.
-2. **Block Rules** (`block`): `BlockSites` and `BlockIp` are blackholed.
-3. **Direct Rules** (`direct`): `DirectSites` and `DirectIp` are routed directly to bypass the proxy.
-4. **Proxy Rules** (`proxy`): `ProxySites` and `ProxyIp` are routed through the active proxy outbound.
-5. **Catch-all Fallback**:
-   - If `GlobalProxy == false`: traffic not matched above defaults to `direct` (`network: tcp,udp -> direct`).
-   - If `GlobalProxy == true`: traffic not matched above defaults to `proxy`.
-
-#### Isolated Per-Profile Geo Assets
-
-If a Happ profile specifies custom `Geoipurl` or `Geositeurl`, WhoisThat downloads and maintains these assets in an isolated, versioned directory (`~/.local/share/whoisthat/geo/groups/<gid>/<profile_id>/v<N>/`).
-- **Safety guarantees**: 3-minute strict download timeout, HTTPS-only validation, 100 MiB payload cap, and weekly update gate.
-- **Resilience**: An asset download failure never disrupts an active connection; previous verified files or global geo assets are retained as fallback.
-
-#### Deep Links, Clipboard Import & URI Scheme
-
-- **In TUI**: Press `H` in the Routing tab to open the Happ Profiles popup (switch profiles, view rule counts, deactivate with `o`, or delete with `d`/`x`). Press `i` to import a `happ://routing/...` link directly from your system clipboard into the active group.
-- **Via CLI**: Run `whoisthat handle-url <URL> [--group <id|name>]` to import links from the terminal or shell scripts.
-- **System registration**: To maintain privacy and security, the `happ://` protocol is **not** registered system-wide on the desktop by default.
-- **DNS / FakeDNS**: Happ DNS and FakeDNS blocks are preserved in encrypted JSON storage for future releases but are not applied to system or TUN DNS in this version.
-
-**Proxy mode (SOCKS5):**
-
-- DNS queries (UDP port 53) always go through `proxy` — this prevents user domain rules from interfering with DNS resolution
-- Matched traffic follows the user's rule; unmatched traffic implicitly falls back to `proxy` (first outbound)
-- `direct` rules work correctly: xray resolves the domain via its internal DNS (through proxy), then connects directly via the `freedom` outbound
-
-**TUN mode:**
-
-- The TUN default route sends ALL system traffic through the TUN device into Xray-core. Without special handling, xray's own `freedom` outbound traffic would loop back into TUN
-- **Root mode:** Xray runs under a dedicated UID (61000+ range). `ip rule uidrange` + table 100 routes xray traffic through the physical gateway, bypassing TUN
-- **Capability mode (no root):** Freedom outbound sets `SO_MARK` via xray's `sockopt.mark`. `ip rule fwmark 1 table 100` routes marked packets through the physical gateway. Works under file capabilities — no root needed
-- User applications retain their normal routing and stay under TUN protection
-- This ensures `direct` outbound connections from xray bypass TUN while all user traffic stays protected
-- **Incoming connections to local services** (e.g., a web or game server) are also handled correctly via conntrack-based reply routing: incoming flows on the physical interface are tagged in the connection tracker, and reply packets are marked with `fwmark 1` to bypass TUN and exit through the physical gateway. Works for both host-local servers and Docker-published ports, in both nftables and iptables backends
-
-**Split tunnel architecture:**
-
-- **cgroup v2 isolation**: Applications launched via `whoisthat run` are placed into a transient systemd user slice named `whoisthat_split.slice` (`user.slice/user-<uid>.slice/user@<uid>.service/whoisthat_split.slice`).
-- **nftables socket classification**: The dedicated table `inet whoisthat_split` installs an `output` chain hook (`type route hook output priority -150`). It matches outgoing sockets by `socket cgroupv2 level 4` against the slice cgroup path. Packets generated by processes inside the slice are marked with a dedicated firewall mark:
-  - `fwmark 1` in **exclude** mode
-  - `fwmark 2` in **include** mode
-- **Policy routing**:
-  - `exclude` mode: `ip rule fwmark 1 table 100` directs traffic to routing table 100 (which routes default via the physical gateway).
-  - `include` mode: `ip rule fwmark 2 table 200` directs traffic to routing table 200 (which routes default via `whoisthattun`), while the main system routing table continues using the physical gateway.
-- **Postrouting NAT masquerading**: Because local sockets may initially bind to the default interface IP (`198.18.0.1` on TUN) before packet output routing hooks execute, the core installs an nftables `postrouting` NAT rule (`masquerade`) on physical egress for marked packets. This guarantees correct source IP headers without connection timeouts on physical LANs.
-- **IPv6 dual-stack leak prevention**: If the local network has no IPv6 gateway but the VPN tunnel has IPv6, dual-stack apps (e.g. Spotify, browsers) attempting Happy Eyeballs connections would fall back to the tunnel. In `exclude` mode, table 100 installs an unreachable default route for IPv6 (`ip -6 route replace unreachable default table 100`), instantly dropping IPv6 and forcing immediate fallback to physical IPv4.
-
-### HWID (Device Identification)
-
-When subscription updates are fetched, the core sends HTTP headers identifying the device (Remnawave/Happ standard):
-
-| Header | Value | Source |
-| -------- | ------- | -------- |
-| `x-hwid` | `1fb1e0141ab3e35a` | Auto-generated 8-byte hex (stored in config.json) |
-| `x-device-os` | `Linux` | `runtime.GOOS` |
-| `x-ver-os` | `6.12.0-arch1-1` | `uname -r` |
-| `x-device-model` | `Arch Linux` | `/etc/os-release` PRETTY_NAME |
-| `user-agent` | `whoisthat-core/v0.2.0` | User-configurable (Settings) |
-
-Response headers (`x-hwid-max-devices-reached`, `x-hwid-not-supported`, `x-hwid-limit`) are inspected and trigger warnings when device limits are reached.
-
-HWID can be toggled off, reset, or have its user-agent customized in Settings.
-
----
-
-## TCP API Protocol
-
-### Wire format
-
-```text
-┌──────────────┬───────────────────────────┐
-│ 4 bytes (BE) │ JSON payload              │
-│ uint32 len   │ {"msg":"...","data":{...}}│
-└──────────────┴───────────────────────────┘
-```
-
-Both client→core commands and core→client notifications use the same framing. The core broadcasts notifications to all connected clients.
-
-### Commands (Client → Core)
-
-| Message | Data | Response |
-| --- | --- | --- |
-| `get-application-state` | `{}` | `application-state` |
-| `connect` | `{"profile":{"id":int,"group_id":int}}` | `status-changed` |
-| `disconnect` | `{}` | `status-changed` |
-| `add-profiles` | `{"uris":"...","group_id":int}` | `profiles-added` |
-| `delete-profiles` | `{"profiles":[{"id":int,"group_id":int}]}` | `profiles-deleted` |
-| `test-profile` | `{"profile":{"id":int,"group_id":int},"method":"str"}` | `profile-updated` |
-| `enable-tun` | `{}` | `tun-status-changed` |
-| `disable-tun` | `{}` | `tun-status-changed` |
-| `is-root` | `{}` | `is-root-answer` |
-| `update-profile` | `{"Profile":{"id":int,"group_id":int},"Name":"str"}` | `profile-updated` |
-| `update-group` | `{"id":int,"name":"str","subscription_url":"str"}` | `group-updated` |
-| `add-group` | `{"name":"str","subscription_url":"str"}` | `group-added` |
-| `delete-group` | `{"id":int}` | `group-deleted` |
-| `update-subscription` | `{"group_id":int}` | `subscription-updated` |
-| `set-tun-name` | `{"tun_name":"str"}` | `tun-name-updated` |
-| `set-hwid` | `{"enabled":true/false,"user_agent":"str","reset":true/false}` | `hwid-updated` |
-| `get-routing` | `{}` | `routing-updated` |
-| `update-routing` | `{"config":{...}}` | `routing-updated` |
-| `die` | `{}` | (stops core) |
-| `set-kill-switch` | `{"enabled":bool}` | `kill-switch-updated` |
-| `set-split-tunnel` | `{"mode":"off"\|"exclude"\|"include"}` | `split-tunnel-updated` |
-| `set-autoconnect` | `{"enabled":bool,"group_id":int,"profile_id":int,"mode":"proxy"\|"tun"}` | `autoconnect-updated` |
-| `test-group` | `{"group_id":int,"method":"str"}` | `profile-updated` / `test-progress` |
-| `cancel-tests` | `{}` | (cancels active latency tests) |
-| `set-test-config` | `{"method":"str","samples":int,"concurrency":int,"timeout":int,"endpoint":"str","auto_test":bool}` | `test-config-updated` |
-
-### Notifications (Core → All Clients)
-
-| Message | Data |
-| --- | --- |
-| `application-state` | Full state: groups, profiles, connection status, TUN status, HWID info, kill switch, autoconnect |
-| `status-changed` | `{"connection":"connected"\|"disconnected","profile":{...}}` |
-| `profiles-added` | `{"profiles":[...]}` |
-| `profiles-deleted` | `{"deleted-profiles":[...]}` |
-| `profile-updated` | `{"profile":{...}}` (also fires on test result) |
-| `group-added` | `{"id":int,"name":"str","subscription_url":"str"}` |
-| `group-deleted` | `{"id":int}` |
-| `group-updated` | `{"id":int,"name":"str",...}` (full Group object) |
-| `subscription-updated` | `{"group_id":int,"group":{...},"profiles":[...]}` |
-| `tun-status-changed` | `{"is_enabled":bool}` |
-| `tun-name-updated` | `{"tun_name":"str"}` |
-| `is-root-answer` | `{"IsRoot":bool}` |
-| `hwid-updated` | `{"enabled":bool,"hwid":"str","user_agent":"str","platform":"str","kernel":"str","model":"str"}` |
-| `traffic-stats` | `{"proxy_up":int,"proxy_down":int,"direct_up":int,"direct_down":int}` |
-| `routing-updated` | `{"config":{...}}` |
-| `warn` | `{"key":"str","content":"str"}` |
-| `kill-switch-updated` | `{"enabled":bool}` |
-| `split-tunnel-updated` | `{"mode":"off"\|"exclude"\|"include"}` |
-| `autoconnect-updated` | `{"enabled":bool,"mode":"proxy"\|"tun"}` |
-| `test-progress` | `{"current":int,"total":int}` |
-| `test-config-updated` | Full test configuration object |
-
-### Profile structure
-
-```json
-{
-  "id": 1,
-  "group_id": 0,
-  "nano-id": "abc123",
-  "name": "My Server",
-  "protocol": "vless",
-  "uri": "vless://...",
-  "address": "1.2.3.4",
-  "host": "example.com",
-  "test-result": 45
-}
-```
-
-`test-result`: `>0` = median latency in ms across N samples, `-1` = failed, `-2` = testing in flight, `0` = untested. Each profile also carries optional `tested_at` (unix ts the last successful test completed), `loss-pct` (percentage of samples that failed), and `jitter-ms` (max − min latency of successful samples).
-
-### Group structure
-
-```json
-{
-  "id": 1,
-  "name": "My Sub",
-  "subscription_url": "https://...",
-  "last_id": 42,
-  "sub_last_updated": 1712345678,
-  "sub_expires": 1720000000,
-  "sub_upload": 1048576,
-  "sub_download": 52428800,
-  "sub_total": 107374182400
-}
-```
-
-Subscription metadata (`sub_*`) is populated from the `subscription-userinfo` HTTP header returned by the subscription server. Fields are `omitzero` — omitted from JSON when zero.
-
----
-
-## Usage
-
-### Navigation
+### Essential Keybindings
 
 | Key | Action |
-| --- | --- |
-| `j` / `↓` | Move cursor down |
-| `k` / `↑` | Move cursor up |
-| `J` / `Alt+↓` / `Shift+↓` / `Alt+j` | Move focused profile or group down (instant reorder, persistent) |
-| `K` / `Alt+↑` / `Shift+↑` / `Alt+k` | Move focused profile or group up (instant reorder, persistent) |
-| `h` / `←` | Collapse group (when on group header) or jump to parent group |
-| `l` / `→` | Expand group (when on group header) or switch focus to Details panel |
-| `Space` | Toggle group collapse/expand (when on group header) |
-| `g` | Jump to top |
-| `G` | Jump to bottom |
-| `Tab` | Open compact Tab Switcher popup (or toggle Tree ↔ Details in single-panel mode) |
-| `/` | Search / filter profiles (type to filter, Esc to clear) |
-| `h` / `?` | Show help (context-aware) |
-| `Mouse` | Left-click to select/connect, toggle groups, switch tabs, toggle TUN, or navigate settings |
+| :---: | :--- |
+| <kbd>j</kbd> / <kbd>k</kbd> | Move cursor down / up |
+| <kbd>c</kbd> / <kbd>Enter</kbd> | Connect to selected profile |
+| <kbd>d</kbd> | Disconnect active connection |
+| <kbd>v</kbd> | Toggle between TUN mode (system-wide) and Proxy mode |
+| <kbd>t</kbd> / <kbd>T</kbd> | Test all profiles / test focused profile |
+| <kbd>U</kbd> / <kbd>u</kbd> | Add subscription group / refresh active subscription |
+| <kbd>a</kbd> | Import single proxy URI (`vless://`, `hy2://`, etc.) |
+| <kbd>p</kbd> | Open Routing Presets catalog (Tab 2) |
+| <kbd>1</kbd> – <kbd>5</kbd> | Switch tabs (Profiles, Routing, Traffic, Logs, Settings) |
+| <kbd>q</kbd> | **Detach TUI** (VPN stays connected in background) |
+| <kbd>Q</kbd> | **Quit completely** (shuts down VPN and exits) |
 
-### Connection
-
-| Key | Action |
-| --- | --- |
-| `c` / `Enter` | Connect to selected profile (or toggle group fold if on group header) |
-| `d` | Disconnect |
-| `t` | Test all profiles (starts from cursor, top-to-bottom, dedup) |
-| `T` | Test focused profile or subscription group only |
-| `C` | Cancel in-flight latency tests |
-| `v` | Toggle TUN mode (checks caps first; on first run offers one-time `pkexec setcap` setup, then enables TUN) |
-
-### Profiles & Groups
-
-| Key | Action |
-| --- | --- |
-| `J` / `K` | Move group/profile up/down within current list |
-| `a` | Import profile URI (clipboard or manual input — vless://, vmess://, trojan://, ss://, socks://, hysteria2://, hy2://) |
-| `x` | Delete selected profile |
-| `X` | Delete current group (with confirmation) |
-| `e` | Edit group (name + subscription URL) **or** rename selected profile |
-| `U` | Add new group (name + subscription URL) |
-| `u` | Update subscription (refresh profiles from URL) |
-| `y` | Copy selected profile URI to clipboard |
-| `Ctrl+V` | Paste from clipboard in input popups |
-
-### Routing Tab Shortcuts (Tab 2)
-
-| Key | Action |
-| --- | --- |
-| `←` / `→` | Switch selected group for routing |
-| `H` / `h` | Open Happ Routing Profiles popup (view, activate, deactivate `o`, delete `d`/`x`) |
-| `m` | Cycle group routing mode (`auto` → `manual` → `subscription` → `auto`) |
-| `i` | Import Happ routing link (`happ://routing/...`) from clipboard into selected group |
-| `p` / `P` | Open Presets catalog (Ads & Trackers, Bypass RU/LAN, Media, Telegram, AI, Socials) |
-| `a` | Add new manual routing rule |
-| `Space` | Toggle rule enabled/disabled (live hot-reload) |
-| `e` / `Enter` | Edit selected rule |
-| `x` / `Delete` | Delete selected rule |
-
-### Tabs & Quit
-
-| Key | Action |
-| --- | --- |
-| `1` | Profiles tab (`Esc` from other tabs) |
-| `2` / `r` | Routing rules tab |
-| `3` / `m` | Traffic monitoring tab (real-time Braille charts) |
-| `4` / `l` | Logs view (live tail with auto-scroll, `f` to filter by level) |
-| `5` / `s` | Settings tab |
-| `Tab` | Open compact Tab Switcher popup |
-| `Esc` | Back to Profiles tab, return from Details to Tree, or close active popup |
-| `q` | Detach TUI (VPN stays connected in background) |
-| `Q` / `Ctrl+C` | Full quit (stop VPN + exit) |
-
-### Settings
-
-| Setting | Values | Description |
-| --- | --- | --- |
-| Theme | Tokyo Night / Catppuccin Mocha / Nord / Dracula / Gruvbox Dark / Solarized Dark / Cyberpunk / Monokai Pro | Curated dark color palettes (live cycle with Enter/Space, saved to `config.toml`) |
-| Autoconnect | on/off | Auto-connect to last used profile on startup (core handles boot autostart) |
-| Autostart mode | proxy/tun | VPN mode for boot autostart (proxy = SOCKS5, tun = full system VPN) |
-| Systemd autostart | on/off | Start VPN core at boot via systemd user service (auto-enables linger) |
-| Show IP | on/off | Display public IP in top bar |
-| TUI log | on/off | Enable Rust TUI debug log (`~/.local/share/whoisthat/tui.log`) |
-| Log level | error/warn/info/debug/trace | Minimum log level for TUI and core |
-| Test method | tcp/http-get/http-head | Latency test method (tcp = direct dial prefilter, http = via SOCKS5 proxy, multi-sample) |
-| Test samples | 1/3/5/10 | How many HTTP round-trips per profile test (median is reported) |
-| Test concurrency | 4/8/16/32/64 | Max simultaneous in-flight test subprocesses |
-| Test timeout | 3s/5s/10s/15s | Per-sample HTTP timeout |
-| Test endpoint | cloudflare/gstatic/bing | Target URL for SOCKS5-routed HTTP tests (cycles to fallback on failure) |
-| Auto-test on refresh | on/off | Automatically test profiles after a successful `u` subscription refresh |
-| TUN name | editable text | TUN interface name (1-15 chars, letters/digits/underscore/dash, default `whoisthattun`) |
-| Kill Switch | on/off | Block all non-VPN traffic on connection drop (dedicated firewall table, works in both SOCKS and TUN modes) |
-| Split tunnel | off / exclude / include | Route specific apps via cgroup v2. `exclude` = launched apps bypass VPN; `include` = only launched apps use VPN |
-| HWID: Enabled | on/off | Send HWID headers with subscription requests |
-| HWID | 1fb1e0141ab3e35a | Device identifier (read-only, auto-generated) |
-| Reset HWID | ⏎ | Generate a new random HWID |
-| User-Agent | whoisthat-core/v0.2.0 | User-Agent header (editable — press Enter to modify) |
-
-Navigate with `j`/`k`, press `Enter`/`Space` to toggle, cycle values, open edit popups, or execute actions.
-
-### TUN Mode
-
-TUN mode creates a virtual interface (configurable in Settings, default `whoisthattun`), configures `iptables` or `nftables` rules (DNS hijack, MASQUERADE — auto-detected at runtime), and routes all system traffic through the VPN. DNS queries are redirected to the first server in `dns-servers` config.
-
-**No root required.** TUN mode runs under file capabilities (`cap_net_admin`, `cap_net_raw`, `cap_setpcap`). On first launch, the TUI detects missing capabilities and offers a one-time `pkexec` setup. After that, TUN works as a normal user. The install script sets capabilities automatically.
-
-**How it works internally:**
-
-- `whoisthat-core` has `cap_net_admin,cap_net_raw,cap_setpcap=+ep` set on its binary
-- At startup, the core uses `capset(2)` to move permitted capabilities into the inheritable set (`CAP_SETPCAP` enables this)
-- `prctl(PR_CAP_AMBIENT_RAISE)` promotes them to the ambient set
-- All subprocesses (`sh`, `ip`, `iptables`/`nftables`, `xray`) automatically inherit the capabilities
-- No `sudo`, no root, no setuid — pure Linux capabilities
-
-For debugging or manual setup: `sudo setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep /path/to/whoisthat-core`.
-
-**Capability detection** (`v` key before enabling TUN) creates a real test TUN device (`wt-capcheck`) and tears it down — a true functional check, not just a UID test. This means capabilities mode works correctly even when the binary has `+ep` but the user is not root.
-
-### Split Tunnel
-
-Split tunnel allows routing specific applications differently from the rest of the system without requiring third-party network namespaces or separate proxy clients.
-
-You configure the operating mode in the TUI under **Settings → Network → Split tunnel** (press `Enter` or `Space` to cycle `off` / `exclude` / `include`), and launch target applications using the `whoisthat run` CLI command:
+### Headless CLI Quick Toggles
 
 ```bash
-whoisthat run -d spotify           # launch Spotify in background (bypassing or including VPN)
-whoisthat run curl 2ip.io          # run attached in terminal to verify external IP
-```
-
-#### Modes
-
-- **`exclude`** *(Default / Recommended)* — The entire operating system is protected by the VPN, but applications launched via `whoisthat run` **bypass the tunnel** and route directly through your physical gateway.
-  - *Best for*: Spotify, domestic banking, Russian web services (`.ru`/Госуслуги), online gaming (Steam, Discord voice), torrent clients, and local network services.
-- **`include`** — The entire operating system connects directly via your physical gateway (no system-wide default TUN route is installed). **Only** applications launched via `whoisthat run` are routed through the VPN tunnel.
-  - *Best for*: Dedicated private browsing (e.g. running only a specific browser through the VPN), web scraping, or testing foreign endpoints without changing system-wide network routing.
-
-> [!WARNING]
-> **Security note:** In `include` mode, only applications explicitly launched via `whoisthat run` are protected by the VPN. All other applications and background traffic connect unprotected over your physical connection.
-
-#### Launching Applications (`whoisthat run`)
-
-The `whoisthat run` command supports two execution styles:
-
-##### 1. Background / Detached Mode (`-d`, `--detach`, `-b`, `--background`)
-
-When launching GUI applications (Spotify, Chrome, Telegram, Steam), you usually want them to run independently of your terminal session so you can keep working or close the terminal entirely:
-
-```bash
-# Launch Spotify in the background
-whoisthat run -d spotify
-
-# Launch Google Chrome / Chromium in the background
-whoisthat run -d google-chrome-stable
-
-# Launch Telegram Desktop in the background
-whoisthat run -b telegram-desktop
-```
-
-- Spawns the application as an independent transient systemd user service (`systemd-run --user --slice=whoisthat_split.slice --same-dir`).
-- Automatically preserves and forwards graphical session environment variables (`DISPLAY`, `WAYLAND_DISPLAY`, `XDG_CURRENT_DESKTOP`).
-- The command returns immediately. **The application continues running even after you close the terminal or log out of the shell.**
-
-##### 2. Interactive / Foreground Mode
-
-When running terminal commands, scripts, or CLI utilities where you need to see standard output, provide input, or capture exit codes:
-
-```bash
-# Check external IP directly from terminal to verify bypass/tunneling
-whoisthat run curl 2ip.io
-
-# Play a stream or video in mpv
-whoisthat run mpv "https://example.com/video.mp4"
-```
-
-- Runs inside a transient systemd user scope (`systemd-run --user --scope --slice=whoisthat_split.slice`).
-- Connects directly to terminal standard I/O (stdin, stdout, stderr) and propagates the process exit code.
-
-#### Important: Single-Instance Applications (Spotify, Chrome, Discord)
-
-Many Linux desktop applications (notably **Spotify**, **Chromium/Chrome**, **Discord**, **Telegram**, **Slack**) enforce a single running instance. When you execute `spotify` while an instance is already running (e.g. minimized to tray or running in the background):
-
-1. The new process detects the existing instance and forwards arguments to it via D-Bus / IPC.
-2. The existing instance opens or focuses a window, and the newly launched process exits immediately.
-3. Because the existing instance was started *outside* the split-tunnel slice, it **remains in its original cgroup and continues using the VPN!**
-
-**How to properly launch single-instance apps in Split Tunnel:**
-
-1. **Quit the existing instance completely**:
-   ```bash
-   pkill -9 spotify
-   # or for Chrome / Discord:
-   pkill -f chrome
-   pkill -f discord
-   ```
-2. **Launch via `whoisthat run -d`**:
-   ```bash
-   whoisthat run -d spotify
-   ```
-3. *(Alternative for Chromium/Chrome)*: If you want to run Chrome through the VPN and simultaneously run another Chrome instance bypassing the VPN, launch the split instance with a separate user data directory:
-   ```bash
-   whoisthat run -d google-chrome-stable --user-data-dir="$HOME/.config/chrome-split"
-   ```
-
-#### Desktop Application Integration (`.desktop` files)
-
-You can configure desktop apps to **always** start through Split Tunneling when launched from your application menu, application runner, or dock (GNOME, KDE, Rofi, Wofi, dmenu):
-
-1. Copy the system desktop entry to your user directory:
-   ```bash
-   cp /usr/share/applications/spotify.desktop ~/.local/share/applications/
-   ```
-2. Open `~/.local/share/applications/spotify.desktop` in your editor and prefix the `Exec=` line with `whoisthat run -d`:
-   ```ini
-   # Original:
-   Exec=spotify %U
-
-   # Updated:
-   Exec=whoisthat run -d spotify %U
-   ```
-3. Update your desktop database:
-   ```bash
-   update-desktop-database ~/.local/share/applications
-   ```
-Now clicking the app icon in your desktop launcher or application dock will launch it directly into the split-tunnel slice without opening any terminal window.
-
-#### Technical Implementation Details
-
-WhoisThat uses pure kernel mechanisms for split tunneling without requiring root privileges:
-
-- **cgroup v2 isolation**: Processes run in `whoisthat_split.slice` under the user systemd session (`user.slice/user-<uid>.slice/user@<uid>.service/whoisthat_split.slice`, level 4 below cgroup root).
-- **nftables socket classification**: Core installs table `inet whoisthat_split` with a route-priority `output` hook (`priority -150`). It matches outgoing sockets by `socket cgroupv2 level 4` and assigns fwmark (`1` for exclude, `2` for include). The `type route` hook triggers an immediate re-routing of the packet.
-- **Policy routing**:
-  - `exclude`: fwmark 1 routes via `table 100` (physical gateway bypass table).
-  - `include`: fwmark 2 routes via `table 200` (`dev <tun>`), while unmarked traffic falls through to the physical main table.
-- **Postrouting NAT Masquerade**: Outbound sockets may initially bind to the TUN IP (`198.18.0.1`) before the `output` hook applies fwmark rerouting. An nftables `postrouting` masquerade rule dynamically rewrites the source IP on physical interface egress so LAN routers and external hosts accept the traffic.
-- **IPv6 Dual-Stack / Happy Eyeballs Protection**: If the physical connection has no IPv6 default gateway but the TUN interface provides IPv6, dual-stack apps (e.g. Spotify, modern browsers) could inadvertently leak traffic through the VPN's default IPv6 route. In `exclude` mode, an unreachable route (`ip -6 route replace unreachable default table 100`) is installed in table 100. This causes dual-stack apps to fail fast on IPv6 and instantly fall back to IPv4 on the physical gateway without delays or VPN leaks.
-- **Live Reconciliation**: Changing split mode in Settings while TUN is active immediately reapplies all routing and firewall rules on the fly without needing to disconnect.
-
-### Systemd Integration
-
-WhoisThat Core can run as a **systemd user service**, starting the VPN engine at boot — before you log in — via [lingering](https://wiki.archlinux.org/title/Systemd/User#Automatic_start-up_of_systemd_user_instances). Toggle it from **Settings → Systemd autostart** or manage it manually from the shell.
-
-**Unit file:** `~/.config/systemd/user/whoisthat-core.service`
-
-```ini
-[Unit]
-Description=WhoisThat VPN Core
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-ExecStart=/path/to/whoisthat-core
-Environment=WHOISTHAT_LOG_LEVEL=warn
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=default.target
-```
-
-The TUI generates this unit automatically when you enable the setting (it resolves the absolute path to `whoisthat-core` and substitutes the current log level). It also enables lingering via `pkexec loginctl enable-linger $USER` so the user service starts at boot.
-
-**Service control:**
-
-```bash
-systemctl --user status  whoisthat-core   # current status
-systemctl --user start   whoisthat-core   # start now
-systemctl --user stop    whoisthat-core   # stop now
-systemctl --user restart whoisthat-core   # restart
-systemctl --user disable whoisthat-core   # remove from boot
-```
-
-**Logs:**
-
-```bash
-# Live tail of the core's stdout/stderr (captured by journald)
-journalctl --user -u whoisthat-core -f
-
-# Last 200 lines
-journalctl --user -u whoisthat-core -n 200
-
-# Today's logs only
-journalctl --user -u whoisthat-core --since today
-```
-
-The core also writes its own rotating log to `~/.config/whoisthat/core.log` (20 MB rotation, one backup) regardless of the systemd setting. The journal captures the subprocess-prefixed output; the file log contains the daemon's own structured lines.
-
-**Linger check / enable:**
-
-```bash
-loginctl show-user $USER --property=Linger   # → Linger=yes/no
-sudo loginctl enable-linger  $USER            # allow user services at boot
-sudo loginctl disable-linger $USER           # revoke
-```
-
-**Detach vs systemd:** `q` in the TUI detaches but the core keeps running *for this session*. The systemd service is for boot autostart — they're orthogonal. You can detach the TUI, reattach later, and the systemd service continues independently across reboots.
-
-**After rebuilding the core:** the unit's `ExecStart=` points at a binary with a new inode. `systemctl --user restart whoisthat-core` is enough — no `daemon-reload` needed unless you edit the unit file by hand. The TUI runs `daemon-reload` automatically when toggling the setting.
-
-### Subscription Workflow
-
-1. Press `U` to add a new group — enter a name and subscription URL. Profiles are automatically fetched, parsed, and latency-tested immediately upon creation!
-2. Press `u` with the group selected to manually re-fetch and update profiles at any time (sends HWID headers if enabled)
-3. The details panel shows subscription metadata when available (traffic used, expiry, last updated)
-4. Press `e` to edit the group name or subscription URL (saving an updated URL triggers an automatic profile update immediately)
-5. Press `X` to delete the entire group and its profiles
-
-> [!TIP]
-> You can also add subscriptions headlessly via the CLI (`whoisthat add-sub <url> [name]`), or directly from your web browser with a single click using deep links (`wit://sub?url=...`).
-
----
-
-## Deep Links & Browser Integration (`wit://`)
-
-WhoisThat supports desktop deep linking via the custom URL scheme `wit://`. This allows web dashboards, VPN provider portals, and personal subscription links to import profiles or entire subscriptions with a single click in any web browser (Google Chrome, Firefox, Brave, etc.), as well as trigger quick actions.
-
-### Registering Protocol Handler
-
-The deep link protocol handler is registered via an XDG desktop entry (`whoisthat.desktop`) associating the `x-scheme-handler/wit` MIME type. It is configured **automatically in the background whenever you launch the WhoisThat TUI**, as well as by `install.sh` and AUR packages.
-
-You can also register or refresh it manually at any time via the CLI:
-
-```bash
-whoisthat register-deeplink
-```
-
-This writes `~/.local/share/applications/whoisthat.desktop` and executes:
-```bash
-xdg-mime default whoisthat.desktop x-scheme-handler/wit
-```
-
-### Supported URL Schemes & Formats
-
-#### 1. Subscriptions (`sub` / `subscription`)
-Imports a subscription URL, creates a subscription group, and automatically fetches all profiles immediately:
-
-- **Query parameter format**:
-  - `wit://sub?url=https%3A%2F%2Fexample.com%2Fsub%2Fmytoken&name=Premium`
-  - `wit://subscription?url=https%3A%2F%2Fexample.com%2Fsub`
-- **Path format**:
-  - `wit://sub/https://example.com/sub/mytoken`
-- **Direct HTTPS prefix**:
-  - `wit://https://example.com/sub/mytoken`
-
-#### 2. Single Profile Import (`import`)
-Imports an individual proxy profile into a group:
-
-- **Query parameter format**:
-  - `wit://import?uri=vless%3A%2F%2F...&name=Frankfurt-01&group=MyServers`
-- **Direct proxy URI prefix**:
-  - `wit://vless://...`
-  - `wit://vmess://...`
-  - `wit://trojan://...`
-  - `wit://ss://...`
-  - `wit://hy2://...` or `wit://hysteria2://...`
-
-#### 3. Happ Routing Import
-Imports a Happ routing profile into a specified or auto-detected group:
-- **Direct Happ URI**:
-  - `happ://routing/add/{base64}`
-  - `happ://routing/onadd/{base64}`
-  - `happ://routing/off`
-- **Wrapped within `wit://`**:
-  - `wit://happ://routing/add/{base64}`
-  - `wit://routing?link=happ%3A%2F%2Frouting%2Fadd%2F...&group=MyServers`
-
-#### 4. Quick Actions
-Control the VPN directly via browser links or shell launchers:
-- `wit://connect?profile=1` or `wit://connect?name=Frankfurt-01`
-- `wit://disconnect`
-- `wit://toggle`
-
-### Testing Deep Links Locally
-
-You can test any deep link using either the CLI subcommand or your system's `xdg-open`:
-
-```bash
-# Via whoisthat CLI
-whoisthat handle-url "wit://sub?url=https%3A%2F%2Fexample.com%2Fsub&name=Testing"
-whoisthat handle-url "happ://routing/add/..." --group "MyServers"
-whoisthat "wit://toggle"
-
-# Via system URL opener (simulates clicking a browser link)
-xdg-open "wit://sub?url=https%3A%2F%2Fexample.com%2Fsub&name=Testing"
+whoisthat -t             # Smart toggle connection (reconnects to last profile or disconnects)
+whoisthat -mt            # Toggle between TUN mode and Proxy mode
+whoisthat -kt            # Toggle Kill-Switch protection
+whoisthat status -s      # Compact status (e.g. [Connected] [TUN] ↓ 2.4 MB/s ↑ 410.0 KB/s)
+whoisthat run -d spotify # Launch Spotify bypassing the VPN tunnel
+whoisthat doctor         # Run system capability and runtime diagnostic suite
 ```
 
 ---
 
-## CLI & Desktop Integration
+## Complete Documentation
 
-WhoisThat provides a rich set of non-interactive command-line subcommands and shorthand flags. These can be used in shell scripts, custom keyboard shortcuts, desktop status bars (**Waybar**, **Polybar**, **i3status**, **dwmbars**), or desktop environment extensions (**GNOME Shell Extension**).
+Full, comprehensive documentation with technical deep-dives, configuration guides, and architectural diagrams is available at:
 
-CLI commands connect to the core over its Unix domain socket, execute instantly, and exit with code `0` without initializing the terminal or TUI layout.
+👉 **[https://docs.tuqise.com/](https://docs.tuqise.com/)**
 
-### Commands & Shorthand Flags
-
-| Command / Flag | Shorthand | Description |
-| --- | --- | --- |
-| `whoisthat --toggle` / `toggle` | `-t` | Toggle VPN state (smart toggle: disconnects if active, or reconnects to last profile) |
-| `whoisthat --start [profile]` / `connect` | `-c [profile]` | Connect to profile by ID, `group:id`, or name (connects to last profile if omitted) |
-| `whoisthat --stop` / `disconnect` | `-d` | Disconnect the active VPN session |
-| `whoisthat --mode-toggle` / `toggle-tun` | `-mt` | Toggle between TUN mode (system-wide) and Proxy mode (SOCKS5/HTTP) |
-| `whoisthat --mode-tun` / `--tun` | — | Force enable TUN mode |
-| `whoisthat --mode-proxy` / `--proxy` | — | Force enable Proxy mode (TUN disabled) |
-| `whoisthat --systemd-toggle` | `-st` | Toggle systemd user service (`whoisthat-core.service`) |
-| `whoisthat --systemd-on` / `--enable` | — | Enable and start systemd user service (auto-configures linger) |
-| `whoisthat --systemd-off` / `--disable` | — | Disable and stop systemd user service |
-| `whoisthat --systemd-status` | — | Check if systemd user service is enabled or disabled |
-| `whoisthat --killswitch-toggle` | `-kt` | Toggle kill-switch firewall protection |
-| `whoisthat --killswitch-on` / `--off` | — | Enable or disable kill-switch protection |
-| `whoisthat status --short` | `status -s` | Single-line compact status: `[Connected] [TUN] ↓ 1.2 MB/s ↑ 340.0 KB/s` |
-| `whoisthat status --json` | `status -j` | Machine-readable JSON status snapshot |
-| `whoisthat status --watch --json` | `status -w -j` | Continuous live streaming (1 update per second NDJSON for desktop widgets) |
-| `whoisthat --profiles [--json]` | `-p` | List all subscription groups and profiles |
-| `whoisthat --ip` | `ip` | Fetch and print public IPv4 and IPv6 |
-| `whoisthat doctor [--json]` | — | Run comprehensive system, capabilities, polkit, and IPC diagnostics |
-| `whoisthat run [-d] <app> [args...]` | `-b`, `--detach`, `--background` | Launch application inside split-tunnel slice (`-d` runs detached in background) |
-| `whoisthat add-sub <url> [name]` | — | Add a subscription group by URL and immediately fetch & test its profiles |
-| `whoisthat handle-url <url> [--group <id|name>]` | `<url>` | Handle a `wit://` or `happ://` deep link or import URL from browser or CLI |
-| `whoisthat register-deeplink` | — | Register `wit://` protocol handler (`.desktop` entry & `xdg-mime`) |
-| `whoisthat --version` | `-v` | Display program version |
-| `whoisthat --help` | `-h` | Display full help and flag list |
-
-### Status Bar Formatting Examples
-
-When using `whoisthat status --short` (or `-s`):
-* **Connected via TUN**: `[Connected] [TUN] ↓ 1.2 MB/s ↑ 340.0 KB/s`
-* **Connected via Proxy**: `[Connected] [Proxy] ↓ 1.2 MB/s ↑ 340.0 KB/s`
-* **Disconnected**: `[Disconnected]`
-* **Daemon offline**: `[Offline]`
-
-When using `whoisthat status --json` (or `-j`):
-```json
-{
-  "core_running": true,
-  "connected": true,
-  "status": "connected",
-  "mode": "tun",
-  "tun_enabled": true,
-  "group_id": 1,
-  "group_name": "Premium",
-  "profile_id": 3,
-  "profile_name": "Netherlands-10G",
-  "protocol": "vless",
-  "rx_speed_bytes": 1258291,
-  "tx_speed_bytes": 348160,
-  "rx_speed_human": "1.2 MB/s",
-  "tx_speed_human": "340.0 KB/s"
-}
-```
-
-### CLI Usage Examples
-
-```bash
-# Connection & mode toggling
-whoisthat doctor                      # Run full system & dependency diagnostics
-whoisthat -t                          # Smart-toggle VPN connection on/off
-whoisthat -c 2                        # Connect to profile #2 (or by name: whoisthat -c "Germany")
-whoisthat -mt                         # Toggle between TUN (system-wide) and Proxy modes
-whoisthat -kt                         # Toggle kill-switch firewall protection
-whoisthat --ip                        # Print public IPv4 and IPv6
-
-# Split Tunnel execution
-whoisthat run curl 2ip.io             # Run attached in terminal (verify bypass/tunneling)
-whoisthat run -d spotify              # Launch Spotify detached in background
-whoisthat run -d google-chrome-stable # Launch Chrome detached in background
-whoisthat run -b telegram-desktop     # Launch Telegram detached in background
-
-# Live monitoring & Desktop widgets
-whoisthat status --short              # Compact output for Waybar / Polybar / scripts
-whoisthat status --watch --json       # Real-time NDJSON stream for reactive applets
-whoisthat -st                         # Toggle boot autostart systemd user service
-
-# Subscriptions & Deep Links
-whoisthat add-sub "https://example.com/sub" "Premium"   # Add subscription and auto-fetch profiles
-whoisthat handle-url "wit://sub?url=https%3A%2F%2F..."  # Handle deep link from browser or CLI
-whoisthat register-deeplink                             # Register wit:// scheme handler in desktop environment
-```
-
-### GNOME Shell Extension
-
-WhoisThat features an official GNOME Shell extension for seamless desktop integration:
-
-- **Top Bar Indicator**: Live status dot (`●`), TUN/Proxy badge, and continuous bandwidth monitor (`↓ rx ↑ tx`) right on your desktop panel.
-- **Quick Controls**: 1-click connect/disconnect toggle, TUN mode switch, profile switcher grouped by subscription, and direct terminal TUI launcher.
-- **Customization**: Change top bar position (Right, Center, Left) with real-time relocation, toggle visible elements, and choose your preferred terminal emulator.
-
-Available on:
-- 📦 **GNOME Extensions**: [WhoisThat VPN Indicator on extensions.gnome.org](https://extensions.gnome.org/extension/10998/whoisthat-vpn-indicator/)
-- 💻 **Source Code & Guide**: [kvunoff/whoisthat-extension](https://github.com/kvunoff/whoisthat-extension)
+* 📖 **[Getting Started](https://docs.tuqise.com/guide/quick-start)** — Installation, setup, and first steps.
+* 🏛️ **[System Architecture](https://docs.tuqise.com/architecture/overview)** — Go daemon, IPC transport, and security model.
+* 🌐 **[Networking & TUN](https://docs.tuqise.com/networking/tun-mode)** — Rootless capabilities, DNS hijack, and Conntrack reply routing.
+* 🔀 **[Split Tunneling Guide](https://docs.tuqise.com/networking/split-tunnel)** — cgroup v2 transient slices, single-instance apps, and desktop integration.
+* 🔌 **[Desktop & Widgets](https://docs.tuqise.com/integrations/desktop-widgets)** — Waybar, Polybar, and GNOME Shell extension.
+* 📜 **[Wire Protocol & API](https://docs.tuqise.com/reference/protocol)** — Length-prefixed IPC specification and Python client example.
+* 🩺 **[Troubleshooting & Doctor](https://docs.tuqise.com/reference/troubleshooting)** — Health diagnostics matrix and common fixes.
 
 ---
 
-## Troubleshooting
+## Ecosystem & Extensions
 
-| Symptom | Likely cause | Fix |
-| --------- | ------------- | ----- |
-| `TUN mode needs network capabilities on core binary` popup | Missing caps on `whoisthat-core` (new inode after `go build`, fresh clone, new machine) | `sudo setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep ./core/core/whoisthat-core` (or accept the `pkexec` prompt the TUI offers) |
-| TUN toggle says "Checking root…" then nothing | Core has caps but kernel/distro blocks ambient set — rare on hardened kernels | Run `whoisthat-core` directly: `./core/core/whoisthat-core` and check `~/.config/whoisthat/core.log`; verify `CanTun()` tests a real TUN device `wt-capcheck` |
-| `Failed to connect to core: Connection refused` on startup | Port 4897 occupied by a stale core, or core crashed | `ss -tlnp \| grep 4897` to find the culprit; kill it, or `pkill -f whoisthat-core` |
-| TUI detaches but VPN drops when I close terminal | Ran with `q` (detach) — core keeps living, but was originally launched as foreground child of the shell | Use **Settings → Systemd autostart** so the core runs as a user service, independent of any terminal |
-| Profile test shows `err` | Server down, wrong creds, or firewall blocking the test port range | Check `~/.config/whoisthat/core.log` for the test config and dialer error; verify outbound on the `test-port-range` (config.json) is open |
-| Routing rule doesn't trigger | Disabled in the rules list, or geo files missing | Press `Space` to enable; for `geoip`/`geosite` rules check `~/.config/whoisthat/geo/*.dat` exists and is ≥10 MB; re-trigger download by removing the files and restarting |
-| Kill-switch left dangling rules after exit | `Q` full-quit killed the core before it could clean up firewall rules | Auto-healed: the next core startup reconciles orphaned `whoisthat_*` tables and `table 100`/split routing when no other core is running. To force it now, just restart the core. Manual fallback: `nft delete table inet whoisthat_ks 2>/dev/null` |
-| Settings toggle shows "Could not enable lingering" | `pkexec loginctl enable-linger $USER` failed or was cancelled | Run in a terminal: `sudo loginctl enable-linger $USER` then retry the toggle in the TUI |
-| `screen1.png` / `screen2.png` don't exist in build artifact | Screenshots are checked into the repo but not in `target/` — only used by the README on GitHub | Ignore — they're display-only, not runtime assets |
-| Logs pane is empty | No core log file, or log level filtering hides everything | Press `f` in the Logs tab to cycle the level filter; or raise log level in Settings |
-| `Cannot decrypt DB file` style errors in core log | Key file `~/.local/share/whoisthat/db/.key` was moved or deleted, but encrypted files remain | Keep the `.key` file — it's the AES-256-GCM master key, no fallback. If unsalvageable: stop core, delete `~/.local/share/whoisthat/db/`, restart to generate fresh key + empty DB |
-| Hysteria2 profile fails to connect with config error | Outdated Xray-core version (< v26.9.9) | Update Xray-core to v26.9.9 or later; WhoisThat automatically manages and updates its pinned runtime under `~/.local/share/whoisthat/runtimes/xray/` |
-| App still uses VPN (or still bypasses) when launched via `whoisthat run` | Target app is a single-instance app already running in the background (Spotify, Chrome, Discord) | Completely close/kill existing instances (`pkill -9 spotify` or `pkill -f chrome`) before launching via `whoisthat run -d` |
-| `whoisthat run` application closes when terminal is closed | App was launched in foreground mode without `-d` flag | Use `whoisthat run -d <app>` (or `-b`, `--detach`, `--background`) to launch as an independent transient systemd user service |
-| `whoisthat run: systemd-run not found` | System lacks systemd user session manager | Split tunneling requires systemd with `systemctl --user` session support |
-
-**If you hit something not listed here:** `tail -f ~/.config/whoisthat/core.log whoisthat.log` and reproduce. Both logs are the first place to look — not the source code.
+- **[GNOME Shell Extension](https://extensions.gnome.org/extension/10998/whoisthat-vpn-indicator/)** — Top-bar status badge, real-time speed monitor, and quick controls.
+- **[Deep Links (`wit://`)](https://docs.tuqise.com/integrations/deeplinks)** — One-click profile and subscription imports directly from web browsers.
 
 ---
 
-## Testing
+## Credits & License
 
-The project has unit tests for both the Rust TUI and the Go core. No external dependencies or network access required — all tests run in milliseconds.
-
-### Rust
-
-```bash
-cargo test
-```
-
-Covers (114 unit tests):
-
-- **Message dispatch** (`src/core_client/dispatch.rs`) — all notification message types (22+), unknown type handling, malformed JSON, profile reordering & moving, Xray progress
-- **Diagnostics & Doctor** (`src/doctor/checks.rs`, `src/doctor/types.rs`) — report item counting, status classification (pass/warn/fail/info), JSON serialization & deserialization
-- **Responsive layout geometry** (`src/ui/layout.rs`, `src/ui/app/helpers.rs`) — width/height tier categorization, threshold warnings (<45x8), responsive rect auto-bounding, side-by-side vs stacked splits, traffic card responsive modes
-- **Routing & Presets logic** (`src/ui/routing.rs`) — `form_to_rule` / `rule_to_form` for all 6 match types and 3 outbounds, preset definitions, idempotent preset application & toggling
-- **Traffic monitoring & history** (`src/ui/traffic.rs`) — ring buffer history initialization, rolling push, dynamic max-Y chart scaling
-- **Theme system** (`src/ui/theme.rs`) — theme selection, live cycling across all 8 curated palettes, persistence
-- **Tree state & navigation** (`src/ui/app/state.rs`) — group collapse/expansion, cursor clamping, test pending markers, profile moving and reordering
-- **Settings layout** (`src/ui/settings.rs`) — grouped layout, cursor navigation skipping headers, scroll clamping
-- **Text editor** (`src/text_edit.rs`) — `edit_text_field`: insert, backspace, delete, cursor movement, Home/End boundary conditions, Cyrillic UTF-8 editing
-- **CLI & Status formatting** (`src/cli.rs`) — CLI subcommands, offline and connected status JSON serialization, human-readable speed formatting
-- **Split-tunnel launcher** (`src/launcher.rs`) — `whoisthat run` usage code paths, foreground/background flag parsing (`-d`, `--detach`, `-b`), and PATH lookup
-- **URI parsing & decoding** (`src/ui/uri.rs`) — Hysteria2 URI parsing, query parameter extraction, percent-decoding for UTF-8 and special characters
-- **Deep links & URL handling** (`src/deeplink.rs`) — parsing `wit://` protocols (subscriptions with encoded or path URLs, direct HTTPS, profile imports, connect/disconnect/toggle actions, percent-decoding)
-
-### Go
-
-```bash
-cd core/core
-go test ./...
-```
-
-Covers:
-
-- **Crypto** (`lib/crypto`) — AES-256-GCM encrypt/decrypt round-trip, base64 wrappers, wrong key, short ciphertext, empty plaintext, nonce randomness
-- **Config** (`lib/AppConfig`) — default port values, DNS servers, HWID format (16 lowercase hex chars), HWID randomness, IPC socket-path resolution
-- **Database** (`db`) — path helpers, encrypt/decrypt round-trip via `writeEncryptedJSON`/`readEncryptedJSON`, encrypted file detection, key file creation and reuse across instances
-- **URI & Inbound Parser** (`lib/parser`) — URI protocol detection, VLESS/VMess/Trojan/Shadowsocks/SOCKS/Hysteria2 parsing, stream settings (Reality/Vision/TLS/xHTTP/gRPC/WS), Xray config generation, native TUN inbound injection
-- **Xray Runtime Manager** (`lib/xraymgr`) — pinned version resolution, architecture matching, SHA256 checksum parsing and verification, archive unpacking, background ensure
-- **Dynamic Port Pool** (`lib/PortPool`) — concurrent allocation and release of ephemeral ports for testing and stats API
-- **Traffic Statistics** (`lib/proxy/mainproxy`) — sysfs network interface reader, gRPC query error handling
-- **Latency Tester** (`lib/proxy/mainproxy`) — test request deduplication, multi-sample latency/jitter/loss calculation, epoch cancellation
-- **Preflight Checks** (`lib/TCPServer`) — detection of missing runtime binaries with actionable hints
-- **Network reconcile** (`lib/proxy/tun`) — startup orphan-rule teardown script covers every `whoisthat_*` table and is idempotent
-- **Split tunnel** (`lib/proxy/tun`) — generated exclude/include nftables `socket cgroupv2` + fwmark routing scripts, cgroup level matching, postrouting NAT masquerading, IPv6 unreachable fallback, teardown idempotency
-- **TCP/UDS server** (`lib/TCPServer`) — length-prefixed framing round-trip over a Unix domain socket pair
-
----
-
-## Development
-
-### Local dev loop
-
-No install step needed during development — `cargo run` plus a `go build` in `core/core/` is enough. The TUI auto-spawns `whoisthat-core` from `./core/core/whoisthat-core`, then `whoisthat-core` on `PATH`, then `/usr/local/bin/whoisthat-core`.
-
-```bash
-# Build core (must be first — TUI spawns this binary)
-cd core/core && go build -o whoisthat-core && cd ../..
-
-# Run TUI
-cargo run
-```
-
-**Gotcha:** every `go build` creates a new binary inode, so file capabilities (`setcap`) are **lost after rebuild**. The TUI detects this at startup and offers a one-time `pkexec setcap` — or re-run manually:
-
-```bash
-sudo setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep ./core/core/whoisthat-core
-```
-
-### Log files
-
-| File | Produced by | When | Default level |
-| -------- | ------------- | ----- | --------------- |
-| `whoisthat.log` (CWD) | Rust TUI | Always (file only, never to screen) | `warn` |
-| `~/.config/whoisthat/core.log` | Go core | Always, lumberjack rotation 20 MB + 1 backup | `warn` |
-| `/tmp/whoisthat-core.log` | Go core | Fallback if config dir is unwritable | `warn` |
-| `~/.local/share/whoisthat/tui.log` | Rust TUI | When "TUI log" setting is enabled in Settings | configured level |
-
-Enable verbose logs at runtime via env var (overrides config):
-
-```bash
-WHOISTHAT_LOG_LEVEL=debug cargo run
-```
-
-Or toggle from **Settings → TUI log** + **Log level** — both apply to the TUI and are forwarded to the spawned core.
-
-### Inspecting the core daemon manually
-
-By default the core listens on a Unix domain socket at `$XDG_RUNTIME_DIR/whoisthat/core.sock` (mode `0600`). Anything that speaks the length-prefixed JSON protocol over that socket can talk to it. Set `tcp-enabled: true` in the core config to additionally expose the legacy `127.0.0.1:4897` TCP listener. During development it's often useful to:
-
-```bash
-# Check if the core is up (UDS default)
-ss -xlp | grep core.sock
-# ...or the TCP listener, when tcp-enabled
-ss -tlnp | grep 4897
-
-# Tail the core's rotating log
-tail -f ~/.config/whoisthat/core.log
-
-# Inspect encrypted DB files (decryption requires the core; files are AES-256-GCM)
-ls -la ~/.local/share/whoisthat/db/
-```
-
-### Debugging routing / TUN rules at runtime
-
-```bash
-ip route show table 100                       # dedicated-UID / fwmark bypass table
-ip rule show | grep 1                         # fwmark rule
-nft list table 2> /dev/null || iptables -L -n # active firewall rules
-ip link show whoisthattun                     # the TUN interface
-```
-
-### Continuous Integration
-
-- **CI Workflow** (`.github/workflows/ci.yml`) — runs on push and PRs targeting `main`:
-  - **Rust**: `cargo fmt --all --check`, `cargo clippy --all-targets --no-deps`, `cargo test`
-  - **Go**: `go vet ./...`, `go build ./...`, `go test ./...`
-- **AUR Publish Workflow** (`.github/workflows/aur-publish.yml`) — triggers on every `v*` tag push:
-  1. Parse version from the tag
-  2. Clone the live AUR repo
-  3. Compute `pkgrel` (increment if `pkgver` matches latest AUR, otherwise reset to 1)
-  4. Regenerate `PKGBUILD` and `.SRCINFO` **in CI** (the files in the repo are reference-only)
-  5. Push to AUR using the `AUR_SSH_KEY` secret
-
-> [!NOTE]
-> `pkgrel` in `pkg/aur/PKGBUILD` is reference-only — never hand-bump it for releases. To publish a release, tag the commit and push the tag (`git tag v0.12.x && git push origin v0.12.x`).
-
----
-
-## File Structure
-
-```text
-whoisthat/
-├── Cargo.toml          ← Rust project manifest (TUI & CLI)
-├── README.md           ← Complete documentation and reference guide
-├── install.sh          ← Universal installer / updater
-├── src/                ← Rust TUI & CLI source
-│   ├── main.rs         ← Entry point: CLI routing, core daemon spawn/re-attach, terminal lifecycle
-│   ├── cli.rs          ← CLI subcommands & shorthand flags, status monitoring, JSON/NDJSON streams
-│   ├── doctor/         ← System & capability diagnostics (`whoisthat doctor`)
-│   │   ├── mod.rs      ← Module entry point
-│   │   ├── types.rs    ← Diagnostic models, pass/warn/fail statuses, reports
-│   │   └── checks.rs   ← Diagnostic checks: binaries, capabilities, polkit, IPC, config/storage
-│   ├── event_loop.rs   ← AppEvent enum + run_loop (tokio::select! core_rx ↔ input_rx ↔ ticks)
-│   ├── core_events.rs  ← handle_core_event — dispatches 22+ CoreEvent broadcasts
-│   ├── input.rs        ← handle_input + handle_normal_input — keyboard & mouse dispatch by tab/focus
-│   ├── popups.rs       ← Modal dialogs & routing popup key handlers, two-field forms
-│   ├── testing.rs      ← build_test_list, run_test_batch, persist_and_sync_test_config
-│   ├── text_edit.rs    ← edit_text_field line editor + clipboard paste + UTF-8/Cyrillic support
-│   ├── logger.rs       ← FileLogger (custom) + init/configure logger
-│   ├── core_spawn.rs   ← spawn_core, find_core_binary, ensure_core_caps (pkexec fallback)
-│   ├── systemd.rs      ← Unit-file generation, linger, enable/disable service
-│   ├── net_info.rs     ← fetch_public_ip / fetch_public_ipv6 (raw TCP to ipify)
-│   ├── deeplink.rs     ← Deep link routing (wit:// scheme parser, subscription & profile import, action execution)
-│   ├── launcher.rs     ← `whoisthat run <app>` — launch into split-tunnel slice (foreground/background)
-│   ├── config.rs       ← Config loader (~/.config/whoisthat/config.toml)
-│   ├── core_client/    ← IPC client for the Go core (Unix domain socket / TCP)
-│   │   ├── protocol.rs ← All serde types mirroring Go structs
-│   │   ├── connection.rs ← UDS/TCP transport + 4-byte length framing
-│   │   ├── dispatch.rs ← Read loop → typed event channel
-│   │   └── commands.rs ← High-level async send functions
-│   └── ui/             ← ratatui components
-│       ├── app/        ← Main app state & rendering (state, tree, details, popups, helpers)
-│       ├── layout.rs   ← Responsive layout geometry engine (width/height tiers, adaptive splits)
-│       ├── theme.rs    ← Curated color palettes (8 dark themes: Tokyo Night, Catppuccin, Nord, etc.)
-│       ├── settings.rs ← Settings screen
-│       ├── routing.rs  ← Routing rules tab + presets catalog + popups
-│       ├── traffic.rs  ← Real-time traffic monitoring tab (Braille charts + live transfer stats)
-│       ├── logs.rs     ← Log viewer (live tail + auto-scroll + level filter)
-│       └── uri.rs      ← URI detail parser (VLESS/VMess/Trojan/SS/SOCKS/Hysteria2)
-├── core/               ← WhoisThat Core (Go VPN engine)
-│   └── core/
-│       ├── main.go     ← Daemon entry point; RaiseAmbientCaps() before everything
-│       ├── go.mod
-│       ├── commands/   ← IPC command handlers (connect, test, groups, subscription, split, ...)
-│       ├── structs/    ← Shared data types (mirror of src/core_client/protocol.rs)
-│       ├── db/         ← Encrypted JSON profile DB (AES-256-GCM) + auto-migration
-│       ├── utils/      ← caps.go (RaiseAmbientCaps, CanTun), user.go (UIDs), resolve.go
-│       └── lib/        ← Core libraries
-│           ├── parser/      ← Native in-memory URI parser & Xray JSON config generator
-│           ├── xraymgr/     ← Pinned Xray-core runtime manager (v26.9.9 download & checksum verification)
-│           ├── logger/      ← Structured logger (lumberjack rotation, 20 MB)
-│           ├── TCPServer/   ← IPC server + dispatcher (Unix socket / TCP, length-prefixed JSON)
-│           ├── AppConfig/   ← Core configuration, defaults, HWID gen
-│           ├── PortPool/    ← Dynamic port allocator for test/profile instances
-│           ├── crypto/      ← AES-256-GCM encrypt/decrypt for DB files
-│           ├── geo/         ← Auto-download + verify geoip.dat / geosite.dat from v2fly
-│           └── proxy/       ← mainproxy (connect/stop/status), xray wrapper, TUN manager + scripts, routing
-├── pkg/
-│   ├── whoisthat.desktop ← Desktop launcher entry & x-scheme-handler/wit MIME association
-│   └── aur/              ← AUR packaging (PKGBUILD + .SRCINFO + whoisthat.install)
-└── .github/workflows/
-    ├── ci.yml          ← Automated CI: Rust (fmt/clippy/test) + Go (vet/build/test)
-    └── aur-publish.yml ← Tag-triggered CI: pushes updated PKGBUILD to AUR
-```
-
----
-
-## Credits
-
-Powered by [Xray-core](https://github.com/XTLS/Xray-core).
-
----
-
-## License
-
-MIT — see [LICENSE](LICENSE).
+- Built on top of the exceptional [Xray-core](https://github.com/XTLS/Xray-core).
+- Licensed under the [MIT License](LICENSE).
