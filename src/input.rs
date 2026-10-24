@@ -168,10 +168,29 @@ async fn handle_normal_input(
             app.routing_popup = None;
             app.tab = ActiveTab::Routing;
             app.focus = Focus::LeftPanel;
+            app.sync_routing_group_to_connected();
             let _ = client.get_routing().await;
             return false;
         }
         KeyCode::Char('m') => {
+            if app.tab == ActiveTab::Routing {
+                if let Some(group) = app.routing_selected_group() {
+                    let gid = group.group.id;
+                    let cur = match group.group.routing_mode.as_str() {
+                        "manual" => "manual",
+                        "subscription" => "subscription",
+                        _ => "auto",
+                    };
+                    let next_mode = match cur {
+                        "auto" => "manual",
+                        "manual" => "subscription",
+                        _ => "auto",
+                    };
+                    let _ = client.set_group_routing_mode(gid, next_mode).await;
+                    app.msg(format!("Group routing mode: {next_mode}"));
+                }
+                return false;
+            }
             app.tab = ActiveTab::Traffic;
             app.focus = Focus::LeftPanel;
             return false;
@@ -198,6 +217,7 @@ async fn handle_normal_input(
             app.routing_popup = None;
             app.tab = ActiveTab::Routing;
             app.focus = Focus::LeftPanel;
+            app.sync_routing_group_to_connected();
             let _ = client.get_routing().await;
             return false;
         }
@@ -216,7 +236,17 @@ async fn handle_normal_input(
             app.focus = Focus::LeftPanel;
             return false;
         }
-        KeyCode::Char('h') | KeyCode::Char('?') => {
+        KeyCode::Char('h') => {
+            if app.tab == ActiveTab::Routing {
+                app.routing_popup = Some(RoutingPopup::HappProfiles { cursor: 0 });
+                return false;
+            }
+            app.help_scroll = 0;
+            app.popup = Some(Popup::Help);
+            app.focus = Focus::Popup;
+            return false;
+        }
+        KeyCode::Char('?') => {
             app.help_scroll = 0;
             app.popup = Some(Popup::Help);
             app.focus = Focus::Popup;
@@ -229,6 +259,60 @@ async fn handle_normal_input(
         match key.code {
             KeyCode::Char('p') | KeyCode::Char('P') => {
                 app.routing_popup = Some(RoutingPopup::Presets { cursor: 0 });
+            }
+            KeyCode::Char('h') | KeyCode::Char('H') => {
+                app.routing_popup = Some(RoutingPopup::HappProfiles { cursor: 0 });
+            }
+            KeyCode::Char('m') | KeyCode::Char('M') => {
+                if let Some(group) = app.routing_selected_group() {
+                    let gid = group.group.id;
+                    let cur = match group.group.routing_mode.as_str() {
+                        "manual" => "manual",
+                        "subscription" => "subscription",
+                        _ => "auto",
+                    };
+                    let next_mode = match cur {
+                        "auto" => "manual",
+                        "manual" => "subscription",
+                        _ => "auto",
+                    };
+                    let _ = client.set_group_routing_mode(gid, next_mode).await;
+                    app.msg(format!("Group routing mode: {next_mode}"));
+                }
+            }
+            KeyCode::Left => {
+                app.routing_group_prev();
+            }
+            KeyCode::Right => {
+                app.routing_group_next();
+            }
+            KeyCode::Char('i') | KeyCode::Char('I') => {
+                let clip = read_clipboard();
+                let text = clip.unwrap_or_default().trim().to_string();
+                if text.is_empty() {
+                    app.msg("Clipboard is empty");
+                } else {
+                    let link = if let Some(idx) = text.find("happ://routing/") {
+                        let sub = &text[idx..];
+                        sub.split_whitespace().next().unwrap_or(sub).to_string()
+                    } else if let Some(idx) = text.find("wit://") {
+                        let sub = &text[idx..];
+                        sub.split_whitespace().next().unwrap_or(sub).to_string()
+                    } else {
+                        text
+                    };
+
+                    let gid = app
+                        .routing_selected_group()
+                        .map(|g| g.group.id)
+                        .unwrap_or(0);
+                    if gid == 0 && app.groups.is_empty() {
+                        app.msg("No groups available to import Happ routing");
+                    } else {
+                        let _ = client.import_happ_routing(gid, &link).await;
+                        app.msg("Importing Happ routing from clipboard...");
+                    }
+                }
             }
             KeyCode::Char('j') | KeyCode::Down => {
                 let len = app.routing.rules.len();

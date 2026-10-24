@@ -39,7 +39,7 @@ impl App {
             self.render_popup(f, popup, area);
         }
         if let Some(ref popup) = self.routing_popup {
-            render_routing_popup(f, popup, area, &self.routing);
+            render_routing_popup(f, popup, area, &self.routing, self.routing_selected_group());
         }
     }
 
@@ -233,7 +233,16 @@ impl App {
             }
             ActiveTab::Routing => {
                 let focused = self.focus == Focus::LeftPanel;
-                render_routing_tab(f, area, &self.routing, self.routing_cursor, focused);
+                render_routing_tab(
+                    f,
+                    area,
+                    &self.routing,
+                    self.routing_cursor,
+                    focused,
+                    self.routing_selected_group(),
+                    self.routing_group_index,
+                    self.groups.len(),
+                );
             }
             ActiveTab::Traffic => {
                 let connected_name = self.connected_profile_name();

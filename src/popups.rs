@@ -417,6 +417,95 @@ pub(crate) async fn handle_routing_popup_input(
                 app.routing_popup = Some(RoutingPopup::Presets { cursor });
             }
         },
+        Some(RoutingPopup::HappProfiles { mut cursor }) => match key.code {
+            KeyCode::Esc => {}
+            KeyCode::Char('j') | KeyCode::Down => {
+                let count = app
+                    .routing_selected_group()
+                    .map(|g| g.routing_profiles.len())
+                    .unwrap_or(0);
+                if count > 0 && cursor + 1 < count {
+                    cursor += 1;
+                }
+                app.routing_popup = Some(RoutingPopup::HappProfiles { cursor });
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                cursor = cursor.saturating_sub(1);
+                app.routing_popup = Some(RoutingPopup::HappProfiles { cursor });
+            }
+            KeyCode::Home => {
+                app.routing_popup = Some(RoutingPopup::HappProfiles { cursor: 0 });
+            }
+            KeyCode::End => {
+                let count = app
+                    .routing_selected_group()
+                    .map(|g| g.routing_profiles.len())
+                    .unwrap_or(0);
+                let max = count.saturating_sub(1);
+                app.routing_popup = Some(RoutingPopup::HappProfiles { cursor: max });
+            }
+            KeyCode::Enter => {
+                if let Some(group) = app.routing_selected_group() {
+                    let gid = group.group.id;
+                    if let Some(target_p) = group.routing_profiles.get(cursor) {
+                        let pid = target_p.id.clone();
+                        let name = target_p.name.clone();
+                        let _ = client.set_active_routing_profile(gid, &pid).await;
+                        app.msg(format!("Activating Happ routing: {name}"));
+                    }
+                }
+                app.routing_popup = Some(RoutingPopup::HappProfiles { cursor });
+            }
+            KeyCode::Char('o') | KeyCode::Char('O') => {
+                if let Some(group) = app.routing_selected_group() {
+                    let gid = group.group.id;
+                    let _ = client.set_active_routing_profile(gid, "off").await;
+                    app.msg("Happ routing deactivated (off)");
+                }
+                app.routing_popup = Some(RoutingPopup::HappProfiles { cursor });
+            }
+            KeyCode::Char('d') | KeyCode::Char('D') | KeyCode::Char('x') | KeyCode::Delete => {
+                let to_delete = app.routing_selected_group().and_then(|group| {
+                    group.routing_profiles.get(cursor).map(|target_p| {
+                        (
+                            group.group.id,
+                            target_p.id.clone(),
+                            target_p.name.clone(),
+                            group.routing_profiles.len().saturating_sub(1),
+                        )
+                    })
+                });
+                if let Some((gid, pid, name, count)) = to_delete {
+                    let _ = client.delete_routing_profile(gid, &pid).await;
+                    app.msg(format!("Deleted Happ routing: {name}"));
+                    if cursor >= count && cursor > 0 {
+                        cursor -= 1;
+                    }
+                }
+                app.routing_popup = Some(RoutingPopup::HappProfiles { cursor });
+            }
+            KeyCode::Char('m') | KeyCode::Char('M') => {
+                if let Some(group) = app.routing_selected_group() {
+                    let gid = group.group.id;
+                    let cur = match group.group.routing_mode.as_str() {
+                        "manual" => "manual",
+                        "subscription" => "subscription",
+                        _ => "auto",
+                    };
+                    let next_mode = match cur {
+                        "auto" => "manual",
+                        "manual" => "subscription",
+                        _ => "auto",
+                    };
+                    let _ = client.set_group_routing_mode(gid, next_mode).await;
+                    app.msg(format!("Group routing mode: {next_mode}"));
+                }
+                app.routing_popup = Some(RoutingPopup::HappProfiles { cursor });
+            }
+            _ => {
+                app.routing_popup = Some(RoutingPopup::HappProfiles { cursor });
+            }
+        },
         None => {}
     }
 }

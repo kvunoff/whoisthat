@@ -227,11 +227,50 @@ pub async fn handle_cli(args: &[String]) -> Result<(), Box<dyn std::error::Error
     match cmd {
         // Deep links & URL handlers
         "handle-url" | "url" => {
-            let url = args.get(1).map(String::as_str).unwrap_or("");
-            if url.is_empty() {
-                return Err("Usage: whoisthat handle-url <URL>".into());
+            let mut url = String::new();
+            let mut group: Option<String> = None;
+            let mut i = 1;
+            while i < args.len() {
+                match args[i].as_str() {
+                    "--group" | "-g" => {
+                        if i + 1 < args.len() {
+                            group = Some(args[i + 1].clone());
+                            i += 2;
+                            continue;
+                        } else {
+                            return Err("Missing argument for --group".into());
+                        }
+                    }
+                    val => {
+                        if let Some(g) = val.strip_prefix("--group=") {
+                            group = Some(g.to_string());
+                        } else if url.is_empty() {
+                            url = val.to_string();
+                        }
+                    }
+                }
+                i += 1;
             }
-            crate::deeplink::run_deeplink(url).await
+            if url.is_empty() {
+                return Err("Usage: whoisthat handle-url <URL> [--group <id|name>]".into());
+            }
+            let mut action = crate::deeplink::parse_deeplink(&url)?;
+            if let Some(g) = group {
+                match action {
+                    crate::deeplink::DeepLinkAction::ImportHappRouting {
+                        ref mut group, ..
+                    } => {
+                        *group = Some(g);
+                    }
+                    crate::deeplink::DeepLinkAction::AddProfile {
+                        ref mut group_name, ..
+                    } => {
+                        *group_name = Some(g);
+                    }
+                    _ => {}
+                }
+            }
+            crate::deeplink::run_deeplink_action(action).await
         }
         "add-sub" | "add-subscription" => {
             let url = args.get(1).map(String::as_str).unwrap_or("");
@@ -336,9 +375,7 @@ fn print_help() {
     println!("    -j,  --json                   Structured JSON output");
     println!("    -w,  --watch                  Stream live updates continuously per second\n");
     println!("DEEP LINKS & SUBSCRIPTIONS:");
-    println!(
-        "         handle-url <URL>         Handle wit:// deep link or subscription/profile URL"
-    );
+    println!("         handle-url <URL> [--group <id|name>] Handle wit:// or happ:// deep link");
     println!("         add-sub <URL> [NAME]     Add subscription URL and auto-update profiles");
     println!("         register-deeplink        Register wit:// handler in ~/.local/share/applications\n");
     println!("INFORMATION & UTILITIES:");

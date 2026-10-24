@@ -22,6 +22,8 @@ pub enum DeepLinkAction {
     Disconnect,
     /// Toggle VPN connection.
     Toggle,
+    /// Import Happ routing link (happ://routing/add/..., onadd/..., off).
+    ImportHappRouting { link: String, group: Option<String> },
 }
 
 /// Percent-decodes a URL-encoded UTF-8 string.
@@ -99,6 +101,15 @@ pub fn parse_deeplink(raw: &str) -> Result<DeepLinkAction, String> {
         return Err("Empty deep link".to_string());
     }
 
+    // Direct Happ routing link
+    let raw_lower = raw.to_lowercase();
+    if raw_lower.starts_with("happ://routing/") || raw_lower.starts_with("happ:routing/") {
+        return Ok(DeepLinkAction::ImportHappRouting {
+            link: raw.to_string(),
+            group: None,
+        });
+    }
+
     // Strip "wit://" or "wit:"
     let after_scheme = if let Some(stripped) = raw.strip_prefix("wit://") {
         stripped
@@ -106,11 +117,20 @@ pub fn parse_deeplink(raw: &str) -> Result<DeepLinkAction, String> {
         stripped
     } else {
         return Err(format!(
-            "Invalid scheme in deep link (expected wit://): {raw}"
+            "Invalid scheme in deep link (expected wit:// or happ://routing/...): {raw}"
         ));
     };
 
     let without_leading_slashes = after_scheme.trim_start_matches('/');
+
+    // Check embedded happ:// routing link in wit://
+    let without_lower = without_leading_slashes.to_lowercase();
+    if without_lower.starts_with("happ://routing/") || without_lower.starts_with("happ:routing/") {
+        return Ok(DeepLinkAction::ImportHappRouting {
+            link: without_leading_slashes.to_string(),
+            group: None,
+        });
+    }
 
     // Check direct profile schemes
     for proto in &[
@@ -177,6 +197,17 @@ pub fn parse_deeplink(raw: &str) -> Result<DeepLinkAction, String> {
         "disconnect" => Ok(DeepLinkAction::Disconnect),
         "toggle" => Ok(DeepLinkAction::Toggle),
 
+        "routing" | "happ" | "happ-routing" | "import-routing" => {
+            let link = query_params
+                .get("link")
+                .or_else(|| query_params.get("url"))
+                .or_else(|| query_params.get("uri"))
+                .cloned()
+                .ok_or_else(|| "Missing 'link' parameter in routing deep link".to_string())?;
+            let group = query_params.get("group").cloned();
+            Ok(DeepLinkAction::ImportHappRouting { link, group })
+        }
+
         "sub" | "subscription" | "add-sub" | "install-sub" | "import-sub" => {
             let url = query_params
                 .get("url")
@@ -213,6 +244,20 @@ pub fn parse_deeplink(raw: &str) -> Result<DeepLinkAction, String> {
         }
 
         _ => {
+            // Fallback: If query contains link, check if it's happ routing
+            if let Some(link) = query_params.get("link") {
+                let link_lower = link.to_lowercase();
+                if link_lower.starts_with("happ://routing/")
+                    || link_lower.starts_with("happ:routing/")
+                {
+                    let group = query_params.get("group").cloned();
+                    return Ok(DeepLinkAction::ImportHappRouting {
+                        link: link.clone(),
+                        group,
+                    });
+                }
+            }
+
             // Fallback: If query contains url, treat as subscription
             if let Some(url) = query_params.get("url").or_else(|| query_params.get("sub")) {
                 let name = query_params
@@ -455,6 +500,156 @@ pub async fn run_deeplink_action(action: DeepLinkAction) -> Result<(), Box<dyn s
             println!("Toggling connection via deep link...");
             crate::cli::handle_toggle().await?;
         }
+
+        DeepLinkAction::ImportHappRouting { link, group } => {
+            println!("Importing Happ routing link...");
+            let conn = ensure_core_connected(&cfg).await?;
+            let (mut read_half, mut write_half) = conn.into_split();
+
+            // Fetch state to discover available groups
+            write_half
+                .send("get-application-state", &GetApplicationStateData {})
+                .await?;
+
+            let mut groups = Vec::new();
+            if let Ok(Ok(msg)) =
+                tokio::time::timeout(Duration::from_secs(3), read_half.recv()).await
+            {
+                if msg.msg == "application-state" {
+                    if let Ok(state) = serde_json::from_value::<ApplicationState>(msg.data) {
+                        groups = state.groups;
+                    }
+                }
+            }
+
+            if groups.is_empty() {
+                return Err("No groups found in core. Please add a group first.".into());
+            }
+
+            let (target_gid, target_name) = match group {
+                Some(ref desired) => {
+                    // Try parsing as numeric group ID first
+                    let found = if let Ok(id) = desired.parse::<i32>() {
+                        groups.iter().find(|g| g.group.id == id)
+                    } else {
+                        None
+                    };
+                    let found = found.or_else(|| {
+                        groups
+                            .iter()
+                            .find(|g| g.group.name.eq_ignore_ascii_case(desired))
+                    });
+
+                    if let Some(g) = found {
+                        (g.group.id, g.group.name.clone())
+                    } else {
+                        let group_list: Vec<String> = groups
+                            .iter()
+                            .map(|g| format!("  - [{}] {}", g.group.id, g.group.name))
+                            .collect();
+                        return Err(format!(
+                            "Group '{desired}' not found. Available groups:\n{}",
+                            group_list.join("\n")
+                        )
+                        .into());
+                    }
+                }
+                None => {
+                    if groups.len() == 1 {
+                        (groups[0].group.id, groups[0].group.name.clone())
+                    } else {
+                        let group_list: Vec<String> = groups
+                            .iter()
+                            .map(|g| format!("  - [{}] {}", g.group.id, g.group.name))
+                            .collect();
+                        return Err(format!(
+                            "Multiple groups exist. Please specify target group with --group <id|name>:\n{}",
+                            group_list.join("\n")
+                        )
+                        .into());
+                    }
+                }
+            };
+
+            write_half
+                .send(
+                    "import-happ-routing",
+                    &ImportHappRoutingData {
+                        group_id: target_gid,
+                        link: link.clone(),
+                    },
+                )
+                .await?;
+
+            let timeout = Duration::from_secs(10);
+            let start = tokio::time::Instant::now();
+            let mut success = false;
+            let mut warn_msg: Option<String> = None;
+            let mut profile_name: Option<String> = None;
+
+            while start.elapsed() < timeout {
+                let remaining = timeout.saturating_sub(start.elapsed());
+                let msg = match tokio::time::timeout(remaining, read_half.recv()).await {
+                    Ok(Ok(m)) => m,
+                    _ => break,
+                };
+
+                match msg.msg.as_str() {
+                    "subscription-updated" => {
+                        if let Ok(sub) = serde_json::from_value::<SubscriptionUpdated>(msg.data) {
+                            if sub.group_id == target_gid {
+                                if let Some(active) =
+                                    sub.routing_profiles.iter().find(|rp| rp.active)
+                                {
+                                    profile_name = Some(active.name.clone());
+                                }
+                                success = true;
+                                break;
+                            }
+                        }
+                    }
+                    "group-updated" => {
+                        if let Ok(g) = serde_json::from_value::<Group>(msg.data) {
+                            if g.id == target_gid {
+                                success = true;
+                                break;
+                            }
+                        }
+                    }
+                    "warn" => {
+                        if let Ok(w) = serde_json::from_value::<Warning>(msg.data) {
+                            if w.key.contains("happ") || w.key.contains("routing") {
+                                warn_msg = Some(w.content);
+                                break;
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            if let Some(warn) = warn_msg {
+                let msg = format!("Failed to import Happ routing: {warn}");
+                eprintln!("⚠ {msg}");
+                notify_desktop("WhoisThat: Routing Import Failed", &msg);
+                return Err(msg.into());
+            } else if success {
+                let active_info = if let Some(pn) = profile_name {
+                    format!(" (active: {pn})")
+                } else {
+                    String::new()
+                };
+                let msg = format!(
+                    "Happ routing imported into group '{target_name}' (#{target_gid}){active_info}"
+                );
+                println!("✓ {msg}");
+                notify_desktop("WhoisThat: Routing Imported", &msg);
+            } else {
+                let msg = format!("Import command sent for group '{target_name}' (#{target_gid})");
+                println!("✓ {msg}");
+                notify_desktop("WhoisThat: Routing Import Sent", &msg);
+            }
+        }
     }
 
     Ok(())
@@ -687,5 +882,54 @@ mod tests {
         assert!(parse_deeplink("").is_err());
         assert!(parse_deeplink("http://example.com").is_err());
         assert!(parse_deeplink("wit://unknown-action").is_err());
+    }
+
+    #[test]
+    fn test_parse_happ_routing_direct() {
+        let link = "happ://routing/add/eyJNYW1lIjoiVGVzdCJ9";
+        let action = parse_deeplink(link).expect("must parse direct happ link");
+        assert_eq!(
+            action,
+            DeepLinkAction::ImportHappRouting {
+                link: link.to_string(),
+                group: None,
+            }
+        );
+
+        let off_link = "happ://routing/off";
+        let off_action = parse_deeplink(off_link).expect("must parse off link");
+        assert_eq!(
+            off_action,
+            DeepLinkAction::ImportHappRouting {
+                link: off_link.to_string(),
+                group: None,
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_happ_routing_with_wit_scheme() {
+        let link = "wit://happ://routing/onadd/eyJNYW1lIjoiT25BZGQifQ==";
+        let action = parse_deeplink(link).expect("must parse embedded happ link");
+        assert_eq!(
+            action,
+            DeepLinkAction::ImportHappRouting {
+                link: "happ://routing/onadd/eyJNYW1lIjoiT25BZGQifQ==".to_string(),
+                group: None,
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_happ_routing_query() {
+        let link = "wit://routing?link=happ%3A%2F%2Frouting%2Fadd%2Fabc&group=Work";
+        let action = parse_deeplink(link).expect("must parse routing query");
+        assert_eq!(
+            action,
+            DeepLinkAction::ImportHappRouting {
+                link: "happ://routing/add/abc".to_string(),
+                group: Some("Work".to_string()),
+            }
+        );
     }
 }

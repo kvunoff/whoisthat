@@ -286,6 +286,9 @@ pub enum RoutingPopup {
     Presets {
         cursor: usize,
     },
+    HappProfiles {
+        cursor: usize,
+    },
 }
 
 fn rule_type_label(rule: &RoutingRule) -> &'static str {
@@ -373,12 +376,16 @@ pub fn form_to_rule(match_type: usize, value: &str, outbound: usize) -> RoutingR
     rule
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn render_routing_tab(
     f: &mut Frame,
     area: Rect,
     config: &RoutingConfig,
     cursor: usize,
     focused: bool,
+    group: Option<&GroupWithProfiles>,
+    group_index: usize,
+    total_groups: usize,
 ) {
     let border_color = if focused { border_active() } else { border() };
 
@@ -392,8 +399,113 @@ pub fn render_routing_tab(
     let inner = block.inner(area);
     f.render_widget(block, area);
 
-    let v = Layout::vertical([Constraint::Min(0), Constraint::Length(2)]).split(inner);
-    let (list_area, help_area) = (v[0], v[1]);
+    // Compute effective source & shadowed notice
+    let raw_mode = group
+        .map(|g| g.group.routing_mode.as_str())
+        .unwrap_or("auto");
+    let mode = if raw_mode.is_empty() {
+        "auto"
+    } else {
+        raw_mode
+    };
+    let active_id = group
+        .map(|g| g.group.active_routing_profile_id.as_str())
+        .unwrap_or("");
+    let active_profile = group.and_then(|g| g.routing_profiles.iter().find(|p| p.id == active_id));
+
+    let is_shadowed = match mode {
+        "manual" => false,
+        "subscription" => true,
+        "auto" => active_profile.is_some() && active_profile.unwrap().rules_count > 0,
+        _ => false,
+    };
+
+    let (source_desc, source_style) = match mode {
+        "manual" => ("Manual (local rules)".to_string(), s_text()),
+        "subscription" => {
+            if let Some(p) = active_profile {
+                if p.state == "error" {
+                    (
+                        format!("Subscription (Happ: {}, error: fallback to LAN)", p.name),
+                        s_error(),
+                    )
+                } else {
+                    (format!("Subscription (Happ: {})", p.name), s_success())
+                }
+            } else {
+                (
+                    "Subscription (No active profile — fallback to direct/LAN)".to_string(),
+                    s_disconnected(),
+                )
+            }
+        }
+        _ => {
+            if let Some(p) = active_profile {
+                if p.state == "error" {
+                    (
+                        format!("Auto (Happ: {}, error: fallback to Manual)", p.name),
+                        s_accent(),
+                    )
+                } else if p.rules_count > 0 {
+                    (format!("Auto (Happ: {})", p.name), s_success())
+                } else {
+                    ("Auto (Manual rules)".to_string(), s_text())
+                }
+            } else {
+                ("Auto (Manual rules)".to_string(), s_text())
+            }
+        }
+    };
+
+    let header_height = if is_shadowed { 3 } else { 2 };
+    let v = Layout::vertical([
+        Constraint::Length(header_height),
+        Constraint::Min(0),
+        Constraint::Length(1),
+    ])
+    .split(inner);
+    let (header_area, list_area, help_area) = (v[0], v[1], v[2]);
+
+    // Header rendering
+    let mut header_lines = Vec::new();
+
+    // Line 1: Group, Mode, Happ Profiles
+    let group_str = if total_groups == 0 {
+        "[None]".to_string()
+    } else {
+        let name = group.map(|g| g.group.name.as_str()).unwrap_or("Unknown");
+        format!("[{}/{}] {}", group_index + 1, total_groups, name)
+    };
+    let profiles_count = group.map(|g| g.routing_profiles.len()).unwrap_or(0);
+
+    let line1 = Line::from(vec![
+        Span::styled(" Group: < ", s_faint()),
+        Span::styled(group_str, s_accent_bold().add_modifier(Modifier::BOLD)),
+        Span::styled(" > (←/→) │ Mode: ", s_faint()),
+        Span::styled(format!("[{mode}]"), s_accent()),
+        Span::styled(" (m) │ Happ Profiles: ", s_faint()),
+        Span::styled("[H] ", s_accent_bold()),
+        Span::styled(format!("({profiles_count} profiles)"), s_dim()),
+    ]);
+    header_lines.push(line1);
+
+    // Line 2: Effective Source
+    let line2 = Line::from(vec![
+        Span::styled(" Effective Source: ", s_faint()),
+        Span::styled(source_desc, source_style),
+    ]);
+    header_lines.push(line2);
+
+    // Line 3: Notice if shadowed
+    if is_shadowed {
+        let line3 = Line::from(vec![Span::styled(
+            " ⚠ Notice: Manual rules below are shadowed by active Happ routing for this group",
+            s_accent().add_modifier(Modifier::BOLD),
+        )]);
+        header_lines.push(line3);
+    }
+
+    f.render_widget(Paragraph::new(header_lines), header_area);
 
     if config.rules.is_empty() {
         f.render_widget(
@@ -490,10 +602,10 @@ pub fn render_routing_tab(
         f.render_stateful_widget(table, list_area, &mut ts);
     }
 
-    let hint = if area.width < 75 {
-        " a:add │ p:presets │ e:edit │ x:del │ Spc:toggle "
+    let hint = if area.width < 85 {
+        " a:add │ p:presets │ H:happ │ m:mode │ i:clip │ e:edit │ x:del │ Spc:toggle │ ←/→:grp "
     } else {
-        " a add  │  p presets  │  e edit  │  x delete  │  Space toggle  │  j/k navigate "
+        " a add │ p presets │ H happ profiles │ m mode │ i import (clip) │ e edit │ x delete │ Space toggle │ ←/→ group "
     };
     f.render_widget(
         Paragraph::new(hint)
@@ -508,6 +620,7 @@ pub fn render_routing_popup(
     popup: &RoutingPopup,
     area: Rect,
     config: &RoutingConfig,
+    group: Option<&GroupWithProfiles>,
 ) {
     match popup {
         RoutingPopup::Add {
@@ -553,7 +666,226 @@ pub fn render_routing_popup(
         RoutingPopup::Presets { cursor } => {
             render_presets_popup(f, *cursor, config, area);
         }
+        RoutingPopup::HappProfiles { cursor } => {
+            render_happ_profiles_popup(f, *cursor, group, area);
+        }
     }
+}
+
+fn render_happ_profiles_popup(
+    f: &mut Frame,
+    cursor: usize,
+    group: Option<&GroupWithProfiles>,
+    area: Rect,
+) {
+    let pa = crate::ui::app::responsive_rect(96, 26, 96, 92, area);
+    f.render_widget(ratatui::widgets::Clear, pa);
+
+    let group_name = group.map(|g| g.group.name.as_str()).unwrap_or("No group");
+    let mode = group
+        .map(|g| {
+            let m = g.group.routing_mode.as_str();
+            if m.is_empty() {
+                "auto"
+            } else {
+                m
+            }
+        })
+        .unwrap_or("auto");
+
+    let block = Block::default()
+        .title(format!(
+            " ⚡ Happ Routing Profiles — Group: {} [mode: {}] ",
+            group_name, mode
+        ))
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(accent()))
+        .style(s_surface());
+
+    let inner = block.inner(pa);
+    f.render_widget(block, pa);
+
+    let profiles = group.map(|g| g.routing_profiles.as_slice()).unwrap_or(&[]);
+    let active_id = group
+        .map(|g| g.group.active_routing_profile_id.as_str())
+        .unwrap_or("");
+
+    // Check if the currently selected profile has an error message
+    let selected_error = profiles.get(cursor).and_then(|p| {
+        if !p.last_error.is_empty() {
+            Some(p.last_error.as_str())
+        } else {
+            None
+        }
+    });
+
+    let (list_area, error_area, hint_area) = if let Some(err_msg) = selected_error {
+        let content_width = inner.width.saturating_sub(4).max(1) as usize;
+        let estimated_lines: usize = err_msg
+            .lines()
+            .map(|l| (l.chars().count() / content_width).max(1))
+            .sum();
+        let max_err_h = (inner.height.saturating_sub(6)).clamp(3, 10);
+        let err_box_h = (estimated_lines as u16 + 2).clamp(3, max_err_h);
+        let chunks = Layout::vertical([
+            Constraint::Min(4),
+            Constraint::Length(err_box_h),
+            Constraint::Length(1),
+        ])
+        .split(inner);
+        (chunks[0], Some((chunks[1], err_msg)), chunks[2])
+    } else {
+        let chunks = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).split(inner);
+        (chunks[0], None, chunks[1])
+    };
+
+    if profiles.is_empty() {
+        let empty_msg = Paragraph::new(
+            "No Happ routing profiles for this group.\n\nPress [i] in Routing tab to import from clipboard,\nor fetch via subscription.",
+        )
+        .style(s_dim())
+        .alignment(Alignment::Center);
+        f.render_widget(empty_msg, list_area);
+    } else {
+        let items: Vec<ListItem> = profiles
+            .iter()
+            .enumerate()
+            .map(|(i, p)| {
+                let is_selected = i == cursor;
+                let is_active = p.id == active_id || (active_id.is_empty() && p.active);
+                let status_badge = if is_active {
+                    Span::styled(" [● Active] ", s_success().add_modifier(Modifier::BOLD))
+                } else {
+                    Span::styled(" [○ Inactive] ", s_dim())
+                };
+
+                let state_badge = match p.state.as_str() {
+                    "ready" | "" => Span::styled(" [ready] ", s_success()),
+                    "updating" => Span::styled(" [updating...] ", s_accent()),
+                    "error" => Span::styled(" [error] ", s_error().add_modifier(Modifier::BOLD)),
+                    other => Span::styled(format!(" [{other}] "), s_dim()),
+                };
+
+                let title_style = if is_selected {
+                    s_accent_bold().add_modifier(Modifier::BOLD)
+                } else {
+                    s_text()
+                };
+                let cursor_mark = if is_selected { "▸ " } else { "  " };
+                let p_name = if p.name.is_empty() {
+                    "(unnamed)"
+                } else {
+                    p.name.as_str()
+                };
+
+                let line1 = vec![
+                    Span::styled(cursor_mark, s_accent()),
+                    status_badge,
+                    state_badge,
+                    Span::styled(p_name, title_style),
+                ];
+
+                let mut details = vec![
+                    Span::styled("      ", s_faint()),
+                    Span::styled(format!("rules: {} │ ", p.rules_count), s_dim()),
+                    Span::styled(
+                        format!(
+                            "strategy: {} │ ",
+                            if p.domain_strategy.is_empty() {
+                                "AsIs"
+                            } else {
+                                &p.domain_strategy
+                            }
+                        ),
+                        s_dim(),
+                    ),
+                ];
+
+                if p.last_updated > 0 {
+                    details.push(Span::styled(
+                        format!(
+                            "updated: {} │ ",
+                            crate::ui::app::format_relative(p.last_updated)
+                        ),
+                        s_dim(),
+                    ));
+                }
+                if p.geo_updated_at > 0 {
+                    details.push(Span::styled(
+                        format!(
+                            "geo: {} │ ",
+                            crate::ui::app::format_relative(p.geo_updated_at)
+                        ),
+                        s_dim(),
+                    ));
+                }
+                if !p.last_error.is_empty() {
+                    let max_snippet = 35;
+                    let snippet = if p.last_error.chars().count() > max_snippet {
+                        format!(
+                            "err: {}…",
+                            p.last_error
+                                .chars()
+                                .take(max_snippet - 1)
+                                .collect::<String>()
+                        )
+                    } else {
+                        format!("err: {}", p.last_error)
+                    };
+                    details.push(Span::styled(snippet, s_error()));
+                } else if let Some(last) = details.last_mut() {
+                    let text = last.content.trim_end_matches(" │ ");
+                    *last = Span::styled(text.to_string(), s_dim());
+                }
+
+                let item_bg = if is_selected { surface() } else { bg() };
+                ListItem::new(vec![Line::from(line1), Line::from(details)])
+                    .style(Style::default().bg(item_bg))
+            })
+            .collect();
+
+        let visible_items = (list_area.height as usize) / 2;
+        let scroll_item = if visible_items > 0 && cursor >= visible_items {
+            cursor - visible_items + 1
+        } else {
+            0
+        };
+        let mut list_state = ListState::default()
+            .with_selected(Some(cursor))
+            .with_offset(scroll_item);
+
+        let list = List::new(items);
+        f.render_stateful_widget(list, list_area, &mut list_state);
+    }
+
+    if let Some((err_rect, err_msg)) = error_area {
+        let err_block = Block::default()
+            .title(" ⚠ Error Details ")
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(Style::default().fg(error()))
+            .style(s_surface());
+        let err_p = Paragraph::new(err_msg)
+            .block(err_block)
+            .style(s_error())
+            .wrap(ratatui::widgets::Wrap { trim: true });
+        f.render_widget(err_p, err_rect);
+    }
+
+    let hint = Line::from(vec![
+        Span::styled(" [Enter] ", s_accent_bold()),
+        Span::styled("Activate  │ ", s_text()),
+        Span::styled("[o] ", s_accent_bold()),
+        Span::styled("Off  │ ", s_text()),
+        Span::styled("[d/x] ", s_accent_bold()),
+        Span::styled("Delete  │ ", s_text()),
+        Span::styled("[m] ", s_accent_bold()),
+        Span::styled(format!("Mode ({mode})  │ "), s_text()),
+        Span::styled("[Esc] ", s_accent_bold()),
+        Span::styled("Close", s_text()),
+    ]);
+    f.render_widget(Paragraph::new(hint).alignment(Alignment::Center), hint_area);
 }
 
 fn render_presets_popup(f: &mut Frame, cursor: usize, config: &RoutingConfig, area: Rect) {
@@ -802,6 +1134,7 @@ mod tests {
             ip: ip.into(),
             protocol: protocol.into(),
             port: port.into(),
+            network: "".into(),
             outbound_tag: outbound_tag.into(),
             enabled: true,
         }
@@ -1012,5 +1345,187 @@ mod tests {
         assert!(!p_ru.is_applied(&cfg));
         assert!(p_ads.is_applied(&cfg));
         assert_eq!(cfg.rules.len(), p_ads.rules.len());
+    }
+
+    #[test]
+    fn test_render_routing_tab_with_group_shadowed() {
+        let backend = ratatui::backend::TestBackend::new(100, 30);
+        let mut term = ratatui::Terminal::new(backend).unwrap();
+        let cfg = RoutingConfig::default();
+        let group = GroupWithProfiles {
+            group: Group {
+                id: 1,
+                name: "Test Group".into(),
+                routing_mode: "auto".into(),
+                active_routing_profile_id: "happ-1".into(),
+                ..Default::default()
+            },
+            profiles: Vec::new(),
+            routing_profiles: vec![RoutingProfileInfo {
+                id: "happ-1".into(),
+                name: "Happ Profile 1".into(),
+                state: "ready".into(),
+                active: true,
+                rules_count: 5,
+                domain_strategy: "AsIs".into(),
+                ..Default::default()
+            }],
+        };
+
+        term.draw(|f| {
+            render_routing_tab(f, f.area(), &cfg, 0, true, Some(&group), 0, 1);
+        })
+        .unwrap();
+
+        let text = term
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|c| c.symbol().to_string())
+            .collect::<Vec<_>>()
+            .join("");
+        assert!(text.contains("Group: < [1/1] Test Group >"));
+        assert!(text.contains("Mode: [auto]"));
+        assert!(text.contains("Happ Profiles: [H] (1 profiles)"));
+        assert!(text.contains("Effective Source: Auto (Happ: Happ Profile 1)"));
+        assert!(text.contains("Notice: Manual rules below are shadowed"));
+    }
+
+    #[test]
+    fn test_render_routing_tab_manual_mode_not_shadowed() {
+        let backend = ratatui::backend::TestBackend::new(100, 30);
+        let mut term = ratatui::Terminal::new(backend).unwrap();
+        let cfg = RoutingConfig::default();
+        let group = GroupWithProfiles {
+            group: Group {
+                id: 1,
+                name: "Manual Group".into(),
+                routing_mode: "manual".into(),
+                ..Default::default()
+            },
+            profiles: Vec::new(),
+            routing_profiles: Vec::new(),
+        };
+
+        term.draw(|f| {
+            render_routing_tab(f, f.area(), &cfg, 0, true, Some(&group), 0, 1);
+        })
+        .unwrap();
+
+        let text = term
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|c| c.symbol().to_string())
+            .collect::<Vec<_>>()
+            .join("");
+        assert!(text.contains("Group: < [1/1] Manual Group >"));
+        assert!(text.contains("Mode: [manual]"));
+        assert!(text.contains("Effective Source: Manual (local rules)"));
+        assert!(!text.contains("Notice: Manual rules below are shadowed"));
+    }
+
+    #[test]
+    fn test_render_happ_profiles_popup() {
+        let backend = ratatui::backend::TestBackend::new(100, 30);
+        let mut term = ratatui::Terminal::new(backend).unwrap();
+        let cfg = RoutingConfig::default();
+        let group = GroupWithProfiles {
+            group: Group {
+                id: 1,
+                name: "Happ Group".into(),
+                routing_mode: "subscription".into(),
+                active_routing_profile_id: "happ-1".into(),
+                ..Default::default()
+            },
+            profiles: Vec::new(),
+            routing_profiles: vec![RoutingProfileInfo {
+                id: "happ-1".into(),
+                name: "My Happ Rules".into(),
+                state: "ready".into(),
+                active: true,
+                rules_count: 42,
+                domain_strategy: "IPIfNonMatch".into(),
+                ..Default::default()
+            }],
+        };
+
+        term.draw(|f| {
+            render_routing_popup(
+                f,
+                &RoutingPopup::HappProfiles { cursor: 0 },
+                f.area(),
+                &cfg,
+                Some(&group),
+            );
+        })
+        .unwrap();
+
+        let text = term
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|c| c.symbol().to_string())
+            .collect::<Vec<_>>()
+            .join("");
+        assert!(text.contains("Happ Routing Profiles"));
+        assert!(text.contains("[● Active]"));
+        assert!(text.contains("[ready]"));
+        assert!(text.contains("My Happ Rules"));
+        assert!(text.contains("rules: 42"));
+        assert!(text.contains("strategy: IPIfNonMatch"));
+    }
+
+    #[test]
+    fn test_render_happ_profiles_popup_with_error() {
+        let backend = ratatui::backend::TestBackend::new(100, 30);
+        let mut term = ratatui::Terminal::new(backend).unwrap();
+        let cfg = RoutingConfig::default();
+        let group = GroupWithProfiles {
+            group: Group {
+                id: 1,
+                name: "Happ Group".into(),
+                routing_mode: "subscription".into(),
+                active_routing_profile_id: "happ-1".into(),
+                ..Default::default()
+            },
+            profiles: Vec::new(),
+            routing_profiles: vec![RoutingProfileInfo {
+                id: "happ-1".into(),
+                name: "Broken Happ Rules".into(),
+                state: "error".into(),
+                active: true,
+                rules_count: 10,
+                last_error: "downloading geosite failed: connection timed out to cdn.jsdelivr.net"
+                    .into(),
+                ..Default::default()
+            }],
+        };
+
+        term.draw(|f| {
+            render_routing_popup(
+                f,
+                &RoutingPopup::HappProfiles { cursor: 0 },
+                f.area(),
+                &cfg,
+                Some(&group),
+            );
+        })
+        .unwrap();
+
+        let text = term
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|c| c.symbol().to_string())
+            .collect::<Vec<_>>()
+            .join("");
+        assert!(text.contains("Error Details"));
+        assert!(text.contains("downloading geosite failed"));
+        assert!(text.contains("connection timed out"));
     }
 }

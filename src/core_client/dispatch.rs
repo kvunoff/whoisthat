@@ -19,6 +19,7 @@ pub enum CoreEvent {
     SubscriptionUpdated {
         group: Group,
         profiles: Vec<Profile>,
+        routing_profiles: Vec<RoutingProfileInfo>,
     },
     TunStatusChanged(bool),
     IsRootAnswer(bool),
@@ -238,6 +239,7 @@ pub(crate) fn dispatch(msg: TcpMessage) -> CoreEvent {
                 CoreEvent::SubscriptionUpdated {
                     group: d.group,
                     profiles: d.profiles,
+                    routing_profiles: d.routing_profiles,
                 }
             })
         }
@@ -476,9 +478,50 @@ mod tests {
                 "profiles": [{ "id": 1, "group_id": 1 }]
             }),
         ));
-        if let CoreEvent::SubscriptionUpdated { group, profiles } = event {
+        if let CoreEvent::SubscriptionUpdated {
+            group,
+            profiles,
+            routing_profiles,
+        } = event
+        {
             assert_eq!(group.id, 1);
             assert_eq!(profiles.len(), 1);
+            assert_eq!(routing_profiles.len(), 0);
+        } else {
+            panic!("expected SubscriptionUpdated");
+        }
+    }
+
+    #[test]
+    fn test_dispatch_subscription_updated_with_routing_profiles() {
+        let event = dispatch(make_msg(
+            "subscription-updated",
+            json!({
+                "group_id": 1,
+                "group": { "id": 1, "name": "Sub", "routing_mode": "auto", "active_routing_profile_id": "r1" },
+                "profiles": [],
+                "routing_profiles": [{
+                    "id": "r1",
+                    "name": "Route 1",
+                    "state": "ready",
+                    "active": true,
+                    "rules_count": 5
+                }]
+            }),
+        ));
+        if let CoreEvent::SubscriptionUpdated {
+            group,
+            profiles: _,
+            routing_profiles,
+        } = event
+        {
+            assert_eq!(group.routing_mode, "auto");
+            assert_eq!(group.active_routing_profile_id, "r1");
+            assert_eq!(routing_profiles.len(), 1);
+            assert_eq!(routing_profiles[0].id, "r1");
+            assert_eq!(routing_profiles[0].name, "Route 1");
+            assert!(routing_profiles[0].active);
+            assert_eq!(routing_profiles[0].rules_count, 5);
         } else {
             panic!("expected SubscriptionUpdated");
         }

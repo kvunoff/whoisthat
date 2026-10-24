@@ -354,4 +354,68 @@ impl CoreClient {
             )
             .await
     }
+
+    pub async fn import_happ_routing(&self, group_id: i32, link: &str) -> std::io::Result<()> {
+        self.writer
+            .lock()
+            .await
+            .send(
+                "import-happ-routing",
+                &ImportHappRoutingData {
+                    group_id,
+                    link: link.to_string(),
+                },
+            )
+            .await
+    }
+
+    pub async fn set_group_routing_mode(&self, group_id: i32, mode: &str) -> std::io::Result<()> {
+        self.writer
+            .lock()
+            .await
+            .send(
+                "set-group-routing-mode",
+                &SetGroupRoutingModeData {
+                    group_id,
+                    mode: mode.to_string(),
+                },
+            )
+            .await
+    }
+
+    pub async fn set_active_routing_profile(
+        &self,
+        group_id: i32,
+        profile_id: &str,
+    ) -> std::io::Result<()> {
+        self.writer
+            .lock()
+            .await
+            .send(
+                "set-active-routing-profile",
+                &SetActiveRoutingProfileData {
+                    group_id,
+                    profile_id: profile_id.to_string(),
+                },
+            )
+            .await
+    }
+
+    pub async fn delete_routing_profile(
+        &self,
+        group_id: i32,
+        profile_id: &str,
+    ) -> std::io::Result<()> {
+        self.writer
+            .lock()
+            .await
+            .send(
+                "delete-routing-profile",
+                &DeleteRoutingProfileData {
+                    group_id,
+                    profile_id: profile_id.to_string(),
+                },
+            )
+            .await
+    }
 }

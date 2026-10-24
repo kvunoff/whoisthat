@@ -6,6 +6,6 @@ mod state;
 mod tree;
 mod types;
 
-pub use helpers::{centered_rect_fixed, format_bytes, responsive_rect};
+pub use helpers::{centered_rect_fixed, format_bytes, format_relative, responsive_rect};
 pub use state::App;
 pub use types::{ActiveTab, Focus, ItemMoveAction, Popup, TreeNode};

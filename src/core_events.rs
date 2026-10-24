@@ -182,8 +182,12 @@ pub(crate) async fn handle_core_event(
             let _ = client.get_application_state().await;
             let _ = client.get_routing().await;
         }
-        CoreEvent::SubscriptionUpdated { group, profiles } => {
-            app.apply_subscription_updated(group, profiles);
+        CoreEvent::SubscriptionUpdated {
+            group,
+            profiles,
+            routing_profiles,
+        } => {
+            app.apply_subscription_updated(group, profiles, routing_profiles);
             app.msg("Subscription updated");
         }
 

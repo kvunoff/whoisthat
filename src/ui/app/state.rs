@@ -47,6 +47,7 @@ pub struct App {
     pub traffic_history: TrafficHistory,
     pub routing: RoutingConfig,
     pub routing_cursor: usize,
+    pub routing_group_index: usize,
     pub routing_popup: Option<RoutingPopup>,
     pub search_query: Option<String>,
     pub search_input: String,
@@ -115,6 +116,7 @@ impl App {
             traffic_history: TrafficHistory::new(),
             routing: RoutingConfig::default(),
             routing_cursor: 0,
+            routing_group_index: 0,
             routing_popup: None,
             search_query: None,
             search_input: String::new(),
@@ -219,6 +221,41 @@ impl App {
         match self.tree_node_at(self.cursor)? {
             TreeNode::Group(gi) => self.groups.get(gi),
             TreeNode::Profile(gi, _) => self.groups.get(gi),
+        }
+    }
+
+    pub fn routing_selected_group(&self) -> Option<&GroupWithProfiles> {
+        if self.groups.is_empty() {
+            return None;
+        }
+        if self.routing_group_index < self.groups.len() {
+            Some(&self.groups[self.routing_group_index])
+        } else {
+            self.groups.first()
+        }
+    }
+
+    pub fn routing_group_next(&mut self) {
+        if !self.groups.is_empty() {
+            self.routing_group_index = (self.routing_group_index + 1) % self.groups.len();
+        }
+    }
+
+    pub fn routing_group_prev(&mut self) {
+        if !self.groups.is_empty() {
+            self.routing_group_index = if self.routing_group_index == 0 {
+                self.groups.len() - 1
+            } else {
+                self.routing_group_index - 1
+            };
+        }
+    }
+
+    pub fn sync_routing_group_to_connected(&mut self) {
+        if let Some(ref p) = self.connection_status.profile {
+            if let Some(idx) = self.groups.iter().position(|g| g.group.id == p.group_id) {
+                self.routing_group_index = idx;
+            }
         }
     }
 
@@ -450,11 +487,17 @@ impl App {
         self.clamp_cursor();
     }
 
-    pub fn apply_subscription_updated(&mut self, group: Group, profiles: Vec<Profile>) {
+    pub fn apply_subscription_updated(
+        &mut self,
+        group: Group,
+        profiles: Vec<Profile>,
+        routing_profiles: Vec<RoutingProfileInfo>,
+    ) {
         self.invalidate_uri_cache();
         if let Some(g) = self.groups.iter_mut().find(|g| g.group.id == group.id) {
             g.group = group;
             g.profiles = profiles;
+            g.routing_profiles = routing_profiles;
         }
         self.clamp_cursor();
     }
@@ -483,6 +526,7 @@ impl App {
         self.groups.push(GroupWithProfiles {
             group: g,
             profiles: Vec::new(),
+            routing_profiles: Vec::new(),
         });
     }
 
@@ -747,6 +791,7 @@ mod tests {
                 tested_at: 12345,
                 ..Default::default()
             }],
+            routing_profiles: Vec::new(),
         }];
         app
     }
@@ -800,6 +845,7 @@ mod tests {
                     ..Default::default()
                 },
             ],
+            routing_profiles: Vec::new(),
         });
 
         // Group 1 (1 profile) + Group 2 (2 profiles) = 2 groups + 3 profiles = 5 items
@@ -941,6 +987,7 @@ mod tests {
                 ..Default::default()
             },
             profiles: vec![],
+            routing_profiles: Vec::new(),
         });
 
         // Group 1 at cursor 0
@@ -996,6 +1043,7 @@ mod tests {
                 ..Default::default()
             },
             profiles: vec![],
+            routing_profiles: Vec::new(),
         });
 
         app.connection_status.connection = "connected".into();

@@ -334,7 +334,11 @@ impl App {
             ("e", "Edit rule"),
             ("x", "Delete rule"),
             ("Space", "Toggle rule enabled"),
-            ("←/→", "Cycle type/outbound in form"),
+            ("p", "Presets (GeoIP/GeoSite)"),
+            ("H", "Happ routing profiles"),
+            ("m", "Cycle group routing mode"),
+            ("i", "Import Happ routing from clip"),
+            ("←/→", "Switch group / form fields"),
         ];
 
         let settings: &[(&str, &str)] = &[

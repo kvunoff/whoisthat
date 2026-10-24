@@ -36,6 +36,30 @@ pub struct ProfileID {
     pub group_id: i32,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub struct RoutingProfileInfo {
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub state: String,
+    #[serde(default)]
+    pub last_error: String,
+    #[serde(default)]
+    pub active: bool,
+    #[serde(default)]
+    pub rules_count: usize,
+    #[serde(default)]
+    pub global_proxy: bool,
+    #[serde(default)]
+    pub domain_strategy: String,
+    #[serde(default)]
+    pub last_updated: i64,
+    #[serde(default)]
+    pub geo_updated_at: i64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Group {
     pub id: i32,
@@ -57,12 +81,20 @@ pub struct Group {
     pub sub_total: i64,
     #[serde(default)]
     pub profile_order: Vec<i32>,
+    #[serde(default)]
+    pub routing_mode: String,
+    #[serde(default)]
+    pub active_routing_profile_id: String,
+    #[serde(default)]
+    pub pending_active_routing_profile_id: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct GroupWithProfiles {
     pub group: Group,
     pub profiles: Vec<Profile>,
+    #[serde(default)]
+    pub routing_profiles: Vec<RoutingProfileInfo>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -339,6 +371,8 @@ pub struct SubscriptionUpdated {
     pub group_id: i32,
     pub group: Group,
     pub profiles: Vec<Profile>,
+    #[serde(default)]
+    pub routing_profiles: Vec<RoutingProfileInfo>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -394,6 +428,8 @@ pub struct RoutingRule {
     pub protocol: String,
     #[serde(default)]
     pub port: String,
+    #[serde(default)]
+    pub network: String,
     #[serde(default)]
     pub outbound_tag: String,
     #[serde(default = "default_true")]
@@ -459,4 +495,28 @@ pub struct AutoconnectInfo {
 
 fn default_autoconnect_mode() -> String {
     "proxy".into()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImportHappRoutingData {
+    pub group_id: i32,
+    pub link: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SetGroupRoutingModeData {
+    pub group_id: i32,
+    pub mode: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SetActiveRoutingProfileData {
+    pub group_id: i32,
+    pub profile_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeleteRoutingProfileData {
+    pub group_id: i32,
+    pub profile_id: String,
 }
