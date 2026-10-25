@@ -1,10 +1,11 @@
-use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
+use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 
 use crate::config;
 use crate::core_client::protocol::SetHwidData;
 use crate::core_client::CoreClient;
 use crate::core_spawn::find_core_binary;
 use crate::event_loop::AppEvent;
+use crate::keymap::{resolve_action, AppAction, KeyContext};
 use crate::logger::{configure_logger, FileLogger};
 use crate::popups::{handle_popup_input, handle_routing_popup_input};
 use crate::systemd::{setup_systemd_service, teardown_systemd_service};
@@ -43,26 +44,6 @@ pub(crate) async fn handle_input(
             Event::Key(key) => {
                 if key.kind == KeyEventKind::Release {
                     return false;
-                }
-
-                if key.code == KeyCode::Char('q')
-                    && app.popup.is_none()
-                    && app.routing_popup.is_none()
-                    && !app.search_mode
-                    && !matches!(key.modifiers, crossterm::event::KeyModifiers::CONTROL)
-                {
-                    return true;
-                }
-
-                if (key.code == KeyCode::Char('Q')
-                    || (key.code == KeyCode::Char('c')
-                        && key.modifiers == crossterm::event::KeyModifiers::CONTROL))
-                    && app.popup.is_none()
-                    && app.routing_popup.is_none()
-                    && !app.search_mode
-                {
-                    let _ = client.die().await;
-                    return true;
                 }
 
                 if app.popup.is_some() {
@@ -124,15 +105,273 @@ async fn handle_normal_input(
         return false;
     }
 
-    match key.code {
-        KeyCode::Tab | KeyCode::BackTab => {
+    let ctx = match app.tab {
+        ActiveTab::Profiles => match app.focus {
+            Focus::LeftPanel => KeyContext::ProfilesTree,
+            Focus::RightPanel => KeyContext::ProfilesDetails,
+            Focus::Popup => KeyContext::Global,
+        },
+        ActiveTab::Routing => KeyContext::Routing,
+        ActiveTab::Settings => KeyContext::Settings,
+        ActiveTab::Logs => KeyContext::Logs,
+        ActiveTab::Traffic => KeyContext::Traffic,
+    };
+
+    let action = resolve_action(ctx, &key);
+    match action {
+        AppAction::Quit => {
+            let _ = client.die().await;
+            true
+        }
+        AppAction::Detach => true,
+        AppAction::Help => {
+            app.help_scroll = 0;
+            app.popup = Some(Popup::Help);
+            app.focus = Focus::Popup;
+            false
+        }
+        AppAction::TabSwitcherModal => {
             app.popup = Some(Popup::TabSwitcher {
                 cursor: app.tab_index(),
             });
             app.focus = Focus::Popup;
-            return false;
+            false
         }
-        KeyCode::Char('a') => {
+        AppAction::SwitchTab(idx) => {
+            let target = App::tab_from_index(idx);
+            app.tab = target;
+            app.focus = Focus::LeftPanel;
+            if target == ActiveTab::Routing {
+                app.routing_popup = None;
+                app.sync_routing_group_to_connected();
+                let _ = client.get_routing().await;
+            }
+            false
+        }
+        AppAction::NextTab => {
+            let target = app.next_tab();
+            app.focus = Focus::LeftPanel;
+            if target == ActiveTab::Routing {
+                app.routing_popup = None;
+                app.sync_routing_group_to_connected();
+                let _ = client.get_routing().await;
+            }
+            false
+        }
+        AppAction::PrevTab => {
+            let target = app.prev_tab();
+            app.focus = Focus::LeftPanel;
+            if target == ActiveTab::Routing {
+                app.routing_popup = None;
+                app.sync_routing_group_to_connected();
+                let _ = client.get_routing().await;
+            }
+            false
+        }
+        AppAction::ToggleTun => {
+            if app.tun_enabled {
+                let _ = client.disable_tun().await;
+            } else {
+                let _ = client.is_root().await;
+                app.msg("Checking root...");
+            }
+            false
+        }
+        AppAction::Disconnect => {
+            let _ = client.disconnect().await;
+            app.msg("Disconnecting...");
+            false
+        }
+        AppAction::Dismiss => {
+            if app.focus == Focus::RightPanel {
+                app.focus = Focus::LeftPanel;
+            } else if app.search_query.is_some() {
+                app.search_query = None;
+                app.search_input.clear();
+                app.cursor = 0;
+                app.clamp_cursor();
+            }
+            false
+        }
+        AppAction::ToggleFocus => {
+            app.toggle_focus();
+            false
+        }
+        AppAction::CursorDown => {
+            match app.tab {
+                ActiveTab::Profiles => match app.focus {
+                    Focus::LeftPanel => app.cursor_down(),
+                    Focus::RightPanel => {
+                        app.details_scroll_down(app.details_line_count(), app.details_visible());
+                    }
+                    Focus::Popup => {}
+                },
+                ActiveTab::Routing => {
+                    let len = app.routing.rules.len();
+                    if len > 0 && app.routing_cursor + 1 < len {
+                        app.routing_cursor += 1;
+                    }
+                }
+                ActiveTab::Settings => app.settings_state.cursor_down(),
+                ActiveTab::Logs => app.logs_state.scroll_down(),
+                ActiveTab::Traffic => {}
+            }
+            false
+        }
+        AppAction::CursorUp => {
+            match app.tab {
+                ActiveTab::Profiles => match app.focus {
+                    Focus::LeftPanel => app.cursor_up(),
+                    Focus::RightPanel => app.details_scroll_up(),
+                    Focus::Popup => {}
+                },
+                ActiveTab::Routing => {
+                    app.routing_cursor = app.routing_cursor.saturating_sub(1);
+                }
+                ActiveTab::Settings => app.settings_state.cursor_up(),
+                ActiveTab::Logs => app.logs_state.scroll_up(),
+                ActiveTab::Traffic => {}
+            }
+            false
+        }
+        AppAction::CursorLeft => {
+            match app.tab {
+                ActiveTab::Profiles => match app.focus {
+                    Focus::LeftPanel => {
+                        if let Some(TreeNode::Group(gi)) = app.tree_node_at(app.cursor) {
+                            if let Some(g) = app.groups.get(gi) {
+                                app.collapse_group(g.group.id);
+                            }
+                        } else if let Some(parent_pos) = app.parent_group_cursor() {
+                            app.cursor = parent_pos;
+                        }
+                    }
+                    Focus::RightPanel => {
+                        app.focus = Focus::LeftPanel;
+                    }
+                    Focus::Popup => {}
+                },
+                _ => {}
+            }
+            false
+        }
+        AppAction::CursorRight => {
+            match app.tab {
+                ActiveTab::Profiles => match app.focus {
+                    Focus::LeftPanel => {
+                        if let Some(TreeNode::Group(gi)) = app.tree_node_at(app.cursor) {
+                            if let Some(g) = app.groups.get(gi) {
+                                if app.is_group_collapsed(g.group.id) {
+                                    app.expand_group(g.group.id);
+                                } else if !g.profiles.is_empty() {
+                                    app.cursor_down();
+                                }
+                            }
+                        } else if app.selected_profile().is_some() {
+                            app.focus = Focus::RightPanel;
+                        }
+                    }
+                    Focus::RightPanel => {}
+                    Focus::Popup => {}
+                },
+                _ => {}
+            }
+            false
+        }
+        AppAction::ScrollTop => {
+            match app.tab {
+                ActiveTab::Profiles => match app.focus {
+                    Focus::LeftPanel => app.cursor_top(),
+                    Focus::RightPanel => app.details_scroll_top(),
+                    Focus::Popup => {}
+                },
+                ActiveTab::Logs => app.logs_state.scroll_top(),
+                _ => {}
+            }
+            false
+        }
+        AppAction::ScrollBottom => {
+            match app.tab {
+                ActiveTab::Profiles => match app.focus {
+                    Focus::LeftPanel => app.cursor_bottom(),
+                    Focus::RightPanel => {
+                        app.details_scroll_bottom(app.details_line_count(), app.details_visible());
+                    }
+                    Focus::Popup => {}
+                },
+                ActiveTab::Logs => app.logs_state.scroll_bottom(),
+                _ => {}
+            }
+            false
+        }
+        AppAction::PageDown => {
+            match app.tab {
+                ActiveTab::Profiles => match app.focus {
+                    Focus::LeftPanel => app.cursor_page_down(10),
+                    Focus::RightPanel => {
+                        for _ in 0..10 {
+                            app.details_scroll_down(app.details_line_count(), app.details_visible());
+                        }
+                    }
+                    Focus::Popup => {}
+                },
+                ActiveTab::Logs => app.logs_state.scroll_page_down(10),
+                _ => {}
+            }
+            false
+        }
+        AppAction::PageUp => {
+            match app.tab {
+                ActiveTab::Profiles => match app.focus {
+                    Focus::LeftPanel => app.cursor_page_up(10),
+                    Focus::RightPanel => {
+                        for _ in 0..10 {
+                            app.details_scroll_up();
+                        }
+                    }
+                    Focus::Popup => {}
+                },
+                ActiveTab::Logs => app.logs_state.scroll_page_up(10),
+                _ => {}
+            }
+            false
+        }
+        AppAction::Connect => {
+            if let Some(p) = app.selected_profile() {
+                let _ = client.connect(p.group_id, p.id).await;
+                app.msg("Connecting...");
+            } else if let Some(TreeNode::Group(gi)) = app.tree_node_at(app.cursor) {
+                if let Some(g) = app.groups.get(gi) {
+                    app.toggle_group_collapsed(g.group.id);
+                }
+            }
+            false
+        }
+        AppAction::ToggleGroup => {
+            if let Some(TreeNode::Group(gi)) = app.tree_node_at(app.cursor) {
+                if let Some(g) = app.groups.get(gi) {
+                    app.toggle_group_collapsed(g.group.id);
+                }
+            }
+            false
+        }
+        AppAction::TestFocused => {
+            let list = build_test_list(app, true);
+            run_test_batch(app, client, &list).await;
+            false
+        }
+        AppAction::TestAll => {
+            let list = build_test_list(app, false);
+            run_test_batch(app, client, &list).await;
+            false
+        }
+        AppAction::CancelTests => {
+            let _ = client.cancel_tests().await;
+            app.test_progress = None;
+            app.msg("Cancelling in-flight tests...");
+            false
+        }
+        AppAction::AddProfile => {
             if app.tab == ActiveTab::Routing {
                 app.routing_popup = Some(RoutingPopup::Add {
                     match_type: 0,
@@ -157,227 +396,277 @@ async fn handle_normal_input(
                 cursor: 0,
             });
             app.focus = Focus::Popup;
-            return false;
+            false
         }
-        KeyCode::Char('l') => {
-            app.tab = ActiveTab::Logs;
-            app.focus = Focus::LeftPanel;
-            return false;
-        }
-        KeyCode::Char('r') => {
-            app.routing_popup = None;
-            app.tab = ActiveTab::Routing;
-            app.focus = Focus::LeftPanel;
-            app.sync_routing_group_to_connected();
-            let _ = client.get_routing().await;
-            return false;
-        }
-        KeyCode::Char('m') => {
-            if app.tab == ActiveTab::Routing {
-                if let Some(group) = app.routing_selected_group() {
-                    let gid = group.group.id;
-                    let cur = match group.group.routing_mode.as_str() {
-                        "manual" => "manual",
-                        "subscription" => "subscription",
-                        _ => "auto",
-                    };
-                    let next_mode = match cur {
-                        "auto" => "manual",
-                        "manual" => "subscription",
-                        _ => "auto",
-                    };
-                    let _ = client.set_group_routing_mode(gid, next_mode).await;
-                    app.msg(format!("Group routing mode: {next_mode}"));
-                }
-                return false;
-            }
-            app.tab = ActiveTab::Traffic;
-            app.focus = Focus::LeftPanel;
-            return false;
-        }
-        KeyCode::Char('s') => {
-            app.tab = ActiveTab::Settings;
-            app.focus = Focus::LeftPanel;
-            return false;
-        }
-        KeyCode::Char('v') => {
-            if app.tun_enabled {
-                let _ = client.disable_tun().await;
-            } else {
-                let _ = client.is_root().await;
-                app.msg("Checking root...");
-            }
-            return false;
-        }
-        KeyCode::Char('1') | KeyCode::Esc => {
-            app.tab = ActiveTab::Profiles;
-            return false;
-        }
-        KeyCode::Char('2') => {
-            app.routing_popup = None;
-            app.tab = ActiveTab::Routing;
-            app.focus = Focus::LeftPanel;
-            app.sync_routing_group_to_connected();
-            let _ = client.get_routing().await;
-            return false;
-        }
-        KeyCode::Char('3') => {
-            app.tab = ActiveTab::Traffic;
-            app.focus = Focus::LeftPanel;
-            return false;
-        }
-        KeyCode::Char('4') => {
-            app.tab = ActiveTab::Logs;
-            app.focus = Focus::LeftPanel;
-            return false;
-        }
-        KeyCode::Char('5') => {
-            app.tab = ActiveTab::Settings;
-            app.focus = Focus::LeftPanel;
-            return false;
-        }
-        KeyCode::Char('h') => {
-            if app.tab == ActiveTab::Routing {
-                app.routing_popup = Some(RoutingPopup::HappProfiles { cursor: 0 });
-                return false;
-            }
-            app.help_scroll = 0;
-            app.popup = Some(Popup::Help);
+        AppAction::AddGroup => {
+            let default_name = format!("Group {}", app.groups.len() + 1);
+            app.popup = Some(Popup::AddGroup {
+                name: default_name,
+                url: String::new(),
+                cursor: 0,
+                field: 0,
+            });
             app.focus = Focus::Popup;
-            return false;
+            false
         }
-        KeyCode::Char('?') => {
-            app.help_scroll = 0;
-            app.popup = Some(Popup::Help);
-            app.focus = Focus::Popup;
-            return false;
-        }
-        _ => {}
-    }
-
-    if app.tab == ActiveTab::Routing {
-        match key.code {
-            KeyCode::Char('p') | KeyCode::Char('P') => {
-                app.routing_popup = Some(RoutingPopup::Presets { cursor: 0 });
-            }
-            KeyCode::Char('h') | KeyCode::Char('H') => {
-                app.routing_popup = Some(RoutingPopup::HappProfiles { cursor: 0 });
-            }
-            KeyCode::Char('m') | KeyCode::Char('M') => {
-                if let Some(group) = app.routing_selected_group() {
-                    let gid = group.group.id;
-                    let cur = match group.group.routing_mode.as_str() {
-                        "manual" => "manual",
-                        "subscription" => "subscription",
-                        _ => "auto",
-                    };
-                    let next_mode = match cur {
-                        "auto" => "manual",
-                        "manual" => "subscription",
-                        _ => "auto",
-                    };
-                    let _ = client.set_group_routing_mode(gid, next_mode).await;
-                    app.msg(format!("Group routing mode: {next_mode}"));
+        AppAction::UpdateSubscription => {
+            if let Some(g) = app.current_group() {
+                if !g.group.subscription_url.is_empty() {
+                    let _ = client.update_subscription(g.group.id).await;
+                    app.msg("Updating subscription...");
                 }
             }
-            KeyCode::Left => {
-                app.routing_group_prev();
+            false
+        }
+        AppAction::EditItem => {
+            if app.on_group() {
+                if let Some(g) = app.current_group() {
+                    app.popup = Some(Popup::EditSubscription {
+                        name: g.group.name.clone(),
+                        url: g.group.subscription_url.clone(),
+                        group_id: g.group.id,
+                        cursor: g.group.subscription_url.chars().count(),
+                        field: 1,
+                    });
+                    app.focus = Focus::Popup;
+                }
+            } else if let Some(p) = app.selected_profile() {
+                app.popup = Some(Popup::EditProfileName {
+                    input: p.name.clone(),
+                    cursor: p.name.chars().count(),
+                    group_id: p.group_id,
+                    profile_id: p.id,
+                });
+                app.focus = Focus::Popup;
             }
-            KeyCode::Right => {
-                app.routing_group_next();
+            false
+        }
+        AppAction::CopyUri => {
+            if let Some(p) = app.selected_profile() {
+                match arboard::Clipboard::new() {
+                    Ok(mut cb) => match cb.set_text(&p.uri) {
+                        Ok(()) => app.msg("Copied profile URI to clipboard"),
+                        Err(e) => app.msg(format!("Failed to copy URI: {e}")),
+                    },
+                    Err(e) => app.msg(format!("Clipboard unavailable: {e}")),
+                }
             }
-            KeyCode::Char('i') | KeyCode::Char('I') => {
-                let clip = read_clipboard();
-                let text = clip.unwrap_or_default().trim().to_string();
-                if text.is_empty() {
-                    app.msg("Clipboard is empty");
+            false
+        }
+        AppAction::DeleteItem => {
+            if let Some(p) = app.selected_profile() {
+                let name = if p.name.is_empty() {
+                    if p.address.is_empty() {
+                        "Unknown".to_string()
+                    } else {
+                        p.address.clone()
+                    }
                 } else {
-                    let link = if let Some(idx) = text.find("happ://routing/") {
-                        let sub = &text[idx..];
-                        sub.split_whitespace().next().unwrap_or(sub).to_string()
-                    } else if let Some(idx) = text.find("wit://") {
-                        let sub = &text[idx..];
-                        sub.split_whitespace().next().unwrap_or(sub).to_string()
-                    } else {
-                        text
-                    };
-
-                    let gid = app
-                        .routing_selected_group()
-                        .map(|g| g.group.id)
-                        .unwrap_or(0);
-                    if gid == 0 && app.groups.is_empty() {
-                        app.msg("No groups available to import Happ routing");
-                    } else {
-                        let _ = client.import_happ_routing(gid, &link).await;
-                        app.msg("Importing Happ routing from clipboard...");
+                    p.name.clone()
+                };
+                app.popup = Some(Popup::ConfirmDelete {
+                    gid: p.group_id,
+                    pid: p.id,
+                    name,
+                });
+                app.focus = Focus::Popup;
+            }
+            false
+        }
+        AppAction::DeleteGroup => {
+            if let Some(g) = app.current_group() {
+                app.popup = Some(Popup::ConfirmDeleteGroup {
+                    gid: g.group.id,
+                    name: g.group.name.clone(),
+                });
+                app.focus = Focus::Popup;
+            }
+            false
+        }
+        AppAction::MoveItemDown => {
+            if app.search_query.is_some() {
+                app.msg("Cannot reorder profiles while search filter is active");
+            } else if let Some(action) = app.move_item_down() {
+                match action {
+                    ItemMoveAction::ReorderProfiles {
+                        group_id,
+                        profile_ids,
+                        profile_name,
+                        ..
+                    } => {
+                        app.msg(format!("Moved \"{}\" down", profile_name));
+                        let _ = client.reorder_profiles(group_id, profile_ids).await;
+                    }
+                    ItemMoveAction::ReorderGroups {
+                        group_ids,
+                        group_name,
+                        ..
+                    } => {
+                        app.msg(format!("Moved group \"{}\" down", group_name));
+                        let _ = client.reorder_groups(group_ids).await;
                     }
                 }
             }
-            KeyCode::Char('j') | KeyCode::Down => {
-                let len = app.routing.rules.len();
-                if len > 0 && app.routing_cursor + 1 < len {
-                    app.routing_cursor += 1;
-                }
-            }
-            KeyCode::Char('k') | KeyCode::Up => {
-                app.routing_cursor = app.routing_cursor.saturating_sub(1);
-            }
-            KeyCode::Char('e') | KeyCode::Enter => {
-                if let Some(rule) = app.routing.rules.get(app.routing_cursor) {
-                    let (mt, val, ob) = rule_to_form(rule);
-                    let cursor = val.chars().count();
-                    app.routing_popup = Some(RoutingPopup::Edit {
-                        index: app.routing_cursor,
-                        match_type: mt,
-                        value: val,
-                        outbound: ob,
-                        cursor,
-                        field: 0,
-                    });
-                }
-            }
-            KeyCode::Char('x') | KeyCode::Delete => {
-                if app.routing.rules.get(app.routing_cursor).is_some() {
-                    app.routing_popup = Some(RoutingPopup::ConfirmDelete {
-                        index: app.routing_cursor,
-                    });
-                }
-            }
-            KeyCode::Char(' ') => {
-                if let Some(rule) = app.routing.rules.get_mut(app.routing_cursor) {
-                    rule.enabled = !rule.enabled;
-                    let action = if rule.enabled { "enabled" } else { "disabled" };
-                    app.msg(format!("Rule {action}"));
-                    let _ = client.update_routing(&app.routing).await;
-                }
-            }
-            _ => {}
+            false
         }
-        return false;
-    }
+        AppAction::MoveItemUp => {
+            if app.search_query.is_some() {
+                app.msg("Cannot reorder profiles while search filter is active");
+            } else if let Some(action) = app.move_item_up() {
+                match action {
+                    ItemMoveAction::ReorderProfiles {
+                        group_id,
+                        profile_ids,
+                        profile_name,
+                        ..
+                    } => {
+                        app.msg(format!("Moved \"{}\" up", profile_name));
+                        let _ = client.reorder_profiles(group_id, profile_ids).await;
+                    }
+                    ItemMoveAction::ReorderGroups {
+                        group_ids,
+                        group_name,
+                        ..
+                    } => {
+                        app.msg(format!("Moved group \"{}\" up", group_name));
+                        let _ = client.reorder_groups(group_ids).await;
+                    }
+                }
+            }
+            false
+        }
+        AppAction::StartSearch => {
+            app.search_mode = true;
+            app.search_input.clear();
+            app.search_query = Some(String::new());
+            app.cursor = 0;
+            false
+        }
+        AppAction::AddRoutingRule => {
+            app.routing_popup = Some(RoutingPopup::Add {
+                match_type: 0,
+                value: String::new(),
+                outbound: 0,
+                cursor: 0,
+                field: 0,
+            });
+            false
+        }
+        AppAction::EditRoutingRule => {
+            if let Some(rule) = app.routing.rules.get(app.routing_cursor) {
+                let (mt, val, ob) = rule_to_form(rule);
+                let cursor = val.chars().count();
+                app.routing_popup = Some(RoutingPopup::Edit {
+                    index: app.routing_cursor,
+                    match_type: mt,
+                    value: val,
+                    outbound: ob,
+                    cursor,
+                    field: 0,
+                });
+            }
+            false
+        }
+        AppAction::DeleteRoutingRule => {
+            if app.routing.rules.get(app.routing_cursor).is_some() {
+                app.routing_popup = Some(RoutingPopup::ConfirmDelete {
+                    index: app.routing_cursor,
+                });
+            }
+            false
+        }
+        AppAction::ToggleRuleEnabled => {
+            if let Some(rule) = app.routing.rules.get_mut(app.routing_cursor) {
+                rule.enabled = !rule.enabled;
+                let action = if rule.enabled { "enabled" } else { "disabled" };
+                app.msg(format!("Rule {action}"));
+                let _ = client.update_routing(&app.routing).await;
+            }
+            false
+        }
+        AppAction::OpenPresets => {
+            app.routing_popup = Some(RoutingPopup::Presets { cursor: 0 });
+            false
+        }
+        AppAction::OpenHappProfiles => {
+            app.routing_popup = Some(RoutingPopup::HappProfiles { cursor: 0 });
+            false
+        }
+        AppAction::CycleRoutingMode => {
+            if let Some(group) = app.routing_selected_group() {
+                let gid = group.group.id;
+                let cur = match group.group.routing_mode.as_str() {
+                    "manual" => "manual",
+                    "subscription" => "subscription",
+                    _ => "auto",
+                };
+                let next_mode = match cur {
+                    "auto" => "manual",
+                    "manual" => "subscription",
+                    _ => "auto",
+                };
+                let _ = client.set_group_routing_mode(gid, next_mode).await;
+                app.msg(format!("Group routing mode: {next_mode}"));
+            }
+            false
+        }
+        AppAction::ImportHappLink => {
+            let clip = read_clipboard();
+            let text = clip.unwrap_or_default().trim().to_string();
+            if text.is_empty() {
+                app.msg("Clipboard is empty");
+            } else {
+                let link = if let Some(idx) = text.find("happ://routing/") {
+                    let sub = &text[idx..];
+                    sub.split_whitespace().next().unwrap_or(sub).to_string()
+                } else if let Some(idx) = text.find("wit://") {
+                    let sub = &text[idx..];
+                    sub.split_whitespace().next().unwrap_or(sub).to_string()
+                } else {
+                    text
+                };
 
-    if app.tab == ActiveTab::Settings {
-        match key.code {
-            KeyCode::Char('j') | KeyCode::Down => app.settings_state.cursor_down(),
-            KeyCode::Char('k') | KeyCode::Up => app.settings_state.cursor_up(),
-            KeyCode::Char('h') | KeyCode::Left => {
-                if app.settings_state.cursor() == 3 {
-                    let prev_theme = crate::ui::theme::cycle_theme_prev();
-                    cfg.theme = prev_theme.to_string();
-                    config::save_config(cfg);
-                    app.msg(format!("Theme: {}", crate::ui::theme::current_theme().name));
+                let gid = app
+                    .routing_selected_group()
+                    .map(|g| g.group.id)
+                    .unwrap_or(0);
+                if gid == 0 && app.groups.is_empty() {
+                    app.msg("No groups available to import Happ routing");
+                } else {
+                    let _ = client.import_happ_routing(gid, &link).await;
+                    app.msg("Importing Happ routing from clipboard...");
                 }
             }
-            KeyCode::Char('l') | KeyCode::Right => {
-                if app.settings_state.cursor() == 3 {
-                    let next_theme = crate::ui::theme::cycle_theme();
-                    cfg.theme = next_theme.to_string();
-                    config::save_config(cfg);
-                    app.msg(format!("Theme: {}", crate::ui::theme::current_theme().name));
-                }
+            false
+        }
+        AppAction::RoutingGroupPrev => {
+            app.routing_group_prev();
+            false
+        }
+        AppAction::RoutingGroupNext => {
+            app.routing_group_next();
+            false
+        }
+        AppAction::SettingsPrev => {
+            if app.settings_state.cursor() == 3 {
+                let prev_theme = crate::ui::theme::cycle_theme_prev();
+                cfg.theme = prev_theme.to_string();
+                config::save_config(cfg);
+                app.msg(format!("Theme: {}", crate::ui::theme::current_theme().name));
             }
-            KeyCode::Char(' ') | KeyCode::Enter => match app.settings_state.cursor() {
+            false
+        }
+        AppAction::SettingsNext => {
+            if app.settings_state.cursor() == 3 {
+                let next_theme = crate::ui::theme::cycle_theme();
+                cfg.theme = next_theme.to_string();
+                config::save_config(cfg);
+                app.msg(format!("Theme: {}", crate::ui::theme::current_theme().name));
+            }
+            false
+        }
+        AppAction::SettingsActivate => {
+            match app.settings_state.cursor() {
                 0 => {
                     let new_val = !app.autoconnect_enabled;
                     let _ = client
@@ -581,330 +870,16 @@ async fn handle_normal_input(
                     }
                 }
                 _ => {}
-            },
-            _ => {}
+            }
+            false
         }
-        return false;
-    }
-
-    if app.tab == ActiveTab::Logs {
-        match key.code {
-            KeyCode::Char('j') | KeyCode::Down => app.logs_state.scroll_down(),
-            KeyCode::Char('k') | KeyCode::Up => app.logs_state.scroll_up(),
-            KeyCode::Char('g') => app.logs_state.scroll_top(),
-            KeyCode::Char('G') => app.logs_state.scroll_bottom(),
-            KeyCode::Char('f') | KeyCode::Char('F') => {
-                app.logs_state.cycle_filter();
-                app.msg(format!("Log filter: {}", app.logs_state.filter.label()));
-            }
-            _ => {}
+        AppAction::LogsCycleFilter => {
+            app.logs_state.cycle_filter();
+            app.msg(format!("Log filter: {}", app.logs_state.filter.label()));
+            false
         }
-        return false;
+        AppAction::None => false,
     }
-
-    if app.tab == ActiveTab::Traffic {
-        if key.code == KeyCode::Char('d') {
-            let _ = client.disconnect().await;
-            app.msg("Disconnecting...");
-        }
-        return false;
-    }
-
-    match app.focus {
-        Focus::LeftPanel => {
-            let is_move_down = match key.code {
-                KeyCode::Char('J') => true,
-                KeyCode::Down
-                    if key.modifiers.contains(KeyModifiers::ALT)
-                        || key.modifiers.contains(KeyModifiers::SHIFT) =>
-                {
-                    true
-                }
-                KeyCode::Char('j') if key.modifiers.contains(KeyModifiers::ALT) => true,
-                _ => false,
-            };
-            let is_move_up = match key.code {
-                KeyCode::Char('K') => true,
-                KeyCode::Up
-                    if key.modifiers.contains(KeyModifiers::ALT)
-                        || key.modifiers.contains(KeyModifiers::SHIFT) =>
-                {
-                    true
-                }
-                KeyCode::Char('k') if key.modifiers.contains(KeyModifiers::ALT) => true,
-                _ => false,
-            };
-
-            if is_move_down {
-                if app.search_query.is_some() {
-                    app.msg("Cannot reorder profiles while search filter is active");
-                } else if let Some(action) = app.move_item_down() {
-                    match action {
-                        ItemMoveAction::ReorderProfiles {
-                            group_id,
-                            profile_ids,
-                            profile_name,
-                            ..
-                        } => {
-                            app.msg(format!("Moved \"{}\" down", profile_name));
-                            let _ = client.reorder_profiles(group_id, profile_ids).await;
-                        }
-                        ItemMoveAction::ReorderGroups {
-                            group_ids,
-                            group_name,
-                            ..
-                        } => {
-                            app.msg(format!("Moved group \"{}\" down", group_name));
-                            let _ = client.reorder_groups(group_ids).await;
-                        }
-                    }
-                }
-                return false;
-            }
-
-            if is_move_up {
-                if app.search_query.is_some() {
-                    app.msg("Cannot reorder profiles while search filter is active");
-                } else if let Some(action) = app.move_item_up() {
-                    match action {
-                        ItemMoveAction::ReorderProfiles {
-                            group_id,
-                            profile_ids,
-                            profile_name,
-                            ..
-                        } => {
-                            app.msg(format!("Moved \"{}\" up", profile_name));
-                            let _ = client.reorder_profiles(group_id, profile_ids).await;
-                        }
-                        ItemMoveAction::ReorderGroups {
-                            group_ids,
-                            group_name,
-                            ..
-                        } => {
-                            app.msg(format!("Moved group \"{}\" up", group_name));
-                            let _ = client.reorder_groups(group_ids).await;
-                        }
-                    }
-                }
-                return false;
-            }
-
-            match key.code {
-                KeyCode::Char('j') | KeyCode::Down => app.cursor_down(),
-                KeyCode::Char('k') | KeyCode::Up => app.cursor_up(),
-                KeyCode::Char('g') => app.cursor_top(),
-                KeyCode::Char('G') => app.cursor_bottom(),
-                KeyCode::Char('/') => {
-                    app.search_mode = true;
-                    app.search_input.clear();
-                    app.search_query = Some(String::new());
-                    app.cursor = 0;
-                    return false;
-                }
-                KeyCode::Esc => {
-                    if app.search_query.is_some() {
-                        app.search_query = None;
-                        app.search_input.clear();
-                        app.cursor = 0;
-                        app.clamp_cursor();
-                        return false;
-                    }
-                }
-                KeyCode::Char('h') | KeyCode::Left => {
-                    if let Some(TreeNode::Group(gi)) = app.tree_node_at(app.cursor) {
-                        if let Some(g) = app.groups.get(gi) {
-                            app.collapse_group(g.group.id);
-                        }
-                    } else if let Some(parent_pos) = app.parent_group_cursor() {
-                        app.cursor = parent_pos;
-                    }
-                }
-                KeyCode::Char('l') | KeyCode::Right => {
-                    if let Some(TreeNode::Group(gi)) = app.tree_node_at(app.cursor) {
-                        if let Some(g) = app.groups.get(gi) {
-                            if app.is_group_collapsed(g.group.id) {
-                                app.expand_group(g.group.id);
-                            } else if !g.profiles.is_empty() {
-                                app.cursor_down();
-                            }
-                        }
-                    } else if app.selected_profile().is_some() {
-                        app.focus = Focus::RightPanel;
-                    }
-                }
-                KeyCode::Char(' ') => {
-                    if let Some(TreeNode::Group(gi)) = app.tree_node_at(app.cursor) {
-                        if let Some(g) = app.groups.get(gi) {
-                            app.toggle_group_collapsed(g.group.id);
-                        }
-                    }
-                }
-                KeyCode::Char('c') => {
-                    if let Some(p) = app.selected_profile() {
-                        let _ = client.connect(p.group_id, p.id).await;
-                        app.msg("Connecting...");
-                    }
-                }
-                KeyCode::Enter => {
-                    if let Some(p) = app.selected_profile() {
-                        let _ = client.connect(p.group_id, p.id).await;
-                        app.msg("Connecting...");
-                    } else if let Some(TreeNode::Group(gi)) = app.tree_node_at(app.cursor) {
-                        if let Some(g) = app.groups.get(gi) {
-                            app.toggle_group_collapsed(g.group.id);
-                        }
-                    }
-                }
-                KeyCode::Char('d') => {
-                    let _ = client.disconnect().await;
-                    app.msg("Disconnecting...");
-                }
-                KeyCode::Char('u') => {
-                    if let Some(g) = app.current_group() {
-                        if !g.group.subscription_url.is_empty() {
-                            let _ = client.update_subscription(g.group.id).await;
-                            app.msg("Updating subscription...");
-                        }
-                    }
-                }
-                KeyCode::Char('e') => {
-                    if app.on_group() {
-                        if let Some(g) = app.current_group() {
-                            app.popup = Some(Popup::EditSubscription {
-                                name: g.group.name.clone(),
-                                url: g.group.subscription_url.clone(),
-                                group_id: g.group.id,
-                                cursor: g.group.subscription_url.chars().count(),
-                                field: 1,
-                            });
-                            app.focus = Focus::Popup;
-                        }
-                    } else if let Some(p) = app.selected_profile() {
-                        app.popup = Some(Popup::EditProfileName {
-                            input: p.name.clone(),
-                            cursor: p.name.chars().count(),
-                            group_id: p.group_id,
-                            profile_id: p.id,
-                        });
-                        app.focus = Focus::Popup;
-                    }
-                }
-                KeyCode::Char('U') => {
-                    let default_name = format!("Group {}", app.groups.len() + 1);
-                    app.popup = Some(Popup::AddGroup {
-                        name: default_name,
-                        url: String::new(),
-                        cursor: 0,
-                        field: 0,
-                    });
-                    app.focus = Focus::Popup;
-                }
-                KeyCode::Char('t') => {
-                    let list = build_test_list(app, false);
-                    run_test_batch(app, client, &list).await;
-                }
-                KeyCode::Char('T') => {
-                    let list = build_test_list(app, true);
-                    run_test_batch(app, client, &list).await;
-                }
-                KeyCode::Char('C') => {
-                    let _ = client.cancel_tests().await;
-                    app.test_progress = None;
-                    app.msg("Cancelling in-flight tests...");
-                }
-                KeyCode::Char('y') => {
-                    if let Some(p) = app.selected_profile() {
-                        match arboard::Clipboard::new() {
-                            Ok(mut cb) => match cb.set_text(&p.uri) {
-                                Ok(()) => app.msg("Copied profile URI to clipboard"),
-                                Err(e) => app.msg(format!("Failed to copy URI: {e}")),
-                            },
-                            Err(e) => app.msg(format!("Clipboard unavailable: {e}")),
-                        }
-                    }
-                }
-                KeyCode::Char('x') => {
-                    if let Some(p) = app.selected_profile() {
-                        let name = if p.name.is_empty() {
-                            if p.address.is_empty() {
-                                "Unknown".to_string()
-                            } else {
-                                p.address.clone()
-                            }
-                        } else {
-                            p.name.clone()
-                        };
-                        app.popup = Some(Popup::ConfirmDelete {
-                            gid: p.group_id,
-                            pid: p.id,
-                            name,
-                        });
-                        app.focus = Focus::Popup;
-                    }
-                }
-                KeyCode::Char('X') => {
-                    if let Some(g) = app.current_group() {
-                        app.popup = Some(Popup::ConfirmDeleteGroup {
-                            gid: g.group.id,
-                            name: g.group.name.clone(),
-                        });
-                        app.focus = Focus::Popup;
-                    }
-                }
-                _ => {}
-            }
-        }
-        Focus::RightPanel => match key.code {
-            KeyCode::Char('h') | KeyCode::Left | KeyCode::Esc => {
-                app.focus = Focus::LeftPanel;
-            }
-            KeyCode::Char('c') | KeyCode::Enter => {
-                if let Some(p) = app.selected_profile() {
-                    let _ = client.connect(p.group_id, p.id).await;
-                    app.msg("Connecting...");
-                }
-            }
-            KeyCode::Char('d') => {
-                let _ = client.disconnect().await;
-                app.msg("Disconnecting...");
-            }
-            KeyCode::Char('j') | KeyCode::Down => {
-                app.details_scroll_down(app.details_line_count(), app.details_visible());
-            }
-            KeyCode::Char('k') | KeyCode::Up => {
-                app.details_scroll_up();
-            }
-            KeyCode::Char('g') => {
-                app.details_scroll_top();
-            }
-            KeyCode::Char('G') => {
-                app.details_scroll_bottom(app.details_line_count(), app.details_visible());
-            }
-            KeyCode::Char('t') => {
-                let list = build_test_list(app, false);
-                run_test_batch(app, client, &list).await;
-            }
-            KeyCode::Char('T') => {
-                let list = build_test_list(app, true);
-                run_test_batch(app, client, &list).await;
-            }
-            KeyCode::Char('y') => {
-                if let Some(p) = app.selected_profile() {
-                    match arboard::Clipboard::new() {
-                        Ok(mut cb) => match cb.set_text(&p.uri) {
-                            Ok(()) => app.msg("Copied profile URI to clipboard"),
-                            Err(e) => app.msg(format!("Failed to copy URI: {e}")),
-                        },
-                        Err(e) => app.msg(format!("Clipboard unavailable: {e}")),
-                    }
-                }
-            }
-            _ => {}
-        },
-        Focus::Popup => {}
-    }
-
-    false
 }
 
 pub(crate) async fn handle_mouse_input(
@@ -1076,6 +1051,7 @@ async fn handle_mouse_left_click(
             if rel_from_right <= quit_limit {
                 return true;
             } else if rel_from_right <= help_limit {
+                app.help_scroll = 0;
                 app.popup = Some(Popup::Help);
                 app.focus = Focus::Popup;
                 return false;

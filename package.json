@@ -1,6 +1,6 @@
 {
   "name": "whoisthat-docs",
-  "version": "0.13.1",
+  "version": "0.13.2",
   "description": "Comprehensive documentation for WhoisThat VPN client",
   "scripts": {
     "docs:dev": "vitepress dev docs",
