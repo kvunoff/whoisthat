@@ -6,23 +6,19 @@ WhoisThat is crafted for terminal aesthetics and responsiveness, featuring curat
 
 ## Curated Color Themes
 
-WhoisThat includes 8 dark palettes designed for high readability, contrast, and visual harmony:
+WhoisThat includes 4 curated palettes designed for high readability, contrast, and visual harmony:
 
 | Theme Name | Style & Atmosphere | Accent Highlights |
 | :--- | :--- | :--- |
-| **Tokyo Night** *(Default)* | Deep midnight blue background inspired by Tokyo at dusk | Neon cyan, soft purple, magenta |
-| **Catppuccin Mocha** | Soothing pastel palette on dark velvety mocha | Lavender, sky blue, peach |
-| **Nord** | Arctic-inspired cool blue and slate grays | Frost teal, polar night, snow storm |
-| **Dracula** | Vibrant gothic contrast with deep purple tones | Bright pink, purple, neon green |
-| **Gruvbox Dark** | Retro groove with earthy, warm tones | Warm amber, forest green, terracotta |
-| **Solarized Dark** | Precision-engineered palette with low eyestrain | Solar cyan, blue, olive |
-| **Cyberpunk** | High-energy synthwave neon | Electric yellow, hot magenta, cyan |
-| **Monokai Pro** | Professional code editor palette with balanced contrast | Sunshine yellow, rose, mint green |
+| **Graphite Dark** *(Default)* | Modern monochrome graphite & slate aesthetic with obsidian depth | Platinum silver, crisp white, emerald |
+| **Graphite Light** | Minimalist architectural monochrome paper & chalk light theme | Ink black, charcoal, deep forest green |
+| **Tokyo Night** | Refined deep midnight blue background inspired by Tokyo at dusk | Neon cyan, soft sky blue, coral red |
+| **Dracula** | Vibrant gothic contrast with deep vampire purple tones | Neon pink, electric purple, spring green |
 
 ### Switching Themes
 1. Open the Settings tab (<kbd>5</kbd> or <kbd>s</kbd>).
 2. Highlight the **Theme** option.
-3. Press <kbd>Enter</kbd> or <kbd>Space</kbd> to cycle themes with **instant live preview**.
+3. Press <kbd>Enter</kbd>, <kbd>Space</kbd>, or <kbd>→</kbd> / <kbd>l</kbd> to cycle forward, or <kbd>←</kbd> / <kbd>h</kbd> to cycle backward with **instant live preview**.
 4. The selected theme is saved persistently to `~/.config/whoisthat/config.toml`.
 
 ---

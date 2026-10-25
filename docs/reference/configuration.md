@@ -27,9 +27,8 @@ last_profile_id = 0
 # Display public IP address in the header
 show_ip = true
 
-# Active color palette: tokyo-night, catppuccin-mocha, nord, dracula,
-# gruvbox-dark, solarized-dark, cyberpunk, monokai-pro
-theme = "tokyo-night"
+# Active color palette: graphite-dark, graphite-light, tokyo-night, dracula
+theme = "graphite-dark"
 
 # Enable Rust TUI debug file logging (~/.local/share/whoisthat/tui.log)
 log_enabled = false
