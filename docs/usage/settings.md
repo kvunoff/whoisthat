@@ -8,7 +8,7 @@ The Settings tab (<kbd>5</kbd> or <kbd>s</kbd>) provides an interactive control 
 
 | Setting | Allowed Values | Default | Description |
 | :--- | :--- | :--- | :--- |
-| **Theme** | 8 palettes | `tokyo-night` | Visual color palette with live preview (Tokyo Night, Catppuccin, Nord, Dracula, Gruvbox, Solarized, Cyberpunk, Monokai). |
+| **Theme** | 4 palettes | `graphite-dark` | Visual color palette with live preview (Graphite Dark, Graphite Light, Tokyo Night, Dracula). |
 | **Show IP** | `on` / `off` | `on` | Display public IPv4/IPv6 address in the top status bar (refreshed periodically and on state change). |
 | **Autoconnect** | `on` / `off` | `off` | Automatically connect to the last used profile when the core daemon initializes. |
 | **Autostart Mode** | `proxy` / `tun` | `proxy` | Connection mode applied when autoconnect triggers (`proxy` = local SOCKS5/HTTP, `tun` = full system VPN). |
