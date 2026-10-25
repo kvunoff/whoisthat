@@ -2,7 +2,7 @@
 
 WhoisThat provides native, enterprise-grade support for **Happ routing profiles** (`happ://routing/...`). Many modern VPN subscription providers, anti-censorship operators, and server management panels bundle complex routing configurations—containing thousands of verified domains, CIDRs, regional rules, and custom GeoIP/GeoSite databases—directly inside subscription responses or through standalone links.
 
-This document offers an in-depth technical analysis of the Happ routing subsystem, covering URI structure, tolerant decoding algorithms, payload JSON contracts, rule compilation ordering, isolated Geo asset sandboxing, runtime hot-reloading, and per-group routing modes.
+This document offers an in-depth technical analysis of the Happ routing subsystem, covering how routing profiles enter the client, delivery channels (HTTP headers, body, deep links), URI structure, tolerant decoding algorithms, payload JSON contracts, rule compilation ordering, isolated Geo asset sandboxing, runtime hot-reloading, and per-group routing modes.
 
 ---
 
@@ -13,10 +13,11 @@ The Happ routing engine operates as an autonomous pipeline within the `whoisthat
 ```mermaid
 flowchart TD
     subgraph Ingestion["1. Ingestion Vectors"]
-        A1["Subscription HTTP Header\n(Routing: ...)"] --> B["happ.ExtractLinks\n(Headers & Body)"]
+        A1["Subscription HTTP Header\n(routing: happ://routing/...)"] --> B["happ.ExtractLinks\n(Headers & Body)"]
         A2["Subscription Body\n(Plaintext / Base64)"] --> B
         A3["TUI Clipboard Import\n(Press 'i' in Routing tab)"] --> C["IPC: import-happ-routing"]
         A4["CLI / Browser Deep Link\n(whoisthat handle-url / wit://)"] --> C
+        A5["QR Code Scanning\n(Mobile / Desktop Readers)"] --> C
     end
 
     B --> C
@@ -45,23 +46,138 @@ flowchart TD
 
 ---
 
+## How Happ Routing Enters the Client
+
+Happ routing profiles are designed to be distributed effortlessly by providers and created by administrators without requiring manual rule-by-rule configuration on every client device.
+
+### 1. Profile Creation & Web Generator
+
+Routing rules can be assembled, visually tested, and exported into Happ URIs using the official web generator at **[routing.happ.su](https://routing.happ.su/)**, or authored directly in accordance with the [Happ routing specification](https://www.happ.su/main/dev-docs/routing).
+
+From the generator, administrators define proxy lists, direct sites, blocked resources, custom Geo URLs, and export a ready-to-use `happ://routing/add/{base64}` or `happ://routing/onadd/{base64}` link.
+
+### 2. Delivery Channels
+
+WhoisThat implements automated detection across all delivery channels defined by the Happ specification:
+
+```mermaid
+graph LR
+    subgraph Provider["VPN Provider / Server Panel"]
+        S1["HTTP Response Header\n'routing: happ://...'"]
+        S2["Subscription Body\n'happ://...' line"]
+    end
+    subgraph Direct["Direct User Channels"]
+        D1["Web Generator\nrouting.happ.su"]
+        D2["Browser Links\nwit:// or happ://"]
+        D3["QR Codes"]
+    end
+    subgraph Client["WhoisThat Ingestion Engine"]
+        W1["happ.ExtractLinksFromResponse\n(Unescapes %3A%2F%2F)"]
+        W2["happ.ExtractLinks\n(Plaintext & Base64 scanner)"]
+        W3["TUI Clipboard\n(Press 'i' in Tab 2)"]
+        W4["XDG Desktop Scheme Handler\n(/usr/share/applications)"]
+        W5["Headless CLI\nwhoisthat handle-url"]
+    end
+
+    S1 --> W1
+    S2 --> W2
+    D1 --> W3
+    D2 --> W4
+    D3 --> W5
+```
+
+#### Channel A: HTTP Response Headers (`routing:`)
+Subscription servers and management panels (e.g., Marzban, Remnawave, 3X-UI, custom billing APIs) attach the routing policy directly in the HTTP response headers when the client fetches or updates a subscription:
+
+```http
+HTTP/2 200 OK
+Date: Wed, 24 Nov 2024 10:00:52 GMT
+Content-Type: application/json
+Content-Length: 3798
+Content-Disposition: attachment; filename="subscription"
+routing: happ://routing/onadd/ewogICAgIk5hbWUiOiAidGVzdCIsCiAgICAiR2xvYmFsUHJveHkiOiAidHJ1ZSIsCiAgICAiRGlyZWN0U2l0ZXMiOiBbXSwKICAgICJEaXJlY3RJcCI6IFtdLAogICAgIlByb3h5U2l0ZXMiOiBbXSwKICAgICJQcm94eUlwIjogW10sCiAgICAiQmxvY2tTaXRlcyI6IFtdLAogICAgIkJsb2NrSXAiOiBbXSwKICAgICJEb21haW5TdHJhdGVneSI6ICJBc0lzIgp9
+```
+
+When WhoisThat updates a subscription (`whoisthat -u` or <kbd>u</kbd> in the TUI), the internal function `happ.ExtractLinksFromResponse` reads the `Routing` header, decodes percent-encoded schemes (`happ%3A%2F%2F` ➔ `happ://`), and immediately imports the profile into the corresponding subscription group.
+
+#### Channel B: Embedded in Subscription Body
+The `happ://routing/...` link can be placed directly inside the subscription body, on its own line alongside proxy node URIs:
+
+```
+happ://routing/onadd/ewogICAgIk5hbWUiOiAidGVzdCIsCiAgICAiR2xvYmFsUHJveHkiOiAidHJ1ZSIs...
+vmess://eyJob3N0IjoiZ3VhdmVpc3RhbmJ1bC5jb20iLCJwYXRoIjoiXC8xUyIsInRscyI6InRscyIs...
+vless://70cc43c5-b2f4-34ac-a092-d806984a6b8c@1.13.7.91:443?encryption=none&security=reality...
+```
+
+* **Plaintext Subscriptions**: The parser scans lines for the `happ://routing/` prefix, extracts the link, and filters out punctuation.
+* **Base64-Encoded Subscriptions**: If the subscription file is a single Base64 block, `happ.ExtractLinks` attempts tolerant Base64 decoding on the entire body and then searches the decoded payload for embedded routing links.
+
+#### Channel C: System Clipboard (<kbd>i</kbd> in Routing Tab)
+Users can copy a `happ://routing/...` link from a website, Telegram channel, or email and press <kbd>i</kbd> on Tab 2 (*Routing*). The client reads the system clipboard (via Wayland data-control or X11 selection), parses the link, and dispatches an `import-happ-routing` IPC call targeting the currently focused group.
+
+#### Channel D: Desktop Deep Links (`wit://` & `happ://`)
+Clicking links in browsers or applications launches WhoisThat via its registered XDG desktop handler (`x-scheme-handler/wit` and `x-scheme-handler/happ`):
+
+```
+wit://happ://routing/add/<BASE64>
+wit://routing?link=happ%3A%2F%2Frouting%2Fadd%2F...&group=Premium
+happ://routing/add/<BASE64>
+```
+
+#### Channel E: Headless CLI & QR Codes
+Any link extracted from a QR code scanner or automated script can be ingested via the command line:
+
+```bash
+whoisthat handle-url "happ://routing/add/<BASE64>" --group "Premium"
+whoisthat handle-url "happ://routing/onadd/<BASE64>" --group 2
+```
+
+---
+
+## Decentralization & Subscription Lifecycle
+
+The Happ specification introduces a fundamental shift from monolithic, global client routing to **decentralized, subscription-level management**:
+
+### 1. Isolated Per-Subscription Scope
+Every subscription group (including individual manual profiles) maintains its own independent routing profiles, active profile state, and cached Geo assets on disk. Modifying rules in one group has zero effect on other subscriptions.
+
+### 2. Cascading Deletion
+When a subscription group is deleted from WhoisThat:
+* All associated Happ routing profiles are purged from the database.
+* The entire cached Geo sandbox directory on disk (`~/.local/share/whoisthat/db/groups/<GID>/routing/geo/`) is deleted in a cascading manner, ensuring no orphaned `.dat` files consume disk space.
+
+### 3. Name-Based Deduplication & Versioning
+* If a routing profile with the same name already exists within the target group, the existing record is updated in-place rather than creating duplicates.
+* **`LastUpdated` Timestamp Gate**: If the incoming profile carries a `LastUpdated` Unix timestamp, WhoisThat checks the stored version. If the incoming timestamp is older than the existing one (`incoming.LastUpdated < existing.LastUpdated`), the update is skipped to prevent rollback from cached CDN responses.
+
+### 4. Continuity of Service During Updates
+When an update to an existing profile is received:
+1. The profile transitions to the `updating` state.
+2. New Geo assets begin downloading in the background.
+3. **The running proxy core continues serving connections with the old rules and old geofiles.**
+4. Once all new assets are verified and compiled, an **atomic swap** occurs, switching Xray to the new version without any dropped packets or connection resets.
+
+### 5. 7-Day Update Cooldown Gate
+Geo asset files (`geoip.dat`, `geosite.dat`) are gated by a 7-day cooldown (`WeeklyUpdateGate = 604800` seconds). Even if a subscription is updated every hour, custom Geo files are not re-downloaded unless 7 days have passed since the last successful download, protecting provider CDNs from bandwidth exhaustion.
+
+### 6. Independence of WhoisThat's Technical Architecture
+While WhoisThat provides complete support for Happ routing profiles as an open data interchange format, **WhoisThat's technical architecture is completely independent from upstream Happ mobile/desktop clients**:
+
+* **Zero-Downtime Hot-Reload vs Reconnection**: Upstream clients often require tearing down the active connection and reconnecting to apply routing changes. In contrast, WhoisThat executes **in-place atomic hot-reloading** (`ReloadRouting`) in under 30ms without resetting the TUN device or interrupting active network sessions.
+* **Native Linux Network Stack**: Rather than generic cross-platform mobile frameworks, WhoisThat's engine is built directly for Linux: rootless TUN via file capabilities (`cap_net_admin`), kernel policy routing (`ip rule`), `nftables` packet marking (`SO_MARK 1`), and `cgroup v2` transient slices.
+* **Decoupled User Control**: While upstream clients enforce a "Restricted Mode" that locks controls on provider-managed JSON subscriptions, WhoisThat provides complete user autonomy through its TUI and CLI, allowing inspection, per-group mode switching (`auto`/`manual`/`subscription`), and live rule toggling.
+
+---
+
 ## URI Protocol & Action Specifications
 
-Happ routing links use the `happ://routing/` URI scheme. WhoisThat recognizes three operational actions:
+Happ routing links use the `happ://routing/` scheme. WhoisThat recognizes three operational actions:
 
 | Action URI | Internal Identifier | Behavior & Core Lifecycle |
 | :--- | :--- | :--- |
 | `happ://routing/add/{base64}` | `ActionAdd` | Ingests, validates, and stores the routing profile in the target group. If custom Geo assets are specified, initiates background download. Leaves active profile unchanged. |
 | `happ://routing/onadd/{base64}` | `ActionOnAdd` | Ingests, validates, and stores the profile. If no custom Geo assets are needed, **immediately activates** the profile. If assets are downloading, marks as pending and activates automatically once compilation finishes. |
 | `happ://routing/off` | `ActionOff` | Deactivates the currently active Happ routing profile for the group, clearing `ActiveRoutingProfileId`. |
-
-### Supported URI Variants & Deep Links
-
-WhoisThat normalizes multiple input encodings:
-* **Direct Scheme**: `happ://routing/add/<BASE64>`
-* **Percent-Encoded Scheme**: `happ%3A%2F%2Frouting%2Fadd%2F<BASE64>`
-* **Embedded `wit://` Deep Link**: `wit://happ://routing/add/<BASE64>`
-* **Query Parameter Deep Link**: `wit://routing?link=happ%3A%2F%2Frouting%2Fadd%2F...&group=Premium`
 
 ### Tolerant Base64 Decoder Engine
 
@@ -285,41 +401,6 @@ xray run -test
 
 ---
 
-## Ingestion Vectors & Automation
-
-Happ profiles can be ingested into WhoisThat through multiple workflows:
-
-### 1. Automatic Subscription Synchronization
-When WhoisThat updates a subscription (`whoisthat -u` or <kbd>u</kbd> in the TUI), it scans the HTTP response:
-* **Response Headers**: Inspects the `Routing:` header (including percent-encoded values).
-* **Response Body**: Scans the body text and base64-decoded body content for embedded `happ://routing/...` links.
-* Automatically upserts any discovered profiles into the database and launches background Geo downloaders if required.
-
-### 2. TUI Clipboard Ingestion (<kbd>i</kbd>)
-Pressing <kbd>i</kbd> on Tab 2 (*Routing*):
-1. Reads the system clipboard (Wayland/X11).
-2. Extracts any `happ://routing/...` or `wit://` link.
-3. Dispatches an IPC command (`import-happ-routing`) to the daemon targeting the highlighted group.
-
-### 3. Headless CLI
-Import any Happ link directly from scripts or terminals:
-```bash
-# Import into a group by name
-whoisthat handle-url "happ://routing/add/<BASE64>" --group "Premium"
-
-# Import into a group by ID
-whoisthat handle-url "happ://routing/onadd/<BASE64>" --group 2
-```
-
-### 4. Desktop Deep Links (`wit://`)
-Clicking links in web browsers or messaging apps triggers WhoisThat via its XDG desktop scheme handler:
-```
-wit://happ://routing/add/<BASE64>
-wit://routing?link=happ%3A%2F%2Frouting%2Fadd%2F...&group=Premium
-```
-
----
-
 ## TUI Management Interface
 
 In the TUI on Tab 2 (*Routing*), pressing <kbd>H</kbd> opens the **Happ Routing Profiles** modal:
@@ -418,3 +499,12 @@ Permanently deletes a profile and its on-disk Geo sandbox.
 | **Profile displays `downloaded file is HTML/JSON, not a binary .dat asset`** | Provider CDN returned a Cloudflare challenge, 502 HTML error, or JSON error payload with HTTP 200. | The engine rejected the non-binary payload. Wait for provider CDN recovery or press <kbd>Enter</kbd> to retry. |
 | **Rules do not take effect when connected** | Group mode is set to `manual`. | Press <kbd>m</kbd> in the Happ modal or Routing tab to switch the group mode to `auto` or `subscription`. |
 | **Cannot activate profile: `geoip.dat missing in ...`** | Asset directory was corrupted or deleted while daemon was stopped. | Selecting the profile with <kbd>Enter</kbd> triggers an automatic re-download and re-compilation. |
+ 
+---
+
+## References & External Links
+
+* [Happ Developer Documentation: Routing](https://www.happ.su/main/dev-docs/routing) — Upstream protocol reference and schema documentation.
+* [Happ Web Rule Builder](https://routing.happ.su/) — Visual editor for crafting and exporting Happ routing profiles.
+* [Xray-core Routing Configuration](https://xtls.github.io/config/routing.html) — Reference for underlying routing tags and domain matching mechanics.
+
