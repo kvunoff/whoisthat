@@ -1,13 +1,13 @@
 # Log Viewer & Diagnostics
 
-The Logs tab (<kbd>4</kbd> or <kbd>l</kbd>) provides a live stream of daemon and proxy events, routing decisions, and diagnostic warnings directly inside the TUI.
+The Logs tab (<kbd>4</kbd>, or cycle with <kbd>[</kbd> / <kbd>]</kbd>) provides a live stream of daemon and proxy events, routing decisions, and diagnostic warnings directly inside the TUI.
 
 ---
 
 ## Log Viewer Features
 
 * **Live Auto-Scroll**: As new log events arrive from `whoisthat-core`, the viewer automatically tails the stream to the newest entry.
-* **Scroll Pausing**: Press <kbd>k</kbd> or <kbd>↑</kbd> to scroll upwards and inspect previous logs. Auto-scroll pauses while reading history and resumes when returning to the bottom (<kbd>G</kbd>).
+* **Scroll Pausing & Navigation**: Press <kbd>k</kbd> / <kbd>↑</kbd> or <kbd>Ctrl+U</kbd> to scroll upwards and inspect previous logs. Auto-scroll pauses while reading history and resumes when returning to the bottom (<kbd>G</kbd> / <kbd>End</kbd>). Press <kbd>g</kbd> / <kbd>Home</kbd> to jump to the top, and <kbd>Ctrl+D</kbd> / <kbd>Ctrl+U</kbd> for half-page navigation.
 * **Level Filtering (<kbd>f</kbd>)**: Press <kbd>f</kbd> to cycle through log levels:
   $$\text{ALL} \longrightarrow \text{DEBUG} \longrightarrow \text{INFO} \longrightarrow \text{WARN} \longrightarrow \text{ERROR} \longrightarrow \text{ALL}$$
 * **Visual Syntax Highlighting**:

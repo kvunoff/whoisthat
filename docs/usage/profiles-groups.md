@@ -10,10 +10,10 @@ Groups allow you to categorize profiles (e.g. by provider, protocol, or geograph
 
 | Action | Shortcut | Description |
 | :--- | :---: | :--- |
-| **Add Group** | <kbd>U</kbd> | Opens modal to create a new group with a custom name and optional subscription URL. |
+| **Add Group** | <kbd>A</kbd> / <kbd>n</kbd> | Opens modal to create a new group with a custom name and optional subscription URL. |
 | **Edit Group** | <kbd>e</kbd> | Edit group name or update subscription URL. Updating the URL automatically triggers an immediate profile fetch! |
 | **Delete Group** | <kbd>X</kbd> | Prompts confirmation to delete the entire group and all contained profiles. |
-| **Refresh Group** | <kbd>u</kbd> | Fetches the latest server list from the subscription provider, updating metadata and profiles. |
+| **Refresh Group** | <kbd>u</kbd> / <kbd>r</kbd> | Fetches the latest server list from the subscription provider, updating metadata and profiles. |
 | **Move Group** | <kbd>J</kbd> / <kbd>K</kbd> | Move group up or down in the tree. Order is saved persistently to disk. |
 | **Fold / Unfold** | <kbd>Space</kbd> / <kbd>Enter</kbd> | Toggle collapsing or expanding the group tree node (<kbd>h</kbd> to collapse, <kbd>l</kbd> to expand). |
 
@@ -41,10 +41,12 @@ The Details panel dynamically displays:
 | Action | Shortcut | Description |
 | :--- | :---: | :--- |
 | **Import Profile** | <kbd>a</kbd> | Paste one or more proxy URIs (`vless://`, `vmess://`, `trojan://`, `ss://`, `socks://`, `hysteria2://`, `hy2://`). |
+| **Switch Focus** | <kbd>Tab</kbd> | Toggle focus between Profile Tree and Server Details pane. |
 | **Rename Profile** | <kbd>e</kbd> | Rename selected profile alias. |
 | **Copy URI** | <kbd>y</kbd> | Copies the selected profile's raw URI to the system clipboard (Wayland / X11). |
 | **Delete Profile** | <kbd>x</kbd> | Delete the selected profile. |
-| **Reorder Profile** | <kbd>J</kbd> / <kbd>K</kbd> | Move profile up or down within its group (instant & persistent). |
+| **Reorder Profile** | <kbd>J</kbd> / <kbd>K</kbd> | Move profile up or down within its group (<kbd>Alt+↓</kbd> / <kbd>Alt+↑</kbd>). |
+| **Page Scroll** | <kbd>Ctrl+D</kbd> / <kbd>Ctrl+U</kbd> | Fast half-page scroll down / up through long server lists. |
 
 ---
 
@@ -53,8 +55,8 @@ The Details panel dynamically displays:
 WhoisThat includes a high-precision multi-sample latency testing subsystem:
 
 ### Test Controls
-* <kbd>t</kbd>: **Scan All** — Tests all profiles across all groups starting from the cursor, deduplicating identical IP/port endpoints.
-* <kbd>T</kbd>: **Test Focused** — Tests only the selected profile, or all profiles within the selected group (using the optimized `test-group` command).
+* <kbd>t</kbd>: **Test Focused** — Tests only the selected profile, or all profiles within the selected group (using the optimized `test-group` command).
+* <kbd>T</kbd>: **Scan All** — Tests all profiles across all groups starting from the cursor, deduplicating identical IP/port endpoints.
 * <kbd>C</kbd>: **Cancel Tests** — Immediately halts all in-flight and queued latency tests using an internal epoch counter. Drops pending queue items before spawning Xray instances and terminates active test subprocesses without leaving orphans.
 
 ### Testing Architecture & Metrics
@@ -74,4 +76,4 @@ Latency tests are not simple ICMP pings (which many VPN firewalls block or prior
    * In-flight batches broadcast tested/total progress to the bottom status bar (`[Testing 12/48]`).
    * **Throttled Failure Notifications**: When test endpoints fail or time out, the core broadcasts a `warn` notification, throttled to 1 warning per error-reason per 5 seconds so users are not spammed with modal alerts.
 4. **Auto-Test on Refresh**:
-   When **Auto-test on refresh** is enabled in Settings, refreshing a subscription group (<kbd>u</kbd>) immediately schedules latency tests for all newly imported or updated servers.
+   When **Auto-test on refresh** is enabled in Settings, refreshing a subscription group (<kbd>u</kbd> / <kbd>r</kbd>) immediately schedules latency tests for all newly imported or updated servers.

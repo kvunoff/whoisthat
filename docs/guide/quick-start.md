@@ -22,7 +22,7 @@ There are three ways to import VPN profiles:
 
 ### Method A: Subscription URL (Recommended)
 
-1. Press <kbd>U</kbd> in the TUI to open the **Add Group** modal.
+1. Press <kbd>A</kbd> or <kbd>n</kbd> in the TUI to open the **Add Group** modal.
 2. Enter a descriptive group name (e.g., `Personal VPN` or `Mullvad`).
 3. Paste your subscription URL into the **Subscription URL** field.
 4. Press <kbd>Enter</kbd> to save.
@@ -49,8 +49,8 @@ WhoisThat features a multi-sample latency testing engine:
 
 | Key | Action | Details |
 | :---: | :--- | :--- |
-| <kbd>t</kbd> | **Test All** | Sequentially tests all profiles across all groups starting from the cursor. Deduplicates identical addresses. |
-| <kbd>T</kbd> | **Test Focused** | Tests only the highlighted profile, or all profiles within the highlighted group. |
+| <kbd>t</kbd> | **Test Focused** | Tests only the highlighted profile, or all profiles within the highlighted group. |
+| <kbd>T</kbd> | **Test All** | Sequentially tests all profiles across all groups. Deduplicates identical addresses. |
 | <kbd>C</kbd> | **Cancel Tests** | Immediately halts all in-flight and queued latency tests. |
 
 Pending tests display `…`. Finished profiles show median round-trip time in milliseconds (e.g. `42ms`), along with jitter and packet loss percentages in the details panel.
@@ -60,8 +60,9 @@ Pending tests display `…`. Finished profiles show median round-trip time in mi
 ## 4. Connecting to a Server
 
 1. Use <kbd>j</kbd> / <kbd>k</kbd> or the arrow keys <kbd>↓</kbd> / <kbd>↑</kbd> to move the selection bar.
-2. Press <kbd>c</kbd> or <kbd>Enter</kbd> to connect to the highlighted profile.
-3. The status indicator in the top header will transition to `[Connected]`.
+2. Press <kbd>Tab</kbd> if you want to switch focus between the Profile Tree and the Details pane (e.g. to scroll server details or copy parameters).
+3. Press <kbd>c</kbd> or <kbd>Enter</kbd> to connect to the highlighted profile.
+4. The status indicator in the top header will transition to `[Connected]`.
 
 ---
 

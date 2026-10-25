@@ -51,7 +51,7 @@ To prevent breaking local machine communication, the Kill-Switch automatically p
 ## Toggling the Kill-Switch
 
 ### In the TUI
-1. Open the Settings tab (<kbd>5</kbd> or <kbd>s</kbd>).
+1. Open the Settings tab (<kbd>5</kbd>).
 2. Navigate to **Kill Switch** and press <kbd>Enter</kbd> or <kbd>Space</kbd> to toggle `on` / `off`.
 
 ### Via CLI

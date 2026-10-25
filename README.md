@@ -88,14 +88,18 @@ whoisthat
 | Key | Action |
 | :---: | :--- |
 | <kbd>j</kbd> / <kbd>k</kbd> | Move cursor down / up |
+| <kbd>h</kbd> / <kbd>l</kbd> | Collapse / expand group (or jump to Details) |
+| <kbd>Tab</kbd> | Switch focus between Tree and Details panels |
+| <kbd>[</kbd> / <kbd>]</kbd> | Cycle tabs left / right |
+| <kbd>1</kbd> – <kbd>5</kbd> | Jump to tab (Profiles, Routing, Traffic, Logs, Settings) |
 | <kbd>c</kbd> / <kbd>Enter</kbd> | Connect to selected profile |
 | <kbd>d</kbd> | Disconnect active connection |
 | <kbd>v</kbd> | Toggle between TUN mode (system-wide) and Proxy mode |
-| <kbd>t</kbd> / <kbd>T</kbd> | Test all profiles / test focused profile |
-| <kbd>U</kbd> / <kbd>u</kbd> | Add subscription group / refresh active subscription |
+| <kbd>t</kbd> / <kbd>T</kbd> | Test focused profile / test all profiles |
+| <kbd>u</kbd> / <kbd>r</kbd> | Refresh active subscription |
+| <kbd>A</kbd> / <kbd>n</kbd> | Add new subscription group |
 | <kbd>a</kbd> | Import single proxy URI (`vless://`, `hy2://`, etc.) |
-| <kbd>p</kbd> | Open Routing Presets catalog (Tab 2) |
-| <kbd>1</kbd> – <kbd>5</kbd> | Switch tabs (Profiles, Routing, Traffic, Logs, Settings) |
+| <kbd>?</kbd> | Open interactive help dialog |
 | <kbd>q</kbd> | **Detach TUI** (VPN stays connected in background) |
 | <kbd>Q</kbd> | **Quit completely** (shuts down VPN and exits) |
 
