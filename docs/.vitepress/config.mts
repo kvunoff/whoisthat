@@ -1,4 +1,22 @@
+import { readFileSync } from 'node:fs'
 import { defineConfig } from 'vitepress'
+
+function getClientVersion(): string {
+  try {
+    const cargoPath = new URL('../../Cargo.toml', import.meta.url)
+    const content = readFileSync(cargoPath, 'utf-8')
+    const match = content.match(/^version\s*=\s*"([^"]+)"/m)
+    if (match) return match[1]
+  } catch {}
+  try {
+    const pkgPath = new URL('../../package.json', import.meta.url)
+    const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'))
+    if (pkg.version) return pkg.version
+  } catch {}
+  return '0.13.1'
+}
+
+const clientVersion = getClientVersion()
 
 export default defineConfig({
   title: 'WhoisThat',
@@ -38,7 +56,7 @@ export default defineConfig({
       { text: 'Integrations', link: '/integrations/cli' },
       { text: 'API & Wire Protocol', link: '/reference/protocol' },
       {
-        text: 'v0.13.0',
+        text: `v${clientVersion}`,
         items: [
           { text: 'Changelog / Releases', link: 'https://github.com/kvunoff/whoisthat/releases' },
           { text: 'AUR Package', link: 'https://aur.archlinux.org/packages/whoisthat' },
