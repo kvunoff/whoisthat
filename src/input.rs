@@ -361,6 +361,22 @@ async fn handle_normal_input(
         match key.code {
             KeyCode::Char('j') | KeyCode::Down => app.settings_state.cursor_down(),
             KeyCode::Char('k') | KeyCode::Up => app.settings_state.cursor_up(),
+            KeyCode::Char('h') | KeyCode::Left => {
+                if app.settings_state.cursor() == 3 {
+                    let prev_theme = crate::ui::theme::cycle_theme_prev();
+                    cfg.theme = prev_theme.to_string();
+                    config::save_config(cfg);
+                    app.msg(format!("Theme: {}", crate::ui::theme::current_theme().name));
+                }
+            }
+            KeyCode::Char('l') | KeyCode::Right => {
+                if app.settings_state.cursor() == 3 {
+                    let next_theme = crate::ui::theme::cycle_theme();
+                    cfg.theme = next_theme.to_string();
+                    config::save_config(cfg);
+                    app.msg(format!("Theme: {}", crate::ui::theme::current_theme().name));
+                }
+            }
             KeyCode::Char(' ') | KeyCode::Enter => match app.settings_state.cursor() {
                 0 => {
                     let new_val = !app.autoconnect_enabled;
@@ -424,6 +440,7 @@ async fn handle_normal_input(
                     let next_theme = crate::ui::theme::cycle_theme();
                     cfg.theme = next_theme.to_string();
                     config::save_config(cfg);
+                    app.msg(format!("Theme: {}", crate::ui::theme::current_theme().name));
                 }
                 4 => {
                     app.show_ip = !app.show_ip;

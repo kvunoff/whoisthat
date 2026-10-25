@@ -66,7 +66,7 @@ fn default_true() -> bool {
     true
 }
 fn default_theme() -> String {
-    "tokyo-night".into()
+    "graphite-dark".into()
 }
 fn default_log_level() -> String {
     "warn".into()

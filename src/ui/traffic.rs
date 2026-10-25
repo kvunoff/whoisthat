@@ -10,10 +10,6 @@ use ratatui::Frame;
 use crate::core_client::protocol::TrafficStats;
 use crate::ui::app::format_bytes;
 use crate::ui::theme::*;
-use ratatui::style::Color;
-
-const TRAFFIC_DOWN: Color = Color::Rgb(74, 222, 128); // Always green (#4ade80)
-const TRAFFIC_UP: Color = Color::Rgb(248, 113, 113); // Always red (#f87171)
 
 const DEFAULT_HISTORY_LEN: usize = 60;
 
@@ -214,20 +210,22 @@ fn render_stat_cards(
                 Span::styled(
                     "▼ ",
                     Style::default()
-                        .fg(TRAFFIC_DOWN)
+                        .fg(traffic_down())
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
                     format!("{}/s ", format_bytes(cur_down)),
-                    Style::default().fg(TRAFFIC_DOWN),
+                    Style::default().fg(traffic_down()),
                 ),
                 Span::styled(
                     "▲ ",
-                    Style::default().fg(TRAFFIC_UP).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(traffic_up())
+                        .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
                     format!("{}/s ", format_bytes(cur_up)),
-                    Style::default().fg(TRAFFIC_UP),
+                    Style::default().fg(traffic_up()),
                 ),
                 Span::styled(format!("│ {} ", status_icon), status_style),
                 Span::styled(
@@ -254,13 +252,13 @@ fn render_stat_cards(
             Span::styled(
                 "▼ RX: ",
                 Style::default()
-                    .fg(TRAFFIC_DOWN)
+                    .fg(traffic_down())
                     .add_modifier(Modifier::BOLD),
             ),
             Span::styled(
                 format!("{}/s ", format_bytes(cur_down)),
                 Style::default()
-                    .fg(TRAFFIC_DOWN)
+                    .fg(traffic_down())
                     .add_modifier(Modifier::BOLD),
             ),
             Span::styled(
@@ -271,11 +269,15 @@ fn render_stat_cards(
         let r1 = Line::from(vec![
             Span::styled(
                 "▲ TX: ",
-                Style::default().fg(TRAFFIC_UP).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(traffic_up())
+                    .add_modifier(Modifier::BOLD),
             ),
             Span::styled(
                 format!("{}/s ", format_bytes(cur_up)),
-                Style::default().fg(TRAFFIC_UP).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(traffic_up())
+                    .add_modifier(Modifier::BOLD),
             ),
             Span::styled(
                 format!("(Peak: {}/s)", format_bytes(history.peak_up as i64)),
@@ -324,13 +326,13 @@ fn render_stat_cards(
             Span::styled(
                 "▼ ",
                 Style::default()
-                    .fg(TRAFFIC_DOWN)
+                    .fg(traffic_down())
                     .add_modifier(Modifier::BOLD),
             ),
             Span::styled(
                 format!("{}/s", format_bytes(cur_down)),
                 Style::default()
-                    .fg(TRAFFIC_DOWN)
+                    .fg(traffic_down())
                     .add_modifier(Modifier::BOLD),
             ),
         ]),
@@ -354,11 +356,15 @@ fn render_stat_cards(
         Line::from(vec![
             Span::styled(
                 "▲ ",
-                Style::default().fg(TRAFFIC_UP).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(traffic_up())
+                    .add_modifier(Modifier::BOLD),
             ),
             Span::styled(
                 format!("{}/s", format_bytes(cur_up)),
-                Style::default().fg(TRAFFIC_UP).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(traffic_up())
+                    .add_modifier(Modifier::BOLD),
             ),
         ]),
         Line::from(vec![
@@ -420,13 +426,13 @@ fn render_traffic_chart(f: &mut Frame, area: Rect, history: &TrafficHistory) {
             .name("Download (Proxy)")
             .marker(Marker::Braille)
             .graph_type(GraphType::Line)
-            .style(Style::default().fg(TRAFFIC_DOWN))
+            .style(Style::default().fg(traffic_down()))
             .data(&down_data),
         Dataset::default()
             .name("Upload (Proxy)")
             .marker(Marker::Braille)
             .graph_type(GraphType::Line)
-            .style(Style::default().fg(TRAFFIC_UP))
+            .style(Style::default().fg(traffic_up()))
             .data(&up_data),
     ];
 

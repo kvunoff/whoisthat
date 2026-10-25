@@ -87,9 +87,9 @@ fn line_passes_filter(line: &str, filter: LogFilter) -> bool {
 fn line_style(line: &str) -> Style {
     match line_level(line) {
         0 => s_error(),
-        1 => s_accent(),
+        1 => s_warn(),
         2 => s_success(),
-        3 | 4 => s_faint(),
+        3 | 4 => s_dim(),
         _ => s_faint(),
     }
 }
