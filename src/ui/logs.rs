@@ -177,10 +177,23 @@ impl LogsState {
         }
     }
 
+    pub fn scroll_page_down(&mut self, step: usize) {
+        let vis = self.lines.len().saturating_sub(1);
+        self.scroll = (self.scroll + step).min(vis);
+        if self.scroll >= vis {
+            self.auto_scroll = true;
+        }
+    }
+
     pub fn scroll_up(&mut self) {
         if self.scroll > 0 {
             self.scroll -= 1;
         }
+        self.auto_scroll = false;
+    }
+
+    pub fn scroll_page_up(&mut self, step: usize) {
+        self.scroll = self.scroll.saturating_sub(step);
         self.auto_scroll = false;
     }
 

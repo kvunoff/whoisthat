@@ -297,83 +297,24 @@ impl App {
         let inner = block.inner(pa);
         f.render_widget(block, pa);
 
-        let global: &[(&str, &str)] = &[
-            ("Tab", "Open Pages / View Switcher"),
-            ("1/Esc", "Profiles tab"),
-            ("2/r", "Routing tab"),
-            ("3/m", "Traffic tab"),
-            ("4/l", "Logs tab"),
-            ("5/s", "Settings tab"),
-            ("Mouse", "Wheel scroll, click tabs/items"),
-            ("h/?", "This help"),
-            ("q", "Detach (VPN stays on)"),
-            ("Q/C-c", "Quit + stop VPN"),
-        ];
-
-        let profiles: &[(&str, &str)] = &[
-            ("j/k", "Navigate cursor"),
-            ("J/K / Alt+↑/↓", "Move group/profile up/down"),
-            ("Space/Enter", "Fold / unfold group"),
-            ("h/l / ←/→", "Collapse/expand / panel focus"),
-            ("g/G", "Top / bottom"),
-            ("c/Enter", "Connect to profile"),
-            ("d", "Disconnect"),
-            ("t/T", "Test latency / test group"),
-            ("y", "Copy profile URI"),
-            ("a", "Import profile URI"),
-            ("x/X", "Delete profile / group"),
-            ("u", "Update subscription"),
-            ("e/U", "Edit group/profile / add group"),
-            ("v", "Toggle TUN mode"),
-            ("/", "Search / filter profiles"),
-        ];
-
-        let routing: &[(&str, &str)] = &[
-            ("j/k", "Navigate rules"),
-            ("a", "Add rule"),
-            ("e", "Edit rule"),
-            ("x", "Delete rule"),
-            ("Space", "Toggle rule enabled"),
-            ("p", "Presets (GeoIP/GeoSite)"),
-            ("H", "Happ routing profiles"),
-            ("m", "Cycle group routing mode"),
-            ("i", "Import Happ routing from clip"),
-            ("←/→", "Switch group / form fields"),
-        ];
-
-        let settings: &[(&str, &str)] = &[
-            ("j/k", "Navigate settings"),
-            ("Enter/Space", "Toggle / cycle / edit / execute"),
-        ];
-
-        let logs: &[(&str, &str)] = &[
-            ("j/k", "Scroll up/down"),
-            ("g/G", "Top / bottom"),
-            ("f", "Cycle log level filter"),
-        ];
-
-        let traffic: &[(&str, &str)] = &[
-            ("1/Esc", "Back to profiles"),
-            ("v", "Toggle TUN mode"),
-            ("d", "Disconnect"),
-        ];
-
-        let (tab_name, tab_help): (&str, &[(&str, &str)]) = match self.tab {
-            ActiveTab::Profiles => ("Profiles", profiles),
-            ActiveTab::Routing => ("Routing", routing),
-            ActiveTab::Settings => ("Settings", settings),
-            ActiveTab::Logs => ("Logs", logs),
-            ActiveTab::Traffic => ("Traffic", traffic),
+        let ctx = match self.tab {
+            ActiveTab::Profiles => crate::keymap::KeyContext::ProfilesTree,
+            ActiveTab::Routing => crate::keymap::KeyContext::Routing,
+            ActiveTab::Settings => crate::keymap::KeyContext::Settings,
+            ActiveTab::Logs => crate::keymap::KeyContext::Logs,
+            ActiveTab::Traffic => crate::keymap::KeyContext::Traffic,
         };
 
-        let sections: [(&str, &[(&str, &str)]); 2] = [("Global", global), (tab_name, tab_help)];
+        let (tab_name, tab_help) = crate::keymap::get_tab_help(ctx);
 
         let mut help: Vec<(&str, &str, bool)> = Vec::new();
-        for (name, entries) in &sections {
-            help.push((name, "", true));
-            for (k, d) in *entries {
-                help.push((k, d, false));
-            }
+        help.push(("Global Shortcuts", "", true));
+        for entry in crate::keymap::GLOBAL_HELP {
+            help.push((entry.key, entry.desc, false));
+        }
+        help.push((tab_name, "", true));
+        for entry in tab_help {
+            help.push((entry.key, entry.desc, false));
         }
 
         let slot_rows = inner.height.saturating_sub(1) as usize;
@@ -404,7 +345,7 @@ impl App {
                 );
             } else {
                 let line = Line::from(vec![
-                    Span::styled(format!(" {:>12} ", key), s_accent()),
+                    Span::styled(format!(" {:>15} ", key), s_accent()),
                     Span::styled(*desc, s_dim()),
                 ]);
                 f.render_widget(

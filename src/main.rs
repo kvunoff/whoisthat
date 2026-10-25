@@ -7,6 +7,7 @@ mod deeplink;
 mod doctor;
 mod event_loop;
 mod input;
+mod keymap;
 mod launcher;
 mod logger;
 mod net_info;

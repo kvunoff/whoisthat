@@ -78,7 +78,7 @@ impl App {
 
         let header_actions = if is_compact {
             Line::from(vec![
-                Span::styled(" [Tab] ", s_accent_bold()),
+                Span::styled(" [[]/[]] ", s_accent_bold()),
                 Span::styled(format!("{}/5 ", tab_num), s_accent()),
                 Span::styled("│ ", s_faint()),
                 Span::styled("[?] ", s_accent_bold()),
@@ -87,11 +87,11 @@ impl App {
             ])
         } else {
             Line::from(vec![
-                Span::styled(" [Tab] ", s_accent_bold()),
-                Span::styled("Pages ▾ ", s_accent().add_modifier(Modifier::BOLD)),
+                Span::styled(" [[]/[]] ", s_accent_bold()),
+                Span::styled("Tabs ▾ ", s_accent().add_modifier(Modifier::BOLD)),
                 Span::styled(format!("({}) ", current_tab_name), s_dim()),
                 Span::styled("│ ", s_faint()),
-                Span::styled("[?/h] ", s_accent_bold()),
+                Span::styled("[?] ", s_accent_bold()),
                 Span::styled("Help ", s_text()),
                 Span::styled("│ ", s_faint()),
                 Span::styled("[Q/q] ", s_accent_bold()),
@@ -115,7 +115,7 @@ impl App {
             }
             spans.push(Span::styled("│ ", s_faint()));
             spans.push(Span::styled(
-                format!("[Tab] {}/5 ", tab_num),
+                format!("{}/5 ", tab_num),
                 s_accent_bold(),
             ));
             spans.push(Span::styled("│ [?] │ [q]", s_dim()));

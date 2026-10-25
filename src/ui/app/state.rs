@@ -290,6 +290,35 @@ impl App {
         }
     }
 
+    pub fn next_tab(&mut self) -> ActiveTab {
+        let next_idx = (self.tab_index() + 1) % 5;
+        self.tab = Self::tab_from_index(next_idx);
+        self.tab
+    }
+
+    pub fn prev_tab(&mut self) -> ActiveTab {
+        let cur = self.tab_index();
+        let prev_idx = if cur == 0 { 4 } else { cur - 1 };
+        self.tab = Self::tab_from_index(prev_idx);
+        self.tab
+    }
+
+    pub fn toggle_focus(&mut self) {
+        if self.tab == ActiveTab::Profiles {
+            self.focus = match self.focus {
+                Focus::LeftPanel => {
+                    if self.selected_profile().is_some() {
+                        Focus::RightPanel
+                    } else {
+                        Focus::LeftPanel
+                    }
+                }
+                Focus::RightPanel => Focus::LeftPanel,
+                Focus::Popup => Focus::Popup,
+            };
+        }
+    }
+
     pub fn is_connected(&self) -> bool {
         self.connection_status.connection == "connected"
     }
@@ -344,6 +373,20 @@ impl App {
             self.cursor = len - 1;
             self.details_scroll = 0;
         }
+    }
+
+    pub fn cursor_page_down(&mut self, step: usize) {
+        let len = self.tree_len();
+        if len == 0 {
+            return;
+        }
+        self.cursor = (self.cursor + step).min(len - 1);
+        self.details_scroll = 0;
+    }
+
+    pub fn cursor_page_up(&mut self, step: usize) {
+        self.cursor = self.cursor.saturating_sub(step);
+        self.details_scroll = 0;
     }
 
     pub fn clear_msg(&mut self) {
