@@ -235,8 +235,8 @@ async fn handle_normal_input(
             false
         }
         AppAction::CursorLeft => {
-            match app.tab {
-                ActiveTab::Profiles => match app.focus {
+            if app.tab == ActiveTab::Profiles {
+                match app.focus {
                     Focus::LeftPanel => {
                         if let Some(TreeNode::Group(gi)) = app.tree_node_at(app.cursor) {
                             if let Some(g) = app.groups.get(gi) {
@@ -250,14 +250,13 @@ async fn handle_normal_input(
                         app.focus = Focus::LeftPanel;
                     }
                     Focus::Popup => {}
-                },
-                _ => {}
+                }
             }
             false
         }
         AppAction::CursorRight => {
-            match app.tab {
-                ActiveTab::Profiles => match app.focus {
+            if app.tab == ActiveTab::Profiles {
+                match app.focus {
                     Focus::LeftPanel => {
                         if let Some(TreeNode::Group(gi)) = app.tree_node_at(app.cursor) {
                             if let Some(g) = app.groups.get(gi) {
@@ -273,8 +272,7 @@ async fn handle_normal_input(
                     }
                     Focus::RightPanel => {}
                     Focus::Popup => {}
-                },
-                _ => {}
+                }
             }
             false
         }
@@ -310,7 +308,10 @@ async fn handle_normal_input(
                     Focus::LeftPanel => app.cursor_page_down(10),
                     Focus::RightPanel => {
                         for _ in 0..10 {
-                            app.details_scroll_down(app.details_line_count(), app.details_visible());
+                            app.details_scroll_down(
+                                app.details_line_count(),
+                                app.details_visible(),
+                            );
                         }
                     }
                     Focus::Popup => {}
