@@ -16,7 +16,7 @@ WhoisThat includes 4 curated palettes designed for high readability, contrast, a
 | **Dracula** | Vibrant gothic contrast with deep vampire purple tones | Neon pink, electric purple, spring green |
 
 ### Switching Themes
-1. Open the Settings tab (<kbd>5</kbd> or <kbd>s</kbd>).
+1. Open the Settings tab (<kbd>5</kbd> or cycle with <kbd>[</kbd> / <kbd>]</kbd>).
 2. Highlight the **Theme** option.
 3. Press <kbd>Enter</kbd>, <kbd>Space</kbd>, or <kbd>→</kbd> / <kbd>l</kbd> to cycle forward, or <kbd>←</kbd> / <kbd>h</kbd> to cycle backward with **instant live preview**.
 4. The selected theme is saved persistently to `~/.config/whoisthat/config.toml`.
@@ -28,8 +28,8 @@ WhoisThat includes 4 curated palettes designed for high readability, contrast, a
 Terminals come in all shapes and sizes—from a compact 80x24 window to tiled splits on an ultrawide monitor. WhoisThat features a custom viewport geometry engine that classifies window dimensions into tiers:
 
 ### Width Tiers
-* **Compact (< 80 columns)**: Automatically collapses side-by-side splits into a full-width single panel. Press <kbd>Tab</kbd> to toggle between the Profile Tree and Server Details.
-* **Medium (80–125 columns)**: Balanced side-by-side layout (40% tree, 60% details/routing).
+* **Compact (< 80 columns)**: Automatically collapses side-by-side splits into a full-width single panel. Press <kbd>Tab</kbd> to switch focus between the Profile Tree and Server Details views.
+* **Medium (80–125 columns)**: Balanced side-by-side layout (40% tree, 60% details/routing). Press <kbd>Tab</kbd> to toggle focus between panes.
 * **Wide (126–160 columns)**: Expanded details view with full server parameters, TLS properties, and multi-column statistics.
 * **UltraWide (> 160 columns)**: Dual-column details cards, extended traffic history, and verbose routing paths.
 

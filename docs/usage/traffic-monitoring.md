@@ -1,6 +1,6 @@
 # Real-Time Traffic Monitoring
 
-The Traffic Monitoring dashboard (<kbd>3</kbd> or <kbd>m</kbd>) provides real-time visibility into your network throughput, data transfer totals, and interface health.
+The Traffic Monitoring dashboard (<kbd>3</kbd>, or cycle with <kbd>[</kbd> / <kbd>]</kbd>) provides real-time visibility into your network throughput, data transfer totals, and interface health.
 
 ---
 
