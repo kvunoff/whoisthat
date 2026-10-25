@@ -71,7 +71,16 @@ async fn main() -> io::Result<()> {
     let logger = init_logger();
 
     let mut cfg = config::load_config();
-    ui::theme::set_theme(&cfg.theme);
+    if !ui::theme::set_theme(&cfg.theme) {
+        let fallback = ui::theme::current_theme().id.to_string();
+        log::warn!(
+            "Configured theme '{}' not recognized, falling back to '{}'",
+            cfg.theme,
+            fallback
+        );
+        cfg.theme = fallback;
+        config::save_config(&cfg);
+    }
     configure_logger(logger, cfg.log_enabled, &cfg.log_level);
     let tui_version = env!("CARGO_PKG_VERSION").to_string();
 

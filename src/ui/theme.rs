@@ -20,142 +20,74 @@ pub struct Theme {
     pub border_active: Color,
 }
 
-pub const THEMES: [Theme; 8] = [
+pub const THEMES: [Theme; 4] = [
+    Theme {
+        id: "graphite-dark",
+        name: "Graphite Dark",
+        bg: Color::Rgb(18, 18, 20),        // #121214 - deep rich graphite
+        surface: Color::Rgb(32, 33, 37),   // #202125 - solid charcoal surface
+        accent: Color::Rgb(220, 224, 230), // #dce0e6 - bright platinum silver
+        accent_glow: Color::Rgb(255, 255, 255), // #ffffff - pure white highlight
+        text: Color::Rgb(240, 242, 245),   // #f0f2f5 - bright crisp white
+        text_dim: Color::Rgb(150, 155, 165), // #969ba5 - neutral graphite gray
+        text_faint: Color::Rgb(95, 100, 110), // #5f646e - steel gray
+        success: Color::Rgb(74, 222, 128), // #4ade80 - emerald green
+        warn: Color::Rgb(251, 191, 36),    // #fbbf24 - amber
+        error: Color::Rgb(248, 113, 113),  // #f87171 - coral red
+        disconnected: Color::Rgb(105, 110, 120),
+        border: Color::Rgb(46, 48, 54), // #2e3036 - slate border
+        border_active: Color::Rgb(210, 215, 225), // #d2d7e1 - platinum active border
+    },
+    Theme {
+        id: "graphite-light",
+        name: "Graphite Light",
+        bg: Color::Rgb(246, 247, 249), // #f6f7f9 - paper off-white background
+        surface: Color::Rgb(230, 233, 238), // #e6e9ee - soft ash/slate surface
+        accent: Color::Rgb(25, 26, 30), // #191a1e - dark ink black accent
+        accent_glow: Color::Rgb(0, 0, 0), // #000000 - pure jet black
+        text: Color::Rgb(24, 25, 28),  // #18191c - high contrast charcoal text
+        text_dim: Color::Rgb(95, 102, 115), // #5f6673 - legible slate gray
+        text_faint: Color::Rgb(145, 152, 163), // #9198a3 - pencil gray
+        success: Color::Rgb(22, 163, 74), // #16a34a - forest green (high contrast on white)
+        warn: Color::Rgb(217, 119, 6), // #d97706 - dark amber (high contrast on white)
+        error: Color::Rgb(220, 38, 38), // #dc2626 - crimson red (high contrast on white)
+        disconnected: Color::Rgb(130, 138, 150),
+        border: Color::Rgb(205, 210, 218), // #cdd2da - light graphite border
+        border_active: Color::Rgb(25, 26, 30), // #191a1e - bold ink active border
+    },
     Theme {
         id: "tokyo-night",
         name: "Tokyo Night",
-        bg: Color::Rgb(26, 27, 38),
-        surface: Color::Rgb(36, 37, 58),
-        accent: Color::Rgb(125, 207, 255),
-        accent_glow: Color::Rgb(158, 206, 219),
-        text: Color::Rgb(192, 202, 245),
-        text_dim: Color::Rgb(86, 95, 137),
-        text_faint: Color::Rgb(59, 66, 97),
-        success: Color::Rgb(158, 206, 106),
-        warn: Color::Rgb(224, 175, 104),
-        error: Color::Rgb(247, 118, 142),
+        bg: Color::Rgb(26, 27, 38),        // #1a1b26 - deep midnight blue
+        surface: Color::Rgb(36, 40, 59),   // #24283b - elevated storm surface
+        accent: Color::Rgb(122, 162, 247), // #7aa2f7 - Tokyo Night signature blue
+        accent_glow: Color::Rgb(125, 207, 255), // #7dcfff - brilliant cyan highlight
+        text: Color::Rgb(192, 202, 245),   // #c0caf5 - clean foreground
+        text_dim: Color::Rgb(154, 165, 206), // #9aa5ce - crisp readable secondary
+        text_faint: Color::Rgb(86, 95, 137), // #565f89 - distinct metadata/labels
+        success: Color::Rgb(158, 206, 106), // #9ece6a - green
+        warn: Color::Rgb(224, 175, 104),   // #e0af68 - warm amber
+        error: Color::Rgb(247, 118, 142),  // #f7768e - coral red
         disconnected: Color::Rgb(86, 95, 137),
-        border: Color::Rgb(59, 66, 97),
-        border_active: Color::Rgb(125, 207, 255),
-    },
-    Theme {
-        id: "catppuccin-mocha",
-        name: "Catppuccin Mocha",
-        bg: Color::Rgb(30, 30, 46),
-        surface: Color::Rgb(49, 50, 68),
-        accent: Color::Rgb(137, 180, 250),
-        accent_glow: Color::Rgb(180, 190, 254),
-        text: Color::Rgb(205, 214, 244),
-        text_dim: Color::Rgb(166, 173, 200),
-        text_faint: Color::Rgb(88, 91, 112),
-        success: Color::Rgb(166, 227, 161),
-        warn: Color::Rgb(249, 226, 175),
-        error: Color::Rgb(243, 139, 168),
-        disconnected: Color::Rgb(108, 112, 134),
-        border: Color::Rgb(69, 71, 90),
-        border_active: Color::Rgb(137, 180, 250),
-    },
-    Theme {
-        id: "nord",
-        name: "Nord",
-        bg: Color::Rgb(46, 52, 64),
-        surface: Color::Rgb(59, 66, 82),
-        accent: Color::Rgb(136, 192, 208),
-        accent_glow: Color::Rgb(129, 161, 193),
-        text: Color::Rgb(236, 239, 244),
-        text_dim: Color::Rgb(216, 222, 233),
-        text_faint: Color::Rgb(76, 86, 106),
-        success: Color::Rgb(163, 190, 140),
-        warn: Color::Rgb(235, 203, 139),
-        error: Color::Rgb(191, 97, 106),
-        disconnected: Color::Rgb(76, 86, 106),
-        border: Color::Rgb(67, 76, 94),
-        border_active: Color::Rgb(136, 192, 208),
+        border: Color::Rgb(59, 66, 97), // #3b4261 - distinct frame border
+        border_active: Color::Rgb(125, 207, 255), // #7dcfff - cyan active border
     },
     Theme {
         id: "dracula",
         name: "Dracula",
-        bg: Color::Rgb(40, 42, 54),
-        surface: Color::Rgb(56, 58, 89),
-        accent: Color::Rgb(189, 147, 249),
-        accent_glow: Color::Rgb(255, 121, 198),
-        text: Color::Rgb(248, 248, 242),
-        text_dim: Color::Rgb(98, 114, 164),
-        text_faint: Color::Rgb(68, 71, 90),
-        success: Color::Rgb(80, 250, 123),
-        warn: Color::Rgb(241, 250, 140),
-        error: Color::Rgb(255, 85, 85),
+        bg: Color::Rgb(40, 42, 54),        // #282a36 - Dracula background
+        surface: Color::Rgb(68, 71, 90),   // #44475a - current line / selection surface
+        accent: Color::Rgb(189, 147, 249), // #bd93f9 - Dracula purple
+        accent_glow: Color::Rgb(255, 121, 198), // #ff79c6 - Dracula hot pink
+        text: Color::Rgb(248, 248, 242),   // #f8f8f2 - Dracula foreground
+        text_dim: Color::Rgb(164, 177, 214), // #a4b1d6 - readable comment highlight
+        text_faint: Color::Rgb(98, 114, 164), // #6272a4 - Dracula comment
+        success: Color::Rgb(80, 250, 123), // #50fa7b - electric green
+        warn: Color::Rgb(241, 250, 140),   // #f1fa8c - yellow
+        error: Color::Rgb(255, 85, 85),    // #ff5555 - red
         disconnected: Color::Rgb(98, 114, 164),
-        border: Color::Rgb(68, 71, 90),
-        border_active: Color::Rgb(189, 147, 249),
-    },
-    Theme {
-        id: "gruvbox-dark",
-        name: "Gruvbox Dark",
-        bg: Color::Rgb(40, 40, 40),
-        surface: Color::Rgb(60, 56, 54),
-        accent: Color::Rgb(254, 128, 25),
-        accent_glow: Color::Rgb(250, 189, 47),
-        text: Color::Rgb(235, 219, 178),
-        text_dim: Color::Rgb(168, 153, 132),
-        text_faint: Color::Rgb(80, 73, 69),
-        success: Color::Rgb(184, 187, 38),
-        warn: Color::Rgb(250, 189, 47),
-        error: Color::Rgb(251, 73, 52),
-        disconnected: Color::Rgb(124, 111, 100),
-        border: Color::Rgb(80, 73, 69),
-        border_active: Color::Rgb(254, 128, 25),
-    },
-    Theme {
-        id: "solarized-dark",
-        name: "Solarized Dark",
-        bg: Color::Rgb(0, 43, 54),
-        surface: Color::Rgb(7, 54, 66),
-        accent: Color::Rgb(38, 139, 210),
-        accent_glow: Color::Rgb(42, 161, 152),
-        text: Color::Rgb(131, 148, 150),
-        text_dim: Color::Rgb(101, 123, 131),
-        text_faint: Color::Rgb(88, 110, 117),
-        success: Color::Rgb(133, 153, 0),
-        warn: Color::Rgb(181, 137, 0),
-        error: Color::Rgb(220, 50, 47),
-        disconnected: Color::Rgb(88, 110, 117),
-        border: Color::Rgb(7, 54, 66),
-        border_active: Color::Rgb(38, 139, 210),
-    },
-    Theme {
-        id: "cyberpunk",
-        name: "Cyberpunk",
-        bg: Color::Rgb(15, 15, 27),
-        surface: Color::Rgb(26, 26, 46),
-        accent: Color::Rgb(0, 255, 159),
-        accent_glow: Color::Rgb(0, 184, 255),
-        text: Color::Rgb(224, 224, 255),
-        text_dim: Color::Rgb(138, 142, 168),
-        text_faint: Color::Rgb(55, 55, 82),
-        success: Color::Rgb(0, 255, 159),
-        warn: Color::Rgb(255, 230, 0),
-        error: Color::Rgb(255, 0, 85),
-        disconnected: Color::Rgb(93, 93, 125),
-        border: Color::Rgb(44, 44, 77),
-        border_active: Color::Rgb(0, 255, 159),
-    },
-    Theme {
-        id: "monokai-pro",
-        name: "Monokai Pro",
-        bg: Color::Rgb(45, 42, 46),
-        surface: Color::Rgb(64, 62, 65),
-        accent: Color::Rgb(255, 216, 102),
-        accent_glow: Color::Rgb(252, 152, 103),
-        text: Color::Rgb(252, 252, 250),
-        text_dim: Color::Rgb(147, 146, 147),
-        text_faint: Color::Rgb(91, 89, 92),
-        success: Color::Rgb(169, 220, 118),
-        warn: Color::Rgb(252, 152, 103),
-        error: Color::Rgb(255, 97, 136),
-        disconnected: Color::Rgb(114, 112, 114),
-        border: Color::Rgb(73, 70, 78),
-        border_active: Color::Rgb(255, 216, 102),
+        border: Color::Rgb(68, 71, 90), // #44475a - selection border
+        border_active: Color::Rgb(189, 147, 249), // #bd93f9 - purple active border
     },
 ];
 
@@ -182,6 +114,13 @@ pub fn cycle_theme() -> &'static str {
     let next = (cur + 1) % THEMES.len();
     CURRENT_THEME_IDX.store(next, Ordering::Relaxed);
     THEMES[next].id
+}
+
+pub fn cycle_theme_prev() -> &'static str {
+    let cur = CURRENT_THEME_IDX.load(Ordering::Relaxed);
+    let prev = if cur == 0 { THEMES.len() - 1 } else { cur - 1 };
+    CURRENT_THEME_IDX.store(prev, Ordering::Relaxed);
+    THEMES[prev].id
 }
 
 #[allow(dead_code)]
@@ -241,6 +180,14 @@ pub fn border_active() -> Color {
     current_theme().border_active
 }
 
+pub fn traffic_down() -> Color {
+    current_theme().success
+}
+
+pub fn traffic_up() -> Color {
+    current_theme().error
+}
+
 pub fn s_text() -> Style {
     Style::default().fg(text())
 }
@@ -278,11 +225,11 @@ pub fn s_disconnected() -> Style {
 }
 
 pub fn s_bg() -> Style {
-    Style::default().bg(bg())
+    Style::default().bg(bg()).fg(text())
 }
 
 pub fn s_surface() -> Style {
-    Style::default().bg(surface())
+    Style::default().bg(surface()).fg(text())
 }
 
 #[cfg(test)]
@@ -291,23 +238,29 @@ mod tests {
 
     #[test]
     fn test_theme_selection_and_cycling() {
-        assert_eq!(available_themes().len(), 8);
-
-        assert!(set_theme("nord"));
-        assert_eq!(current_theme().id, "nord");
-        assert_eq!(current_theme().name, "Nord");
-        assert_eq!(accent(), current_theme().accent);
-        assert_eq!(border_active(), current_theme().border_active);
+        assert_eq!(available_themes().len(), 4);
+        assert_eq!(available_themes()[0].id, "graphite-dark");
 
         assert!(set_theme("dracula"));
         assert_eq!(current_theme().id, "dracula");
+        assert_eq!(current_theme().name, "Dracula");
+        assert_eq!(accent(), current_theme().accent);
+        assert_eq!(border_active(), current_theme().border_active);
 
         let next = cycle_theme();
-        assert_eq!(next, "gruvbox-dark");
-        assert_eq!(current_theme().id, "gruvbox-dark");
+        assert_eq!(next, "graphite-dark");
+        assert_eq!(current_theme().id, "graphite-dark");
+
+        let next2 = cycle_theme();
+        assert_eq!(next2, "graphite-light");
+        assert_eq!(current_theme().id, "graphite-light");
+
+        let prev = cycle_theme_prev();
+        assert_eq!(prev, "graphite-dark");
+        assert_eq!(current_theme().id, "graphite-dark");
 
         // Reset back to default
-        assert!(set_theme("tokyo-night"));
-        assert_eq!(current_theme().id, "tokyo-night");
+        assert!(set_theme("graphite-dark"));
+        assert_eq!(current_theme().id, "graphite-dark");
     }
 }

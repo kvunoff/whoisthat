@@ -326,8 +326,18 @@ pub fn render_settings(
                 value_idx += 1;
                 let label_w = if content_area.width < 50 { 16 } else { 22 };
                 ListItem::new(Line::from(vec![
-                    Span::styled(prefix, if is_selected { s_accent() } else { s_faint() }),
-                    Span::styled(format!("{:<width$}", *label, width = label_w), s_dim()),
+                    Span::styled(
+                        prefix,
+                        if is_selected {
+                            s_accent_bold()
+                        } else {
+                            s_faint()
+                        },
+                    ),
+                    Span::styled(
+                        format!("{:<width$}", *label, width = label_w),
+                        if is_selected { s_text() } else { s_dim() },
+                    ),
                     Span::styled(val.clone(), val_style),
                     Span::styled(extra, s_faint()),
                 ]))
@@ -350,7 +360,11 @@ pub fn render_settings(
         .with_offset(state.scroll);
 
     let list = List::new(items)
-        .highlight_style(Style::default())
+        .highlight_style(if focused {
+            Style::default().bg(surface())
+        } else {
+            Style::default()
+        })
         .scroll_padding(3);
 
     f.render_stateful_widget(list, content_area, &mut list_state);
@@ -358,9 +372,9 @@ pub fn render_settings(
     state.list_state = list_state;
 
     let help_text = if area.width < 60 {
-        " j/k:nav │ Enter/Space:change"
+        " j/k:nav │ Enter/h/l:change"
     } else {
-        " j/k navigate  │  Enter/Space toggle / cycle / edit"
+        " j/k navigate  │  Enter/Space/h/l toggle / cycle / edit"
     };
     let help = Paragraph::new(help_text)
         .style(s_faint())

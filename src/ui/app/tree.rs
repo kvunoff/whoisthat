@@ -161,7 +161,11 @@ impl App {
             .with_offset(self.tree_scroll);
 
         let list = List::new(items)
-            .highlight_style(Style::default())
+            .highlight_style(if left_focus {
+                Style::default().bg(surface())
+            } else {
+                Style::default()
+            })
             .scroll_padding(5);
         f.render_stateful_widget(list, inner, &mut list_state);
     }
@@ -286,7 +290,11 @@ impl App {
             .with_offset(self.tree_scroll);
 
         let list = List::new(items)
-            .highlight_style(Style::default())
+            .highlight_style(if left_focus {
+                Style::default().bg(surface())
+            } else {
+                Style::default()
+            })
             .scroll_padding(5);
 
         f.render_stateful_widget(list, inner, &mut list_state);
