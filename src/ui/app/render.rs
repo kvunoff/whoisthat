@@ -114,10 +114,7 @@ impl App {
                 spans.push(Span::styled(format!("{} ", self.public_ip), s_dim()));
             }
             spans.push(Span::styled("│ ", s_faint()));
-            spans.push(Span::styled(
-                format!("{}/5 ", tab_num),
-                s_accent_bold(),
-            ));
+            spans.push(Span::styled(format!("{}/5 ", tab_num), s_accent_bold()));
             spans.push(Span::styled("│ [?] │ [q]", s_dim()));
 
             f.render_widget(Paragraph::new(Line::from(spans)).style(s_bg()), area);
