@@ -1,6 +1,7 @@
 package db
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -273,5 +274,132 @@ func TestHappRouting_UpdateGroupAndProfilesPreservesRouting(t *testing.T) {
 	}
 	if loaded.Name != "SubProf" {
 		t.Errorf("loaded profile corrupted: %+v", loaded)
+	}
+}
+
+func TestHappRouting_ResolveRoutingPropagatesDNS(t *testing.T) {
+	database := setupTestDB(t)
+	addedGroup, err := database.AddGroup("DNSGroup", "")
+	if err != nil {
+		t.Fatalf("AddGroup failed: %v", err)
+	}
+	groupID := addedGroup.Id
+
+	prof := structs.RoutingProfile{
+		Id:             "pdns",
+		GroupId:        groupID,
+		Name:           "DNSProfile",
+		Source:         "happ",
+		State:          "ready",
+		DomainStrategy: "AsIs",
+		GlobalProxy:    false,
+		Rules: []structs.RoutingRule{
+			{Type: "field", Domain: "direct.example", OutboundTag: "direct", Enabled: true},
+		},
+		DNS: &structs.HappDNSConfig{
+			FakeDNSEnabled:    true,
+			RemoteDNSType:     "DoH",
+			RemoteDNSDomain:   "https://cloudflare-dns.com/dns-query",
+			RemoteDNSIP:       "1.1.1.1",
+			DomesticDNSType:   "DoU",
+			DomesticDNSIP:     "8.8.8.8",
+			DomesticDNSDomain: "",
+			Hosts:             map[string]string{"vpn.example.com": "203.0.113.7"},
+		},
+	}
+	if err := database.SaveRoutingProfile(prof); err != nil {
+		t.Fatalf("SaveRoutingProfile failed: %v", err)
+	}
+	if err := database.SetActiveRoutingProfile(groupID, prof.Id); err != nil {
+		t.Fatalf("SetActiveRoutingProfile failed: %v", err)
+	}
+
+	sel, err := database.ResolveRouting(groupID)
+	if err != nil {
+		t.Fatalf("ResolveRouting failed: %v", err)
+	}
+	if sel.Source != "happ" {
+		t.Fatalf("expected happ source, got %q", sel.Source)
+	}
+	if sel.GlobalProxy {
+		t.Error("expected GlobalProxy=false to be propagated")
+	}
+	if sel.Config.DNS == nil {
+		t.Fatal("expected DNS config in selection")
+	}
+	if !sel.Config.DNS.FakeDNSEnabled || sel.Config.DNS.RemoteDNSType != "DoH" || sel.Config.DNS.DomesticDNSType != "DoU" {
+		t.Errorf("unexpected DNS config: %+v", sel.Config.DNS)
+	}
+
+	infos, err := database.ListRoutingProfileInfos(groupID, prof.Id)
+	if err != nil {
+		t.Fatalf("ListRoutingProfileInfos failed: %v", err)
+	}
+	if len(infos) != 1 {
+		t.Fatalf("expected 1 info, got %d", len(infos))
+	}
+	if !infos[0].FakeDNSEnabled {
+		t.Error("expected fake_dns_enabled=true in info")
+	}
+	if infos[0].RemoteDNS != "DoH cloudflare-dns.com" {
+		t.Errorf("unexpected RemoteDNS label: %q", infos[0].RemoteDNS)
+	}
+	if infos[0].DomesticDNS != "DoU 8.8.8.8" {
+		t.Errorf("unexpected DomesticDNS label: %q", infos[0].DomesticDNS)
+	}
+}
+
+func TestHappRouting_BackfillsDNSFromRawJSON(t *testing.T) {
+	database := setupTestDB(t)
+	addedGroup, err := database.AddGroup("LegacyGroup", "")
+	if err != nil {
+		t.Fatalf("AddGroup failed: %v", err)
+	}
+	groupID := addedGroup.Id
+
+	raw := json.RawMessage(`{
+		"Name":"Legacy",
+		"GlobalProxy":true,
+		"RemoteDNSType":"DoH",
+		"RemoteDNSDomain":"https://dns.google/dns-query",
+		"RemoteDNSIP":"8.8.8.8",
+		"DomesticDNSType":"DoU",
+		"DomesticDNSIP":"1.1.1.1",
+		"DnsHosts":{"vpn.example.com":"203.0.113.9"}
+	}`)
+	prof := structs.RoutingProfile{
+		Id:             "legacy",
+		GroupId:        groupID,
+		Name:           "Legacy",
+		Source:         "happ",
+		State:          "ready",
+		DomainStrategy: "IPIfNonMatch",
+		GlobalProxy:    true,
+		RawJSON:        raw,
+		Rules: []structs.RoutingRule{
+			{Type: "field", Domain: "legacy.example", OutboundTag: "proxy", Enabled: true},
+		},
+	}
+	if err := database.SaveRoutingProfile(prof); err != nil {
+		t.Fatalf("SaveRoutingProfile failed: %v", err)
+	}
+	if err := database.SetActiveRoutingProfile(groupID, prof.Id); err != nil {
+		t.Fatalf("SetActiveRoutingProfile failed: %v", err)
+	}
+
+	sel, err := database.ResolveRouting(groupID)
+	if err != nil {
+		t.Fatalf("ResolveRouting failed: %v", err)
+	}
+	if sel.Config.DNS == nil {
+		t.Fatal("expected DNS to be backfilled from RawJSON")
+	}
+	if sel.Config.DNS.RemoteDNSType != "DoH" || sel.Config.DNS.Hosts["vpn.example.com"] != "203.0.113.9" {
+		t.Errorf("unexpected backfilled DNS: %+v", sel.Config.DNS)
+	}
+
+	infos, _ := database.ListRoutingProfileInfos(groupID, prof.Id)
+	if len(infos) != 1 || infos[0].RemoteDNS != "DoH dns.google" {
+		t.Errorf("unexpected info badges: %+v", infos)
 	}
 }

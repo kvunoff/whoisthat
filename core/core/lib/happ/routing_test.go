@@ -66,10 +66,10 @@ func TestParseLink_Base64Variants(t *testing.T) {
 	rawUrl := base64.RawURLEncoding.EncodeToString([]byte(jsonContent))
 
 	for name, enc := range map[string]string{
-		"std":     std,
-		"rawStd":  rawStd,
-		"url":     urlEnc,
-		"rawUrl":  rawUrl,
+		"std":      std,
+		"rawStd":   rawStd,
+		"url":      urlEnc,
+		"rawUrl":   rawUrl,
 		"newlines": "\r\n " + std + "\t\n",
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -218,18 +218,18 @@ func TestFlexibleUnix(t *testing.T) {
 func TestToRoutingConfig_RuleOrderAndPriority(t *testing.T) {
 	fbFalse := FlexibleBool(false)
 	profile := HappProfile{
-		Name:        "FullTest",
-		GlobalProxy: &fbFalse,
-		BlockSites:  []string{"geosite:category-ads-all"},
-		BlockIp:     []string{"geoip:bad"},
-		DirectSites: []string{"geosite:cn", "domain:example.cn"},
-		DirectIp:    []string{"geoip:cn", "1.1.1.0/24"},
-		ProxySites:  []string{"geosite:google"},
-		ProxyIp:     []string{"geoip:us"},
+		Name:           "FullTest",
+		GlobalProxy:    &fbFalse,
+		BlockSites:     []string{"geosite:category-ads-all"},
+		BlockIp:        []string{"geoip:bad"},
+		DirectSites:    []string{"geosite:cn", "domain:example.cn"},
+		DirectIp:       []string{"geoip:cn", "1.1.1.0/24"},
+		ProxySites:     []string{"geosite:google"},
+		ProxyIp:        []string{"geoip:us"},
 		DomainStrategy: "AsIs",
-		Geoipurl:    "https://example.com/geoip.dat",
-		Geositeurl:  "https://example.com/geosite.dat",
-		LastUpdated: FlexibleUnix{val: 1760000000},
+		Geoipurl:       "https://example.com/geoip.dat",
+		Geositeurl:     "https://example.com/geosite.dat",
+		LastUpdated:    FlexibleUnix{val: 1760000000},
 	}
 
 	cfg, warnings, err := ToRoutingConfig(profile)
@@ -355,5 +355,79 @@ func TestToRoutingConfig_SeparateDomainAndIPInvariant(t *testing.T) {
 		if rule.Domain != "" && rule.IP != "" {
 			t.Errorf("rule %d violates invariant: has both Domain (%s) and IP (%s)", i, rule.Domain, rule.IP)
 		}
+	}
+}
+
+func TestToRoutingConfig_DNSSection(t *testing.T) {
+	raw := `{
+		"Name":"DNSProfile",
+		"GlobalProxy":true,
+		"RemoteDNSType":"DoH",
+		"RemoteDNSDomain":"https://cloudflare-dns.com/dns-query",
+		"RemoteDNSIP":"1.1.1.1",
+		"DomesticDNSType":"DoU",
+		"DomesticDNSIP":"8.8.8.8",
+		"DnsHosts":{"vpn.example.com":"203.0.113.7"},
+		"FakeDNS":"true"
+	}`
+
+	var profile HappProfile
+	if err := json.Unmarshal([]byte(raw), &profile); err != nil {
+		t.Fatalf("failed to unmarshal profile: %v", err)
+	}
+
+	cfg, warnings, err := ToRoutingConfig(profile)
+	if err != nil {
+		t.Fatalf("ToRoutingConfig failed: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("unexpected warnings: %v", warnings)
+	}
+	if cfg.DNS == nil {
+		t.Fatal("expected DNS config, got nil")
+	}
+	if !cfg.DNS.FakeDNSEnabled {
+		t.Error("expected FakeDNSEnabled=true")
+	}
+	if cfg.DNS.RemoteDNSType != "DoH" || cfg.DNS.RemoteDNSDomain != "https://cloudflare-dns.com/dns-query" {
+		t.Errorf("unexpected remote DNS: %+v", cfg.DNS)
+	}
+	if cfg.DNS.DomesticDNSType != "DoU" || cfg.DNS.DomesticDNSIP != "8.8.8.8" {
+		t.Errorf("unexpected domestic DNS: %+v", cfg.DNS)
+	}
+	if cfg.DNS.Hosts["vpn.example.com"] != "203.0.113.7" {
+		t.Errorf("unexpected hosts: %+v", cfg.DNS.Hosts)
+	}
+}
+
+func TestToRoutingConfig_NoDNSSection(t *testing.T) {
+	cfg, warnings, err := ToRoutingConfig(HappProfile{Name: "Plain"})
+	if err != nil {
+		t.Fatalf("ToRoutingConfig failed: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("unexpected warnings: %v", warnings)
+	}
+	if cfg.DNS != nil {
+		t.Errorf("expected nil DNS for profile without DNS fields, got %+v", cfg.DNS)
+	}
+}
+
+func TestToRoutingConfig_InvalidDNSWarnsButKeepsProfile(t *testing.T) {
+	var profile HappProfile
+	raw := `{"Name":"BadDNS","RemoteDNSType":"DoH","RemoteDNSDomain":"http://insecure/dns-query"}`
+	if err := json.Unmarshal([]byte(raw), &profile); err != nil {
+		t.Fatalf("failed to unmarshal profile: %v", err)
+	}
+
+	cfg, warnings, err := ToRoutingConfig(profile)
+	if err != nil {
+		t.Fatalf("ToRoutingConfig must not fail on invalid DNS: %v", err)
+	}
+	if len(warnings) == 0 {
+		t.Error("expected warnings for invalid DNS URL")
+	}
+	if cfg.DNS != nil {
+		t.Errorf("expected unusable DNS to be dropped, got %+v", cfg.DNS)
 	}
 }

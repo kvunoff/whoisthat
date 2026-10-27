@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"whoisthat-core/lib/happdns"
 	"whoisthat-core/structs"
 )
 
@@ -21,47 +22,14 @@ const (
 )
 
 const (
-	LANRuleIP = structs.LANRuleIP
+	LANRuleIP       = structs.LANRuleIP
 	MaxPayloadBytes = 1024 * 1024 // 1 MiB limit
 )
 
-// FlexibleBool parses boolean values from bool, quoted bool, numeric 1/0 or strings.
-type FlexibleBool bool
-
-func (b *FlexibleBool) UnmarshalJSON(data []byte) error {
-	s := strings.TrimSpace(string(data))
-	if s == "null" || s == "" {
-		return nil
-	}
-	if strings.HasPrefix(s, `"`) && strings.HasSuffix(s, `"`) && len(s) >= 2 {
-		s = s[1 : len(s)-1]
-	}
-	s = strings.ToLower(strings.TrimSpace(s))
-	switch s {
-	case "true", "1", "t", "yes":
-		*b = true
-		return nil
-	case "false", "0", "f", "no":
-		*b = false
-		return nil
-	default:
-		return fmt.Errorf("invalid boolean value: %s", string(data))
-	}
-}
-
-func (b FlexibleBool) MarshalJSON() ([]byte, error) {
-	if b {
-		return []byte("true"), nil
-	}
-	return []byte("false"), nil
-}
-
-func (b *FlexibleBool) Value() bool {
-	if b == nil {
-		return false
-	}
-	return bool(*b)
-}
+// FlexibleBool is kept as an alias for backwards compatibility. The
+// implementation lives in lib/happdns so the DB layer can reuse it without
+// importing this package (which itself imports db).
+type FlexibleBool = happdns.FlexibleBool
 
 // FlexibleUnix parses Unix timestamps from numbers or numeric strings without failing on garbage.
 type FlexibleUnix struct {
@@ -132,7 +100,8 @@ type HappProfile struct {
 	Geositeurl     string        `json:"Geositeurl"`
 	LastUpdated    FlexibleUnix  `json:"LastUpdated"`
 
-	// Retained in raw format for forward compatibility, but not applied in this stage:
+	// DNS section. Kept in raw form here and normalized by lib/happdns so a
+	// malformed value never fails the whole profile import.
 	RemoteDNSType     string          `json:"RemoteDNSType,omitempty"`
 	RemoteDNSDomain   string          `json:"RemoteDNSDomain,omitempty"`
 	RemoteDNSIP       string          `json:"RemoteDNSIP,omitempty"`
@@ -305,6 +274,20 @@ func ToRoutingConfig(p HappProfile) (structs.RoutingConfig, []string, error) {
 		return structs.RoutingConfig{}, nil, errors.New("profile Name is required")
 	}
 
+	// DNS is additive: invalid values are reported as warnings and never fail
+	// the whole profile.
+	dnsCfg, dnsWarnings := happdns.Parse(happdns.Raw{
+		RemoteDNSType:     p.RemoteDNSType,
+		RemoteDNSDomain:   p.RemoteDNSDomain,
+		RemoteDNSIP:       p.RemoteDNSIP,
+		DomesticDNSType:   p.DomesticDNSType,
+		DomesticDNSDomain: p.DomesticDNSDomain,
+		DomesticDNSIP:     p.DomesticDNSIP,
+		DnsHosts:          p.DnsHosts,
+		FakeDNS:           p.FakeDNS,
+	})
+	warnings = append(warnings, dnsWarnings...)
+
 	// 1. Normalize DomainStrategy
 	strategy := strings.TrimSpace(p.DomainStrategy)
 	canonicalStrategy := "IPIfNonMatch"
@@ -433,5 +416,6 @@ func ToRoutingConfig(p HappProfile) (structs.RoutingConfig, []string, error) {
 	return structs.RoutingConfig{
 		DomainStrategy: canonicalStrategy,
 		Rules:          rules,
+		DNS:            dnsCfg,
 	}, warnings, nil
 }

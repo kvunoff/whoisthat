@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"whoisthat-core/lib/happdns"
 	"whoisthat-core/lib/logger"
 	"whoisthat-core/structs"
 )
@@ -25,6 +26,20 @@ func (db *DB) GetRoutingGeoDir(groupID int, profileID string) string {
 
 func (db *DB) GetRoutingProfileFilePath(groupID int, id string) string {
 	return filepath.Join(db.GetRoutingProfilesDir(groupID), id+".json")
+}
+
+// dnsForProfile returns the stored DNS config, lazily decoding RawJSON for
+// profiles imported before DNS support existed. A broken raw payload simply
+// means "no DNS section": resolution must never fail because of it.
+func dnsForProfile(p structs.RoutingProfile) *structs.HappDNSConfig {
+	if p.DNS != nil {
+		return p.DNS
+	}
+	if len(p.RawJSON) == 0 {
+		return nil
+	}
+	cfg, _ := happdns.ParseRawJSON(p.RawJSON)
+	return cfg
 }
 
 func (db *DB) saveRoutingProfile(p structs.RoutingProfile) error {
@@ -104,7 +119,8 @@ func (db *DB) listRoutingProfileInfos(groupID int, activeID string) ([]structs.R
 	}
 	var infos []structs.RoutingProfileInfo
 	for _, p := range profiles {
-		infos = append(infos, structs.RoutingProfileInfo{
+		dns := dnsForProfile(p)
+		info := structs.RoutingProfileInfo{
 			Id:             p.Id,
 			Name:           p.Name,
 			State:          p.State,
@@ -115,7 +131,13 @@ func (db *DB) listRoutingProfileInfos(groupID int, activeID string) ([]structs.R
 			DomainStrategy: p.DomainStrategy,
 			LastUpdated:    p.LastUpdated,
 			GeoUpdatedAt:   p.GeoUpdatedAt,
-		})
+		}
+		if dns != nil {
+			info.FakeDNSEnabled = dns.FakeDNSEnabled
+			info.RemoteDNS = happdns.RemoteLabel(dns)
+			info.DomesticDNS = happdns.DomesticLabel(dns)
+		}
+		infos = append(infos, info)
 	}
 	return infos, nil
 }
@@ -296,10 +318,12 @@ func (db *DB) resolveRouting(groupID int) (structs.RoutingSelection, error) {
 					Config: structs.RoutingConfig{
 						DomainStrategy: p.DomainStrategy,
 						Rules:          p.Rules,
+						DNS:            dnsForProfile(p),
 					},
-					Source:    "happ",
-					ProfileId: p.Id,
-					GeoDir:    absGeoDir,
+					Source:      "happ",
+					ProfileId:   p.Id,
+					GeoDir:      absGeoDir,
+					GlobalProxy: p.GlobalProxy,
 				}, nil
 			} else {
 				logger.Warnf("resolveRouting: profile %s geo assets missing in %s", p.Id, absGeoDir)
@@ -331,7 +355,8 @@ func (db *DB) resolveRouting(groupID int) (structs.RoutingSelection, error) {
 				},
 			},
 		},
-		Source: "happ",
+		Source:      "happ",
+		GlobalProxy: true,
 	}, nil
 }
 
