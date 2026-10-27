@@ -16,12 +16,12 @@ func (cmd *Cmd) DisableTun(data structs.DisableTunData, proxy_manager *proxy.Pro
 	ConnectionMutex.Lock()
 	defer ConnectionMutex.Unlock()
 
-	tun_manager.Stop()
 	if proxy_manager != nil {
 		if err := proxy_manager.SetTunMode(appconfig.GetConfig().TunName, false); err != nil {
 			logger.Warn("tun: failed to remove tun inbound from proxy:", err)
 		}
 	}
+	tun_manager.Stop()
 }
 
 func (cmd *Cmd) EnableTun(data structs.EnableTunData, proxy_manager *proxy.ProxyManager, tun_manager *tunmode.TunModeManager) {
