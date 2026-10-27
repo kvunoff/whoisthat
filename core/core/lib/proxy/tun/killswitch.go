@@ -39,8 +39,8 @@ const (
 	// killSwitchDNSSink4/6 are the reserved addresses the TUN DNS hijack will
 	// redirect port 53 to. Nothing listens on them directly; they must stay
 	// reachable so DNS keeps working with the kill-switch armed.
-	killSwitchDNSSink4 = "198.18.0.53"
-	killSwitchDNSSink6 = "fd00::53"
+	killSwitchDNSSink4 = DNSSink4
+	killSwitchDNSSink6 = DNSSink6
 )
 
 // killSwitchV4/6 are the fixed LAN ranges always allowed through.

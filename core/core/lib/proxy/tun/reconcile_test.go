@@ -76,3 +76,24 @@ func TestReconcileScriptIsIdempotent(t *testing.T) {
 		}
 	}
 }
+
+// The iptables DNS hijack chains must be reconciled as well; otherwise a crash
+// on the legacy backend leaves port 53 DNAT'd to a sink with no core running.
+func TestReconcileScriptClearsDnsHijackChains(t *testing.T) {
+	script := buildReconcileScript()
+	for _, w := range []string{
+		"-t nat -D OUTPUT -j WHOISTHAT_DNS_OUT",
+		"-t nat -D PREROUTING -j WHOISTHAT_DNS_PRE",
+		"-t nat -D POSTROUTING -j WHOISTHAT_DNS_POST",
+		"-t nat -F WHOISTHAT_DNS_OUT",
+		"-t nat -F WHOISTHAT_DNS_PRE",
+		"-t nat -F WHOISTHAT_DNS_POST",
+		"-t nat -X WHOISTHAT_DNS_OUT",
+		"-t nat -X WHOISTHAT_DNS_PRE",
+		"-t nat -X WHOISTHAT_DNS_POST",
+	} {
+		if !strings.Contains(script, w) {
+			t.Errorf("reconcile script missing DNS hijack cleanup: %q", w)
+		}
+	}
+}
