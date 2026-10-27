@@ -32,12 +32,9 @@ func main() {
 			return
 		}
 	}
-	configDir, err := os.UserConfigDir()
-	if err != nil {
-		configDir = filepath.Join(os.Getenv("HOME"), ".config")
-	}
-	logPath := filepath.Join(configDir, "whoisthat", "core.log")
-	if err := os.MkdirAll(filepath.Dir(logPath), 0755); err != nil {
+	configDir := utils.ConfigDir()
+	logPath := filepath.Join(configDir, "core.log")
+	if err := os.MkdirAll(configDir, 0700); err != nil {
 		logPath = "/tmp/whoisthat-core.log"
 	}
 
@@ -62,14 +59,14 @@ func main() {
 	// up (hard quit, crash, power loss mid-TUN). Guarded on the IPC endpoint
 	// being free so we never nuke a live core's rules.
 	if !coreAlreadyRunning() {
-		if err := tunmode.ReconcileOrphanedRules(); err != nil {
+		if err := tunmode.ReconcileOrphanedRules(appconfig.GetConfig().TunName); err != nil {
 			logger.Warnf("startup reconcile: %v", err)
 		} else {
 			logger.Info("startup reconcile: orphaned rules cleared")
 		}
 	}
 
-	geoDir := filepath.Join(configDir, "whoisthat", "geo")
+	geoDir := filepath.Join(configDir, "geo")
 	if _, err := geo.EnsureAssets(geoDir); err != nil {
 		logger.Warnf("main: geo assets not available: %v", err)
 	}

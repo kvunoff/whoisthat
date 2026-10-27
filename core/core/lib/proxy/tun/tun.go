@@ -247,6 +247,7 @@ func (t *TunModeManager) setDnsHijackLocked(dns DnsHijack) error {
 
 func (t *TunModeManager) clearNetworkRules() error {
 	errs := []error{
+		restoreRpFilter(),
 		deleteTunIpRoute(t.tun_name, t.tun_ip),
 		deleteTunIpRoute6(t.tun_name, t.tun_ipv6),
 		deleteTun(t.tun_name),

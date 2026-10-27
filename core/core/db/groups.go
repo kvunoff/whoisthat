@@ -11,66 +11,119 @@ import (
 	"whoisthat-core/structs"
 )
 
+// UpdateGroupAndProfiles replaces a subscription group's profile list while
+// preserving profile IDs across refreshes. IDs are matched by the proxy URI
+// (not by position), so reordering a provider's list or adding a profile does
+// not invalidate IDs used by external scripts, bookmarks, or the active
+// connection. The currently connected profile (keep_profile_id) is always kept
+// verbatim, even if the provider removed its URI.
 func (db *DB) UpdateGroupAndProfiles(group_id int, profiles []structs.DBAddProfileData, keep_profile_id int) ([]structs.Profile, error) {
 	db.mu.Lock()
 	defer db.mu.Unlock()
+
+	group, err := db.getGroupDataAndProfiles(group_id)
+	if err != nil {
+		return nil, fmt.Errorf("error getting group: %w", err)
+	}
+	group_config := group.Group
+
 	profiles_added := []structs.Profile{}
-	group_dir := db.GetGroupDirPath(group_id)
-	var kept_uri string
-
-	group_config, err := db.loadGroupConfig(group_id)
-	group_config.LastId = 0
-	if err != nil {
-		return profiles_added, fmt.Errorf("Error getting group: %w", err)
+	byID := make(map[int]structs.Profile, len(group.Profiles))
+	byURI := make(map[string]int, len(group.Profiles))
+	lastID := group_config.LastId
+	for _, p := range group.Profiles {
+		byID[p.Id] = p
+		uri := normalizeProfileURI(p.Uri)
+		if _, exists := byURI[uri]; !exists {
+			byURI[uri] = p.Id
+		}
+		if p.Id > lastID {
+			lastID = p.Id
+		}
 	}
 
-	entries, err := os.ReadDir(group_dir)
-	if err != nil {
-		return profiles_added, fmt.Errorf("Error reading directory: %w", err)
-	}
-
+	keepURI := ""
 	if keep_profile_id != 0 {
-		kept_profile, err := db.getProfile(group_id, keep_profile_id)
-		if err == nil {
-			group_config.LastId = keep_profile_id
-			profiles_added = append(profiles_added, kept_profile)
-			kept_uri = kept_profile.Uri
+		if kept, ok := byID[keep_profile_id]; ok {
+			keepURI = normalizeProfileURI(kept.Uri)
+			profiles_added = append(profiles_added, kept)
 		} else {
 			keep_profile_id = 0
 		}
 	}
 
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") || entry.Name() == "group_config.json" {
-			continue
-		}
-		profile_id_str, _ := strings.CutSuffix(entry.Name(), ".json")
-		profile_id, err := strconv.Atoi(profile_id_str)
-		if err != nil {
-			continue
-		}
-		if profile_id == keep_profile_id {
-			continue
-		}
-		db.deleteProfile(group_id, profile_id)
+	usedIDs := make(map[int]bool, len(profiles)+1)
+	newOrder := make([]int, 0, len(profiles)+1)
+	if keep_profile_id != 0 {
+		usedIDs[keep_profile_id] = true
+		newOrder = append(newOrder, keep_profile_id)
 	}
 
-	err = db.updateGroup(group_config)
-	if err != nil {
-		logger.Warn("warning while updating the group:", err)
-	}
-
-	for _, profile := range profiles {
-		if keep_profile_id != 0 && profile.Uri == kept_uri {
+	seenURIs := make(map[string]bool, len(profiles))
+	for _, data := range profiles {
+		uriKey := normalizeProfileURI(data.Uri)
+		if keep_profile_id != 0 && uriKey == keepURI {
 			continue
 		}
-		profile_added, err := db.addProfile(profile)
-		if err == nil {
-			profiles_added = append(profiles_added, profile_added)
+		if seenURIs[uriKey] {
+			// Duplicate URI inside one subscription: keep both entries but
+			// give the duplicate a fresh ID so neither overwrites the other.
+			uriKey = uriKey + "\x00dup"
 		}
+		seenURIs[uriKey] = true
+
+		id := 0
+		if existingID, ok := byURI[uriKey]; ok && !usedIDs[existingID] {
+			id = existingID
+		} else {
+			lastID++
+			id = lastID
+		}
+		usedIDs[id] = true
+
+		profile := structs.Profile{
+			Id:       id,
+			GroupId:  data.GroupId,
+			NanoID:   data.NanoID,
+			Name:     data.Name,
+			Protocol: data.Protocol,
+			Uri:      data.Uri,
+			Host:     data.Host,
+			Address:  data.Address,
+		}
+		// Keep latency results when the same URI is still present.
+		if old, ok := byID[id]; ok && normalizeProfileURI(old.Uri) == normalizeProfileURI(data.Uri) {
+			profile.TestResult = old.TestResult
+			profile.TestedAt = old.TestedAt
+			profile.LossPct = old.LossPct
+			profile.JitterMs = old.JitterMs
+		}
+
+		if err := db.writeEncryptedJSON(db.GetProfileFilePath(group_id, id), profile); err != nil {
+			return profiles_added, fmt.Errorf("failed to write profile %d: %w", id, err)
+		}
+		newOrder = append(newOrder, id)
+		profiles_added = append(profiles_added, profile)
 	}
 
+	group_config.LastId = lastID
+	group_config.ProfileOrder = newOrder
+	if err := db.saveGroupConfig(group_config); err != nil {
+		return profiles_added, err
+	}
+
+	// Only remove stale profile files after the new group config is durable.
+	// If anything failed above, the previous subscription remains readable.
+	for _, p := range group.Profiles {
+		if !usedIDs[p.Id] {
+			_ = os.Remove(db.GetProfileFilePath(group_id, p.Id))
+		}
+	}
 	return profiles_added, nil
+}
+
+func normalizeProfileURI(uri string) string {
+	return strings.TrimSpace(uri)
 }
 
 func (db *DB) updateGroup(group structs.Group) error {

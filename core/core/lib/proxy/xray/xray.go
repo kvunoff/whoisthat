@@ -29,9 +29,8 @@ type XrayCore struct {
 	waitDone       chan struct{}
 }
 
-// ExitedCh returns the channel used to report subprocess termination. Lets
-// mainproxy treat both xray.XrayCore and hysteria.HysteriaCore through a
-// common interface.
+// ExitedCh returns the channel used to report subprocess termination. It
+// satisfies mainproxy's coreProc interface.
 func (x *XrayCore) ExitedCh() chan error {
 	return x.Exited
 }

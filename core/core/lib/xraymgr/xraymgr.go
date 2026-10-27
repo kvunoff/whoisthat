@@ -88,11 +88,7 @@ func (m *Manager) GetXrayBin() (string, error) {
 
 // RuntimeDir returns the directory path for the pinned Xray version.
 func RuntimeDir() (string, error) {
-	homeDir, err := utils.GetHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("failed to get user home directory: %w", err)
-	}
-	return filepath.Join(homeDir, ".local", "share", "whoisthat", "runtimes", "xray", PinnedVersion), nil
+	return filepath.Join(utils.DataDir(), "runtimes", "xray", PinnedVersion), nil
 }
 
 // Init inspects existing managed runtimes and system binaries to resolve the pinned Xray binary.
@@ -244,10 +240,11 @@ func (m *Manager) downloadAndInstall() error {
 
 	zipDest := filepath.Join(tempDir, "xray.zip")
 
-	// 1. Fetch expected digest
+	// 1. Fetch expected digest. Fail closed: an archive without a verified
+	// checksum must never be installed.
 	expectedSHA, err := fetchDigest(m.httpClient, PinnedVersion, arch)
 	if err != nil {
-		logger.Warnf("xraymgr: failed to fetch digest: %v (will proceed with archive download and binary test)", err)
+		return fmt.Errorf("failed to fetch Xray checksum: %w", err)
 	}
 
 	// 2. Download zip with progress reporting
@@ -266,13 +263,11 @@ func (m *Manager) downloadAndInstall() error {
 		return fmt.Errorf("failed to download Xray archive: %w", err)
 	}
 
-	// 3. Verify SHA256 if digest was obtained
-	if expectedSHA != "" {
-		if err := verifySHA256(zipDest, expectedSHA); err != nil {
-			return fmt.Errorf("checksum verification failed: %w", err)
-		}
-		logger.Infof("xraymgr: checksum verified OK: %s", expectedSHA)
+	// 3. Verify SHA256
+	if err := verifySHA256(zipDest, expectedSHA); err != nil {
+		return fmt.Errorf("checksum verification failed: %w", err)
 	}
+	logger.Infof("xraymgr: checksum verified OK: %s", expectedSHA)
 
 	// 4. Extract archive
 	extractedDir := filepath.Join(tempDir, "extracted")

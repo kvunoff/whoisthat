@@ -66,6 +66,19 @@ func (cmd *Cmd) Connect(data structs.ConnectData, proxy_manager *proxy.ProxyMana
 	if err := proxy_manager.Connect(profile, tunName, false); err != nil {
 		logger.Warn("connect failed:", err)
 		cmd.warn("connect-failed", err.Error())
+
+		// The old connection was already stopped and the kill-switch block was
+		// removed above. Re-arm it with the last known server IPs so a failed
+		// switch does not silently leave the machine unprotected. With no known
+		// IPs the block is still fail-closed (only loopback/LAN/DNS allowed).
+		if killSwitchEnabled {
+			proxyIPs := proxy_manager.GetProxyIPs()
+			if ksErr := tunmode.SetupKillSwitchBlock(proxyIPs, tunName, appconfig.GetConfig().DnsServers); ksErr != nil {
+				logger.Warn("kill-switch: failed to re-arm after connect failure:", ksErr)
+			} else {
+				logger.Infof("kill-switch: re-armed after connect failure, whitelisted IPs: %v", proxyIPs)
+			}
+		}
 		return
 	}
 

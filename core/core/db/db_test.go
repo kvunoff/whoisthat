@@ -402,3 +402,83 @@ func TestMigrateToEncryptedHandlesStaleGroupDir(t *testing.T) {
 	// Must be a no-op for the missing group_config.json rather than a warning.
 	db.MigrateToEncrypted()
 }
+
+func TestUpdateGroupAndProfilesPreservesIDsAcrossRefresh(t *testing.T) {
+	db := newTestDB(t)
+	group := structs.Group{Id: 1, Name: "test"}
+	if err := db.SaveGroup(group); err != nil {
+		t.Fatalf("SaveGroup: %v", err)
+	}
+
+	first, err := db.UpdateGroupAndProfiles(1, []structs.DBAddProfileData{
+		{Uri: "vless://a@example.com:443", GroupId: 1, Name: "a"},
+		{Uri: "vless://b@example.com:443", GroupId: 1, Name: "b"},
+	}, 0)
+	if err != nil {
+		t.Fatalf("first refresh: %v", err)
+	}
+	if len(first) != 2 {
+		t.Fatalf("first refresh returned %d profiles, want 2", len(first))
+	}
+	ids := map[string]int{}
+	for _, p := range first {
+		ids[p.Uri] = p.Id
+	}
+
+	// Reorder and add one profile; existing IDs must stay stable and the
+	// active profile (b) must survive even though it moved position.
+	second, err := db.UpdateGroupAndProfiles(1, []structs.DBAddProfileData{
+		{Uri: "vless://c@example.com:443", GroupId: 1, Name: "c"},
+		{Uri: "vless://b@example.com:443", GroupId: 1, Name: "b"},
+		{Uri: "vless://a@example.com:443", GroupId: 1, Name: "a"},
+	}, ids["vless://b@example.com:443"])
+	if err != nil {
+		t.Fatalf("second refresh: %v", err)
+	}
+
+	got := map[string]int{}
+	for _, p := range second {
+		got[p.Uri] = p.Id
+	}
+	for uri, wantID := range ids {
+		if got[uri] != wantID {
+			t.Errorf("profile %s id = %d, want stable id %d", uri, got[uri], wantID)
+		}
+	}
+	if got["vless://c@example.com:443"] == 0 {
+		t.Error("new profile did not receive an id")
+	}
+	if got["vless://c@example.com:443"] == ids["vless://a@example.com:443"] ||
+		got["vless://c@example.com:443"] == ids["vless://b@example.com:443"] {
+		t.Error("new profile reused an existing id")
+	}
+}
+
+func TestLoadOrCreateKeyMigratesLegacyKey(t *testing.T) {
+	legacyDir := t.TempDir()
+	legacyKey := make([]byte, 32)
+	for i := range legacyKey {
+		legacyKey[i] = byte(i)
+	}
+	if err := os.WriteFile(filepath.Join(legacyDir, ".key"), legacyKey, 0600); err != nil {
+		t.Fatalf("write legacy key: %v", err)
+	}
+
+	newKeyPath := filepath.Join(t.TempDir(), "db.key")
+	db := &DB{Path: legacyDir, KeyPath: newKeyPath}
+	db.loadOrCreateKey()
+
+	if string(db.key) != string(legacyKey) {
+		t.Fatal("migrated key differs from legacy key")
+	}
+	data, err := os.ReadFile(newKeyPath)
+	if err != nil {
+		t.Fatalf("new key file not created: %v", err)
+	}
+	if string(data) != string(legacyKey) {
+		t.Fatal("new key file content differs from legacy key")
+	}
+	if _, err := os.Stat(filepath.Join(legacyDir, ".key")); err != nil {
+		t.Fatal("legacy key should be kept for downgrade compatibility")
+	}
+}

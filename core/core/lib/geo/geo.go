@@ -14,6 +14,8 @@ import (
 	"sync"
 	"time"
 	"whoisthat-core/lib/logger"
+	"whoisthat-core/lib/xraymgr"
+	"whoisthat-core/utils"
 )
 
 const (
@@ -28,12 +30,34 @@ const (
 // swap a malicious geoip.dat onto every install. Bump the pinned tag when
 // upgrading; the xray-test verification in verifyGeoIP is a second line of
 // defense, not a primary one.
+const (
+	defaultGeoIPTag   = "202610050438"
+	defaultGeoSiteTag = "20261027070632"
+)
+
+func geoTag(envName, fallback string) string {
+	if tag := strings.TrimSpace(os.Getenv(envName)); tag != "" {
+		return tag
+	}
+	return fallback
+}
+
 var geoIPURLs = []string{
-	"https://github.com/v2fly/geoip/releases/download/v20240922/geoip.dat",
+	"https://github.com/v2fly/geoip/releases/download/" + defaultGeoIPTag + "/geoip.dat",
 }
 
 var geoSiteURLs = []string{
-	"https://github.com/v2fly/domain-list-community/releases/download/v20240922/dlc.dat",
+	"https://github.com/v2fly/domain-list-community/releases/download/" + defaultGeoSiteTag + "/dlc.dat",
+}
+
+// ResolveGeoURLs applies the optional WHOISTHAT_GEOIP_TAG /
+// WHOISTHAT_GEOSITE_TAG overrides at runtime.
+func ResolveGeoURLs() ([]string, []string) {
+	return []string{
+		"https://github.com/v2fly/geoip/releases/download/" + geoTag("WHOISTHAT_GEOIP_TAG", defaultGeoIPTag) + "/geoip.dat",
+	}, []string{
+		"https://github.com/v2fly/domain-list-community/releases/download/" + geoTag("WHOISTHAT_GEOSITE_TAG", defaultGeoSiteTag) + "/dlc.dat",
+	}
 }
 
 var systemAssetDirs = []string{
@@ -84,6 +108,7 @@ func WaitReady(timeout time.Duration) bool {
 }
 
 func EnsureAssets(dir string) (string, error) {
+	geoIPURLs, geoSiteURLs = ResolveGeoURLs()
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		setStatus(StatusFailed)
 		return "", fmt.Errorf("geo: cannot create asset dir %s: %w", dir, err)
@@ -240,8 +265,22 @@ func download(url, dest string, minSize int64) error {
 	return nil
 }
 
+// resolveXrayBin prefers the managed runtime binary over whatever happens to
+// be in PATH. Without this, installing Xray only into
+// ~/.local/share/whoisthat/runtimes made geo verification fail even though the
+// core would happily use that binary for real connections.
+func resolveXrayBin() (string, error) {
+	if dir, err := xraymgr.RuntimeDir(); err == nil {
+		p := filepath.Join(dir, "xray")
+		if info, err := os.Stat(p); err == nil && !info.IsDir() {
+			return p, nil
+		}
+	}
+	return utils.GetXrayBin()
+}
+
 func verifyGeoIP(path string) bool {
-	xrayBin, err := exec.LookPath("xray")
+	xrayBin, err := resolveXrayBin()
 	if err != nil {
 		// Without xray we cannot run the verification test at all. Returning
 		// true here would silently bless any file (including a malicious one).

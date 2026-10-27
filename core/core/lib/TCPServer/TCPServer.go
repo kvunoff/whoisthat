@@ -2,6 +2,7 @@ package TCPServer
 
 import (
 	"bufio"
+	"crypto/subtle"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -10,14 +11,24 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 	cmd "whoisthat-core/commands"
 	"whoisthat-core/db"
+	"whoisthat-core/lib"
 	appconfig "whoisthat-core/lib/AppConfig"
 	"whoisthat-core/lib/logger"
 	proxy "whoisthat-core/lib/proxy/mainproxy"
 	tunmode "whoisthat-core/lib/proxy/tun"
+	"whoisthat-core/lib/version"
 	"whoisthat-core/structs"
 )
+
+// MaxFrameSize is the maximum accepted IPC frame. Kept in sync with
+// src/core_client/connection.rs:MAX_FRAME_SIZE (64 MiB).
+const MaxFrameSize = 64 * 1024 * 1024
+
+// ipcAuthTimeout bounds how long a TCP client may take to send its hello.
+const ipcAuthTimeout = 5 * time.Second
 
 type Server struct {
 	clients         map[string]*clientConn
@@ -27,6 +38,9 @@ type Server struct {
 	tun_manager     *tunmode.TunModeManager
 	stop_sig        chan<- bool
 	missingBinaries []MissingBinary
+	// tcpToken is the shared secret required to speak TCP IPC. Empty when
+	// TCP is disabled or token setup failed (in which case TCP is not opened).
+	tcpToken string
 }
 
 // clientConn wraps a net.Conn with its own dedicated outbound goroutine fed
@@ -40,6 +54,9 @@ type clientConn struct {
 	out     chan []byte
 	closed  bool
 	closeMu sync.Mutex
+	// writeMu serialises writeLoop with the synchronous handshake responses
+	// so a broadcast cannot interleave its frame bytes with hello-ok/error.
+	writeMu sync.Mutex
 }
 
 func newClientConn(conn net.Conn) *clientConn {
@@ -53,17 +70,24 @@ func newClientConn(conn net.Conn) *clientConn {
 
 func (c *clientConn) writeLoop() {
 	for msg := range c.out {
-		length := make([]byte, 4)
-		binary.BigEndian.PutUint32(length, uint32(len(msg)))
-		if _, err := c.conn.Write(length); err != nil {
-			c.shutdown()
-			return
-		}
-		if _, err := c.conn.Write(msg); err != nil {
+		if err := c.writeFrame(msg); err != nil {
 			c.shutdown()
 			return
 		}
 	}
+}
+
+func (c *clientConn) writeFrame(msg []byte) error {
+	length := make([]byte, 4)
+	binary.BigEndian.PutUint32(length, uint32(len(msg)))
+
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+	if _, err := c.conn.Write(length); err != nil {
+		return err
+	}
+	_, err := c.conn.Write(msg)
+	return err
 }
 
 func (c *clientConn) shutdown() {
@@ -95,6 +119,28 @@ func (s *Server) Start() {
 	go s.handleStatsChange()
 	s.handleXrayStatus()
 
+	// If the proxy subprocess dies on its own, the TUN device and firewall
+	// state must not be left half-configured: clear TUN and, when enabled,
+	// re-arm the kill-switch (fail closed) before the UI reconnects.
+	s.proxy_manager.SetUnexpectedExitHandler(func(reason string) {
+		if s.tun_manager.IsEnabledLocked() {
+			s.tun_manager.Stop()
+		}
+		cfg := appconfig.GetConfig()
+		if cfg.KillSwitchEnabled {
+			proxyIPs := s.proxy_manager.GetProxyIPs()
+			if err := tunmode.SetupKillSwitchBlock(proxyIPs, cfg.TunName, cfg.DnsServers); err != nil {
+				logger.Warn("kill-switch: failed to re-arm after proxy exit:", err)
+			} else {
+				logger.Infof("kill-switch: re-armed after proxy exit, whitelisted IPs: %v", proxyIPs)
+			}
+		}
+		s.Broadcast(lib.CreateJsonNotification("warn", structs.Warning{
+			Key:     "proxy-exited",
+			Content: reason + "; TUN state cleared",
+		}))
+	})
+
 	// clientID must be unique per connection. UDS peers all report the same
 	// (empty) RemoteAddr, so fall back to a monotonic counter when the address
 	// is not distinguishing.
@@ -113,7 +159,7 @@ func (s *Server) Start() {
 			clientID := fmt.Sprintf("%s#%d:%s", kind, seq, conn.RemoteAddr())
 			s.clients[clientID] = cc
 			s.mutex.Unlock()
-			go s.handleConnection(cc, clientID)
+			go s.handleConnection(cc, clientID, kind != "uds")
 		}
 	}
 
@@ -137,9 +183,17 @@ func (s *Server) Start() {
 		go accept(uds, "uds")
 	}
 
-	// Legacy TCP — opt-in only (remote/advanced use). Unauthenticated, so it
-	// stays off unless the user explicitly enables it.
+	// Legacy TCP — opt-in only (remote/advanced use). Every TCP client must
+	// prove knowledge of the per-user token before it can issue commands.
 	if app_config.TCPEnabled {
+		token, err := appconfig.EnsureIPCToken()
+		if err != nil {
+			logger.Error("TCP IPC disabled: cannot create authentication token:", err)
+		} else {
+			s.tcpToken = token
+		}
+	}
+	if app_config.TCPEnabled && s.tcpToken != "" {
 		port := app_config.CoreTCPPort
 		if listen4, err := net.Listen("tcp4", fmt.Sprintf("127.0.0.1:%d", port)); err != nil {
 			logger.Warn("failed to listen on IPv4:", err)
@@ -176,7 +230,75 @@ func (s *Server) Broadcast(msg []byte) {
 	}
 }
 
-func (s *Server) handleConnection(cc *clientConn, clientID string) {
+func readTCPMessage(reader *bufio.Reader) (structs.TCPMessage, error) {
+	var msg structs.TCPMessage
+
+	lengthBuf := make([]byte, 4)
+	if _, err := io.ReadFull(reader, lengthBuf); err != nil {
+		return msg, err
+	}
+
+	length := binary.BigEndian.Uint32(lengthBuf)
+	if length == 0 || length > MaxFrameSize {
+		return msg, fmt.Errorf("invalid frame length %d (max %d)", length, MaxFrameSize)
+	}
+
+	payload := make([]byte, length)
+	if _, err := io.ReadFull(reader, payload); err != nil {
+		return msg, err
+	}
+	if err := json.Unmarshal(payload, &msg); err != nil {
+		return msg, fmt.Errorf("invalid JSON: %w", err)
+	}
+	return msg, nil
+}
+
+// authenticateTCP enforces the token handshake for the opt-in TCP transport.
+// UDS clients are already gated by filesystem permissions and skip this.
+func (s *Server) authenticateTCP(cc *clientConn, reader *bufio.Reader) bool {
+	_ = cc.conn.SetReadDeadline(time.Now().Add(ipcAuthTimeout))
+	defer cc.conn.SetReadDeadline(time.Time{})
+
+	msg, err := readTCPMessage(reader)
+	if err != nil {
+		logger.Warn("TCP IPC: failed to read hello:", err)
+		return false
+	}
+	if msg.Msg != "hello" {
+		s.sendAuthError(cc, "expected hello handshake")
+		return false
+	}
+
+	var hello structs.HelloData
+	if err := json.Unmarshal(msg.Data, &hello); err != nil {
+		s.sendAuthError(cc, "invalid hello payload")
+		return false
+	}
+	if s.tcpToken == "" || subtle.ConstantTimeCompare([]byte(hello.Token), []byte(s.tcpToken)) != 1 {
+		logger.Warnf("TCP IPC: rejected client %s: invalid token", cc.conn.RemoteAddr())
+		s.sendAuthError(cc, "invalid authentication token")
+		return false
+	}
+	if hello.ProtocolVersion != version.ProtocolVersion {
+		s.sendAuthError(cc, fmt.Sprintf("protocol mismatch: server=%d client=%d", version.ProtocolVersion, hello.ProtocolVersion))
+		return false
+	}
+
+	resp := lib.CreateJsonNotification("hello-ok", structs.HelloResponse{ProtocolVersion: version.ProtocolVersion})
+	_ = cc.conn.SetWriteDeadline(time.Now().Add(time.Second))
+	err = cc.writeFrame(resp)
+	_ = cc.conn.SetWriteDeadline(time.Time{})
+	return err == nil
+}
+
+func (s *Server) sendAuthError(cc *clientConn, reason string) {
+	msg := lib.CreateJsonNotification("hello-error", structs.HelloResponse{Error: reason})
+	_ = cc.conn.SetWriteDeadline(time.Now().Add(time.Second))
+	_ = cc.writeFrame(msg)
+	_ = cc.conn.SetWriteDeadline(time.Time{})
+}
+
+func (s *Server) handleConnection(cc *clientConn, clientID string, requireAuth bool) {
 	conn := cc.conn
 	defer func() {
 		cc.shutdown()
@@ -186,6 +308,11 @@ func (s *Server) handleConnection(cc *clientConn, clientID string) {
 		}
 		s.mutex.Unlock()
 	}()
+
+	reader := bufio.NewReader(conn)
+	if requireAuth && !s.authenticateTCP(cc, reader) {
+		return
+	}
 
 	// Pre-flight unicast: warn this newly-connected client about any external
 	// binaries the core needs but couldn't find at startup. Sent directly to
@@ -197,41 +324,17 @@ func (s *Server) handleConnection(cc *clientConn, clientID string) {
 	}
 
 	command_handler := cmd.Cmd{DB: s.DB, Broadcast: s.Broadcast, TunManager: s.tun_manager}
-	reader := bufio.NewReader(conn)
 
 	for {
-		lengthBuf := make([]byte, 4)
-		_, err := io.ReadFull(reader, lengthBuf)
-
+		raw_tcp_message, err := readTCPMessage(reader)
 		if err != nil {
 			if err != io.EOF {
-				logger.Warn("Failed to read length:", err)
+				logger.Warn("Failed to read message:", err)
 			}
 			return
 		}
 
-		length := binary.BigEndian.Uint32(lengthBuf)
-		if length == 0 || length > 100*1024*1024 {
-			logger.Warn("Invalid length", length)
-			return
-		}
-
-		payload := make([]byte, length)
-
-		_, err = io.ReadFull(reader, payload)
-
-		if err != nil {
-			logger.Warn("Failed to read the payload:", err)
-			return
-		}
-
-		var raw_tcp_message structs.TCPMessage
-
-		if err := json.Unmarshal(payload, &raw_tcp_message); err != nil {
-			logger.Warn("Invalid JSON:", err)
-			return
-		}
-
+		command_handler.RequestID = raw_tcp_message.ID
 		switch raw_tcp_message.Msg {
 		case "die":
 			s.stop_sig <- true

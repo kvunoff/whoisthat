@@ -85,7 +85,7 @@ func TestAddGroup_WithSubscriptionUrl_AutoUpdates(t *testing.T) {
 	subUpdatedBytes := waitForMessage(t, msgChan, "subscription-updated", 3*time.Second)
 
 	var subUpdated struct {
-		Msg  string                    `json:"msg"`
+		Msg  string                      `json:"msg"`
 		Data structs.SubscriptionUpdated `json:"data"`
 	}
 	if err := json.Unmarshal(subUpdatedBytes, &subUpdated); err != nil {
@@ -159,7 +159,7 @@ func TestUpdateGroup_UrlChanged_AutoUpdates(t *testing.T) {
 	subUpdatedBytes := waitForMessage(t, msgChan, "subscription-updated", 3*time.Second)
 
 	var subUpdated struct {
-		Msg  string                    `json:"msg"`
+		Msg  string                      `json:"msg"`
 		Data structs.SubscriptionUpdated `json:"data"`
 	}
 	if err := json.Unmarshal(subUpdatedBytes, &subUpdated); err != nil {
@@ -198,7 +198,7 @@ func TestUpdateSubscription_ExtractsHappRouting(t *testing.T) {
 
 	subUpdatedBytes := waitForMessage(t, msgChan, "subscription-updated", 3*time.Second)
 	var subUpdated struct {
-		Msg  string                    `json:"msg"`
+		Msg  string                      `json:"msg"`
 		Data structs.SubscriptionUpdated `json:"data"`
 	}
 	if err := json.Unmarshal(subUpdatedBytes, &subUpdated); err != nil {
@@ -242,7 +242,7 @@ func TestHappRoutingCommands_CRUD_Lifecycle(t *testing.T) {
 
 	subUpdatedBytes := waitForMessage(t, msgChan, "subscription-updated", 2*time.Second)
 	var subUpdated struct {
-		Msg  string                    `json:"msg"`
+		Msg  string                      `json:"msg"`
 		Data structs.SubscriptionUpdated `json:"data"`
 	}
 	if err := json.Unmarshal(subUpdatedBytes, &subUpdated); err != nil {
@@ -327,7 +327,7 @@ func TestHappRoutingCommands_CRUD_Lifecycle(t *testing.T) {
 
 	subUpdatedBytes2 := waitForMessage(t, msgChan, "subscription-updated", 2*time.Second)
 	var subUpdated2 struct {
-		Msg  string                    `json:"msg"`
+		Msg  string                      `json:"msg"`
 		Data structs.SubscriptionUpdated `json:"data"`
 	}
 	if err := json.Unmarshal(subUpdatedBytes2, &subUpdated2); err != nil {
@@ -340,5 +340,3 @@ func TestHappRoutingCommands_CRUD_Lifecycle(t *testing.T) {
 		t.Errorf("expected active routing profile to be empty after delete, got %q", subUpdated2.Data.Group.ActiveRoutingProfileId)
 	}
 }
-
-

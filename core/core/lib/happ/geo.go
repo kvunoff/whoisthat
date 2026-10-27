@@ -20,10 +20,10 @@ import (
 )
 
 const (
-	MinGeoFileSize     = 1024               // 1 KB min (allows compact custom geo assets)
-	MaxGeoFileSize     = 100 * 1024 * 1024  // 100 MB max
-	GeoDownloadTimeout = 3 * time.Minute    // 3 minutes per file
-	WeeklyUpdateGate   = 7 * 24 * 3600      // 7 days in seconds
+	MinGeoFileSize     = 1024              // 1 KB min (allows compact custom geo assets)
+	MaxGeoFileSize     = 100 * 1024 * 1024 // 100 MB max
+	GeoDownloadTimeout = 3 * time.Minute   // 3 minutes per file
+	WeeklyUpdateGate   = 7 * 24 * 3600     // 7 days in seconds
 )
 
 // EnsureProfileGeo downloads or updates custom Geoipurl and Geositeurl assets for a Happ profile.

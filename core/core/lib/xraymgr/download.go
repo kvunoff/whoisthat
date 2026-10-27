@@ -25,6 +25,12 @@ var downloadMirrors = []string{
 	"https://ghfast.top/https://github.com/XTLS/Xray-core/releases/download",
 }
 
+// digestBaseURL is deliberately NOT mirror-aware: the checksum must come from
+// the same origin as the project's release, not from the same third-party
+// mirror that served the archive. Otherwise a compromised mirror could swap
+// both the binary and its digest.
+const digestBaseURL = "https://github.com/XTLS/Xray-core/releases/download"
+
 // GetTargetArch maps runtime.GOARCH to Xray release asset architecture naming.
 func GetTargetArch() (string, error) {
 	switch runtime.GOARCH {
@@ -51,45 +57,30 @@ func ParseDgstSHA256(dgstContent string) (string, error) {
 // fetchDigest downloads the .dgst file for the given version and arch and extracts the expected SHA2-256 checksum.
 func fetchDigest(client *http.Client, version, arch string) (string, error) {
 	dgstFileName := fmt.Sprintf("Xray-linux-%s.zip.dgst", arch)
-	var lastErr error
+	url := fmt.Sprintf("%s/%s/%s", digestBaseURL, version, dgstFileName)
+	logger.Infof("xraymgr: fetching digest from %s", url)
 
-	for _, mirror := range downloadMirrors {
-		url := fmt.Sprintf("%s/%s/%s", mirror, version, dgstFileName)
-		logger.Infof("xraymgr: fetching digest from %s", url)
-
-		req, err := http.NewRequestWithContext(context.Background(), "GET", url, nil)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-
-		resp, err := client.Do(req)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-
-		if resp.StatusCode != http.StatusOK {
-			resp.Body.Close()
-			lastErr = fmt.Errorf("HTTP %d from %s", resp.StatusCode, url)
-			continue
-		}
-
-		bodyBytes, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if err != nil {
-			lastErr = err
-			continue
-		}
-
-		sha, err := ParseDgstSHA256(string(bodyBytes))
-		if err == nil {
-			return sha, nil
-		}
-		lastErr = err
+	req, err := http.NewRequestWithContext(context.Background(), "GET", url, nil)
+	if err != nil {
+		return "", err
 	}
 
-	return "", fmt.Errorf("failed to fetch digest: %w", lastErr)
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("HTTP %d from %s", resp.StatusCode, url)
+	}
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+
+	return ParseDgstSHA256(string(bodyBytes))
 }
 
 // downloadArchive downloads the Xray zip file, reporting progress via callback.

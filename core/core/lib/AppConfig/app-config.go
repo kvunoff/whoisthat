@@ -39,7 +39,7 @@ type AppConfig struct {
 	// IPCSocketPath is the Unix domain socket the core listens on. Empty means
 	// "derive the default from XDG_RUNTIME_DIR at runtime" (see SocketPath()).
 	IPCSocketPath string `json:"ipc-socket-path,omitempty"`
-	// TCPEnabled additionally opens the legacy unauthenticated TCP listener on
+	// TCPEnabled additionally opens the token-authenticated TCP listener on
 	// CoreTCPPort. Off by default: the UDS is the secure default transport and
 	// TCP is opt-in for remote/advanced setups.
 	TCPEnabled bool `json:"tcp-enabled"`
@@ -128,6 +128,37 @@ func GetConfig() AppConfig {
 // XDG_RUNTIME_DIR (falling back to /tmp/whoisthat-<uid> when that is unset, e.g.
 // under some systemd/boot contexts). The Rust TUI computes the same path so the
 // two agree without any handshake.
+// IPCTokenPath is the shared secret used to authenticate TCP IPC clients.
+// The file lives in the user's runtime directory (0700/0600) and is never
+// written into config.json.
+func IPCTokenPath() string {
+	return filepath.Join(utils.RuntimeDir(), "ipc.token")
+}
+
+// EnsureIPCToken reads the existing token or generates a new 256-bit one.
+func EnsureIPCToken() (string, error) {
+	path := IPCTokenPath()
+	if data, err := os.ReadFile(path); err == nil {
+		token := strings.TrimSpace(string(data))
+		if len(token) == 64 {
+			if _, err := hex.DecodeString(token); err == nil {
+				_ = os.Chmod(path, 0600)
+				return token, nil
+			}
+		}
+	}
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		return "", fmt.Errorf("failed to generate IPC token: %w", err)
+	}
+	token := hex.EncodeToString(raw)
+	_ = os.Chmod(filepath.Dir(path), 0700)
+	if err := utils.AtomicWriteFile(path, []byte(token+"\n"), 0600); err != nil {
+		return "", fmt.Errorf("failed to write IPC token %s: %w", path, err)
+	}
+	return token, nil
+}
+
 func SocketPath() string {
 	if p := strings.TrimSpace(application_configuration.IPCSocketPath); p != "" {
 		return p
@@ -157,6 +188,14 @@ func LoadConfig() {
 	config.TunName = sanitizeTunName(config.TunName)
 	config.AutoconnectMode = sanitizeAutoconnectMode(config.AutoconnectMode)
 	config.TestConfig = sanitizeTestConfig(config.TestConfig)
+	// include-mode split tunnel only routes the marked apps through the VPN;
+	// a system-wide kill-switch would block everything else, contradicting the
+	// mode's purpose. Refuse the combination rather than creating a surprise
+	// total blackout for the user.
+	if config.SplitTunnel.Mode == "include" && config.KillSwitchEnabled {
+		logger.Warn("config: split-tunnel include mode is incompatible with kill-switch; disabling kill-switch")
+		config.KillSwitchEnabled = false
+	}
 	application_configuration = config
 }
 
@@ -295,18 +334,14 @@ func SetTunName(name string) error {
 }
 
 func SaveConfig() {
-	home_dir, err := utils.GetHomeDir()
-	if err != nil {
-		logger.Warn("save config: cannot get home dir:", err)
-		return
-	}
-	var dir_path = filepath.Join(home_dir, ".config", "whoisthat")
-	var config_path = filepath.Join(dir_path, "config.json")
+	dir_path := utils.ConfigDir()
+	config_path := filepath.Join(dir_path, "config.json")
 
-	if err := os.MkdirAll(dir_path, 0777); err != nil {
+	if err := os.MkdirAll(dir_path, 0700); err != nil {
 		logger.Warn("save config: cannot create dir:", err)
 		return
 	}
+	_ = os.Chmod(dir_path, 0700)
 
 	jsonData, err := json.MarshalIndent(application_configuration, "", " ")
 	if err != nil {
@@ -314,20 +349,19 @@ func SaveConfig() {
 		return
 	}
 
-	if err := os.WriteFile(config_path, jsonData, 0666); err != nil {
+	if err := utils.AtomicWriteFile(config_path, jsonData, 0600); err != nil {
 		logger.Warn("save config: write failed:", err)
 	}
 }
 
 func readConfig() (AppConfig, error) {
 	var default_config AppConfig = defaultConfig()
-	home_dir, err := utils.GetHomeDir()
-	if err != nil {
-		return default_config, err
-	}
-	var dir_path = filepath.Join(home_dir, ".config", "whoisthat")
-	var config_path = filepath.Join(dir_path, "config.json")
+	config_path := filepath.Join(utils.ConfigDir(), "config.json")
 	file_bytes, err := os.ReadFile(config_path)
+	if err == nil {
+		// Tighten permissions left behind by older releases (0666/0644).
+		_ = os.Chmod(config_path, 0600)
+	}
 	if err == nil {
 		if err := json.Unmarshal(file_bytes, &default_config); err != nil {
 			return default_config, fmt.Errorf("failed to parse config file, invalid json")

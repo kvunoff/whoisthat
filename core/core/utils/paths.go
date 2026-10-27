@@ -4,18 +4,56 @@ import (
 	"fmt"
 	"os"
 	osuser "os/user"
+	"path/filepath"
 	"strconv"
 )
 
-func GetXrayBin() (string, error) {
-	return GetBinPath("xray")
+// ConfigDir returns the XDG config directory for WhoisThat.
+//
+// Resolution mirrors the Rust client (which uses the `directories` crate):
+// $XDG_CONFIG_HOME/whoisthat when XDG_CONFIG_HOME is an absolute path,
+// otherwise ~/.config/whoisthat. Keeping both sides on the same algorithm is
+// essential: the TUI and the daemon must read the same config.toml/config.json.
+func ConfigDir() string {
+	if dir := os.Getenv("XDG_CONFIG_HOME"); dir != "" && filepath.IsAbs(dir) {
+		return filepath.Join(dir, "whoisthat")
+	}
+	home, err := GetHomeDir()
+	if err != nil || home == "" {
+		home = os.Getenv("HOME")
+	}
+	if home == "" {
+		home = "/tmp"
+	}
+	return filepath.Join(home, ".config", "whoisthat")
 }
 
-// GetHysteriaBin locates the official hysteria2 client binary
-// (github.com/apernet/hysteria2). Used by the hysteria2 subprocess manager
-// instead of xray-core, which does not implement the hysteria2 protocol.
-func GetHysteriaBin() (string, error) {
-	return GetBinPath("hysteria")
+// DataDir returns the XDG data directory for WhoisThat.
+func DataDir() string {
+	if dir := os.Getenv("XDG_DATA_HOME"); dir != "" && filepath.IsAbs(dir) {
+		return filepath.Join(dir, "whoisthat")
+	}
+	home, err := GetHomeDir()
+	if err != nil || home == "" {
+		home = os.Getenv("HOME")
+	}
+	if home == "" {
+		home = "/tmp"
+	}
+	return filepath.Join(home, ".local", "share", "whoisthat")
+}
+
+// RuntimeDir returns the XDG runtime directory for WhoisThat, used for the
+// IPC socket, token and ephemeral state.
+func RuntimeDir() string {
+	if dir := os.Getenv("XDG_RUNTIME_DIR"); dir != "" && filepath.IsAbs(dir) {
+		return filepath.Join(dir, "whoisthat")
+	}
+	return filepath.Join("/tmp", fmt.Sprintf("whoisthat-%d", os.Getuid()))
+}
+
+func GetXrayBin() (string, error) {
+	return GetBinPath("xray")
 }
 
 func GetHomeDir() (string, error) {

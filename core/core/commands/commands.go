@@ -15,6 +15,9 @@ type Cmd struct {
 	Broadcast  func([]byte)
 	DB         *db.DB
 	TunManager *tunmode.TunModeManager
+	// RequestID is echoed on notifications produced by the current request.
+	// Empty for UDS/TUI traffic that does not opt into correlation.
+	RequestID string
 }
 
 func (cmd *Cmd) DeleteGroup(data structs.DeleteGroupData) {
@@ -133,9 +136,9 @@ func (cmd *Cmd) MoveProfile(data structs.MoveProfileData, pm *mainproxy.ProxyMan
 }
 
 func (cmd *Cmd) warn(key string, msg string) {
-	cmd.Broadcast(lib.CreateJsonNotification("warn", structs.Warning{Key: key, Content: msg}))
+	cmd.Broadcast(lib.CreateJsonNotificationWithID("warn", structs.Warning{Key: key, Content: msg}, cmd.RequestID))
 }
 
 func (cmd *Cmd) send(msg string, obj any) {
-	cmd.Broadcast(lib.CreateJsonNotification(msg, obj))
+	cmd.Broadcast(lib.CreateJsonNotificationWithID(msg, obj, cmd.RequestID))
 }
