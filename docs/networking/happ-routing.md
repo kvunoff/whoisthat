@@ -229,6 +229,16 @@ Once Base64-decoded, the payload must be a valid UTF-8 JSON document adhering to
   ],
   "Geoipurl": "https://cdn.provider.com/geo/geoip.dat",
   "Geositeurl": "https://cdn.provider.com/geo/geosite.dat",
+  "RemoteDNSType": "DoH",
+  "RemoteDNSDomain": "https://cloudflare-dns.com/dns-query",
+  "RemoteDNSIP": "1.1.1.1",
+  "DomesticDNSType": "DoU",
+  "DomesticDNSDomain": "",
+  "DomesticDNSIP": "8.8.8.8",
+  "DnsHosts": {
+    "vpn.provider.com": "203.0.113.7"
+  },
+  "FakeDNS": "false",
   "LastUpdated": 1712345678
 }
 ```
@@ -248,7 +258,17 @@ Once Base64-decoded, the payload must be a valid UTF-8 JSON document adhering to
 | **`BlockIp`** | `[]string` | No | IP addresses and `geoip:` categories blackholed and dropped. |
 | **`Geoipurl`** | `string` | No | Remote HTTPS URL from which to download a profile-specific `geoip.dat`. |
 | **`Geositeurl`** | `string` | No | Remote HTTPS URL from which to download a profile-specific `geosite.dat`. |
+| **`RemoteDNSType`** | `string` | No | Tunnel DNS transport: `DoH` or `DoU`. If omitted, inferred from the populated fields. |
+| **`RemoteDNSDomain`** | `string` | No | DoH URL, normalized to `https://host[/path]`. |
+| **`RemoteDNSIP`** | `string` | No | Literal IP used for DoU and as the DoH bootstrap entry. |
+| **`DomesticDNSType`** | `string` | No | Direct DNS transport: `DoH` or `DoU`. |
+| **`DomesticDNSDomain`** | `string` | No | Domestic DoH URL. |
+| **`DomesticDNSIP`** | `string` | No | Domestic DoU address / DoH bootstrap IP. |
+| **`DnsHosts`** | `object` | No | Static `domain -> literal IP` mappings copied into Xray's `dns.hosts`. Invalid entries are ignored with a warning. |
+| **`FakeDNS`** | `FlexibleBool` | No | FakeDNS preference from the provider. The flag is parsed and stored; FakeDNS allocation itself is not enabled yet. |
 | **`LastUpdated`** | `FlexibleUnix` | No | Epoch timestamp in seconds indicating when the provider generated the profile. |
+
+DNS values are validated defensively. A malformed DoH URL or non-IP DoU address produces a warning and a safe fallback instead of rejecting the entire routing profile. Profiles created before DNS support are decoded lazily from their stored raw JSON, so re-importing is not required.
 
 ### Resilient Deserialization Types
 
@@ -268,24 +288,28 @@ WhoisThat's compiler (`ToRoutingConfig` & `injectRoutingConfig`) translates a `H
 ```mermaid
 graph TD
     Start["Incoming Traffic / DNS Sniffing"] --> R1["1. API dokodemo-door (gRPC stats) -> outbound: api"]
-    R1 --> R2["2. DNS Port 53 UDP -> outbound: proxy"]
-    R2 --> R3["3. LAN RFC1918 & Loopback Subnets -> outbound: direct"]
-    R3 --> R4["4. BlockSites (Domain Rules) -> outbound: block"]
-    R4 --> R5["5. BlockIp (IP Rules) -> outbound: block"]
-    R5 --> R6["6. DirectSites (Domain Rules) -> outbound: direct"]
-    R6 --> R7["7. DirectIp (IP Rules) -> outbound: direct"]
-    R7 --> R8["8. ProxySites (Domain Rules) -> outbound: proxy"]
-    R8 --> R9["9. ProxyIp (IP Rules) -> outbound: proxy"]
-    R9 --> R10{"10. GlobalProxy Flag?"}
-    R10 -->|GlobalProxy == false| R11["Catch-All Rule: network: tcp,udp -> outbound: direct"]
-    R10 -->|GlobalProxy == true| R12["Default Outbound: First outbound (proxy)"]
+    R1 --> R2["2. TUN DNS capture: tun-in port 53/tcp+udp -> outbound: dns-out"]
+    R2 --> R3["3. Domestic DNS queries -> outbound: direct"]
+    R3 --> R4["4. Remote DNS queries -> outbound: proxy"]
+    R4 --> R5["5. LAN RFC1918 & Loopback Subnets -> outbound: direct"]
+    R5 --> R6["6. BlockSites (Domain Rules) -> outbound: block"]
+    R6 --> R7["7. BlockIp (IP Rules) -> outbound: block"]
+    R7 --> R8["8. DirectSites (Domain Rules) -> outbound: direct"]
+    R8 --> R9["9. DirectIp (IP Rules) -> outbound: direct"]
+    R9 --> R10["10. ProxySites (Domain Rules) -> outbound: proxy"]
+    R10 --> R11["11. ProxyIp (IP Rules) -> outbound: proxy"]
+    R11 --> R12{"12. GlobalProxy Flag?"}
+    R12 -->|GlobalProxy == false| R13["Catch-All Rule: network: tcp,udp -> outbound: direct"]
+    R12 -->|GlobalProxy == true| R14["Default Outbound: First outbound (proxy)"]
 ```
+
+Rules 2–4 are emitted only when the active Happ profile carries DNS settings. Manual routing and Happ profiles without DNS keep the legacy `port 53 UDP -> proxy` rule.
 
 ### Detailed Stage Breakdown
 
 1. **Stats API Loopback**: Injects an internal routing rule for gRPC traffic destined for the Dokodemo-door API inbound. Ensures traffic stats collection never conflicts with user rules.
-2. **DNS Leak & Hijack Protection**: Forces all UDP traffic on destination port 53 to the `proxy` outbound. This prevents domain resolution queries from prematurely matching direct rules and leaking unencrypted DNS requests to the local network before domain sniffing occurs.
-3. **Private LAN Bypass (Unconditional Priority)**: The private IP subnet rule is hardcoded to execute first:
+2. **DNS Capture & Tagged Resolvers**: When TUN is active and the Happ profile has a DNS section, DNS arriving through `tun-in` on port 53 is sent to the `dns-out` outbound. Queries originated by the tagged `domestic-dns` and `remote-dns` servers are then routed to `direct` and `proxy` respectively. This replaces the legacy blanket `port 53 -> proxy` rule and prevents DNS queries from matching user domain rules.
+3. **Private LAN Bypass (Unconditional Priority)**: The private IP subnet rule is hardcoded ahead of all provider rules (after API and DNS capture):
    ```
    127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, ::1/128, fc00::/7, fe80::/10 -> direct
    ```
@@ -297,6 +321,37 @@ graph TD
    * If `GlobalProxy == false`: A terminal rule matching `network: "tcp,udp"` sends all remaining traffic to `direct`. Only explicitly proxied domains/IPs traverse the VPN tunnel.
    * If `GlobalProxy == true`: Omitted, causing Xray to fall through to the default outbound (the active proxy profile).
 8. **Sniffing Route Enforcement**: Sets `routeOnly: false` on inbounds so that SNI-sniffed domain names override raw IP destinations, enabling domain-level routing even when client applications resolve DNS locally.
+
+---
+
+## DNS and FakeDNS
+
+When the active Happ profile supplies DNS fields, the core **replaces** the Xray `dns` section instead of layering it on top of the locally configured one.
+
+### Server selection
+
+* **`GlobalProxy = true`** — unmatched traffic is proxied:
+  * `domestic-dns` is emitted only when the profile has direct domains. It carries those domains and `skipFallback: true`, so direct sites resolve through the domestic resolver.
+  * `remote-dns` is the fallback and resolves everything else through the proxy.
+* **`GlobalProxy = false`** — unmatched traffic is direct:
+  * `domestic-dns` is the primary fallback resolver and has no `domains` filter.
+  * `remote-dns` is used only for the profile's proxy domains (`ProxySites`) and has `skipFallback: true`.
+* If the profile provides no usable resolvers, the configured `dns-servers` array is used as a fallback.
+
+### Bootstrap and static hosts
+
+`dns.hosts` is merged in this priority order (first value wins):
+
+1. `DnsHosts` from the profile;
+2. the DoH/DoU hostname mapped to `RemoteDNSIP`;
+3. the domestic DoH/DoU hostname mapped to `DomesticDNSIP`;
+4. the resolved IPs of the VPN server itself.
+
+The last entry is essential in TUN mode: the system resolver is already captured when Xray reconnects, so the server domain must be resolvable without asking the tunnel it is about to establish.
+
+### FakeDNS status
+
+The `FakeDNS` flag is parsed, validated, and stored with the profile. FakeDNS address allocation, the `fakedns` DNS server, and sniffing changes are **not enabled yet**; `FakeDNS: "true"` currently has no effect on routing. This is reserved for the next DNS stage, together with the IPv6 fake pool and AAAA policy.
 
 ---
 
@@ -377,7 +432,7 @@ sequenceDiagram
 
 ## Runtime Hot-Reloading & Validation
 
-Whenever an active Happ profile is modified, activated, or finishes downloading Geo assets, `whoisthat-core` reloads Xray-core **in-place without resetting the TUN device** (`ReloadRouting`):
+Whenever an active Happ profile is modified, activated, finishes downloading Geo assets, or changes its DNS settings, `whoisthat-core` reloads Xray-core **in-place without resetting the TUN device** (`ReloadRouting`):
 
 ### 1. Asset Environment Binding
 The daemon dynamically exports the `XRAY_LOCATION_ASSET` environment variable pointing to the profile's isolated sandbox folder:
@@ -410,9 +465,11 @@ In the TUI on Tab 2 (*Routing*), pressing <kbd>H</kbd> opens the **Happ Routing 
 │                                                                                         │
 │  ▸ [● Active]  [ready]       Provider Comprehensive Bypass                              │
 │        rules: 142 │ strategy: IPIfNonMatch │ updated: 2h ago │ geo: 2h ago              │
+│        DNS: DoH cloudflare-dns.com │ DoU 8.8.8.8                                        │
 │                                                                                         │
 │    [○ Inactive] [ready]       Streaming & Social Only                                   │
 │        rules: 38  │ strategy: AsIs │ updated: 3d ago                                    │
+│        DNS: DoH dns.google │ DoU 1.1.1.1                                                 │
 │                                                                                         │
 │    [○ Inactive] [error]       Custom Regional Rules                                     │
 │        rules: 12  │ strategy: IPIfNonMatch │ err: download geoip: HTTP status 404       │

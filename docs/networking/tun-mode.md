@@ -38,27 +38,33 @@ If running under a dedicated root daemon:
 
 ---
 
-## DNS Architecture & The Triple Context
+## DNS Architecture & Contexts
 
-The `dns-servers` array configured in `~/.config/whoisthat/config.json` (e.g., `["1.1.1.1", "8.8.8.8", "2606:4700:4700::1111"]`) serves three distinct roles in WhoisThat:
-
-```
-┌────────────────────────────────────────────────────────┐
-│                   dns-servers array                    │
-│      ["1.1.1.1", "8.8.8.8", "2606:4700:4700::1111"]   │
-└───────────────┬───────────────────┬────────────────────┘
-                │                   │
-    ┌───────────┴────────┐ ┌────────┴───────────┐ ┌──────────────────────┐
-    ▼                    ▼ ▼                    ▼ ▼                      ▼
-1. Profile Resolution     2. Direct Outbound       3. TUN Mode DNS Hijack
-Resolves proxy hostnames   Injected into Xray's    First server in list is
-to IPs prior to connect    freedom outbound for    targeted by iptables/nft
-(queries all, merges)      direct domain lookups   for system-wide redirect
-```
+The `dns-servers` array configured in `~/.config/whoisthat/config.json` (e.g., `["1.1.1.1", "8.8.8.8", "2606:4700:4700::1111"]`) serves several roles:
 
 1. **Profile Resolution**: When connecting to a proxy server whose address is a hostname (e.g. `de.vpn.com`), all DNS servers in the list are queried simultaneously via parallel UDP dials, and the fastest resolved IP is used for dialing.
-2. **Xray Direct Outbound**: Injected into Xray-core's internal DNS routing configuration so that `freedom` (direct bypass) outbound traffic resolves domains using safe, unpolluted upstream resolvers.
-3. **TUN Mode DNS Hijacking**: The **first server** specified in the array is configured as the DNAT destination for system-wide port 53 redirection. Any application attempting to query an ISP resolver or hardcoded DNS IP is silently intercepted and answered securely over the VPN tunnel.
+2. **Xray Direct Outbound**: Used as the internal resolver for `freedom` (direct bypass) traffic when the active Happ profile does not provide its own DNS section.
+3. **Legacy TUN DNS Hijacking**: For manual routing and Happ profiles without DNS, the first IPv4/IPv6 servers in the array are used as the DNAT destination for system-wide port 53 redirection. DNS routes are pinned to the physical gateway and masqueraded there, preserving the previous behaviour.
+4. **Happ DNS Override**: When the active Happ profile supplies DNS settings, they take precedence over `dns-servers` for TUN DNS. The configured servers remain only as a fallback when the profile provides no usable resolvers.
+
+### Happ DNS in TUN Mode
+
+Happ profiles use reserved **sink addresses** instead of the configured resolver:
+
+* `198.18.0.53` for IPv4 and `fd00::53` for IPv6.
+* These addresses are **not assigned to any interface**. Packets survive the `nat OUTPUT` DNAT, follow the TUN default route, and are read by Xray's native TUN inbound.
+* The hijack installs early returns so it never captures:
+  * sockets marked `1` (Xray's `freedom` outbound and apps launched via `whoisthat run` in exclude mode);
+  * traffic already addressed to the sink;
+  * the VPN server IPs, which keeps a server listening on port 53 reachable.
+* `resolvectl dns <tun> 198.18.0.53` plus `~.` makes systemd-resolved send its queries to the same sink.
+* The DNS query then follows `tun-in :53 -> dns-out`, where the tagged `domestic-dns` and `remote-dns` servers decide whether to resolve directly or through the proxy. Hosts and bootstrap entries are described in [Happ Routing](happ-routing.md#dns-and-fakedns).
+
+In `include` split mode the hijack and `resolvectl` changes are disabled entirely: only explicitly launched apps use the tunnel, while the rest of the system keeps its physical resolver. This is a deliberate limitation — `systemd-resolved` lives outside the split slice and cannot be tunnelled per-app.
+
+::: tip Manual mode is unchanged
+If no Happ profile with DNS is active, WhoisThat uses the legacy hijack to the configured resolver, including DNS routes through the physical gateway and masquerading. The sink addresses are only used by Happ DNS.
+:::
 
 ---
 

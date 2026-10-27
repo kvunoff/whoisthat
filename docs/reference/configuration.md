@@ -95,8 +95,9 @@ Auto-generated and synchronized by the Go core daemon:
 ### Key Parameter Explanations:
 * **`dns-servers`**:
   * Used for resolving remote proxy hostnames (queries all servers, merges answers).
-  * Injected into Xray's `freedom` (direct) outbound domain resolver.
-  * In TUN mode, the **first IP** in this array is targeted for kernel-level DNS hijacking.
+  * Injected into Xray's `freedom` (direct) outbound domain resolver when a Happ profile does not provide its own DNS section.
+  * In TUN mode without Happ DNS (manual routing or profiles without DNS fields), the **first IPv4/IPv6** entries are targeted by the legacy kernel-level DNS hijack.
+  * When the active Happ profile supplies DNS, its `RemoteDNS*` / `DomesticDNS*` servers take precedence; `dns-servers` are only used as a fallback. Happ DNS uses the reserved sink addresses `198.18.0.53` / `fd00::53` rather than the configured resolvers.
 * **`test-port-range`**: Ephemeral port boundary leased dynamically for concurrent latency test instances.
 * **`split-tunnel.mode`**: Can be `"off"`, `"exclude"`, or `"include"`.
 
