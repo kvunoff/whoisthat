@@ -40,6 +40,7 @@
 - **cgroup v2 Split Tunneling**: Selectively bypass or enforce VPN routing per application (`whoisthat run <app>`) using transient systemd slices and policy routing.
 - **Fail-Safe Kill-Switch**: Independent nftables firewall protection blocks non-VPN traffic if the connection drops unexpectedly.
 - **Happ Routing & Presets**: Ingests provider Happ routing profiles (`happ://routing/...`) with per-group modes (`auto`, `manual`, `subscription`) and 1-click preset rules (ad blocking, domestic bypass, media, AI).
+- **DNS Hijack & FakeDNS**: Captures system DNS through a reserved TUN sink, routes queries through tagged domestic/remote resolvers, and allocates FakeDNS addresses only in safe TUN + global-proxy modes. Split-excluded apps keep resolving directly.
 - **Encrypted State at Rest**: Credentials, subscriptions, and custom rules are encrypted locally with AES-256-GCM.
 - **Real-Time Traffic Monitoring**: Unicode Braille bandwidth monitor (RX/TX), dynamic scaling, and interface health metrics.
 - **Desktop & Ecosystem Integration**: 1-click browser imports (`wit://`), official GNOME Shell extension, and continuous NDJSON streaming for Waybar and Polybar.

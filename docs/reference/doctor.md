@@ -14,9 +14,9 @@ whoisthat doctor --json
 
 ---
 
-## The 5 Diagnostic Categories
+## The 6 Diagnostic Categories
 
-The diagnostic engine performs comprehensive, non-destructive system inspections divided into five categories implemented in `src/doctor/checks.rs`:
+The diagnostic engine performs comprehensive, non-destructive system inspections divided into six categories implemented in `src/doctor/checks.rs`:
 
 ```
 ┌────────────────────────────────────────────────────────┐
@@ -26,7 +26,8 @@ The diagnostic engine performs comprehensive, non-destructive system inspections
 │  2. Linux Capabilities      (cap_net_admin, /dev/net)  │
 │  3. Polkit & Permissions    (polkit, pkexec, linger)   │
 │  4. IPC & Daemon Runtime    (UDS socket, handshake)    │
-│  5. Storage & Cryptography  (DB 0700, .key, geoip)     │
+│  5. DNS & Routing           (sink, pools, hijack, KS)  │
+│  6. Storage & Cryptography  (DB 0700, .key, geoip)     │
 └────────────────────────────────────────────────────────┘
 ```
 
@@ -53,10 +54,22 @@ The diagnostic engine performs comprehensive, non-destructive system inspections
 ### 4. IPC & Daemon Runtime Status
 * **`XDG_RUNTIME_DIR`**: Validates the user runtime directory environment variable and permissions.
 * **Unix Domain Socket**: Resolves `$XDG_RUNTIME_DIR/whoisthat/core.sock`, verifying that file mode is `0600` and owned by the current user.
-* **Daemon Handshake**: Transmits an IPC `get-application-state` probe to verify the daemon is responsive and reports wire protocol version `2`.
+* **Daemon Handshake**: Transmits an IPC `get-application-state` probe to verify the daemon is responsive and reports wire protocol version `1`.
 * **Legacy TCP Port**: If TCP is enabled, checks if `127.0.0.1:4897` is accessible.
 
-### 5. Storage, Database & Cryptography
+### 5. DNS & Routing
+* **DNS sink address**: Verifies that `198.18.0.53` / `fd00::53` are **not** assigned to any interface. If they are, kernel local delivery bypasses the TUN inbound and DNS hijack stops working.
+* **FakeDNS pools**: Checks the TUN interface addresses against `198.19.0.0/16` and `fc00::/18`; an overlap means real traffic could collide with fake addresses.
+* **DNS hijack rules**: Inspects the `ip whoisthat` / `ip6 whoisthat` nftables tables (or the iptables `WHOISTHAT_DNS_*` chains) and reports the active mode: Happ sink, legacy resolver, disabled in `include`, or TUN inactive.
+* **DNS safety returns**: In Happ mode, verifies that the `mark 1` and sink return rules are present. Missing returns can loop Xray's direct DNS or capture split-excluded apps.
+* **systemd-resolved**: If `resolvectl` is installed, verifies that the TUN interface points at the Happ sink. A missing systemd-resolved is a warning, not a failure — kernel DNAT still works.
+* **Kill-switch DNS allowlist**: When the kill-switch is armed, checks that its nftables table still allows the TUN interface, the DNS sink, and `mark 1`.
+
+::: tip Root permissions
+Reading nftables/iptables state usually requires root. When `whoisthat doctor` runs unprivileged, firewall items are reported as `info` with the exact inspection command (`sudo nft list table ip whoisthat`) instead of failing.
+:::
+
+### 6. Storage, Database & Cryptography
 * **Database Directory**: Validates that `~/.local/share/whoisthat/db/` exists and has secure Unix permissions (`0700`).
 * **Master Encryption Key**: Inspects `~/.local/share/whoisthat/db/.key`:
   * Ensures permissions are strictly `0600`.
@@ -72,8 +85,8 @@ When running `whoisthat doctor --json`:
 
 ```json
 {
-  "client_version": "0.13.3",
-  "core_version": "0.2.3",
+  "client_version": "0.14.0",
+  "core_version": "0.3.0",
   "core_protocol_version": 1,
   "categories": [
     {
