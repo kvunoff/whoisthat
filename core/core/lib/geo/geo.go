@@ -53,11 +53,13 @@ var geoSiteURLs = []string{
 // ResolveGeoURLs applies the optional WHOISTHAT_GEOIP_TAG /
 // WHOISTHAT_GEOSITE_TAG overrides at runtime.
 func ResolveGeoURLs() ([]string, []string) {
-	return []string{
+	geoIP := []string{
 		"https://github.com/v2fly/geoip/releases/download/" + geoTag("WHOISTHAT_GEOIP_TAG", defaultGeoIPTag) + "/geoip.dat",
-	}, []string{
+	}
+	geoSite := []string{
 		"https://github.com/v2fly/domain-list-community/releases/download/" + geoTag("WHOISTHAT_GEOSITE_TAG", defaultGeoSiteTag) + "/dlc.dat",
 	}
+	return geoIP, geoSite
 }
 
 var systemAssetDirs = []string{
