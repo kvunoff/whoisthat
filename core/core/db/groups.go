@@ -1,6 +1,7 @@
 package db
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"sort"
@@ -110,6 +111,12 @@ func (db *DB) GetAllGroupsAndProfiles() ([]structs.GroupWithProfiles, error) {
 		}
 		group, err := db.getGroupDataAndProfiles(group_id)
 		if err != nil {
+			// A group directory without group_config.json is a stale leftover
+			// from an interrupted delete/import. It is not a loadable group, so
+			// skip it silently instead of spamming the log on every state query.
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
 			logger.Warn("warning while gathering all groups:", err)
 			continue
 		}

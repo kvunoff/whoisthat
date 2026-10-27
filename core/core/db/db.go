@@ -2,6 +2,7 @@ package db
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -132,6 +133,11 @@ func (db *DB) migrateFileToEncrypted(path string) {
 	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
+		// A missing file is normal: stale or partially deleted group
+		// directories do not contain every legacy file.
+		if errors.Is(err, os.ErrNotExist) {
+			return
+		}
 		logger.Warnf("migration: failed to read %s: %v", path, err)
 		return
 	}
