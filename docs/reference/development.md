@@ -112,7 +112,7 @@ whoisthat/
 
 Both the Rust client and Go daemon feature extensive unit test suites that run entirely in memory in milliseconds without requiring network access.
 
-### 1. Rust Test Suite (122 Tests)
+### 1. Rust Test Suite (148 Tests)
 
 ```bash
 cargo test
@@ -121,7 +121,8 @@ cargo test
 **Areas Covered:**
 * **Protocol Framing & Dispatch** (`src/core_client/`): Tests handling of all 22+ core notification types, deserialization resilience, profile moving, and reordering.
 * **Responsive Layout Tiers** (`src/ui/layout.rs`, `src/ui/app/helpers.rs`): Tests width tiers (Compact, Medium, Wide, UltraWide), height tiers (Tiny, Short, Normal, Tall), adaptive panel collapsing, and safety threshold (<45x8).
-* **Routing Logic & Presets** (`src/ui/routing.rs`): Form-to-rule and rule-to-form round trips for all 6 match types, preset idempotency, and live rule toggling.
+* **Routing Logic & Presets** (`src/ui/routing.rs`): Form-to-rule and rule-to-form round trips for all 6 match types, preset idempotency, live rule toggling, and Global / inherited / custom page rendering.
+* **Global & Per-Group Routing State** (`src/ui/app/state.rs`): Page navigation including the Global page, inheritance fallback, custom-rule seeding, cached overrides, and page clamping after group deletion.
 * **Text Editing & Cyrillic** (`src/text_edit.rs`): UTF-8 character insertion, boundary backspace, cursor positioning, Home/End boundaries.
 * **Traffic History Ring Buffer** (`src/ui/traffic.rs`): 60-sample rolling buffer push, dynamic max-Y scale calculations.
 * **Deep Links** (`src/deeplink.rs`): Scheme parser validation for `wit://sub`, `wit://import`, `wit://toggle`, and raw proxy URIs.
@@ -135,7 +136,7 @@ go test ./...
 
 **Areas Covered:**
 * **AES-256-GCM Crypto** (`lib/crypto`): Nonce uniqueness, key validation, tampering detection, base64 wrapping, short ciphertext handling.
-* **Database Operations** (`db`): Encrypted read/write round-trips, key persistence across restarts, and directory initialization.
+* **Database Operations** (`db`): Encrypted read/write round-trips, key persistence across restarts, directory initialization, manual routing inheritance, custom-rule seeding, and cleanup on group deletion.
 * **Proxy URI Parsers** (`lib/parser`): In-memory compilation of VLESS (Reality, Vision, xHTTP, gRPC), VMess, Trojan, Shadowsocks, SOCKS5, and Hysteria2 URIs into Xray JSON.
 * **PortPool Allocator** (`lib/PortPool`): Concurrent ephemeral port lease and release without race conditions.
 * **Startup Reconcile & Split** (`lib/proxy/tun`): Idempotency of nftables teardown scripts and routing table rule restoration.

@@ -48,6 +48,7 @@ pub enum AppAction {
     OpenPresets,
     OpenHappProfiles,
     CycleRoutingMode,
+    ToggleManualRoutingSource,
     ImportHappLink,
     RoutingGroupPrev,
     RoutingGroupNext,

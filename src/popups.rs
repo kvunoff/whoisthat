@@ -33,7 +33,9 @@ pub(crate) async fn handle_popup_input(
                 app.focus = Focus::LeftPanel;
                 if target == ActiveTab::Routing {
                     app.routing_popup = None;
-                    let _ = client.get_routing().await;
+                    app.sync_routing_group_to_connected();
+                    let gid = app.routing_page_group_id();
+                    let _ = client.get_routing(gid).await;
                 }
             }
             KeyCode::Char('1') => {
@@ -46,7 +48,9 @@ pub(crate) async fn handle_popup_input(
                 app.popup = None;
                 app.focus = Focus::LeftPanel;
                 app.routing_popup = None;
-                let _ = client.get_routing().await;
+                app.sync_routing_group_to_connected();
+                let gid = app.routing_page_group_id();
+                let _ = client.get_routing(gid).await;
             }
             KeyCode::Char('3') | KeyCode::Char('m') => {
                 app.tab = ActiveTab::Traffic;
@@ -296,12 +300,17 @@ pub(crate) async fn handle_routing_popup_input(
     match app.routing_popup.take() {
         Some(RoutingPopup::ConfirmDelete { index }) => match key.code {
             KeyCode::Enter => {
-                app.routing.rules.remove(index);
-                if app.routing_cursor >= app.routing.rules.len() && app.routing_cursor > 0 {
+                app.ensure_custom_routing();
+                app.active_routing_config_mut().rules.remove(index);
+                if app.routing_cursor >= app.active_routing_config().rules.len()
+                    && app.routing_cursor > 0
+                {
                     app.routing_cursor -= 1;
                 }
                 app.msg("Rule deleted");
-                let _ = client.update_routing(&app.routing).await;
+                let gid = app.routing_page_group_id();
+                let cfg = app.active_routing_config().clone();
+                let _ = client.update_routing(gid, &cfg).await;
             }
             KeyCode::Esc => {}
             _ => {
@@ -326,9 +335,12 @@ pub(crate) async fn handle_routing_popup_input(
             ) {
                 FormResult::Save => {
                     let rule = form_to_rule(match_type, &value, outbound);
-                    app.routing.rules.push(rule);
+                    app.ensure_custom_routing();
+                    app.active_routing_config_mut().rules.push(rule);
                     app.msg("Rule added");
-                    let _ = client.update_routing(&app.routing).await;
+                    let gid = app.routing_page_group_id();
+                    let cfg = app.active_routing_config().clone();
+                    let _ = client.update_routing(gid, &cfg).await;
                 }
                 FormResult::Cancel => {
                     app.routing_popup = None;
@@ -363,10 +375,13 @@ pub(crate) async fn handle_routing_popup_input(
             ) {
                 FormResult::Save => {
                     let rule = form_to_rule(match_type, &value, outbound);
-                    if index < app.routing.rules.len() {
-                        app.routing.rules[index] = rule;
+                    app.ensure_custom_routing();
+                    if index < app.active_routing_config().rules.len() {
+                        app.active_routing_config_mut().rules[index] = rule;
                         app.msg("Rule saved");
-                        let _ = client.update_routing(&app.routing).await;
+                        let gid = app.routing_page_group_id();
+                        let cfg = app.active_routing_config().clone();
+                        let _ = client.update_routing(gid, &cfg).await;
                     }
                 }
                 FormResult::Cancel => {
@@ -406,10 +421,13 @@ pub(crate) async fn handle_routing_popup_input(
             }
             KeyCode::Enter | KeyCode::Char(' ') => {
                 if let Some(preset) = ROUTING_PRESETS.get(cursor) {
-                    let now_applied = toggle_preset(&mut app.routing, preset);
+                    app.ensure_custom_routing();
+                    let now_applied = toggle_preset(app.active_routing_config_mut(), preset);
                     let action = if now_applied { "applied" } else { "removed" };
                     app.msg(format!("Preset {}: {}", action, preset.title));
-                    let _ = client.update_routing(&app.routing).await;
+                    let gid = app.routing_page_group_id();
+                    let cfg = app.active_routing_config().clone();
+                    let _ = client.update_routing(gid, &cfg).await;
                 }
                 app.routing_popup = Some(RoutingPopup::Presets { cursor });
             }

@@ -180,7 +180,7 @@ pub(crate) async fn handle_core_event(
             log::info!("Core reconnected; re-syncing state");
             app.msg("Core reconnected. Re-syncing state...");
             let _ = client.get_application_state().await;
-            let _ = client.get_routing().await;
+            let _ = client.get_routing(0).await;
         }
         CoreEvent::SubscriptionUpdated {
             group,
@@ -225,12 +225,13 @@ pub(crate) async fn handle_core_event(
             app.popup = None;
         }
 
-        CoreEvent::RoutingUpdated(cfg) => {
-            app.routing = cfg;
-            let len = app.routing.rules.len();
-            if app.routing_cursor >= len && len > 0 {
-                app.routing_cursor = len - 1;
-            }
+        CoreEvent::RoutingUpdated {
+            group_id,
+            config,
+            source,
+            custom,
+        } => {
+            app.apply_routing_updated(group_id, config, source, custom);
             if app.is_connected() {
                 let tx = ip_tx.clone();
                 tokio::spawn(async move {

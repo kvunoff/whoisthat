@@ -39,7 +39,13 @@ impl App {
             self.render_popup(f, popup, area);
         }
         if let Some(ref popup) = self.routing_popup {
-            render_routing_popup(f, popup, area, &self.routing, self.routing_selected_group());
+            render_routing_popup(
+                f,
+                popup,
+                area,
+                self.active_routing_config(),
+                self.routing_selected_group(),
+            );
         }
     }
 
@@ -233,12 +239,13 @@ impl App {
                 render_routing_tab(
                     f,
                     area,
-                    &self.routing,
+                    self.active_routing_config(),
                     self.routing_cursor,
                     focused,
                     self.routing_selected_group(),
                     self.routing_group_index,
-                    self.groups.len(),
+                    self.groups.len() + 1,
+                    self.routing_source(),
                 );
             }
             ActiveTab::Traffic => {

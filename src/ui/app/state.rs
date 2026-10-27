@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use ratatui::layout::Rect;
 
@@ -13,6 +13,12 @@ use crate::ui::traffic::TrafficHistory;
 use crate::ui::uri::{self, ParsedUri};
 
 use super::types::*;
+
+#[derive(Debug, Clone, Default)]
+pub struct GroupRoutingView {
+    pub effective: RoutingConfig,
+    pub custom: Option<RoutingConfig>,
+}
 
 pub struct App {
     pub groups: Vec<GroupWithProfiles>,
@@ -46,6 +52,7 @@ pub struct App {
     pub traffic_stats: TrafficStats,
     pub traffic_history: TrafficHistory,
     pub routing: RoutingConfig,
+    pub group_routing: HashMap<i32, GroupRoutingView>,
     pub routing_cursor: usize,
     pub routing_group_index: usize,
     pub routing_popup: Option<RoutingPopup>,
@@ -115,6 +122,7 @@ impl App {
             traffic_stats: TrafficStats::default(),
             traffic_history: TrafficHistory::new(),
             routing: RoutingConfig::default(),
+            group_routing: HashMap::new(),
             routing_cursor: 0,
             routing_group_index: 0,
             routing_popup: None,
@@ -224,37 +232,154 @@ impl App {
         }
     }
 
-    pub fn routing_selected_group(&self) -> Option<&GroupWithProfiles> {
-        if self.groups.is_empty() {
-            return None;
+    /// Page 0 is the global rule set; pages 1..=groups.len() are groups.
+    pub fn routing_page_group_id(&self) -> i32 {
+        if self.routing_group_index == 0 {
+            return 0;
         }
-        if self.routing_group_index < self.groups.len() {
-            Some(&self.groups[self.routing_group_index])
+        self.groups
+            .get(self.routing_group_index - 1)
+            .map(|g| g.group.id)
+            .unwrap_or(0)
+    }
+
+    pub fn routing_selected_group(&self) -> Option<&GroupWithProfiles> {
+        if self.routing_group_index == 0 {
+            None
         } else {
-            self.groups.first()
+            self.groups.get(self.routing_group_index - 1)
+        }
+    }
+
+    pub fn routing_source(&self) -> &'static str {
+        match self.routing_selected_group() {
+            Some(g) if g.group.manual_routing_mode == "custom" => "custom",
+            _ => "global",
+        }
+    }
+
+    pub fn active_routing_config(&self) -> &RoutingConfig {
+        let gid = self.routing_page_group_id();
+        if gid != 0 && self.routing_source() == "custom" {
+            if let Some(view) = self.group_routing.get(&gid) {
+                return &view.effective;
+            }
+        }
+        &self.routing
+    }
+
+    pub fn active_routing_config_mut(&mut self) -> &mut RoutingConfig {
+        let gid = self.routing_page_group_id();
+        if gid == 0 {
+            return &mut self.routing;
+        }
+        if !self.group_routing.contains_key(&gid) {
+            let fallback = self.routing.clone();
+            self.group_routing.insert(
+                gid,
+                GroupRoutingView {
+                    effective: fallback,
+                    custom: None,
+                },
+            );
+        }
+        &mut self.group_routing.get_mut(&gid).unwrap().effective
+    }
+
+    /// Makes the current group page editable. Inheriting groups are switched
+    /// to a group-specific rule set, seeded from their stored custom rules if
+    /// any, otherwise from the global rules. Returns the affected group id
+    /// (0 for the global page).
+    pub fn ensure_custom_routing(&mut self) -> i32 {
+        let gid = self.routing_page_group_id();
+        if gid == 0 {
+            return 0;
+        }
+
+        let already_custom = self
+            .routing_selected_group()
+            .map(|g| g.group.manual_routing_mode == "custom")
+            .unwrap_or(false);
+
+        if !already_custom {
+            let seed = self
+                .group_routing
+                .get(&gid)
+                .and_then(|v| v.custom.clone())
+                .unwrap_or_else(|| self.routing.clone());
+            self.group_routing.insert(
+                gid,
+                GroupRoutingView {
+                    effective: seed,
+                    custom: None,
+                },
+            );
+            if let Some(g) = self.groups.iter_mut().find(|g| g.group.id == gid) {
+                g.group.manual_routing_mode = "custom".to_string();
+            }
+        }
+
+        gid
+    }
+
+    pub fn apply_routing_updated(
+        &mut self,
+        group_id: i32,
+        config: RoutingConfig,
+        source: String,
+        custom: Option<RoutingConfig>,
+    ) {
+        if group_id == 0 {
+            self.routing = config;
+        } else {
+            let custom = if source == "custom" {
+                custom.or_else(|| Some(config.clone()))
+            } else {
+                custom
+            };
+            self.group_routing.insert(
+                group_id,
+                GroupRoutingView {
+                    effective: config,
+                    custom,
+                },
+            );
+        }
+
+        if group_id == 0 || group_id == self.routing_page_group_id() {
+            self.clamp_routing_cursor();
+        }
+    }
+
+    pub fn clamp_routing_cursor(&mut self) {
+        let len = self.active_routing_config().rules.len();
+        if len == 0 {
+            self.routing_cursor = 0;
+        } else if self.routing_cursor >= len {
+            self.routing_cursor = len - 1;
         }
     }
 
     pub fn routing_group_next(&mut self) {
-        if !self.groups.is_empty() {
-            self.routing_group_index = (self.routing_group_index + 1) % self.groups.len();
-        }
+        let pages = self.groups.len() + 1;
+        self.routing_group_index = (self.routing_group_index + 1) % pages;
+        self.routing_cursor = 0;
     }
 
     pub fn routing_group_prev(&mut self) {
-        if !self.groups.is_empty() {
-            self.routing_group_index = if self.routing_group_index == 0 {
-                self.groups.len() - 1
-            } else {
-                self.routing_group_index - 1
-            };
-        }
+        let pages = self.groups.len() + 1;
+        self.routing_group_index = if self.routing_group_index == 0 {
+            pages - 1
+        } else {
+            self.routing_group_index - 1
+        };
+        self.routing_cursor = 0;
     }
 
     pub fn sync_routing_group_to_connected(&mut self) {
         if let Some(ref p) = self.connection_status.profile {
             if let Some(idx) = self.groups.iter().position(|g| g.group.id == p.group_id) {
-                self.routing_group_index = idx;
+                self.routing_group_index = idx + 1;
             }
         }
     }
@@ -576,6 +701,11 @@ impl App {
     pub fn apply_group_deleted(&mut self, id: i32) {
         self.groups.retain(|g| g.group.id != id);
         self.collapsed_groups.remove(&id);
+        self.group_routing.remove(&id);
+        if self.routing_group_index > self.groups.len() {
+            self.routing_group_index = self.groups.len();
+        }
+        self.routing_cursor = 0;
         self.clamp_cursor();
     }
 
@@ -1109,5 +1239,129 @@ mod tests {
         app.apply_groups_reordered(&[2, 1]);
         assert_eq!(app.groups[0].group.id, 2);
         assert_eq!(app.groups[1].group.id, 1);
+    }
+
+    fn routing_config(domain: &str) -> RoutingConfig {
+        RoutingConfig {
+            domain_strategy: "IPIfNonMatch".into(),
+            rules: vec![RoutingRule {
+                r#type: "field".into(),
+                domain: domain.into(),
+                outbound_tag: "proxy".into(),
+                enabled: true,
+                ..Default::default()
+            }],
+        }
+    }
+
+    #[test]
+    fn test_routing_pages_start_with_global() {
+        let mut app = make_app_with_profile();
+
+        assert_eq!(app.routing_group_index, 0);
+        assert_eq!(app.routing_page_group_id(), 0);
+        assert!(app.routing_selected_group().is_none());
+        assert_eq!(app.routing_source(), "global");
+
+        app.routing_group_next();
+        assert_eq!(app.routing_group_index, 1);
+        assert_eq!(app.routing_page_group_id(), 1);
+        assert!(app.routing_selected_group().is_some());
+
+        app.routing_group_next();
+        assert_eq!(app.routing_group_index, 0);
+    }
+
+    #[test]
+    fn test_routing_inherit_displays_current_global_rules() {
+        let mut app = make_app_with_profile();
+        app.routing_group_index = 1;
+        app.routing = routing_config("first");
+
+        assert_eq!(app.routing_source(), "global");
+        assert_eq!(app.active_routing_config().rules[0].domain, "first");
+
+        // A later global update must be reflected on inheriting pages.
+        app.apply_routing_updated(0, routing_config("second"), "global".into(), None);
+        assert_eq!(app.active_routing_config().rules[0].domain, "second");
+    }
+
+    #[test]
+    fn test_ensure_custom_routing_seeds_from_global_without_touching_it() {
+        let mut app = make_app_with_profile();
+        app.routing_group_index = 1;
+        app.routing = routing_config("global");
+
+        let gid = app.ensure_custom_routing();
+        assert_eq!(gid, 1);
+        assert_eq!(app.routing_source(), "custom");
+        assert_eq!(app.active_routing_config().rules[0].domain, "global");
+
+        app.active_routing_config_mut().rules[0].domain = "edited".into();
+        assert_eq!(app.routing.rules[0].domain, "global");
+        assert_eq!(app.active_routing_config().rules[0].domain, "edited");
+    }
+
+    #[test]
+    fn test_ensure_custom_routing_reuses_stored_override() {
+        let mut app = make_app_with_profile();
+        app.routing_group_index = 1;
+        app.routing = routing_config("global");
+        app.group_routing.insert(
+            1,
+            GroupRoutingView {
+                effective: routing_config("global"),
+                custom: Some(routing_config("saved")),
+            },
+        );
+
+        app.ensure_custom_routing();
+        assert_eq!(app.active_routing_config().rules[0].domain, "saved");
+    }
+
+    #[test]
+    fn test_apply_routing_updated_by_group() {
+        let mut app = make_app_with_profile();
+
+        app.apply_routing_updated(0, routing_config("global"), "global".into(), None);
+        assert_eq!(app.routing.rules[0].domain, "global");
+
+        app.apply_routing_updated(1, routing_config("custom"), "custom".into(), None);
+        let view = app.group_routing.get(&1).unwrap();
+        assert_eq!(view.effective.rules[0].domain, "custom");
+        assert_eq!(view.custom.as_ref().unwrap().rules[0].domain, "custom");
+
+        app.apply_routing_updated(
+            1,
+            routing_config("global"),
+            "global".into(),
+            Some(routing_config("saved")),
+        );
+        let view = app.group_routing.get(&1).unwrap();
+        assert_eq!(view.effective.rules[0].domain, "global");
+        assert_eq!(view.custom.as_ref().unwrap().rules[0].domain, "saved");
+    }
+
+    #[test]
+    fn test_apply_group_deleted_resets_routing_page() {
+        let mut app = make_app_with_profile();
+        app.routing_group_index = 1;
+        app.group_routing.insert(1, GroupRoutingView::default());
+
+        app.apply_group_deleted(1);
+
+        assert_eq!(app.routing_group_index, 0);
+        assert!(!app.group_routing.contains_key(&1));
+    }
+
+    #[test]
+    fn test_sync_routing_group_to_connected_skips_global_page() {
+        let mut app = make_app_with_profile();
+        app.connection_status.profile = Some(app.groups[0].profiles[0].clone());
+
+        app.sync_routing_group_to_connected();
+
+        assert_eq!(app.routing_group_index, 1);
+        assert_eq!(app.routing_page_group_id(), 1);
     }
 }

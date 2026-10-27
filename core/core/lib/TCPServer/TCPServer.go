@@ -451,6 +451,14 @@ func (s *Server) handleConnection(cc *clientConn, clientID string) {
 			}
 			command_handler.UpdateRouting(data, s.proxy_manager)
 
+		case "set-manual-routing-source":
+			var data structs.SetManualRoutingSourceData
+			if err := json.Unmarshal(raw_tcp_message.Data, &data); err != nil {
+				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
+				return
+			}
+			command_handler.SetManualRoutingSource(data, s.proxy_manager)
+
 		case "import-happ-routing":
 			var data structs.ImportHappRoutingData
 			if err := json.Unmarshal(raw_tcp_message.Data, &data); err != nil {

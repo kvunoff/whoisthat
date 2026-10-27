@@ -130,7 +130,7 @@ While routing concepts are universal across proxy platforms, WhoisThat's impleme
 ┌────────────────────────────────────────────────────────┐
 │                   WhoisThat TUI & CLI                  │
 │    • Presets Catalog (<kbd>p</kbd>) • Interactive Rule Editor (<kbd>a</kbd>/<kbd>e</kbd>)   │
-│    • Per-Group Routing Switcher (<kbd>m</kbd>: auto/manual/sub)     │
+│    • Global / Per-Group Rule Pages (<kbd>g</kbd>) • Mode Switcher (<kbd>m</kbd>)           │
 └───────────────────────────┬────────────────────────────┘
                             │ Length-Prefixed IPC (UDS)
 ┌───────────────────────────▼────────────────────────────┐
@@ -155,6 +155,33 @@ While routing concepts are universal across proxy platforms, WhoisThat's impleme
 2. **Sub-30ms Zero-Downtime Hot-Reloading**: Unlike clients that tear down the virtual network interface or disconnect the VPN whenever a rule changes, WhoisThat validates new routing configurations in-memory (`xray run -test`) and reloads the routing engine in-place. Active SSH sessions, streams, and downloads remain uninterrupted.
 3. **cgroup v2 Split Tunneling Integration**: Complementing domain and IP routing, WhoisThat features application-level routing via `whoisthat run <app>`. Sockets launched inside `whoisthat_split.slice` are matched by kernel nftables rules using cgroup v2 path hierarchies, allowing per-application bypass or enforcement.
 4. **Decoupled Architecture**: Rule policies (whether created manually, toggled via presets, or imported from external profile links) are stored in an encrypted database (`~/.local/share/whoisthat/db`) using AES-256-GCM.
+
+---
+
+## Global Rules and Per-Group Overrides
+
+The Routing tab is paginated: page 0 is **Global**, followed by one page per subscription group. Use <kbd>←</kbd> / <kbd>→</kbd> (or <kbd>h</kbd> / <kbd>l</kbd>) to move between pages.
+
+Manual rules have two layers:
+
+* **Global** — the shared rule set shown on page 0. It is stored in `~/.local/share/whoisthat/db/routing.json` and is used by every group that inherits it.
+* **Custom** — a group-specific rule set stored in `~/.local/share/whoisthat/db/groups/<GID>/routing/manual.json`.
+
+A group's `manual_routing_mode` decides which layer applies:
+
+| Value | Behavior |
+| :--- | :--- |
+| `inherit` (default, also stored as an empty value) | The group uses the Global rules. |
+| `custom` | The group uses its own rule set instead of Global. |
+
+Press <kbd>g</kbd> on a group page to switch between the two. Switching to **Custom** seeds the group with a copy of Global if no custom rules exist yet. Switching back to **Global** keeps the custom file on disk, so the rules return when Custom is enabled again.
+
+Editing a rule (add / edit / delete / toggle / preset) on a group page that still inherits Global automatically creates the custom override, seeded from the stored custom rules if present, otherwise from Global.
+
+The effective manual layer is resolved by `resolveRouting`:
+
+* `manual` mode and fallbacks in `auto` mode use the group's custom rules when `manual_routing_mode == "custom"`, otherwise the Global rules.
+* `subscription` mode never applies manual rules; it falls back to the LAN-only fail-safe instead.
 
 ---
 

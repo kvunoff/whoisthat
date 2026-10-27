@@ -290,7 +290,7 @@ func (db *DB) resolveRouting(groupID int) (structs.RoutingSelection, error) {
 	}
 
 	if mode == "manual" {
-		cfg, err := db.loadRouting()
+		cfg, _, err := db.loadEffectiveManualRouting(groupID)
 		return structs.RoutingSelection{
 			Config: cfg,
 			Source: "manual",
@@ -335,7 +335,7 @@ func (db *DB) resolveRouting(groupID int) (structs.RoutingSelection, error) {
 
 	// Fallback when active Happ profile is not available or not ready
 	if mode == "auto" {
-		cfg, err := db.loadRouting()
+		cfg, _, err := db.loadEffectiveManualRouting(groupID)
 		return structs.RoutingSelection{
 			Config: cfg,
 			Source: "manual",

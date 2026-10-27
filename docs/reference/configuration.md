@@ -107,7 +107,9 @@ Auto-generated and synchronized by the Go core daemon:
 
 | Directory Path | Content & Purpose | Permissions |
 | :--- | :--- | :---: |
-| `~/.local/share/whoisthat/db/` | AES-256-GCM encrypted database files (`groups.json`, `profiles.json`, `routing.json`). | `0700` |
+| `~/.local/share/whoisthat/db/` | AES-256-GCM encrypted database: `config.json`, `routing.json`, and per-group directories (`groups/<id>/group_config.json`, profile files). | `0700` |
+| `~/.local/share/whoisthat/db/routing.json` | Global manual routing rules shared by groups that inherit them. | `0600` |
+| `~/.local/share/whoisthat/db/groups/<id>/routing/manual.json` | Custom manual routing rules for one group (`manual_routing_mode = "custom"`). | `0600` |
 | `~/.local/share/whoisthat/db/.key` | 32-byte cryptographic master key. | `0600` |
 | `~/.local/share/whoisthat/runtimes/xray/` | Pinned official Xray-core binary (v26.9.9). | `0755` |
 | `~/.config/whoisthat/geo/` | Global routing databases (`geoip.dat`, `geosite.dat`). | `0755` |

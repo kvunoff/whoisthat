@@ -139,7 +139,7 @@ whoisthat handle-url "happ://routing/onadd/<BASE64>" --group 2
 The Happ specification introduces a fundamental shift from monolithic, global client routing to **decentralized, subscription-level management**:
 
 ### 1. Isolated Per-Subscription Scope
-Every subscription group (including individual manual profiles) maintains its own independent routing profiles, active profile state, and cached Geo assets on disk. Modifying rules in one group has zero effect on other subscriptions.
+Every subscription group maintains its own independent Happ routing profiles, active profile state, routing mode, and cached Geo assets on disk. Manual rules are different: they live in a **Global** rule set, and each group can either inherit it or keep its own custom override. Changing one group's custom override has no effect on other subscriptions.
 
 ### 2. Cascading Deletion
 When a subscription group is deleted from WhoisThat:
@@ -388,23 +388,30 @@ Limitations:
 
 ## Per-Group Routing Modes
 
-Routing rules in WhoisThat can be configured **independently for each subscription group**. Pressing <kbd>m</kbd> on the Routing tab cycles the active mode for the focused group:
+Happ routing profiles, Geo assets, and the routing mode are configured **independently for each subscription group**. Pressing <kbd>m</kbd> on the Routing tab cycles the active mode for the focused group:
 
 ```
 [auto] ──► [manual] ──► [subscription] ──► [auto]
 ```
 
-### Decision Matrix & Resolution Logic
+Manual rules are arranged in two layers:
+
+* **Global** (the first page of the Routing tab) — a shared rule set used by every group that inherits it.
+* **Custom** (a group page, press <kbd>g</kbd> to switch) — a group-specific rule set that overrides Global for that group.
 
 The resolution algorithm (`resolveRouting`) determines what routing table is applied during connection startup or rule reloading:
 
-| Group Mode | Active Happ Profile Condition | Resulting Routing Source | Effective Behavior |
-| :--- | :--- | :--- | :--- |
-| **`auto`** *(Default)* | Profile active and assets ready (`state == "ready"`) | **`happ`** | Compiles and enforces the active Happ profile rules. |
-| **`auto`** | No active Happ profile, or assets failed/downloading | **`manual`** | **Transparent Fallback**: Seamlessly switches to your manual rules and presets catalog without interrupting traffic. |
-| **`manual`** | Any condition | **`manual`** | Strictly enforces user-defined manual rules and presets. All Happ profiles are ignored. |
-| **`subscription`** | Profile active and assets ready (`state == "ready"`) | **`happ`** | Strictly compiles and enforces the provider Happ profile. |
-| **`subscription`** | Profile missing, inactive, or assets uncompiled | **`happ` (Safe LAN-only)** | **Fail-Safe Isolation**: Instead of exposing manual rules, installs a strict LAN-only bypass rule (`LAN -> direct`). Non-LAN traffic is contained to prevent leaks. |
+| Group Mode | Manual Source | Active Happ Profile Condition | Resulting Routing Source | Effective Behavior |
+| :--- | :--- | :--- | :--- | :--- |
+| **`auto`** *(Default)* | any | Profile active and assets ready (`state == "ready"`) | **`happ`** | Compiles and enforces the active Happ profile rules. |
+| **`auto`** | Global | No active Happ profile, or assets failed/downloading | **`manual` (global)** | **Transparent Fallback**: uses the Global manual rules and presets catalog. |
+| **`auto`** | Custom | No active Happ profile, or assets failed/downloading | **`manual` (custom)** | **Transparent Fallback**: uses this group's custom rules. |
+| **`manual`** | Global | Any condition | **`manual` (global)** | Strictly enforces the Global manual rules and presets. All Happ profiles are ignored. |
+| **`manual`** | Custom | Any condition | **`manual` (custom)** | Strictly enforces this group's custom rules. All Happ profiles are ignored. |
+| **`subscription`** | any | Profile active and assets ready (`state == "ready"`) | **`happ`** | Strictly compiles and enforces the provider Happ profile. |
+| **`subscription`** | any | Profile missing, inactive, or assets uncompiled | **`happ` (Safe LAN-only)** | **Fail-Safe Isolation**: Instead of exposing manual rules, installs a strict LAN-only bypass rule (`LAN -> direct`). Non-LAN traffic is contained to prevent leaks. |
+
+Editing a rule on a group page that still inherits Global automatically switches that group to a custom rule set (seeded from the stored override, if one exists, otherwise from Global). Switching back to Global with <kbd>g</kbd> keeps the custom rules on disk, so they can be restored later.
 
 ---
 

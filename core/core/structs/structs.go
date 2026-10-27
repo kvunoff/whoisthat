@@ -256,6 +256,7 @@ type Group struct {
 	SubTotal                      int64  `json:"sub_total,omitzero"`
 	ProfileOrder                  []int  `json:"profile_order,omitempty"`
 	RoutingMode                   string `json:"routing_mode,omitzero"`
+	ManualRoutingMode             string `json:"manual_routing_mode,omitzero"`
 	ActiveRoutingProfileId        string `json:"active_routing_profile_id,omitzero"`
 	PendingActiveRoutingProfileId string `json:"pending_active_routing_profile_id,omitzero"`
 }
@@ -343,13 +344,34 @@ type RoutingConfig struct {
 	DNS            *HappDNSConfig `json:"dns,omitzero"`
 }
 
-type GetRoutingData struct{}
+// Manual routing sources. An empty ManualRoutingMode is treated as inherit,
+// so groups created before the global/override split keep working unchanged.
+const (
+	ManualRoutingInherit = "inherit"
+	ManualRoutingCustom  = "custom"
+
+	RoutingSourceGlobal = "global"
+	RoutingSourceCustom = "custom"
+)
+
+type GetRoutingData struct {
+	GroupId int `json:"group_id"`
+}
 type UpdateRoutingData struct {
-	Config RoutingConfig `json:"config"`
+	GroupId int           `json:"group_id"`
+	Config  RoutingConfig `json:"config"`
 }
 
 type RoutingUpdated struct {
-	Config RoutingConfig `json:"config"`
+	GroupId int            `json:"group_id"`
+	Config  RoutingConfig  `json:"config"`
+	Source  string         `json:"source"`           // "global" | "custom"
+	Custom  *RoutingConfig `json:"custom,omitempty"` // stored per-group override, if any
+}
+
+type SetManualRoutingSourceData struct {
+	GroupId int    `json:"group_id"`
+	Source  string `json:"source"` // "inherit" | "custom"
 }
 
 type RoutingProfile struct {
