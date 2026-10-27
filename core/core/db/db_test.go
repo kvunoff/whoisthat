@@ -367,3 +367,38 @@ func TestMoveProfile(t *testing.T) {
 	}
 }
 
+func TestGetAllGroupsSkipsStaleGroupDir(t *testing.T) {
+	db := newTestDB(t)
+
+	realGroup, err := db.AddGroup("Real", "")
+	if err != nil {
+		t.Fatalf("AddGroup: %v", err)
+	}
+
+	// Simulate an interrupted delete/import: a numeric group directory with no
+	// group_config.json. It must be ignored without failing the whole state.
+	staleDir := db.GetGroupDirPath(999)
+	if err := os.MkdirAll(staleDir, 0700); err != nil {
+		t.Fatalf("mkdir stale group: %v", err)
+	}
+
+	groups, err := db.GetAllGroupsAndProfiles()
+	if err != nil {
+		t.Fatalf("GetAllGroupsAndProfiles: %v", err)
+	}
+	if len(groups) != 1 || groups[0].Group.Id != realGroup.Id {
+		t.Fatalf("expected only group %d, got %+v", realGroup.Id, groups)
+	}
+}
+
+func TestMigrateToEncryptedHandlesStaleGroupDir(t *testing.T) {
+	db := newTestDB(t)
+
+	staleDir := db.GetGroupDirPath(999)
+	if err := os.MkdirAll(staleDir, 0700); err != nil {
+		t.Fatalf("mkdir stale group: %v", err)
+	}
+
+	// Must be a no-op for the missing group_config.json rather than a warning.
+	db.MigrateToEncrypted()
+}
