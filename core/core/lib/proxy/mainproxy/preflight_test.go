@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	appconfig "whoisthat-core/lib/AppConfig"
 	"whoisthat-core/structs"
 )
 
@@ -222,5 +224,46 @@ func TestValidateXrayConfigIntegrationHappDNS(t *testing.T) {
 	}
 	if err := validateXrayConfig(raw, ""); err != nil {
 		t.Fatalf("xray rejected Happ DNS config: %v", err)
+	}
+}
+
+func TestValidateXrayConfigIntegrationFakeDNS(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping xray binary integration test in -short mode")
+	}
+	if xrayTestBinary() == "" {
+		t.Skip("xray binary not available")
+	}
+
+	appconfig.SetSplitTunnelMode("off")
+	t.Cleanup(func() { appconfig.SetSplitTunnelMode("off") })
+
+	profile := structs.Profile{Id: 1, GroupId: 1, Name: "p", Uri: preflightTestURI}
+	selection := structs.RoutingSelection{
+		Source:      "happ",
+		GlobalProxy: true,
+		Config: structs.RoutingConfig{
+			DomainStrategy: "AsIs",
+			DNS: &structs.HappDNSConfig{
+				FakeDNSEnabled:  true,
+				RemoteDNSType:   "DoH",
+				RemoteDNSDomain: "https://cloudflare-dns.com/dns-query",
+				RemoteDNSIP:     "1.1.1.1",
+				DomesticDNSType: "DoU",
+				DomesticDNSIP:   "8.8.8.8",
+			},
+			Rules: []structs.RoutingRule{
+				{Type: "field", Domain: "direct.example", OutboundTag: "direct", Enabled: true},
+				{Type: "field", Domain: "proxy.example", OutboundTag: "proxy", Enabled: true},
+			},
+		},
+	}
+
+	raw, err := buildPreflightConfig(profile, 0, 0, 0, selection, true, true)
+	if err != nil {
+		t.Fatalf("buildPreflightConfig failed: %v", err)
+	}
+	if err := validateXrayConfig(raw, ""); err != nil {
+		t.Fatalf("xray rejected fake DNS config: %v", err)
 	}
 }

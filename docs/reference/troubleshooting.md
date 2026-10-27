@@ -38,7 +38,16 @@ The core forwards exact dial errors, DNS lookup failures, and firewall command e
 **Yes.** You can install `whoisthat-core`, manage it via `systemctl --user`, and control connections entirely through non-interactive CLI commands (`whoisthat -c`, `whoisthat -t`, `whoisthat status -s`).
 
 ### Does WhoisThat prevent DNS leaks?
-**Yes.** In TUN mode, kernel-level DNAT rules intercept all outbound DNS requests destined for port 53 and redirect them through Xray's remote DNS resolver over the encrypted tunnel.
+**Yes.** In TUN mode, kernel-level DNAT rules intercept all outbound DNS requests destined for port 53. With a Happ DNS profile, queries go to the reserved sink (`198.18.0.53` / `fd00::53`) and then through Xray's tagged domestic/remote resolvers. Split-excluded apps deliberately keep resolving directly.
+
+### Why does `ping <fake-ip>` sometimes get a reply?
+FakeDNS replaces the address with a virtual one from `198.19.0.0/16` or `fc00::/18`. ICMP has no domain name to sniff, so it is never forwarded to the real host. The TUN stack may answer the echo locally instead (typically `ttl 64` and sub-millisecond latency); this synthetic reply proves nothing about remote reachability. Use TCP-based tools (`curl`, browser) to verify fake-IP routing.
+
+### Why is FakeDNS not active even though the profile enables it?
+FakeDNS only runs in TUN mode with `GlobalProxy=true` and split mode `off` or `exclude`. It is intentionally disabled in proxy mode, with `GlobalProxy=false`, and in split `include` mode.
+
+### Why does HTTP/3/QUIC sometimes bypass domain routing?
+`quic` is deliberately not in the TUN sniffing list to avoid the screen-share latency regression. HTTP/3 traffic may therefore not be mapped back from a fake IP to its domain; force HTTP/2 or use a TCP-based test.
 
 ### How do I completely uninstall WhoisThat?
 ```bash

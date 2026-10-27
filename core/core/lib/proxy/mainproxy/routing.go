@@ -26,10 +26,11 @@ func injectRoutingConfig(configJSON []byte, selection structs.RoutingSelection, 
 
 	userRules := buildUserRules(selection.Config.Rules)
 	happDNS := selection.Source == "happ" && selection.Config.DNS != nil
+	fakeDNS := fakeDNSActive(selection, tunActive)
 
 	var rules []map[string]interface{}
 	if happDNS {
-		dnsSection, hasDomestic, hasRemote := buildHappDNSSection(selection)
+		dnsSection, hasDomestic, hasRemote := buildHappDNSSection(selection, fakeDNS)
 
 		if _, hasAPI := config["api"]; hasAPI {
 			rules = append(rules, apiRule())
@@ -45,6 +46,9 @@ func injectRoutingConfig(configJSON []byte, selection structs.RoutingSelection, 
 		}
 
 		config["dns"] = dnsSection
+		if fakeDNS {
+			config["fakedns"] = fakeDNSPools()
+		}
 	} else {
 		// Legacy behaviour for manual routing and Happ profiles without DNS:
 		// keep DNS queries away from user domain rules. With Happ DNS active the
@@ -67,6 +71,12 @@ func injectRoutingConfig(configJSON []byte, selection structs.RoutingSelection, 
 	if domainStrategy == "" {
 		domainStrategy = "IPIfNonMatch"
 	}
+	// Fake IPs break IP-based rules unless Xray resolves the real address after
+	// sniffing. AsIs never does that, so force the next safest strategy.
+	if fakeDNS && domainStrategy == "AsIs" {
+		logger.Warn("fake DNS: forcing IPIfNonMatch instead of AsIs")
+		domainStrategy = "IPIfNonMatch"
+	}
 
 	config["routing"] = map[string]interface{}{
 		"domainStrategy": domainStrategy,
@@ -81,6 +91,9 @@ func injectRoutingConfig(configJSON []byte, selection structs.RoutingSelection, 
 			if inbound, ok := ib.(map[string]interface{}); ok {
 				if sniffing, ok := inbound["sniffing"].(map[string]interface{}); ok {
 					sniffing["routeOnly"] = false
+					if fakeDNS && inbound["tag"] == "tun-in" {
+						addDestOverride(sniffing, "fakedns")
+					}
 				}
 			}
 		}
@@ -210,7 +223,46 @@ func legacyDNSRule() map[string]interface{} {
 // buildHappDNSSection returns the dns object plus which tagged servers were
 // actually emitted. Rules are only generated for existing servers so we never
 // reference a missing tag.
-func buildHappDNSSection(selection structs.RoutingSelection) (map[string]interface{}, bool, bool) {
+const (
+	fakeDNSPool4    = "198.19.0.0/16"
+	fakeDNSPool6    = "fc00::/18"
+	fakeDNSPoolSize = 32768
+)
+
+// fakeDNSActive decides whether fake IP allocation is safe for this selection.
+// Fake DNS is only used when the tunnel is up, the profile explicitly requests
+// it, all unmatched traffic is proxied, and split-include is not active.
+func fakeDNSActive(selection structs.RoutingSelection, tunActive bool) bool {
+	if !tunActive || selection.Source != "happ" || selection.Config.DNS == nil {
+		return false
+	}
+	if !selection.Config.DNS.FakeDNSEnabled || !selection.GlobalProxy {
+		return false
+	}
+	return appconfig.GetConfig().SplitTunnel.Mode != "include"
+}
+
+func fakeDNSPools() []map[string]interface{} {
+	return []map[string]interface{}{
+		{"ipPool": fakeDNSPool4, "poolSize": fakeDNSPoolSize},
+		{"ipPool": fakeDNSPool6, "poolSize": fakeDNSPoolSize},
+	}
+}
+
+func addDestOverride(sniffing map[string]interface{}, value string) {
+	var overrides []interface{}
+	if raw, ok := sniffing["destOverride"].([]interface{}); ok {
+		overrides = append(overrides, raw...)
+	}
+	for _, item := range overrides {
+		if existing, ok := item.(string); ok && existing == value {
+			return
+		}
+	}
+	sniffing["destOverride"] = append(overrides, value)
+}
+
+func buildHappDNSSection(selection structs.RoutingSelection, fakeDNS bool) (map[string]interface{}, bool, bool) {
 	cfg := selection.Config.DNS
 	domesticAddr := dnsServerAddress(cfg.DomesticDNSType, cfg.DomesticDNSDomain, cfg.DomesticDNSIP)
 	remoteAddr := dnsServerAddress(cfg.RemoteDNSType, cfg.RemoteDNSDomain, cfg.RemoteDNSIP)
@@ -257,6 +309,11 @@ func buildHappDNSSection(selection structs.RoutingSelection) (map[string]interfa
 	}
 	if servers == nil {
 		servers = fallbackDNSServers()
+	}
+	if fakeDNS {
+		servers = append([]map[string]interface{}{
+			{"address": "fakedns", "tag": "fakedns"},
+		}, servers...)
 	}
 
 	section := map[string]interface{}{

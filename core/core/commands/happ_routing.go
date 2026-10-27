@@ -48,6 +48,7 @@ func (cmd *Cmd) ImportHappRouting(data structs.ImportHappRoutingData, proxy_mana
 	if isOff {
 		if isConnected && proxy_manager != nil {
 			_ = proxy_manager.ReloadRouting(tunName)
+			cmd.refreshDnsHijackFor(proxy_manager.GetStatus().Profile)
 		}
 	} else if rp.State == "updating" {
 		go func(gID int, profile structs.RoutingProfile) {
@@ -69,6 +70,7 @@ func (cmd *Cmd) ImportHappRouting(data structs.ImportHappRoutingData, proxy_mana
 					st := proxy_manager.GetStatus()
 					if st.Connection == "connected" && st.Profile.GroupId == gID && g.ActiveRoutingProfileId == profile.Id {
 						_ = proxy_manager.ReloadRouting(appconfig.GetConfig().TunName)
+						cmd.refreshDnsHijackFor(st.Profile)
 					}
 				}
 				rProfiles, _ := cmd.DB.ListRoutingProfileInfos(gID, g.ActiveRoutingProfileId)
@@ -87,11 +89,15 @@ func (cmd *Cmd) ImportHappRouting(data structs.ImportHappRoutingData, proxy_mana
 		}
 		if isConnected && grp.ActiveRoutingProfileId == rp.Id && proxy_manager != nil {
 			_ = proxy_manager.ReloadRouting(tunName)
+			cmd.refreshDnsHijackFor(proxy_manager.GetStatus().Profile)
 		}
 	}
 
 	if refGroup, err := cmd.DB.LoadGroupConfig(data.GroupId); err == nil {
 		grp = refGroup
+	}
+	if isConnected && proxy_manager != nil {
+		cmd.refreshDnsHijackFor(proxy_manager.GetStatus().Profile)
 	}
 
 	rProfiles, _ := cmd.DB.ListRoutingProfileInfos(data.GroupId, grp.ActiveRoutingProfileId)
@@ -131,6 +137,7 @@ func (cmd *Cmd) SetGroupRoutingMode(data structs.SetGroupRoutingModeData, proxy_
 		st := proxy_manager.GetStatus()
 		if st.Connection == "connected" && st.Profile.GroupId == data.GroupId {
 			_ = proxy_manager.ReloadRouting(appconfig.GetConfig().TunName)
+			cmd.refreshDnsHijackFor(st.Profile)
 		}
 	}
 
@@ -166,6 +173,7 @@ func (cmd *Cmd) SetActiveRoutingProfile(data structs.SetActiveRoutingProfileData
 		st := proxy_manager.GetStatus()
 		if st.Connection == "connected" && st.Profile.GroupId == data.GroupId {
 			_ = proxy_manager.ReloadRouting(appconfig.GetConfig().TunName)
+			cmd.refreshDnsHijackFor(st.Profile)
 		}
 	}
 
@@ -208,6 +216,7 @@ func (cmd *Cmd) SetActiveRoutingProfile(data structs.SetActiveRoutingProfileData
 							st := proxy_manager.GetStatus()
 							if st.Connection == "connected" && st.Profile.GroupId == gID && g.ActiveRoutingProfileId == profile.Id {
 								_ = proxy_manager.ReloadRouting(appconfig.GetConfig().TunName)
+								cmd.refreshDnsHijackFor(st.Profile)
 							}
 						}
 						rProfiles, _ := cmd.DB.ListRoutingProfileInfos(gID, g.ActiveRoutingProfileId)
@@ -254,6 +263,7 @@ func (cmd *Cmd) DeleteRoutingProfile(data structs.DeleteRoutingProfileData, prox
 		st := proxy_manager.GetStatus()
 		if st.Connection == "connected" && st.Profile.GroupId == data.GroupId {
 			_ = proxy_manager.ReloadRouting(appconfig.GetConfig().TunName)
+			cmd.refreshDnsHijackFor(st.Profile)
 		}
 	}
 

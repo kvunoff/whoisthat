@@ -113,6 +113,17 @@ func (cmd *Cmd) dnsHijackFor(profile structs.Profile) tunmode.DnsHijack {
 	}
 }
 
+// refreshDnsHijackFor re-evaluates the kernel port-53 plan after routing
+// configuration changes while TUN is already running.
+func (cmd *Cmd) refreshDnsHijackFor(profile structs.Profile) {
+	if cmd.TunManager == nil || !cmd.TunManager.IsEnabledLocked() {
+		return
+	}
+	if err := cmd.TunManager.SetDnsHijack(cmd.dnsHijackFor(profile)); err != nil {
+		logger.Warnf("tun: failed to refresh dns hijack: %v", err)
+	}
+}
+
 func (cmd *Cmd) enableTun(profile structs.Profile, proxy_manager *proxy.ProxyManager, tun_manager *tunmode.TunModeManager) {
 	resolved, err := resolveHostAndAddress(profile, appconfig.GetConfig().DnsServers)
 	if err != nil {

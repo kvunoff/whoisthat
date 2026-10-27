@@ -196,7 +196,7 @@ func (s *Server) handleConnection(cc *clientConn, clientID string) {
 		sendMissingBinaryWarnings(cc, s.missingBinaries)
 	}
 
-	command_handler := cmd.Cmd{DB: s.DB, Broadcast: s.Broadcast}
+	command_handler := cmd.Cmd{DB: s.DB, Broadcast: s.Broadcast, TunManager: s.tun_manager}
 	reader := bufio.NewReader(conn)
 
 	for {
@@ -425,7 +425,7 @@ func (s *Server) handleConnection(cc *clientConn, clientID string) {
 				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
-			command_handler.SetSplitTunnel(data, s.tun_manager)
+			command_handler.SetSplitTunnel(data, s.proxy_manager, s.tun_manager)
 
 		case "set-autoconnect":
 			var data structs.SetAutoconnectData

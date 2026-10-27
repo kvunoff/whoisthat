@@ -712,7 +712,7 @@ fn render_happ_profiles_popup(
         .unwrap_or("");
     let has_dns = profiles
         .iter()
-        .any(|p| !p.remote_dns.is_empty() || !p.domestic_dns.is_empty());
+        .any(|p| !p.remote_dns.is_empty() || !p.domestic_dns.is_empty() || p.fake_dns_enabled);
 
     // Check if the currently selected profile has an error message
     let selected_error = profiles.get(cursor).and_then(|p| {
@@ -904,6 +904,9 @@ fn happ_dns_line(profile: &RoutingProfileInfo) -> Line<'static> {
     }
     if !profile.domestic_dns.is_empty() {
         parts.push(truncate_dns_label(&profile.domestic_dns));
+    }
+    if profile.fake_dns_enabled {
+        parts.push("FakeDNS: on".to_string());
     }
     let text = if parts.is_empty() {
         "—".to_string()
@@ -1484,6 +1487,7 @@ mod tests {
                 domain_strategy: "IPIfNonMatch".into(),
                 remote_dns: "DoH cloudflare-dns.com".into(),
                 domestic_dns: "DoU 8.8.8.8".into(),
+                fake_dns_enabled: true,
                 ..Default::default()
             }],
         };
@@ -1513,7 +1517,7 @@ mod tests {
         assert!(text.contains("My Happ Rules"));
         assert!(text.contains("rules: 42"));
         assert!(text.contains("strategy: IPIfNonMatch"));
-        assert!(text.contains("DNS: DoH cloudflare-dns.com │ DoU 8.8.8.8"));
+        assert!(text.contains("DNS: DoH cloudflare-dns.com │ DoU 8.8.8.8 │ FakeDNS: on"));
     }
 
     #[test]
