@@ -16,7 +16,7 @@ func GenerateInboundConfig(socksPort, httpPort int) []Inbound {
 func GenerateInboundConfigWithTun(socksPort, httpPort int, tunName string) []Inbound {
 	inbounds := GenerateInboundConfig(socksPort, httpPort)
 	if tunName != "" {
-		inbounds = append(inbounds, GenerateTunInbound(tunName, 1500))
+		inbounds = append(inbounds, GenerateTunInbound(tunName, 1400))
 	}
 	return inbounds
 }
@@ -27,7 +27,7 @@ func GenerateTunInbound(tunName string, mtu int) Inbound {
 	routeOnly := false
 	metadataOnly := false
 	if mtu <= 0 {
-		mtu = 1500
+		mtu = 1400
 	}
 	return Inbound{
 		Protocol: "tun",
@@ -40,7 +40,7 @@ func GenerateTunInbound(tunName string, mtu int) Inbound {
 			Enabled:      &enabled,
 			RouteOnly:    &routeOnly,
 			MetadataOnly: &metadataOnly,
-			DestOverride: []string{"http", "tls", "quic"},
+			DestOverride: []string{"http", "tls"},
 		},
 	}
 }
@@ -58,7 +58,7 @@ func generateHTTPInbound(port uint16) Inbound {
 			Enabled:      &enabled,
 			RouteOnly:    &routeOnly,
 			MetadataOnly: &metadataOnly,
-			DestOverride: []string{"http", "tls", "quic"},
+			DestOverride: []string{"http", "tls"},
 		},
 	}
 }
@@ -77,7 +77,7 @@ func generateSocksInbound(port uint16) Inbound {
 			Enabled:      &enabled,
 			RouteOnly:    &routeOnly,
 			MetadataOnly: &metadataOnly,
-			DestOverride: []string{"http", "tls", "quic"},
+			DestOverride: []string{"http", "tls"},
 		},
 	}
 }

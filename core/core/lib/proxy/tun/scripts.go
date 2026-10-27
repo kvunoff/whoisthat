@@ -303,6 +303,8 @@ func cleanDnsHijackRules6Nftables(interface_name string, dns_ip6 string) error {
 // TUN device
 // ---------------------------------------------------------------------------
 
+const DefaultTunMTU = 1400
+
 func createTun(name string, ip string, ipv6 string) error {
 	var lastErr error
 	for attempt := 0; attempt < 5; attempt++ {
@@ -313,6 +315,7 @@ func createTun(name string, ip string, ipv6 string) error {
 TUN_NAME="%s"
 TUN_IP="%s"
 TUN_IP6="%s"
+TUN_MTU="%d"
 
 # If device already exists, remove it first to avoid EBUSY on recreate
 if ip link show "$TUN_NAME" >/dev/null 2>&1; then
@@ -323,12 +326,13 @@ fi
 
 set -e
 ip tuntap add mode tun dev "$TUN_NAME"
+ip link set dev "$TUN_NAME" mtu "$TUN_MTU"
 ip addr add "$TUN_IP" dev "$TUN_NAME"
 if [ -n "$TUN_IP6" ]; then
     ip addr add "$TUN_IP6" dev "$TUN_NAME"
 fi
 ip link set dev "$TUN_NAME" up
-		`, name, ip, ipv6)
+		`, name, ip, ipv6, DefaultTunMTU)
 		_, err := runScriptWithSh(script)
 		if err == nil {
 			return nil
