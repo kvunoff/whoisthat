@@ -40,6 +40,11 @@ func (cmd *Cmd) Connect(data structs.ConnectData, proxy_manager *proxy.ProxyMana
 	}
 	was_tun_enabled := tun_manager.IsEnabledLocked()
 
+	// 1. If switching while connected or if TUN was enabled, stop the active proxy
+	// process first so it releases /dev/net/tun before we clean up network rules and delete the device.
+	if proxy_manager != nil {
+		proxy_manager.Stop()
+	}
 	if was_tun_enabled {
 		tun_manager.Stop()
 	}
@@ -53,7 +58,11 @@ func (cmd *Cmd) Connect(data structs.ConnectData, proxy_manager *proxy.ProxyMana
 		}
 	}
 
-	if err := proxy_manager.Connect(profile, tunName, was_tun_enabled); err != nil {
+	// Connect the new profile in base proxy mode first (tunEnabled = false).
+	// If TUN was previously active, cmd.enableTun below will create the TUN device
+	// and routing rules first, then reload the proxy with TUN inbound. This guarantees
+	// Xray doesn't race against tun_manager.Start over creating/opening /dev/net/tun.
+	if err := proxy_manager.Connect(profile, tunName, false); err != nil {
 		logger.Warn("connect failed:", err)
 		cmd.warn("connect-failed", err.Error())
 		return

@@ -2,11 +2,13 @@ package hysteria
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"sync"
 	"syscall"
+	"time"
 	"whoisthat-core/lib/logger"
 	"whoisthat-core/utils"
 )
@@ -27,6 +29,7 @@ type HysteriaCore struct {
 	channel_closed bool
 	Exited         chan error
 	cfgPath        string
+	waitDone       chan struct{}
 }
 
 // ExitedCh returns the channel closed/ fed when the subprocess terminates.
@@ -117,12 +120,15 @@ func (h *HysteriaCore) Start(stdinPipe []byte, assetDir string) error {
 
 	logger.Infof("hysteria started (pid=%d)", cmd.Process.Pid)
 
+	waitDone := make(chan struct{})
+	h.waitDone = waitDone
 	h.cmd = cmd
 	h.cancel = cancel
 	h.cfgPath = cfgPath
 	h.running = true
 
 	go func() {
+		defer close(waitDone)
 		err := cmd.Wait()
 		logger.Infof("hysteria stopped (pid=%d)", cmd.Process.Pid)
 
@@ -157,24 +163,36 @@ func (h *HysteriaCore) Start(stdinPipe []byte, assetDir string) error {
 
 func (h *HysteriaCore) Stop() {
 	h.mu.Lock()
-	defer h.mu.Unlock()
 	if !h.channel_closed {
 		close(h.Exited)
 		h.channel_closed = true
 	}
-	if h.cancel != nil {
-		h.cancel()
+	cancel := h.cancel
+	cmd := h.cmd
+	cfgPath := h.cfgPath
+	h.cfgPath = ""
+	waitDone := h.waitDone
+	h.running = false
+	h.mu.Unlock()
+
+	if cancel != nil {
+		cancel()
 	}
-	if h.cmd != nil && h.cmd.Process != nil {
-		if err := h.cmd.Process.Kill(); err != nil {
+	if cmd != nil && cmd.Process != nil {
+		if err := cmd.Process.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
 			logger.Warn("error killing hysteria process:", err)
 		}
 	}
-	if h.cfgPath != "" {
-		_ = os.Remove(h.cfgPath)
-		h.cfgPath = ""
+	if cfgPath != "" {
+		_ = os.Remove(cfgPath)
 	}
-	h.running = false
+	if waitDone != nil {
+		select {
+		case <-waitDone:
+		case <-time.After(500 * time.Millisecond):
+			logger.Warn("hysteria stop: timed out waiting for process to exit")
+		}
+	}
 }
 
 func (h *HysteriaCore) IsRunning() bool {

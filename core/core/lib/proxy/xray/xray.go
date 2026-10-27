@@ -2,6 +2,7 @@ package xray
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -25,6 +26,7 @@ type XrayCore struct {
 	running        bool
 	channel_closed bool
 	Exited         chan error
+	waitDone       chan struct{}
 }
 
 // ExitedCh returns the channel used to report subprocess termination. Lets
@@ -125,6 +127,9 @@ func (x *XrayCore) Start(stdinPipe []byte, assetDir string) error {
 
 	logger.Infof("xray started (pid=%d)", cmd.Process.Pid)
 
+	waitDone := make(chan struct{})
+	x.waitDone = waitDone
+
 	go func() {
 		defer stdin.Close()
 		_, _ = stdin.Write(stdinPipe)
@@ -135,6 +140,7 @@ func (x *XrayCore) Start(stdinPipe []byte, assetDir string) error {
 	x.running = true
 
 	go func() {
+		defer close(waitDone)
 		err := cmd.Wait()
 		logger.Infof("xray stopped (pid=%d)", cmd.Process.Pid)
 		// Keep the stderr log when the process exited with an error so
@@ -167,21 +173,32 @@ func (x *XrayCore) Start(stdinPipe []byte, assetDir string) error {
 
 func (x *XrayCore) Stop() {
 	x.mu.Lock()
-	defer x.mu.Unlock()
 	if !x.channel_closed {
 		close(x.Exited)
 		x.channel_closed = true
 	}
-	if x.cmd != nil && x.cmd.Process != nil {
-		err := x.cmd.Process.Kill()
-		if err != nil {
+	cmd := x.cmd
+	cancel := x.cancel
+	waitDone := x.waitDone
+	x.running = false
+	x.mu.Unlock()
+
+	if cancel != nil {
+		cancel()
+	}
+	if cmd != nil && cmd.Process != nil {
+		err := cmd.Process.Kill()
+		if err != nil && !errors.Is(err, os.ErrProcessDone) {
 			logger.Warn("error killing xray process:", err)
 		}
 	}
-	if x.cancel != nil {
-		x.cancel()
+	if waitDone != nil {
+		select {
+		case <-waitDone:
+		case <-time.After(500 * time.Millisecond):
+			logger.Warn("xray stop: timed out waiting for process to exit")
+		}
 	}
-	x.running = false
 }
 
 func (x *XrayCore) IsRunning() bool {

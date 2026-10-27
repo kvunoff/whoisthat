@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -303,25 +304,50 @@ func cleanDnsHijackRules6Nftables(interface_name string, dns_ip6 string) error {
 // ---------------------------------------------------------------------------
 
 func createTun(name string, ip string, ipv6 string) error {
-	script := fmt.Sprintf(`
-set -e
+	var lastErr error
+	for attempt := 0; attempt < 5; attempt++ {
+		if attempt > 0 {
+			time.Sleep(50 * time.Millisecond)
+		}
+		script := fmt.Sprintf(`
 TUN_NAME="%s"
 TUN_IP="%s"
 TUN_IP6="%s"
-ip tuntap add mode tun dev $TUN_NAME
-ip addr add $TUN_IP dev $TUN_NAME
-ip addr add $TUN_IP6 dev $TUN_NAME
-ip link set dev $TUN_NAME up
-	`, name, ip, ipv6)
-	_, err := runScriptWithSh(script)
-	return err
+
+# If device already exists, remove it first to avoid EBUSY on recreate
+if ip link show "$TUN_NAME" >/dev/null 2>&1; then
+    ip link set "$TUN_NAME" down 2>/dev/null || true
+    ip tuntap del mode tun dev "$TUN_NAME" 2>/dev/null || true
+    ip link del dev "$TUN_NAME" 2>/dev/null || true
+fi
+
+set -e
+ip tuntap add mode tun dev "$TUN_NAME"
+ip addr add "$TUN_IP" dev "$TUN_NAME"
+if [ -n "$TUN_IP6" ]; then
+    ip addr add "$TUN_IP6" dev "$TUN_NAME"
+fi
+ip link set dev "$TUN_NAME" up
+		`, name, ip, ipv6)
+		_, err := runScriptWithSh(script)
+		if err == nil {
+			return nil
+		}
+		lastErr = err
+		errStr := err.Error()
+		if !strings.Contains(errStr, "busy") && !strings.Contains(errStr, "File exists") {
+			break
+		}
+	}
+	return lastErr
 }
 
 func deleteTun(name string) error {
 	script := fmt.Sprintf(`
 TUN_NAME="%s"
-ip link set $TUN_NAME down 2>/dev/null || true
-ip tuntap del mode tun dev $TUN_NAME
+ip link set "$TUN_NAME" down 2>/dev/null || true
+ip tuntap del mode tun dev "$TUN_NAME" 2>/dev/null || true
+ip link del dev "$TUN_NAME" 2>/dev/null || true
 	`, name)
 	_, err := runScriptWithSh(script)
 	return err
