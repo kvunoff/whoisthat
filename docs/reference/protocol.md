@@ -15,9 +15,22 @@ This document provides a complete technical specification for the length-prefixe
 
 * **Length Header**: Exactly 4 bytes containing an unsigned 32-bit integer (`uint32`) in big-endian (network) byte order.
 * **Payload**: UTF-8 encoded JSON object.
+* **Maximum Frame**: 64 MiB on both sides. Larger frames are rejected before allocation/parsing.
+* **Request correlation (optional)**: a client may include an `"id"` string in a request; notifications produced while handling it carry the same `"id"`. The current TUI is event-driven and does not require it.
+* **Protocol Version**: `3` (shared by `core/core/lib/version/protocol.txt`; the TUI and core refuse to talk across a mismatch).
 * **Socket Endpoints**:
   * **Unix Domain Socket (Default)**: `$XDG_RUNTIME_DIR/whoisthat/core.sock` (mode `0600`, owned by the invoking user).
-  * **Loopback TCP (Opt-in)**: `127.0.0.1:4897` (when `tcp-enabled: true` in `config.json`).
+  * **Loopback TCP (Opt-in)**: `127.0.0.1:4897` / `[::1]:4897` (when `tcp-enabled: true` in `config.json`).
+
+### TCP authentication handshake
+
+UDS clients are authenticated by filesystem permissions. The opt-in TCP transport additionally requires a token that the core writes to `$XDG_RUNTIME_DIR/whoisthat/ipc.token` (`0600`). The first frame on a TCP connection must be:
+
+```json
+{"msg":"hello","data":{"token":"<64 hex chars>","protocol_version":3}}
+```
+
+The core replies with `{"msg":"hello-ok","data":{"protocol_version":3}}` or `{"msg":"hello-error","data":{"error":"..."}}` and closes the connection. Commands sent before a successful handshake are never processed.
 
 ---
 
@@ -25,6 +38,7 @@ This document provides a complete technical specification for the length-prefixe
 
 | Command (`msg`) | `data` Parameter Object | Expected Response / Notification |
 | :--- | :--- | :--- |
+| `hello` | `{"token": "string", "protocol_version": int}` | `hello-ok` / `hello-error` (TCP only, must be first) |
 | `get-application-state` | `{}` | `application-state` |
 | `connect` | `{"profile": {"id": int, "group_id": int}}` | `status-changed` |
 | `disconnect` | `{}` | `status-changed` |
@@ -62,7 +76,7 @@ This document provides a complete technical specification for the length-prefixe
 
 | Notification (`msg`) | `data` Object Payload | Description |
 | :--- | :--- | :--- |
-| `application-state` | Complete system state | Emitted on client handshake. Includes groups, profiles, active connection, TUN status, and configurations. |
+| `application-state` | Complete system state | Response to `get-application-state` (the TUI requests it on connect). Includes groups, profiles, active connection, TUN status, `tun_name`, `test_config`, and configurations. `tun_name`/`test_config` are authoritative: the TUI mirrors them into `config.toml` instead of the other way around. |
 | `status-changed` | `{"connection": "connected" \| "disconnected", "profile": { ... }}` | Fired when VPN connects or disconnects. |
 | `profiles-added` | `{"profiles": [ ... ]}` | Fired when new server profiles are imported. |
 | `profiles-deleted` | `{"deleted-profiles": [ ... ]}` | Fired when profiles are deleted. |

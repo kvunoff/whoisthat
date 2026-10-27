@@ -25,6 +25,26 @@ jobs:
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "Tag: ${RAW}  ->  Version: ${VERSION}"
 
+      # --- 2b. Compute source checksum --------------------------------------
+      # AUR packages must not use sha256sums=('SKIP'): pin the actual archive
+      # digest so users can detect a tampered/retagged release tarball.
+      - name: Compute source checksum
+        id: sha
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          URL="https://github.com/kvunoff/whoisthat/archive/refs/tags/v${VERSION}.tar.gz"
+          for attempt in 1 2 3 4 5; do
+            if curl -fsSL "$URL" -o /tmp/whoisthat-src.tar.gz; then
+              break
+            fi
+            echo "Archive not ready yet (attempt ${attempt}/5), retrying..."
+            sleep 10
+          done
+          test -s /tmp/whoisthat-src.tar.gz
+          SHA=$(sha256sum /tmp/whoisthat-src.tar.gz | awk '{print $1}')
+          echo "sha256=${SHA}" >> "$GITHUB_OUTPUT"
+          echo "Source SHA-256: ${SHA}"
+
       # --- 3. Setup SSH -----------------------------------------------------
       - name: Setup SSH
         env:
@@ -83,9 +103,11 @@ jobs:
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           PKGREL="${{ steps.pkgrel.outputs.pkgrel }}"
+          SHA="${{ steps.sha.outputs.sha256 }}"
 
           sed -i "s/^pkgver=.*/pkgver=${VERSION}/" pkg/aur/PKGBUILD
           sed -i "s/^pkgrel=.*/pkgrel=${PKGREL}/"   pkg/aur/PKGBUILD
+          sed -i "s/^sha256sums=.*/sha256sums=('${SHA}')/" pkg/aur/PKGBUILD
 
           echo "=== PKGBUILD ==="
           cat pkg/aur/PKGBUILD
@@ -107,7 +129,9 @@ jobs:
             echo -e "\tpkgrel = ${pkgrel}"
             echo -e "\turl = ${url}"
             echo -e "\tinstall = ${install}"
-            echo -e "\tarch = ${arch[0]}"
+            for a in "${arch[@]}"; do
+              echo -e "\tarch = ${a}"
+            done
             echo -e "\tlicense = ${license[0]}"
 
             for dep in "${makedepends[@]}"; do
@@ -121,7 +145,7 @@ jobs:
             done
 
             echo -e "\tsource = ${pkgname}-${pkgver}.tar.gz::https://github.com/kvunoff/${pkgname}/archive/refs/tags/v${pkgver}.tar.gz"
-            echo -e "\tsha256sums = SKIP"
+            echo -e "\tsha256sums = ${{ steps.sha.outputs.sha256 }}"
             echo
             echo "pkgname = ${pkgname}"
           ) > .SRCINFO

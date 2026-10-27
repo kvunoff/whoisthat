@@ -1,47 +1,33 @@
-use std::io::{Read, Write};
-use std::net::{TcpStream, ToSocketAddrs};
+use std::net::IpAddr;
 use std::time::Duration;
 
-pub(crate) fn fetch_public_ip() -> Option<String> {
-    let addr = "api.ipify.org:80"
-        .to_socket_addrs()
-        .ok()?
-        .find(|a| a.is_ipv4())?;
-    let mut stream = TcpStream::connect_timeout(&addr, Duration::from_secs(5)).ok()?;
-    stream.set_read_timeout(Some(Duration::from_secs(5))).ok()?;
-    stream
-        .write_all(b"GET / HTTP/1.0\r\nHost: api.ipify.org\r\nConnection: close\r\n\r\n")
-        .ok()?;
-    let mut buf = String::new();
-    stream.read_to_string(&mut buf).ok()?;
-    let body = buf.split("\r\n\r\n").nth(1)?;
-    let ip = body.trim();
-    if ip.is_empty() {
-        None
-    } else {
+/// Query a public IP echo service over HTTPS.
+///
+/// Plain HTTP was used historically, which let on-path observers see (and
+/// modify) the response rendered in the status bar. We now require TLS and
+/// only accept a response that parses as an IP address of the expected family.
+fn fetch_ip(url: &str, want_v6: bool) -> Option<String> {
+    let agent = ureq::AgentBuilder::new()
+        .timeout_connect(Duration::from_secs(5))
+        .timeout_read(Duration::from_secs(5))
+        .timeout_write(Duration::from_secs(5))
+        .build();
+
+    let body = agent.get(url).call().ok()?.into_string().ok()?;
+    let ip: IpAddr = body.trim().parse().ok()?;
+    if ip.is_ipv6() == want_v6 {
         Some(ip.to_string())
+    } else {
+        None
     }
 }
 
+pub(crate) fn fetch_public_ip() -> Option<String> {
+    fetch_ip("https://api.ipify.org", false)
+}
+
 pub(crate) fn fetch_public_ipv6() -> Option<String> {
-    let addr = "api6.ipify.org:80"
-        .to_socket_addrs()
-        .ok()?
-        .find(|a| a.is_ipv6())?;
-    let mut stream = TcpStream::connect_timeout(&addr, Duration::from_secs(5)).ok()?;
-    stream.set_read_timeout(Some(Duration::from_secs(5))).ok()?;
-    stream
-        .write_all(b"GET / HTTP/1.0\r\nHost: api6.ipify.org\r\nConnection: close\r\n\r\n")
-        .ok()?;
-    let mut buf = String::new();
-    stream.read_to_string(&mut buf).ok()?;
-    let body = buf.split("\r\n\r\n").nth(1)?;
-    let ip = body.trim();
-    if ip.is_empty() {
-        None
-    } else {
-        Some(ip.to_string())
-    }
+    fetch_ip("https://api6.ipify.org", true)
 }
 
 pub(crate) fn check_sudo_env() -> Option<&'static str> {

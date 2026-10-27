@@ -116,7 +116,7 @@ vless://70cc43c5-b2f4-34ac-a092-d806984a6b8c@1.13.7.91:443?encryption=none&secur
 Users can copy a `happ://routing/...` link from a website, Telegram channel, or email and press <kbd>i</kbd> on Tab 2 (*Routing*). The client reads the system clipboard (via Wayland data-control or X11 selection), parses the link, and dispatches an `import-happ-routing` IPC call targeting the currently focused group.
 
 #### Channel D: Desktop Deep Links (`wit://` & `happ://`)
-Clicking links in browsers or applications launches WhoisThat via its registered XDG desktop handler (`x-scheme-handler/wit` and `x-scheme-handler/happ`):
+Clicking links in browsers or applications launches WhoisThat via its registered XDG desktop handler (`x-scheme-handler/wit`):
 
 ```
 wit://happ://routing/add/<BASE64>

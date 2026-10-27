@@ -74,7 +74,12 @@ The routing engine resolves this using formal domain strategies:
 | **`IPOnDemand`** | As soon as a domain connection enters routing, it is immediately resolved to an IP address, and both domain and IP rules are evaluated simultaneously. | Ensures maximum rule coverage, but introduces resolution latency on every initial domain lookup. |
 
 #### DNS Loop & Leak Prevention
-To prevent circular routing loops (where DNS queries for a blocked site get routed through a rule that itself needs DNS), the routing engine explicitly prioritizes all UDP traffic on port 53 directly to the `proxy` outbound before user rules are evaluated. This guarantees that name resolution always occurs securely inside the encrypted tunnel.
+DNS is handled before user rules so a query for a blocked domain cannot be routed by a rule that itself needs DNS:
+
+* **Happ DNS profiles:** DNS arriving on the TUN inbound (port 53, TCP/UDP) is captured by the `tun-in → dns-out` rule and answered by Xray's DNS module. The tagged `domestic-dns` server is reached via `direct`, and `remote-dns` via `proxy`.
+* **Manual routing / Happ without DNS:** the legacy rule sends UDP port 53 to the `proxy` outbound.
+
+Either way name resolution stays inside the encrypted path instead of leaking to the local resolver.
 
 ### 4. Rule Classification Engines
 

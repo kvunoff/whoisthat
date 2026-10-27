@@ -35,6 +35,9 @@ jobs:
           # auto-download.
           go-version-file: core/core/go.mod
           cache-dependency-path: core/core/go.sum
+      - name: gofmt
+        working-directory: core/core
+        run: test -z "$(gofmt -l .)"
       - name: vet
         working-directory: core/core
         run: go vet ./...
@@ -47,3 +50,49 @@ jobs:
         # unit tests that the previous partial list skipped.
         working-directory: core/core
         run: go test ./...
+      - name: Module tidiness
+        working-directory: core/core
+        run: go mod tidy -diff
+      - name: Vulnerability scan
+        working-directory: core/core
+        # Informational: transitive Xray/grpc advisories should not block a
+        # release, but the report is visible in the job log.
+        continue-on-error: true
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+  shell:
+    name: Shell scripts (shellcheck)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck
+        run: shellcheck -S error install.sh
+
+  docs:
+    name: Docs build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run docs:build
+
+  integration:
+    name: TUN/firewall integration (netns)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: core/core/go.mod
+          cache-dependency-path: core/core/go.sum
+      - name: Install network tools
+        run: sudo apt-get update && sudo apt-get install -y nftables iproute2
+      - name: Run netns tests
+        working-directory: core/core
+        # Root is required for CLONE_NEWNET + TUN. Tests skip themselves when
+        # the runner lacks /dev/net/tun or the needed privileges.
+        run: sudo -E env "PATH=$PATH" "HOME=$HOME" go test -tags=integration ./lib/proxy/tun/ -run 'TestNetns' -v

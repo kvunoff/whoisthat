@@ -629,6 +629,14 @@ impl App {
         if state.protocol_version != 0 {
             self.core_protocol_version = state.protocol_version;
         }
+        // Core is the source of truth for these network/test settings; the
+        // config.toml copies are only an offline cache.
+        if !state.tun_name.is_empty() {
+            self.tun_name = state.tun_name;
+        }
+        if !state.test_config.test_endpoint.is_empty() {
+            self.test_config = state.test_config;
+        }
         self.clamp_cursor();
     }
 
