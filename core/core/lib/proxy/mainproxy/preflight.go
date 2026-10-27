@@ -39,6 +39,7 @@ func buildPreflightConfig(
 	socksPort, httpPort, apiPort int,
 	selection structs.RoutingSelection,
 	withRouting bool,
+	tunActive bool,
 ) ([]byte, error) {
 	cfg, err := lib.ParseUriWithTun(profile.Uri, socksPort, httpPort, "")
 	if err != nil {
@@ -51,7 +52,7 @@ func buildPreflightConfig(
 	}
 
 	if withRouting {
-		cfg, err = injectRoutingConfig(cfg, selection)
+		cfg, err = injectRoutingConfig(cfg, selection, tunActive)
 		if err != nil {
 			return nil, fmt.Errorf("failed to inject routing config: %w", err)
 		}

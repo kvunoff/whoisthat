@@ -21,7 +21,7 @@ func TestBuildPreflightConfigOmitsTunInbound(t *testing.T) {
 		},
 	}
 
-	raw, err := buildPreflightConfig(profile, 3090, 3091, 0, selection, true)
+	raw, err := buildPreflightConfig(profile, 3090, 3091, 0, selection, true, false)
 	if err != nil {
 		t.Fatalf("buildPreflightConfig failed: %v", err)
 	}
@@ -47,7 +47,7 @@ func TestBuildPreflightConfigOmitsTunInbound(t *testing.T) {
 
 func TestBuildPreflightConfigWithoutRouting(t *testing.T) {
 	profile := structs.Profile{Id: 1, GroupId: 1, Name: "p", Uri: preflightTestURI}
-	raw, err := buildPreflightConfig(profile, 3090, 3091, 0, structs.RoutingSelection{}, false)
+	raw, err := buildPreflightConfig(profile, 3090, 3091, 0, structs.RoutingSelection{}, false, false)
 	if err != nil {
 		t.Fatalf("buildPreflightConfig failed: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestValidateXrayConfigIntegration(t *testing.T) {
 		Source: "manual",
 		Config: structs.RoutingConfig{DomainStrategy: "IPIfNonMatch"},
 	}
-	good, err := buildPreflightConfig(profile, 0, 0, 0, selection, true)
+	good, err := buildPreflightConfig(profile, 0, 0, 0, selection, true, false)
 	if err != nil {
 		t.Fatalf("buildPreflightConfig failed: %v", err)
 	}
@@ -124,4 +124,103 @@ func TestSummarizeXrayTestOutput(t *testing.T) {
 			t.Errorf("output not truncated: %d bytes", len(got))
 		}
 	})
+}
+
+func TestBuildPreflightConfigIncludesHappDNS(t *testing.T) {
+	profile := structs.Profile{Id: 1, GroupId: 1, Name: "p", Uri: preflightTestURI}
+	selection := structs.RoutingSelection{
+		Source:      "happ",
+		GlobalProxy: true,
+		Config: structs.RoutingConfig{
+			DNS: &structs.HappDNSConfig{
+				RemoteDNSType:   "DoU",
+				RemoteDNSIP:     "1.1.1.1",
+				DomesticDNSType: "DoU",
+				DomesticDNSIP:   "8.8.8.8",
+			},
+			Rules: []structs.RoutingRule{
+				{Type: "field", Domain: "direct.example", OutboundTag: "direct", Enabled: true},
+			},
+		},
+	}
+
+	raw, err := buildPreflightConfig(profile, 3090, 3091, 0, selection, true, true)
+	if err != nil {
+		t.Fatalf("buildPreflightConfig failed: %v", err)
+	}
+
+	var cfg map[string]interface{}
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		t.Fatalf("preflight config is not valid JSON: %v", err)
+	}
+
+	inbounds, _ := cfg["inbounds"].([]interface{})
+	for _, ib := range inbounds {
+		m, _ := ib.(map[string]interface{})
+		if m["protocol"] == "tun" || m["tag"] == "tun-in" {
+			t.Fatalf("preflight config must not contain the tun inbound: %v", m)
+		}
+	}
+
+	if _, ok := cfg["dns"]; !ok {
+		t.Error("preflight config must include the Happ DNS section")
+	}
+
+	rules := cfg["routing"].(map[string]interface{})["rules"].([]interface{})
+	foundCapture := false
+	for _, rawRule := range rules {
+		rule := rawRule.(map[string]interface{})
+		if rule["outboundTag"] == "dns-out" {
+			foundCapture = true
+			if rule["port"] != "53" {
+				t.Errorf("unexpected dns capture rule: %+v", rule)
+			}
+		}
+	}
+	if !foundCapture {
+		t.Error("preflight config must include the dns capture rule when tun is active")
+	}
+
+	if !hasOutbound(cfg, "dns-out", "dns") {
+		t.Error("preflight config must include the dns-out outbound")
+	}
+}
+
+func TestValidateXrayConfigIntegrationHappDNS(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping xray binary integration test in -short mode")
+	}
+	if xrayTestBinary() == "" {
+		t.Skip("xray binary not available")
+	}
+
+	profile := structs.Profile{Id: 1, GroupId: 1, Name: "p", Uri: preflightTestURI}
+	selection := structs.RoutingSelection{
+		Source:      "happ",
+		GlobalProxy: true,
+		Config: structs.RoutingConfig{
+			DNS: &structs.HappDNSConfig{
+				RemoteDNSType:   "DoH",
+				RemoteDNSDomain: "https://cloudflare-dns.com/dns-query",
+				RemoteDNSIP:     "1.1.1.1",
+				DomesticDNSType: "DoU",
+				DomesticDNSIP:   "8.8.8.8",
+				Hosts:           map[string]string{"vpn.example.com": "203.0.113.7"},
+			},
+			Rules: []structs.RoutingRule{
+				{Type: "field", Domain: "direct.example", OutboundTag: "direct", Enabled: true},
+			},
+		},
+		BootstrapHosts: map[string][]string{
+			"server.example": {"203.0.113.7", "203.0.113.8"},
+		},
+	}
+
+	raw, err := buildPreflightConfig(profile, 0, 0, 0, selection, true, true)
+	if err != nil {
+		t.Fatalf("buildPreflightConfig failed: %v", err)
+	}
+	if err := validateXrayConfig(raw, ""); err != nil {
+		t.Fatalf("xray rejected Happ DNS config: %v", err)
+	}
 }
