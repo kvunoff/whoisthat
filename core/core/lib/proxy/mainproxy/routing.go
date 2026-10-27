@@ -3,6 +3,7 @@ package mainproxy
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 	"whoisthat-core/lib"
@@ -12,63 +13,55 @@ import (
 	"whoisthat-core/structs"
 )
 
-func injectRoutingConfig(configJSON []byte, selection structs.RoutingSelection) ([]byte, error) {
+// injectRoutingConfig merges the effective routing rules and the optional Happ
+// DNS configuration into an Xray config. tunActive controls only the DNS
+// capture rule: the DNS section itself is emitted whenever the selection comes
+// from a Happ profile with DNS settings, because the freedom outbound may need
+// it in proxy mode too.
+func injectRoutingConfig(configJSON []byte, selection structs.RoutingSelection, tunActive bool) ([]byte, error) {
 	var config map[string]interface{}
 	if err := json.Unmarshal(configJSON, &config); err != nil {
 		return configJSON, err
 	}
 
-	// Build routing rules from config, skipping disabled ones
+	userRules := buildUserRules(selection.Config.Rules)
+	happDNS := selection.Source == "happ" && selection.Config.DNS != nil
+
 	var rules []map[string]interface{}
-	for _, r := range selection.Config.Rules {
-		if !r.Enabled {
-			continue
+	if happDNS {
+		dnsSection, hasDomestic, hasRemote := buildHappDNSSection(selection)
+
+		if _, hasAPI := config["api"]; hasAPI {
+			rules = append(rules, apiRule())
 		}
-		rule := map[string]interface{}{
-			"type":        r.Type,
-			"outboundTag": r.OutboundTag,
+		if tunActive {
+			rules = append(rules, dnsCaptureRule())
 		}
-		if r.Domain != "" {
-			rule["domain"] = splitAndTrim(r.Domain)
+		if hasDomestic {
+			rules = append(rules, inboundRule("domestic-dns", "direct"))
 		}
-		if r.IP != "" {
-			rule["ip"] = splitAndTrim(r.IP)
+		if hasRemote {
+			rules = append(rules, inboundRule("remote-dns", "proxy"))
 		}
-		if r.Protocol != "" {
-			rule["protocol"] = []string{r.Protocol}
+
+		config["dns"] = dnsSection
+	} else {
+		// Legacy behaviour for manual routing and Happ profiles without DNS:
+		// keep DNS queries away from user domain rules. With Happ DNS active the
+		// dns-capture/dns-out pair replaces this rule.
+		rules = append(rules, legacyDNSRule())
+		if _, hasAPI := config["api"]; hasAPI {
+			rules = append(rules, apiRule())
 		}
-		if r.Port != "" {
-			rule["port"] = r.Port
+
+		// The freedom (direct) outbound needs a resolver. Preserve an existing
+		// dns section, otherwise fall back to the configured servers.
+		if _, exists := config["dns"]; !exists {
+			config["dns"] = map[string]interface{}{"servers": fallbackDNSServers()}
 		}
-		if r.Network != "" {
-			rule["network"] = r.Network
-		}
-		rules = append(rules, rule)
 	}
 
-	// Route API gRPC traffic (xray StatsService) to the api handler outbound
-	// before any other rule. The api inbound is dokodemo-door on 127.0.0.1
-	// listening for our gRPC stats queries; without this rule those queries
-	// would be misrouted through user/DNS rules. Only emit if injectStatsConfig
-	// actually added the `api` service (apiPort > 0); otherwise the rule would
-	// reference a nonexistent outbound and break xray startup.
-	if _, hasAPI := config["api"]; hasAPI {
-		rules = append([]map[string]interface{}{{
-			"type":        "field",
-			"outboundTag": "api",
-			"inboundTag":  []string{"api"},
-		}}, rules...)
-	}
-
-	// Route all DNS traffic through proxy first — prevents DNS queries from
-	// matching user domain rules (e.g. ifconfig.me → direct would also send
-	// the DNS query for ifconfig.me to the direct outbound, breaking resolution).
-	rules = append([]map[string]interface{}{{
-		"type":        "field",
-		"port":        "53",
-		"network":     "udp",
-		"outboundTag": "proxy",
-	}}, rules...)
+	rules = append(rules, userRules...)
 
 	domainStrategy := selection.Config.DomainStrategy
 	if domainStrategy == "" {
@@ -90,18 +83,6 @@ func injectRoutingConfig(configJSON []byte, selection structs.RoutingSelection) 
 					sniffing["routeOnly"] = false
 				}
 			}
-		}
-	}
-
-	// DNS section — needed for the freedom (direct) outbound to resolve domains.
-	// Without this, domain-routed direct traffic has no DNS resolver.
-	if _, exists := config["dns"]; !exists {
-		dnsServersRaw := make([]map[string]interface{}, len(appconfig.GetConfig().DnsServers))
-		for i, s := range appconfig.GetConfig().DnsServers {
-			dnsServersRaw[i] = map[string]interface{}{"address": s}
-		}
-		config["dns"] = map[string]interface{}{
-			"servers": dnsServersRaw,
 		}
 	}
 
@@ -140,6 +121,13 @@ func injectRoutingConfig(configJSON []byte, selection structs.RoutingSelection) 
 	}
 
 	outboundsRaw = append(outboundsRaw, direct, block)
+	if happDNS && tunActive && !outboundTagExists(outboundsRaw, "dns-out") {
+		outboundsRaw = append(outboundsRaw, map[string]interface{}{
+			"tag":      "dns-out",
+			"protocol": "dns",
+			"settings": map[string]interface{}{},
+		})
+	}
 	config["outbounds"] = outboundsRaw
 
 	result, err := json.Marshal(config)
@@ -147,6 +135,273 @@ func injectRoutingConfig(configJSON []byte, selection structs.RoutingSelection) 
 		return configJSON, err
 	}
 	return result, nil
+}
+
+func buildUserRules(configured []structs.RoutingRule) []map[string]interface{} {
+	var rules []map[string]interface{}
+	for _, r := range configured {
+		if !r.Enabled {
+			continue
+		}
+		rule := map[string]interface{}{
+			"type":        r.Type,
+			"outboundTag": r.OutboundTag,
+		}
+		if r.Domain != "" {
+			rule["domain"] = splitAndTrim(r.Domain)
+		}
+		if r.IP != "" {
+			rule["ip"] = splitAndTrim(r.IP)
+		}
+		if r.Protocol != "" {
+			rule["protocol"] = []string{r.Protocol}
+		}
+		if r.Port != "" {
+			rule["port"] = r.Port
+		}
+		if r.Network != "" {
+			rule["network"] = r.Network
+		}
+		rules = append(rules, rule)
+	}
+	return rules
+}
+
+// apiRule routes xray StatsService gRPC traffic to the api outbound before any
+// other rule. Only emitted when injectStatsConfig actually added the api
+// service; otherwise it would reference a nonexistent outbound.
+func apiRule() map[string]interface{} {
+	return map[string]interface{}{
+		"type":        "field",
+		"outboundTag": "api",
+		"inboundTag":  []string{"api"},
+	}
+}
+
+// dnsCaptureRule intercepts DNS arriving through the TUN inbound and hands it to
+// Xray's DNS module instead of proxying the raw query.
+func dnsCaptureRule() map[string]interface{} {
+	return map[string]interface{}{
+		"type":        "field",
+		"inboundTag":  []string{"tun-in"},
+		"port":        "53",
+		"network":     "tcp,udp",
+		"outboundTag": "dns-out",
+	}
+}
+
+func inboundRule(inboundTag, outboundTag string) map[string]interface{} {
+	return map[string]interface{}{
+		"type":        "field",
+		"inboundTag":  []string{inboundTag},
+		"outboundTag": outboundTag,
+	}
+}
+
+func legacyDNSRule() map[string]interface{} {
+	return map[string]interface{}{
+		"type":        "field",
+		"port":        "53",
+		"network":     "udp",
+		"outboundTag": "proxy",
+	}
+}
+
+// buildHappDNSSection returns the dns object plus which tagged servers were
+// actually emitted. Rules are only generated for existing servers so we never
+// reference a missing tag.
+func buildHappDNSSection(selection structs.RoutingSelection) (map[string]interface{}, bool, bool) {
+	cfg := selection.Config.DNS
+	domesticAddr := dnsServerAddress(cfg.DomesticDNSType, cfg.DomesticDNSDomain, cfg.DomesticDNSIP)
+	remoteAddr := dnsServerAddress(cfg.RemoteDNSType, cfg.RemoteDNSDomain, cfg.RemoteDNSIP)
+
+	directDomains := domainsForOutbound(selection.Config.Rules, "direct")
+	proxyDomains := domainsForOutbound(selection.Config.Rules, "proxy")
+
+	var servers []map[string]interface{}
+	hasDomestic := false
+	hasRemote := false
+
+	if selection.GlobalProxy {
+		// Everything not explicitly direct goes through the proxy. The domestic
+		// server is only useful for direct domains; remote is the fallback.
+		if domesticAddr != "" && len(directDomains) > 0 {
+			servers = append(servers, dnsServer("domestic-dns", domesticAddr, directDomains, true))
+			hasDomestic = true
+		}
+		if remoteAddr != "" {
+			servers = append(servers, dnsServer("remote-dns", remoteAddr, nil, false))
+			hasRemote = true
+		}
+	} else {
+		// GlobalProxy=false: everything is direct by default. Domestic is the
+		// fallback resolver; remote is used only for explicit proxy domains.
+		if domesticAddr != "" {
+			servers = append(servers, dnsServer("domestic-dns", domesticAddr, nil, false))
+			hasDomestic = true
+		}
+		if remoteAddr != "" {
+			if domesticAddr == "" {
+				servers = append(servers, dnsServer("remote-dns", remoteAddr, nil, false))
+				hasRemote = true
+			} else if len(proxyDomains) > 0 {
+				servers = append(servers, dnsServer("remote-dns", remoteAddr, proxyDomains, true))
+				hasRemote = true
+			}
+		}
+	}
+
+	// Unmatched queries need at least one server without a domains filter.
+	if !hasFallbackServer(servers) {
+		servers = append(servers, fallbackDNSServers()...)
+	}
+	if servers == nil {
+		servers = fallbackDNSServers()
+	}
+
+	section := map[string]interface{}{
+		"servers": servers,
+	}
+	if hosts := buildDNSHosts(selection); len(hosts) > 0 {
+		section["hosts"] = hosts
+	}
+	return section, hasDomestic, hasRemote
+}
+
+func dnsServerAddress(kind, domain, ip string) string {
+	switch kind {
+	case "DoH":
+		return domain
+	case "DoU":
+		return ip
+	}
+	if domain != "" {
+		return domain
+	}
+	return ip
+}
+
+func dnsServer(tag, address string, domains []string, skipFallback bool) map[string]interface{} {
+	server := map[string]interface{}{
+		"address": address,
+		"tag":     tag,
+	}
+	if len(domains) > 0 {
+		server["domains"] = domains
+		server["skipFallback"] = skipFallback
+	}
+	return server
+}
+
+func fallbackDNSServers() []map[string]interface{} {
+	configured := appconfig.GetConfig().DnsServers
+	servers := make([]map[string]interface{}, 0, len(configured))
+	for _, address := range configured {
+		servers = append(servers, map[string]interface{}{"address": address})
+	}
+	return servers
+}
+
+func hasFallbackServer(servers []map[string]interface{}) bool {
+	for _, server := range servers {
+		if _, hasDomains := server["domains"]; !hasDomains {
+			return true
+		}
+	}
+	return false
+}
+
+// buildDNSHosts merges static hosts from the profile, the DoH/DoU bootstrap
+// entries, and the already resolved VPN server addresses. Earlier entries win.
+func buildDNSHosts(selection structs.RoutingSelection) map[string]interface{} {
+	cfg := selection.Config.DNS
+	hosts := make(map[string]interface{})
+
+	for domain, ip := range cfg.Hosts {
+		addDNSHost(hosts, domain, ip)
+	}
+	if cfg.RemoteDNSDomain != "" && cfg.RemoteDNSIP != "" {
+		addDNSHost(hosts, hostFromDNSAddress(cfg.RemoteDNSDomain), cfg.RemoteDNSIP)
+	}
+	if cfg.DomesticDNSDomain != "" && cfg.DomesticDNSIP != "" {
+		addDNSHost(hosts, hostFromDNSAddress(cfg.DomesticDNSDomain), cfg.DomesticDNSIP)
+	}
+	for domain, ips := range selection.BootstrapHosts {
+		addDNSHost(hosts, domain, ips...)
+	}
+
+	return hosts
+}
+
+func addDNSHost(hosts map[string]interface{}, domain string, ips ...string) {
+	domain = strings.TrimSpace(domain)
+	if domain == "" {
+		return
+	}
+	if _, exists := hosts[domain]; exists {
+		return
+	}
+
+	values := make([]string, 0, len(ips))
+	for _, ip := range ips {
+		if ip = strings.TrimSpace(ip); ip != "" {
+			values = append(values, ip)
+		}
+	}
+	switch len(values) {
+	case 0:
+		return
+	case 1:
+		hosts[domain] = values[0]
+	default:
+		hosts[domain] = values
+	}
+}
+
+func hostFromDNSAddress(address string) string {
+	address = strings.TrimSpace(address)
+	if address == "" {
+		return ""
+	}
+	if u, err := url.Parse(address); err == nil && u.Hostname() != "" {
+		return u.Hostname()
+	}
+	return address
+}
+
+// domainsForOutbound collects domain matchers from the compiled rules for one
+// outbound tag. The same patterns can safely be reused by Xray's DNS server
+// selection (including geosite:/regexp: forms).
+func domainsForOutbound(rules []structs.RoutingRule, outboundTag string) []string {
+	seen := make(map[string]struct{})
+	var domains []string
+	for _, rule := range rules {
+		if !rule.Enabled || rule.OutboundTag != outboundTag || strings.TrimSpace(rule.Domain) == "" {
+			continue
+		}
+		for _, domain := range splitAndTrim(rule.Domain) {
+			key := strings.ToLower(domain)
+			if _, exists := seen[key]; exists {
+				continue
+			}
+			seen[key] = struct{}{}
+			domains = append(domains, domain)
+		}
+	}
+	return domains
+}
+
+func outboundTagExists(outbounds []interface{}, tag string) bool {
+	for _, raw := range outbounds {
+		outbound, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if outbound["tag"] == tag {
+			return true
+		}
+	}
+	return false
 }
 
 func splitAndTrim(s string) []string {
@@ -211,13 +466,14 @@ func (p *ProxyManager) reloadCoreLocked(tunName string) error {
 		if selErr != nil {
 			logger.Warnf("reloadCoreLocked: failed to resolve routing for group %d: %v", profile.GroupId, selErr)
 		}
+		selection.BootstrapHosts = bootstrapHosts(profile.Address, p.profileIPs)
 	} else {
 		selection = structs.RoutingSelection{Source: "manual"}
 	}
 
 	if p.DB != nil {
 		prevOutboundsCount := countOutbounds(xray_config)
-		xray_config, err = injectRoutingConfig(xray_config, selection)
+		xray_config, err = injectRoutingConfig(xray_config, selection, p.tunEnabled)
 		if err != nil {
 			return fmt.Errorf("failed to inject routing config: %w", err)
 		}
@@ -231,7 +487,7 @@ func (p *ProxyManager) reloadCoreLocked(tunName string) error {
 	validate := true
 	testConfigBytes := xray_config
 	if p.tunEnabled {
-		if testBase, buildErr := buildPreflightConfig(profile, app_config.SocksPort, app_config.HttpPort, apiPort, selection, p.DB != nil); buildErr != nil {
+		if testBase, buildErr := buildPreflightConfig(profile, app_config.SocksPort, app_config.HttpPort, apiPort, selection, p.DB != nil, true); buildErr != nil {
 			logger.Warnf("preflight: could not build tun-less test config, skipping validation: %v", buildErr)
 			validate = false
 		} else {

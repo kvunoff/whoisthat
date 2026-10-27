@@ -3,6 +3,7 @@ package mainproxy
 import (
 	"encoding/json"
 	"net"
+	"strings"
 	"sync"
 	"time"
 	"whoisthat-core/db"
@@ -42,6 +43,7 @@ type ProxyManager struct {
 	statsApiPort      int
 	DB                *db.DB
 	proxyIPs          []string
+	profileIPs        []string
 	tunEnabled        bool
 	tunName           string
 
@@ -218,6 +220,12 @@ func (p *ProxyManager) Connect(profile structs.Profile, tunName string, tunEnabl
 		logger.Warnf("failed to inject stats config: %v", err)
 	}
 
+	// Resolve the VPN server address before Xray starts: once TUN is up the
+	// system resolver points at the tunnel and the server domain must already be
+	// available as a DNS bootstrap entry.
+	profileIPs := resolveProfileIPs(profile.Address)
+	p.profileIPs = profileIPs
+
 	var selection structs.RoutingSelection
 	if p.DB != nil {
 		sel, selErr := p.DB.ResolveRouting(profile.GroupId)
@@ -227,9 +235,10 @@ func (p *ProxyManager) Connect(profile structs.Profile, tunName string, tunEnabl
 		} else {
 			selection = sel
 		}
+		selection.BootstrapHosts = bootstrapHosts(profile.Address, profileIPs)
 
 		prevOutboundsCount := countOutbounds(xray_config)
-		xray_config, err = injectRoutingConfig(xray_config, selection)
+		xray_config, err = injectRoutingConfig(xray_config, selection, tunEnabled)
 		if err != nil {
 			logger.Warnf("failed to inject routing config: %v", err)
 		}
@@ -241,7 +250,7 @@ func (p *ProxyManager) Connect(profile structs.Profile, tunName string, tunEnabl
 	// profile/routing/DNS config surfaces as an actionable connect error instead
 	// of a silent immediate disconnect. The TUN inbound is omitted from the test
 	// config (see buildPreflightConfig).
-	if preflightCfg, buildErr := buildPreflightConfig(profile, app_config.SocksPort, app_config.HttpPort, apiPort, selection, p.DB != nil); buildErr != nil {
+	if preflightCfg, buildErr := buildPreflightConfig(profile, app_config.SocksPort, app_config.HttpPort, apiPort, selection, p.DB != nil, tunEnabled); buildErr != nil {
 		logger.Warnf("preflight: could not build test config, skipping validation: %v", buildErr)
 	} else if testErr := validateXrayConfig(preflightCfg, selection.GeoDir); testErr != nil {
 		// The stats port was reserved above but never handed to a running core.
@@ -256,7 +265,7 @@ func (p *ProxyManager) Connect(profile structs.Profile, tunName string, tunEnabl
 		return err
 	}
 
-	p.proxyIPs = resolveProfileIPs(profile.Address)
+	p.proxyIPs = profileIPs
 
 	logger.Infof("connected to %s (%s://%s)",
 		profile.Name, profile.Protocol, profile.Address)
@@ -394,4 +403,14 @@ func resolveProfileIPs(address string) []string {
 		result = append(result, ip.String())
 	}
 	return result
+}
+
+// bootstrapHosts returns a dns.hosts entry for a VPN server addressed by name.
+// Literal IPs need no bootstrap, and failed resolutions are simply skipped.
+func bootstrapHosts(address string, ips []string) map[string][]string {
+	address = strings.TrimSpace(address)
+	if address == "" || net.ParseIP(address) != nil || len(ips) == 0 {
+		return nil
+	}
+	return map[string][]string{address: ips}
 }
