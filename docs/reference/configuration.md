@@ -78,7 +78,7 @@ Auto-generated and synchronized by the Go core daemon:
   "tun-name": "whoisthattun",
   "hwid-enabled": true,
   "hwid": "1fb1e0141ab3e35a",
-  "user-agent": "whoisthat-core/v0.3.0",
+  "user-agent": "whoisthat-core/v0.3.1",
   "kill-switch-enabled": false,
   "autoconnect-enabled": false,
   "autoconnect-group-id": 0,

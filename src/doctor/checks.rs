@@ -694,13 +694,9 @@ fn check_dns_and_routing(cfg: &AppConfig) -> CheckCategory {
                     ));
                 }
             }
-            _ => items.push(CheckItem::warn(
+            _ => items.push(CheckItem::info(
                 "systemd-resolved",
-                "resolvectl is installed but systemd-resolved is not reachable",
-                Some(
-                    "Start systemd-resolved or ignore this warning — kernel DNAT still works"
-                        .into(),
-                ),
+                "resolvectl is installed but systemd-resolved is inactive; system resolver is left untouched (kernel DNAT still works)",
             )),
         }
     }

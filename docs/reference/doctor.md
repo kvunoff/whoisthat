@@ -62,7 +62,7 @@ The diagnostic engine performs comprehensive, non-destructive system inspections
 * **FakeDNS pools**: Checks the TUN interface addresses against `198.19.0.0/16` and `fc00::/18`; an overlap means real traffic could collide with fake addresses.
 * **DNS hijack rules**: Inspects the `ip whoisthat` / `ip6 whoisthat` nftables tables (or the iptables `WHOISTHAT_DNS_*` chains) and reports the active mode: Happ sink, legacy resolver, disabled in `include`, or TUN inactive.
 * **DNS safety returns**: In Happ mode, verifies that the `mark 1` and sink return rules are present. Missing returns can loop Xray's direct DNS or capture split-excluded apps.
-* **systemd-resolved**: If `resolvectl` is installed, verifies that the TUN interface points at the Happ sink. A missing systemd-resolved is a warning, not a failure — kernel DNAT still works.
+* **systemd-resolved**: If `resolvectl` is installed, verifies that the TUN interface points at the Happ sink. A missing or inactive systemd-resolved is informational, not a warning or failure — kernel DNAT still works.
 * **Kill-switch DNS allowlist**: When the kill-switch is armed, checks that its nftables table still allows the TUN interface, the DNS sink, and `mark 1`.
 
 ::: tip Root permissions
@@ -85,8 +85,8 @@ When running `whoisthat doctor --json`:
 
 ```json
 {
-  "client_version": "0.14.0",
-  "core_version": "0.3.0",
+  "client_version": "0.14.1",
+  "core_version": "0.3.1",
   "core_protocol_version": 1,
   "categories": [
     {
