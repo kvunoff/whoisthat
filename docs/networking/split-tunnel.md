@@ -22,6 +22,17 @@ Configure the mode in the TUI (**Settings → Network → Split tunnel**) or via
 In `include` mode, only processes explicitly launched inside the split slice are protected by the VPN. All other applications and background traffic connect unprotected over your physical connection.
 :::
 
+### DNS Behaviour
+
+DNS follows the same split boundary:
+
+* **`exclude`** — the system-wide Happ DNS hijack stays active. Excluded applications carry `fwmark 1`, and the DNS hijack returns early for marked sockets, so they resolve directly through their normal resolver instead of the tunnel sink.
+* **`include`** — the Happ DNS hijack is disabled. Included applications still use the system resolver, which lives outside the split slice, so their DNS is not tunnelled. This is intentional: hijacking port 53 system-wide would break every non-included application.
+* **`off`** — no split rules are installed; all DNS follows the normal TUN/Happ path.
+* **Manual routing** — the legacy hijack to the configured resolver remains in place in every split mode.
+
+When the split mode changes while TUN is active, the hijack is reconciled together with the cgroup and policy-routing rules.
+
 ---
 
 ## Launching Applications (`whoisthat run`)
@@ -215,4 +226,4 @@ Table 100 sets `unreachable default` for IPv6 to prevent Happy Eyeballs leaks
 
 ### Live Dynamic Reconciliation
 
-Changing the split-tunnel mode in Settings (cycling `off` → `exclude` → `include`) while TUN mode is active immediately reapplies all routing tables, cgroup socket filters, and nftables rules on the fly without needing to disconnect or restart your active session.
+Changing the split-tunnel mode in Settings (cycling `off` → `exclude` → `include`) while TUN mode is active immediately reapplies all routing tables, cgroup socket filters, nftables rules, and the DNS hijack on the fly without needing to disconnect or restart your active session.

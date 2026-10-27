@@ -69,7 +69,7 @@ This document provides a complete technical specification for the length-prefixe
 | `group-added` | `{"id": int, "name": "string", "subscription_url": "string"}` | Fired when a new group is created. |
 | `group-deleted` | `{"id": int}` | Fired when a group is deleted. |
 | `group-updated` | Full Group structure | Fired when a group's name or URL is modified. |
-| `subscription-updated` | `{"group_id": int, "group": { ... }, "profiles": [ ... ]}` | Fired when a subscription finishes downloading and parsing. |
+| `subscription-updated` | `{"group_id": int, "group": { ... }, "profiles": [ ... ], "routing_profiles": [ ... ]}` | Fired when a subscription finishes downloading and parsing. |
 | `tun-status-changed` | `{"is_enabled": bool}` | Fired when TUN mode is toggled. |
 | `tun-name-updated` | `{"tun_name": "string"}` | Fired when the TUN interface name changes. |
 | `is-root-answer` | `{"IsRoot": bool}` | Response indicating whether the daemon holds root privileges. |
@@ -131,6 +131,32 @@ This document provides a complete technical specification for the length-prefixe
 ```
 
 Subscription metadata (`sub_*`) is automatically populated from the standard `subscription-userinfo` HTTP response header.
+
+### Routing Profile Info Structure
+
+`routing_profiles` entries (in `application-state`, `subscription-updated`, and `group-updated`) contain the compiled profile summary plus the DNS display metadata:
+
+```json
+{
+  "id": "c1f7b82e9a",
+  "name": "Provider Full Bypass",
+  "state": "ready",
+  "last_error": "",
+  "active": true,
+  "rules_count": 42,
+  "global_proxy": true,
+  "domain_strategy": "IPIfNonMatch",
+  "fake_dns_enabled": false,
+  "remote_dns": "DoH cloudflare-dns.com",
+  "domestic_dns": "DoU 8.8.8.8",
+  "last_updated": 1712345678,
+  "geo_updated_at": 1712345678
+}
+```
+
+* **`fake_dns_enabled`**: the provider's FakeDNS preference. It is parsed and stored; FakeDNS allocation is not active yet.
+* **`remote_dns` / `domestic_dns`**: short display labels derived from the profile (`DoH host`, `DoU address`). Empty when the profile has no usable DNS server.
+* These fields are additive: older clients can ignore them, and `ProtocolVersion` is unchanged.
 
 ---
 

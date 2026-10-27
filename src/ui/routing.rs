@@ -710,6 +710,9 @@ fn render_happ_profiles_popup(
     let active_id = group
         .map(|g| g.group.active_routing_profile_id.as_str())
         .unwrap_or("");
+    let has_dns = profiles
+        .iter()
+        .any(|p| !p.remote_dns.is_empty() || !p.domestic_dns.is_empty());
 
     // Check if the currently selected profile has an error message
     let selected_error = profiles.get(cursor).and_then(|p| {
@@ -839,13 +842,18 @@ fn render_happ_profiles_popup(
                     *last = Span::styled(text.to_string(), s_dim());
                 }
 
+                let mut lines = vec![Line::from(line1), Line::from(details)];
+                if has_dns {
+                    lines.push(happ_dns_line(p));
+                }
+
                 let item_bg = if is_selected { surface() } else { bg() };
-                ListItem::new(vec![Line::from(line1), Line::from(details)])
-                    .style(Style::default().bg(item_bg))
+                ListItem::new(lines).style(Style::default().bg(item_bg))
             })
             .collect();
 
-        let visible_items = (list_area.height as usize) / 2;
+        let item_height = if has_dns { 3 } else { 2 };
+        let visible_items = (list_area.height as usize) / item_height;
         let scroll_item = if visible_items > 0 && cursor >= visible_items {
             cursor - visible_items + 1
         } else {
@@ -886,6 +894,32 @@ fn render_happ_profiles_popup(
         Span::styled("Close", s_text()),
     ]);
     f.render_widget(Paragraph::new(hint).alignment(Alignment::Center), hint_area);
+}
+
+fn happ_dns_line(profile: &RoutingProfileInfo) -> Line<'static> {
+    let mut spans = vec![Span::styled("      DNS: ", s_faint())];
+    let mut parts = Vec::new();
+    if !profile.remote_dns.is_empty() {
+        parts.push(truncate_dns_label(&profile.remote_dns));
+    }
+    if !profile.domestic_dns.is_empty() {
+        parts.push(truncate_dns_label(&profile.domestic_dns));
+    }
+    let text = if parts.is_empty() {
+        "—".to_string()
+    } else {
+        parts.join(" │ ")
+    };
+    spans.push(Span::styled(text, s_dim()));
+    Line::from(spans)
+}
+
+fn truncate_dns_label(label: &str) -> String {
+    const MAX_CHARS: usize = 28;
+    if label.chars().count() <= MAX_CHARS {
+        return label.to_string();
+    }
+    format!("{}…", label.chars().take(MAX_CHARS - 1).collect::<String>())
 }
 
 fn render_presets_popup(f: &mut Frame, cursor: usize, config: &RoutingConfig, area: Rect) {
@@ -1448,6 +1482,8 @@ mod tests {
                 active: true,
                 rules_count: 42,
                 domain_strategy: "IPIfNonMatch".into(),
+                remote_dns: "DoH cloudflare-dns.com".into(),
+                domestic_dns: "DoU 8.8.8.8".into(),
                 ..Default::default()
             }],
         };
@@ -1477,6 +1513,18 @@ mod tests {
         assert!(text.contains("My Happ Rules"));
         assert!(text.contains("rules: 42"));
         assert!(text.contains("strategy: IPIfNonMatch"));
+        assert!(text.contains("DNS: DoH cloudflare-dns.com │ DoU 8.8.8.8"));
+    }
+
+    #[test]
+    fn test_truncate_dns_label() {
+        assert_eq!(truncate_dns_label("DoH dns.google"), "DoH dns.google");
+
+        let long = "DoH a-very-long-doh-provider-hostname.example";
+        let truncated = truncate_dns_label(long);
+        assert_eq!(truncated.chars().count(), 28);
+        assert!(truncated.ends_with('…'));
+        assert!(truncated.starts_with("DoH a-very-long"));
     }
 
     #[test]

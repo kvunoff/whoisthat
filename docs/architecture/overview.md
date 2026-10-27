@@ -72,7 +72,12 @@ flowchart TD
 ### 2. In System-Wide TUN Mode
 1. The kernel intercepts all outbound traffic using policy routing directed to the `whoisthattun` virtual adapter.
 2. Xray's native TUN inbound reads raw IP packets from the TUN file descriptor.
-3. Built-in DNS hijack rules intercept UDP/TCP port 53 traffic, routing queries through the remote proxy to prevent DNS poisoning or leakage.
+3. DNS is captured before it can leave the physical interface:
+   * With Happ DNS, `nat OUTPUT` DNATs port 53 to the reserved sink `198.18.0.53` / `fd00::53`, which is not assigned to any interface and therefore follows the TUN default route.
+   * Early returns keep the hijack away from `fwmark 1` sockets (Xray's direct outbound and split-exclude apps), the sink itself, and the VPN server addresses.
+   * `resolvectl` points systemd-resolved at the same sink.
+   * Xray receives the query on `tun-in` and routes it to `dns-out`; the tagged `domestic-dns` server resolves direct sites through the physical gateway, while `remote-dns` resolves everything else through the proxy.
+   * In `include` split mode the hijack is disabled, and manual routing keeps the legacy path to the configured resolver.
 4. If a destination is configured as `direct` in routing rules:
    * The outbound connection sets socket mark `SO_MARK = 1`.
    * Kernel policy rule `ip rule fwmark 1 table 100` directs the marked packet to Table 100, routing it directly through your physical gateway without looping back into the TUN adapter!
