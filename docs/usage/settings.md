@@ -27,7 +27,7 @@ The Settings tab (<kbd>5</kbd> or cycle with <kbd>[</kbd> / <kbd>]</kbd>) provid
 | **HWID Enabled** | `on` / `off` | `on` | Send hardware identification headers (`x-hwid`) during subscription fetches. |
 | **HWID** | Read-only hex | Auto | 16-character hexadecimal device fingerprint. |
 | **Reset HWID** | Action button | — | Generates a new random hardware identifier. |
-| **User-Agent** | Editable text | `whoisthat-core/v0.2.3` | Custom HTTP User-Agent header sent with subscription requests. |
+| **User-Agent** | Editable text | `whoisthat-core/v0.3.0` | Custom HTTP User-Agent header sent with subscription requests. |
 
 ---
 
