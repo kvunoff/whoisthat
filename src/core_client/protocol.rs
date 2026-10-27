@@ -89,6 +89,9 @@ pub struct Group {
     pub profile_order: Vec<i32>,
     #[serde(default)]
     pub routing_mode: String,
+    /// "inherit" (default, use the global manual rules) or "custom".
+    #[serde(default)]
+    pub manual_routing_mode: String,
     #[serde(default)]
     pub active_routing_profile_id: String,
     #[serde(default)]
@@ -139,7 +142,7 @@ pub struct ApplicationState {
 /// IPC contract version expected by this TUI. Must match
 /// `core/core/lib/version/version.go:ProtocolVersion`.
 /// A running core is reused while versions match; on mismatch it is restarted.
-pub const EXPECTED_CORE_PROTOCOL_VERSION: u32 = 1;
+pub const EXPECTED_CORE_PROTOCOL_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct XrayStatusInfo {
@@ -458,17 +461,34 @@ fn default_true() -> bool {
     true
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GetRoutingData {}
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct GetRoutingData {
+    #[serde(default)]
+    pub group_id: i32,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpdateRoutingData {
+    #[serde(default)]
+    pub group_id: i32,
     pub config: RoutingConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RoutingUpdated {
+    #[serde(default)]
+    pub group_id: i32,
     pub config: RoutingConfig,
+    #[serde(default)]
+    pub source: String,
+    #[serde(default)]
+    pub custom: Option<RoutingConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SetManualRoutingSourceData {
+    pub group_id: i32,
+    pub source: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

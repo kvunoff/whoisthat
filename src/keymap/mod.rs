@@ -144,6 +144,7 @@ fn resolve_routing(key: &KeyEvent) -> AppAction {
         KeyCode::Char('p') | KeyCode::Char('P') => AppAction::OpenPresets,
         KeyCode::Char('H') => AppAction::OpenHappProfiles,
         KeyCode::Char('m') | KeyCode::Char('M') => AppAction::CycleRoutingMode,
+        KeyCode::Char('g') | KeyCode::Char('G') => AppAction::ToggleManualRoutingSource,
         KeyCode::Char('i') | KeyCode::Char('I') => AppAction::ImportHappLink,
         KeyCode::Esc => AppAction::Dismiss,
         _ => AppAction::None,
@@ -365,6 +366,10 @@ pub const ROUTING_HELP: &[HelpEntry] = &[
         desc: "Cycle mode (auto/manual/sub)",
     },
     HelpEntry {
+        key: "g",
+        desc: "Toggle global / group-specific rules",
+    },
+    HelpEntry {
         key: "i",
         desc: "Import Happ link from clipboard",
     },
@@ -543,6 +548,19 @@ mod tests {
         assert_eq!(
             resolve_action(KeyContext::Logs, &ctrl_key(KeyCode::Char('d'))),
             AppAction::PageDown
+        );
+    }
+
+    #[test]
+    fn test_routing_source_toggle_key() {
+        assert_eq!(
+            resolve_action(KeyContext::Routing, &key(KeyCode::Char('g'))),
+            AppAction::ToggleManualRoutingSource
+        );
+        // In the profiles tree 'g' must still jump to the top.
+        assert_eq!(
+            resolve_action(KeyContext::ProfilesTree, &key(KeyCode::Char('g'))),
+            AppAction::ScrollTop
         );
     }
 

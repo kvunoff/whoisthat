@@ -144,7 +144,8 @@ async fn handle_normal_input(
             if target == ActiveTab::Routing {
                 app.routing_popup = None;
                 app.sync_routing_group_to_connected();
-                let _ = client.get_routing().await;
+                let gid = app.routing_page_group_id();
+                let _ = client.get_routing(gid).await;
             }
             false
         }
@@ -154,7 +155,8 @@ async fn handle_normal_input(
             if target == ActiveTab::Routing {
                 app.routing_popup = None;
                 app.sync_routing_group_to_connected();
-                let _ = client.get_routing().await;
+                let gid = app.routing_page_group_id();
+                let _ = client.get_routing(gid).await;
             }
             false
         }
@@ -164,7 +166,8 @@ async fn handle_normal_input(
             if target == ActiveTab::Routing {
                 app.routing_popup = None;
                 app.sync_routing_group_to_connected();
-                let _ = client.get_routing().await;
+                let gid = app.routing_page_group_id();
+                let _ = client.get_routing(gid).await;
             }
             false
         }
@@ -207,7 +210,7 @@ async fn handle_normal_input(
                     Focus::Popup => {}
                 },
                 ActiveTab::Routing => {
-                    let len = app.routing.rules.len();
+                    let len = app.active_routing_config().rules.len();
                     if len > 0 && app.routing_cursor + 1 < len {
                         app.routing_cursor += 1;
                     }
@@ -554,7 +557,7 @@ async fn handle_normal_input(
             false
         }
         AppAction::EditRoutingRule => {
-            if let Some(rule) = app.routing.rules.get(app.routing_cursor) {
+            if let Some(rule) = app.active_routing_config().rules.get(app.routing_cursor) {
                 let (mt, val, ob) = rule_to_form(rule);
                 let cursor = val.chars().count();
                 app.routing_popup = Some(RoutingPopup::Edit {
@@ -569,7 +572,12 @@ async fn handle_normal_input(
             false
         }
         AppAction::DeleteRoutingRule => {
-            if app.routing.rules.get(app.routing_cursor).is_some() {
+            if app
+                .active_routing_config()
+                .rules
+                .get(app.routing_cursor)
+                .is_some()
+            {
                 app.routing_popup = Some(RoutingPopup::ConfirmDelete {
                     index: app.routing_cursor,
                 });
@@ -577,11 +585,15 @@ async fn handle_normal_input(
             false
         }
         AppAction::ToggleRuleEnabled => {
-            if let Some(rule) = app.routing.rules.get_mut(app.routing_cursor) {
+            app.ensure_custom_routing();
+            let idx = app.routing_cursor;
+            if let Some(rule) = app.active_routing_config_mut().rules.get_mut(idx) {
                 rule.enabled = !rule.enabled;
                 let action = if rule.enabled { "enabled" } else { "disabled" };
                 app.msg(format!("Rule {action}"));
-                let _ = client.update_routing(&app.routing).await;
+                let gid = app.routing_page_group_id();
+                let cfg = app.active_routing_config().clone();
+                let _ = client.update_routing(gid, &cfg).await;
             }
             false
         }
@@ -590,7 +602,11 @@ async fn handle_normal_input(
             false
         }
         AppAction::OpenHappProfiles => {
-            app.routing_popup = Some(RoutingPopup::HappProfiles { cursor: 0 });
+            if app.routing_selected_group().is_some() {
+                app.routing_popup = Some(RoutingPopup::HappProfiles { cursor: 0 });
+            } else {
+                app.msg("Select a subscription group to manage Happ profiles");
+            }
             false
         }
         AppAction::CycleRoutingMode => {
@@ -608,6 +624,29 @@ async fn handle_normal_input(
                 };
                 let _ = client.set_group_routing_mode(gid, next_mode).await;
                 app.msg(format!("Group routing mode: {next_mode}"));
+            } else {
+                app.msg("Select a subscription group to change its routing mode");
+            }
+            false
+        }
+        AppAction::ToggleManualRoutingSource => {
+            let gid = app.routing_page_group_id();
+            if gid == 0 {
+                app.msg("Global rules are the shared base; select a group to override them");
+            } else {
+                let next = if app.routing_source() == "custom" {
+                    "inherit"
+                } else {
+                    "custom"
+                };
+                let _ = client.set_manual_routing_source(gid, next).await;
+                let _ = client.get_routing(gid).await;
+                let label = if next == "custom" {
+                    "custom group rules"
+                } else {
+                    "global rules"
+                };
+                app.msg(format!("Manual routing source: {label}"));
             }
             false
         }
@@ -627,12 +666,9 @@ async fn handle_normal_input(
                     text
                 };
 
-                let gid = app
-                    .routing_selected_group()
-                    .map(|g| g.group.id)
-                    .unwrap_or(0);
-                if gid == 0 && app.groups.is_empty() {
-                    app.msg("No groups available to import Happ routing");
+                let gid = app.routing_page_group_id();
+                if gid == 0 {
+                    app.msg("Select a subscription group to import Happ routing");
                 } else {
                     let _ = client.import_happ_routing(gid, &link).await;
                     app.msg("Importing Happ routing from clipboard...");
@@ -642,10 +678,14 @@ async fn handle_normal_input(
         }
         AppAction::RoutingGroupPrev => {
             app.routing_group_prev();
+            let gid = app.routing_page_group_id();
+            let _ = client.get_routing(gid).await;
             false
         }
         AppAction::RoutingGroupNext => {
             app.routing_group_next();
+            let gid = app.routing_page_group_id();
+            let _ = client.get_routing(gid).await;
             false
         }
         AppAction::SettingsPrev => {
@@ -909,7 +949,8 @@ pub(crate) async fn handle_mouse_input(
                     app.focus = Focus::LeftPanel;
                     if target == ActiveTab::Routing {
                         app.routing_popup = None;
-                        let _ = client.get_routing().await;
+                        let gid = app.routing_page_group_id();
+                        let _ = client.get_routing(gid).await;
                     }
                     return false;
                 }
@@ -960,11 +1001,16 @@ pub(crate) async fn handle_mouse_input(
                         let clicked_item = scroll_item + rel_row / 2;
                         if clicked_item < crate::ui::routing::ROUTING_PRESETS.len() {
                             let preset = &crate::ui::routing::ROUTING_PRESETS[clicked_item];
-                            let now_applied =
-                                crate::ui::routing::toggle_preset(&mut app.routing, preset);
+                            app.ensure_custom_routing();
+                            let now_applied = crate::ui::routing::toggle_preset(
+                                app.active_routing_config_mut(),
+                                preset,
+                            );
                             let action = if now_applied { "applied" } else { "removed" };
                             app.msg(format!("Preset {}: {}", action, preset.title));
-                            let _ = client.update_routing(&app.routing).await;
+                            let gid = app.routing_page_group_id();
+                            let cfg = app.active_routing_config().clone();
+                            let _ = client.update_routing(gid, &cfg).await;
                             app.routing_popup = Some(RoutingPopup::Presets {
                                 cursor: clicked_item,
                             });
@@ -996,7 +1042,7 @@ pub(crate) async fn handle_mouse_input(
                     app.settings_state.cursor_down();
                 }
                 ActiveTab::Routing => {
-                    let max = app.routing.rules.len().saturating_sub(1);
+                    let max = app.active_routing_config().rules.len().saturating_sub(1);
                     if app.routing_cursor < max {
                         app.routing_cursor += 1;
                     }
@@ -1155,11 +1201,16 @@ async fn handle_mouse_left_click(
                 let start_row = main_area.y + 2;
                 if row >= start_row && row < main_area.bottom().saturating_sub(2) {
                     let rule_idx = (row - start_row) as usize;
-                    if rule_idx < app.routing.rules.len() {
+                    if rule_idx < app.active_routing_config().rules.len() {
                         if app.routing_cursor == rule_idx {
-                            if let Some(rule) = app.routing.rules.get_mut(rule_idx) {
+                            app.ensure_custom_routing();
+                            if let Some(rule) =
+                                app.active_routing_config_mut().rules.get_mut(rule_idx)
+                            {
                                 rule.enabled = !rule.enabled;
-                                let _ = client.update_routing(&app.routing).await;
+                                let gid = app.routing_page_group_id();
+                                let cfg = app.active_routing_config().clone();
+                                let _ = client.update_routing(gid, &cfg).await;
                             }
                         } else {
                             app.routing_cursor = rule_idx;

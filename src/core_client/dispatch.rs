@@ -30,7 +30,12 @@ pub enum CoreEvent {
     },
     Error(String),
     TrafficStats(TrafficStats),
-    RoutingUpdated(RoutingConfig),
+    RoutingUpdated {
+        group_id: i32,
+        config: RoutingConfig,
+        source: String,
+        custom: Option<RoutingConfig>,
+    },
     HwidUpdated(HwidData),
     TunNameUpdated(String),
     KillSwitchUpdated(bool),
@@ -279,7 +284,12 @@ pub(crate) fn dispatch(msg: TcpMessage) -> CoreEvent {
         "error" => try_dispatch!(msg, "error", Warning, |d| CoreEvent::Error(d.content)),
         "traffic-stats" => try_dispatch!(msg, "traffic-stats", TrafficStats, TrafficStats),
         "routing-updated" => try_dispatch!(msg, "routing-updated", RoutingUpdated, |d| {
-            CoreEvent::RoutingUpdated(d.config)
+            CoreEvent::RoutingUpdated {
+                group_id: d.group_id,
+                config: d.config,
+                source: d.source,
+                custom: d.custom,
+            }
         }),
         "hwid-updated" => try_dispatch!(msg, "hwid-updated", HwidData, HwidUpdated),
         "tun-name-updated" => try_dispatch!(msg, "tun-name-updated", SetTunNameData, |d| {
@@ -584,11 +594,46 @@ mod tests {
         let event = dispatch(make_msg(
             "routing-updated",
             json!({
+                "group_id": 1,
+                "source": "custom",
+                "config": { "domain_strategy": "IPIfNonMatch", "rules": [] },
+                "custom": { "domain_strategy": "AsIs", "rules": [] }
+            }),
+        ));
+        if let CoreEvent::RoutingUpdated {
+            group_id,
+            config,
+            source,
+            custom,
+        } = event
+        {
+            assert_eq!(group_id, 1);
+            assert_eq!(config.domain_strategy, "IPIfNonMatch");
+            assert_eq!(source, "custom");
+            assert!(custom.is_some());
+        } else {
+            panic!("expected RoutingUpdated");
+        }
+    }
+
+    #[test]
+    fn test_dispatch_routing_updated_legacy_payload() {
+        let event = dispatch(make_msg(
+            "routing-updated",
+            json!({
                 "config": { "domain_strategy": "IPIfNonMatch", "rules": [] }
             }),
         ));
-        if let CoreEvent::RoutingUpdated(cfg) = event {
-            assert_eq!(cfg.domain_strategy, "IPIfNonMatch");
+        if let CoreEvent::RoutingUpdated {
+            group_id,
+            source,
+            custom,
+            ..
+        } = event
+        {
+            assert_eq!(group_id, 0);
+            assert!(source.is_empty());
+            assert!(custom.is_none());
         } else {
             panic!("expected RoutingUpdated");
         }

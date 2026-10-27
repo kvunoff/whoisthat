@@ -168,7 +168,7 @@ async fn main() -> io::Result<()> {
         cfg.log_level.clone(),
     );
     client.get_application_state().await?;
-    let _ = client.get_routing().await;
+    let _ = client.get_routing(0).await;
 
     enable_raw_mode()?;
     let mut stdout = io::stdout();

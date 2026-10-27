@@ -287,22 +287,45 @@ impl CoreClient {
             .await
     }
 
-    pub async fn get_routing(&self) -> std::io::Result<()> {
+    pub async fn get_routing(&self, group_id: i32) -> std::io::Result<()> {
         self.writer
             .lock()
             .await
-            .send("get-routing", &GetRoutingData {})
+            .send("get-routing", &GetRoutingData { group_id })
             .await
     }
 
-    pub async fn update_routing(&self, config: &RoutingConfig) -> std::io::Result<()> {
+    pub async fn update_routing(
+        &self,
+        group_id: i32,
+        config: &RoutingConfig,
+    ) -> std::io::Result<()> {
         self.writer
             .lock()
             .await
             .send(
                 "update-routing",
                 &UpdateRoutingData {
+                    group_id,
                     config: config.clone(),
+                },
+            )
+            .await
+    }
+
+    pub async fn set_manual_routing_source(
+        &self,
+        group_id: i32,
+        source: &str,
+    ) -> std::io::Result<()> {
+        self.writer
+            .lock()
+            .await
+            .send(
+                "set-manual-routing-source",
+                &SetManualRoutingSourceData {
+                    group_id,
+                    source: source.to_string(),
                 },
             )
             .await

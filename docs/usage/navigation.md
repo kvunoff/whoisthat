@@ -65,7 +65,8 @@ WhoisThat features a high-speed, keyboard-driven interface with full mouse suppo
 
 | Key | Context | Action |
 | :---: | :--- | :--- |
-| <kbd>h</kbd> / <kbd>l</kbd> / <kbd>←</kbd> / <kbd>→</kbd> | Routing Tab | Switch selected group for group-specific routing policies |
+| <kbd>h</kbd> / <kbd>l</kbd> / <kbd>←</kbd> / <kbd>→</kbd> | Routing Tab | Switch pages: Global rules and per-group routing |
+| <kbd>g</kbd> / <kbd>G</kbd> | Group Page | Toggle between Global and the group's custom rules |
 | <kbd>H</kbd> | Routing Tab | Open **Happ Routing Profiles** modal (view, activate, deactivate <kbd>o</kbd>, delete <kbd>d</kbd>/<kbd>x</kbd>) |
 | <kbd>m</kbd> | Routing Tab | Cycle group routing mode (`auto` → `manual` → `subscription` → `auto`) |
 | <kbd>i</kbd> | Routing Tab | Import Happ routing profile link (`happ://routing/...`) from clipboard |

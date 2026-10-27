@@ -41,8 +41,9 @@ This document provides a complete technical specification for the length-prefixe
 | `update-subscription` | `{"group_id": int}` | `subscription-updated` |
 | `set-tun-name` | `{"tun_name": "string"}` | `tun-name-updated` |
 | `set-hwid` | `{"enabled": bool, "user_agent": "string", "reset": bool}` | `hwid-updated` |
-| `get-routing` | `{}` | `routing-updated` |
-| `update-routing` | `{"config": { ... }}` | `routing-updated` |
+| `get-routing` | `{"group_id": int}` (`0` = Global) | `routing-updated` |
+| `update-routing` | `{"group_id": int, "config": { ... }}` | `routing-updated` (+ `group-updated` when an inheriting group becomes custom) |
+| `set-manual-routing-source` | `{"group_id": int, "source": "inherit" \| "custom"}` | `group-updated` & `routing-updated` |
 | `die` | `{}` | Terminates the core daemon cleanly. |
 | `set-kill-switch` | `{"enabled": bool}` | `kill-switch-updated` |
 | `set-split-tunnel` | `{"mode": "off" \| "exclude" \| "include"}` | `split-tunnel-updated` |
@@ -75,7 +76,7 @@ This document provides a complete technical specification for the length-prefixe
 | `is-root-answer` | `{"IsRoot": bool}` | Response indicating whether the daemon holds root privileges. |
 | `hwid-updated` | `{"enabled": bool, "hwid": "str", "user_agent": "str", ...}` | Fired when HWID parameters are changed or reset. |
 | `traffic-stats` | `{"proxy_up": int, "proxy_down": int, "direct_up": int, "direct_down": int}` | Broadcast every 1 second with real-time transfer counters. |
-| `routing-updated` | `{"config": { ... }}` | Fired when routing rules or active Happ profiles change. |
+| `routing-updated` | `{"group_id": int, "config": { ... }, "source": "global" \| "custom", "custom": { ... }?}` | Fired when routing rules, the manual rule source, or active Happ profiles change. `custom` carries the stored per-group override when one exists. |
 | `warn` | `{"key": "string", "content": "string"}` | Warning or actionable hint (e.g. missing binary, device limits). |
 | `kill-switch-updated` | `{"enabled": bool}` | Fired when Kill-Switch state changes. |
 | `split-tunnel-updated` | `{"mode": "off" \| "exclude" \| "include"}` | Fired when split-tunnel mode changes. |
@@ -156,7 +157,7 @@ Subscription metadata (`sub_*`) is automatically populated from the standard `su
 
 * **`fake_dns_enabled`**: the provider's FakeDNS preference. It is applied only in TUN mode with `GlobalProxy=true` and split mode `off`/`exclude`; other modes parse and store it without enabling fake allocation.
 * **`remote_dns` / `domestic_dns`**: short display labels derived from the profile (`DoH host`, `DoU address`). Empty when the profile has no usable DNS server.
-* These fields are additive: older clients can ignore them, and `ProtocolVersion` is unchanged.
+* These DNS fields are additive: older clients can ignore them without breaking the IPC handshake.
 
 ---
 
