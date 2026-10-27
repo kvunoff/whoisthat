@@ -2,11 +2,12 @@ package happ
 
 import (
 	"fmt"
+	gonanoid "github.com/matoous/go-nanoid/v2"
 	"net/http"
 	"net/url"
 	"strings"
-	gonanoid "github.com/matoous/go-nanoid/v2"
 	"whoisthat-core/db"
+	"whoisthat-core/lib/logger"
 	"whoisthat-core/structs"
 )
 
@@ -126,9 +127,12 @@ func UpsertFromLink(database *db.DB, groupID int, link string, now int64) (struc
 		return structs.RoutingProfile{}, false, fmt.Errorf("missing profile in link: %s", link)
 	}
 
-	cfg, _, err := ToRoutingConfig(*parsed.Profile)
+	cfg, warnings, err := ToRoutingConfig(*parsed.Profile)
 	if err != nil {
 		return structs.RoutingProfile{}, false, fmt.Errorf("invalid routing config: %w", err)
+	}
+	for _, w := range warnings {
+		logger.Warnf("happ routing %q: %s", parsed.Profile.Name, w)
 	}
 
 	globalProxy := true
@@ -147,6 +151,7 @@ func UpsertFromLink(database *db.DB, groupID int, link string, now int64) (struc
 		existing.Rules = cfg.Rules
 		existing.DomainStrategy = cfg.DomainStrategy
 		existing.GlobalProxy = globalProxy
+		existing.DNS = cfg.DNS
 		existing.LastUpdated = parsed.Profile.LastUpdated.Value()
 		existing.UpdatedAt = now
 
@@ -179,6 +184,7 @@ func UpsertFromLink(database *db.DB, groupID int, link string, now int64) (struc
 		Rules:          cfg.Rules,
 		DomainStrategy: cfg.DomainStrategy,
 		GlobalProxy:    globalProxy,
+		DNS:            cfg.DNS,
 		LastUpdated:    parsed.Profile.LastUpdated.Value(),
 		CreatedAt:      now,
 		UpdatedAt:      now,

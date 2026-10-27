@@ -127,3 +127,50 @@ func TestUpsertFromLink(t *testing.T) {
 		t.Errorf("expected active to be cleared after off, got %s", grp.ActiveRoutingProfileId)
 	}
 }
+
+func TestUpsertFromLink_PersistsDNS(t *testing.T) {
+	database := newTestDB(t)
+	addedGroup, err := database.AddGroup("DNSGroup", "")
+	if err != nil {
+		t.Fatalf("AddGroup failed: %v", err)
+	}
+	groupID := addedGroup.Id
+
+	payload := `{
+		"Name":"DNSProfile",
+		"GlobalProxy":true,
+		"LastUpdated":"1000",
+		"DirectSites":["example.com"],
+		"RemoteDNSType":"DoH",
+		"RemoteDNSDomain":"https://cloudflare-dns.com/dns-query",
+		"RemoteDNSIP":"1.1.1.1",
+		"DomesticDNSType":"DoU",
+		"DomesticDNSIP":"8.8.8.8",
+		"DnsHosts":{"vpn.example.com":"203.0.113.7"},
+		"FakeDNS":"true"
+	}`
+	link := "happ://routing/add/" + base64.StdEncoding.EncodeToString([]byte(payload))
+
+	prof, isOff, err := UpsertFromLink(database, groupID, link, 1000)
+	if err != nil || isOff {
+		t.Fatalf("UpsertFromLink failed: %v, isOff=%v", err, isOff)
+	}
+	if prof.DNS == nil {
+		t.Fatal("expected DNS to be stored on the profile")
+	}
+	if !prof.DNS.FakeDNSEnabled || prof.DNS.RemoteDNSType != "DoH" || prof.DNS.DomesticDNSType != "DoU" {
+		t.Errorf("unexpected DNS: %+v", prof.DNS)
+	}
+
+	// DNS must survive the encrypted round-trip.
+	loaded, err := database.LoadRoutingProfile(groupID, prof.Id)
+	if err != nil {
+		t.Fatalf("LoadRoutingProfile failed: %v", err)
+	}
+	if loaded.DNS == nil {
+		t.Fatal("expected DNS to be persisted")
+	}
+	if loaded.DNS.Hosts["vpn.example.com"] != "203.0.113.7" {
+		t.Errorf("unexpected persisted hosts: %+v", loaded.DNS.Hosts)
+	}
+}

@@ -55,6 +55,12 @@ pub struct RoutingProfileInfo {
     #[serde(default)]
     pub domain_strategy: String,
     #[serde(default)]
+    pub fake_dns_enabled: bool,
+    #[serde(default)]
+    pub remote_dns: String,
+    #[serde(default)]
+    pub domestic_dns: String,
+    #[serde(default)]
     pub last_updated: i64,
     #[serde(default)]
     pub geo_updated_at: i64,
@@ -519,4 +525,42 @@ pub struct SetActiveRoutingProfileData {
 pub struct DeleteRoutingProfileData {
     pub group_id: i32,
     pub profile_id: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::RoutingProfileInfo;
+
+    #[test]
+    fn routing_profile_info_decodes_dns_fields() {
+        let json = r#"{
+            "id": "p1",
+            "name": "DNS Profile",
+            "state": "ready",
+            "active": true,
+            "rules_count": 3,
+            "global_proxy": true,
+            "domain_strategy": "AsIs",
+            "fake_dns_enabled": true,
+            "remote_dns": "DoH cloudflare-dns.com",
+            "domestic_dns": "DoU 8.8.8.8"
+        }"#;
+
+        let info: RoutingProfileInfo =
+            serde_json::from_str(json).expect("decode routing profile info");
+        assert!(info.fake_dns_enabled);
+        assert_eq!(info.remote_dns, "DoH cloudflare-dns.com");
+        assert_eq!(info.domestic_dns, "DoU 8.8.8.8");
+    }
+
+    #[test]
+    fn routing_profile_info_decodes_old_payload_without_dns_fields() {
+        let json = r#"{"id":"p2","name":"Old","state":"ready","active":false,"rules_count":1}"#;
+
+        let info: RoutingProfileInfo =
+            serde_json::from_str(json).expect("decode old routing profile info");
+        assert!(!info.fake_dns_enabled);
+        assert!(info.remote_dns.is_empty());
+        assert!(info.domestic_dns.is_empty());
+    }
 }

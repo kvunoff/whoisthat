@@ -324,9 +324,23 @@ type RoutingRule struct {
 	Enabled     bool   `json:"enabled"`
 }
 
+// HappDNSConfig is the DNS configuration extracted from a Happ routing profile.
+// It is additive: manual routing and older Happ profiles leave it nil.
+type HappDNSConfig struct {
+	FakeDNSEnabled    bool              `json:"fake_dns_enabled,omitzero"`
+	RemoteDNSType     string            `json:"remote_dns_type,omitzero"`     // "DoH" | "DoU"
+	RemoteDNSDomain   string            `json:"remote_dns_domain,omitzero"`   // DoH URL
+	RemoteDNSIP       string            `json:"remote_dns_ip,omitzero"`       // DoU/bootstrap address
+	DomesticDNSType   string            `json:"domestic_dns_type,omitzero"`   // "DoH" | "DoU"
+	DomesticDNSDomain string            `json:"domestic_dns_domain,omitzero"` // DoH URL
+	DomesticDNSIP     string            `json:"domestic_dns_ip,omitzero"`     // DoU/bootstrap address
+	Hosts             map[string]string `json:"hosts,omitzero"`
+}
+
 type RoutingConfig struct {
-	DomainStrategy string        `json:"domain_strategy"`
-	Rules          []RoutingRule `json:"rules"`
+	DomainStrategy string         `json:"domain_strategy"`
+	Rules          []RoutingRule  `json:"rules"`
+	DNS            *HappDNSConfig `json:"dns,omitzero"`
 }
 
 type GetRoutingData struct{}
@@ -339,23 +353,24 @@ type RoutingUpdated struct {
 }
 
 type RoutingProfile struct {
-	Id             string          `json:"id"`
-	GroupId        int             `json:"group_id"`
-	Name           string          `json:"name"`
-	Source         string          `json:"source"` // "happ"
-	State          string          `json:"state"`  // "ready" | "updating" | "error"
-	LastError      string          `json:"last_error,omitzero"`
+	Id        string `json:"id"`
+	GroupId   int    `json:"group_id"`
+	Name      string `json:"name"`
+	Source    string `json:"source"` // "happ"
+	State     string `json:"state"`  // "ready" | "updating" | "error"
+	LastError string `json:"last_error,omitzero"`
 
 	RawJSON        json.RawMessage `json:"raw_json,omitzero"`
 	Rules          []RoutingRule   `json:"rules,omitzero"`
 	DomainStrategy string          `json:"domain_strategy,omitzero"`
 	GlobalProxy    bool            `json:"global_proxy"`
+	DNS            *HappDNSConfig  `json:"dns,omitzero"`
 
-	GeoDir         string          `json:"geo_dir,omitzero"` // relative path from DB.Path
-	LastUpdated    int64           `json:"last_updated,omitzero"`
-	GeoUpdatedAt   int64           `json:"geo_updated_at,omitzero"`
-	CreatedAt      int64           `json:"created_at,omitzero"`
-	UpdatedAt      int64           `json:"updated_at,omitzero"`
+	GeoDir       string `json:"geo_dir,omitzero"` // relative path from DB.Path
+	LastUpdated  int64  `json:"last_updated,omitzero"`
+	GeoUpdatedAt int64  `json:"geo_updated_at,omitzero"`
+	CreatedAt    int64  `json:"created_at,omitzero"`
+	UpdatedAt    int64  `json:"updated_at,omitzero"`
 }
 
 type RoutingProfileInfo struct {
@@ -367,6 +382,9 @@ type RoutingProfileInfo struct {
 	RulesCount     int    `json:"rules_count"`
 	GlobalProxy    bool   `json:"global_proxy"`
 	DomainStrategy string `json:"domain_strategy"`
+	FakeDNSEnabled bool   `json:"fake_dns_enabled,omitzero"`
+	RemoteDNS      string `json:"remote_dns,omitzero"`
+	DomesticDNS    string `json:"domestic_dns,omitzero"`
 	LastUpdated    int64  `json:"last_updated,omitzero"`
 	GeoUpdatedAt   int64  `json:"geo_updated_at,omitzero"`
 }
@@ -376,6 +394,13 @@ type RoutingSelection struct {
 	Source    string // "manual" | "happ"
 	ProfileId string
 	GeoDir    string // absolute path or ""
+
+	// GlobalProxy mirrors RoutingProfile.GlobalProxy for Happ selections. It is
+	// not serialized: it only drives DNS server selection during config synthesis.
+	GlobalProxy bool
+	// BootstrapHosts maps a domain (usually the VPN server host) to already
+	// resolved IPs so the tunnel can be established before its own DNS works.
+	BootstrapHosts map[string][]string
 }
 
 type ImportHappRoutingData struct {
@@ -397,5 +422,3 @@ type DeleteRoutingProfileData struct {
 	GroupId   int    `json:"group_id"`
 	ProfileId string `json:"profile_id"`
 }
-
-
