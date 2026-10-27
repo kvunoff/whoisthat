@@ -9,6 +9,11 @@ import (
 )
 
 func (cmd *Cmd) SetKillSwitch(data structs.SetKillSwitchData, proxy_manager *proxy.ProxyManager) {
+	if data.Enabled && appconfig.GetConfig().SplitTunnel.Mode == "include" {
+		cmd.warn("set-kill-switch-failed", "kill-switch is incompatible with split-tunnel include mode; switch to exclude/off first")
+		cmd.send("kill-switch-updated", structs.SetKillSwitchData{Enabled: appconfig.GetConfig().KillSwitchEnabled})
+		return
+	}
 	appconfig.SetKillSwitch(data.Enabled)
 
 	if !data.Enabled {

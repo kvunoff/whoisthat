@@ -13,6 +13,11 @@ import (
 // AppConfig (invalid -> "off"); the persisted value is echoed back so the TUI
 // reflects any coercion.
 func (cmd *Cmd) SetSplitTunnel(data structs.SetSplitTunnelData, proxy_manager *proxy.ProxyManager, tun_manager *tunmode.TunModeManager) {
+	if data.Mode == "include" && appconfig.GetConfig().KillSwitchEnabled {
+		cmd.warn("set-split-tunnel-failed", "split-tunnel include mode is incompatible with kill-switch; disable kill-switch first")
+		cmd.send("split-tunnel-updated", structs.SetSplitTunnelData{Mode: appconfig.GetConfig().SplitTunnel.Mode})
+		return
+	}
 	mode := appconfig.SetSplitTunnelMode(data.Mode)
 
 	if tun_manager.IsEnabledLocked() {

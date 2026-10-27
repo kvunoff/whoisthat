@@ -4,6 +4,10 @@ use serde::{Deserialize, Serialize};
 pub struct TcpMessage {
     pub msg: String,
     pub data: serde_json::Value,
+    /// Optional request-correlation id (forward-compatible; the current TUI
+    /// does not require it).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -137,12 +141,20 @@ pub struct ApplicationState {
     pub core_version: String,
     #[serde(rename = "protocol_version", default)]
     pub protocol_version: u32,
+    /// Daemon-authoritative TUN name. Mirrored into config.toml for offline
+    /// startup, but the value from this message always wins.
+    #[serde(rename = "tun_name", default)]
+    pub tun_name: String,
+    /// Daemon-authoritative latency-test settings.
+    #[serde(rename = "test_config", default)]
+    pub test_config: TestConfig,
 }
 
-/// IPC contract version expected by this TUI. Must match
-/// `core/core/lib/version/version.go:ProtocolVersion`.
+/// IPC contract version expected by this TUI. The value is mirrored in
+/// `core/core/lib/version/protocol.txt` (embedded by both sides); the test
+/// below fails if they drift.
 /// A running core is reused while versions match; on mismatch it is restarted.
-pub const EXPECTED_CORE_PROTOCOL_VERSION: u32 = 2;
+pub const EXPECTED_CORE_PROTOCOL_VERSION: u32 = 3;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct XrayStatusInfo {
@@ -582,5 +594,18 @@ mod tests {
         assert!(!info.fake_dns_enabled);
         assert!(info.remote_dns.is_empty());
         assert!(info.domestic_dns.is_empty());
+    }
+
+    #[test]
+    fn protocol_version_matches_shared_file() {
+        let shared: u32 = include_str!("../../core/core/lib/version/protocol.txt")
+            .trim()
+            .parse()
+            .expect("protocol.txt must contain a single integer");
+        assert_eq!(
+            super::EXPECTED_CORE_PROTOCOL_VERSION,
+            shared,
+            "Rust and Go protocol versions drifted; update core/core/lib/version/protocol.txt"
+        );
     }
 }

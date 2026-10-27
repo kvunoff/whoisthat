@@ -128,6 +128,11 @@ type ApplicationState struct {
 	XrayStatus       XrayStatusInfo      `json:"xray_status"`
 	CoreVersion      string              `json:"core_version,omitzero"`
 	ProtocolVersion  int                 `json:"protocol_version,omitzero"`
+	// TUNName and TestConfig are the daemon's authoritative values. The TUI
+	// keeps the same fields in config.toml for offline startup, but overwrites
+	// them from every application-state so the two cannot drift.
+	TunName    string     `json:"tun_name,omitzero"`
+	TestConfig TestConfig `json:"test_config,omitzero"`
 }
 
 type UpdateSubscriptionData struct {
@@ -284,17 +289,34 @@ type ProfileID struct {
 type TCPMessage struct {
 	Msg  string          `json:"msg"`
 	Data json.RawMessage `json:"data"`
+	// ID is an optional request correlation id echoed by the server. It is
+	// currently additive and may be omitted by older clients.
+	ID string `json:"id,omitempty"`
+}
+
+type HelloData struct {
+	Token           string `json:"token"`
+	ProtocolVersion int    `json:"protocol_version"`
+}
+
+type HelloResponse struct {
+	ProtocolVersion int    `json:"protocol_version"`
+	Error           string `json:"error,omitempty"`
 }
 
 type Message[T any] struct {
 	Msg  string `json:"msg"`
 	Data T      `json:"data"`
+	ID   string `json:"id,omitempty"`
 }
 
 type ProxyStatus struct {
 	Connection  string  `json:"connection"`
 	Profile     Profile `json:"profile"`
 	ConnectedAt int64   `json:"connected_at"`
+	// Reason is set when the connection dropped without an explicit
+	// disconnect request (e.g. the Xray process exited unexpectedly).
+	Reason string `json:"reason,omitempty"`
 }
 
 type DisableTunData struct{}

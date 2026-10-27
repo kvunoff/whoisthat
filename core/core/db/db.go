@@ -11,12 +11,17 @@ import (
 	"whoisthat-core/lib/crypto"
 	"whoisthat-core/lib/logger"
 	"whoisthat-core/structs"
+	"whoisthat-core/utils"
 )
 
 type DB struct {
 	Path string
-	key  []byte
-	mu   sync.Mutex
+	// KeyPath overrides the encryption-key location. When empty the legacy
+	// per-database path (<Path>/.key) is used, which keeps tests and tools
+	// that construct a bare DB working.
+	KeyPath string
+	key     []byte
+	mu      sync.Mutex
 }
 
 func (db *DB) saveDBConfig(db_config structs.DBConfig) error {
@@ -31,27 +36,65 @@ func (db *DB) loadDBConfig() (structs.DBConfig, error) {
 	return db_config_data, nil
 }
 
+const encryptionKeySize = 32
+
 func (db *DB) loadOrCreateKey() {
 	keyPath := db.GetKeyFilePath()
+	legacyPath := filepath.Join(db.Path, ".key")
+
 	data, err := os.ReadFile(keyPath)
-	if err == nil && len(data) == 32 {
-		db.key = data
+	if err == nil {
+		db.key = validateKey(keyPath, data)
+		_ = os.Chmod(keyPath, 0600)
 		return
 	}
-	if err != nil && !os.IsNotExist(err) {
+	if !os.IsNotExist(err) {
 		logger.Fatal("failed to read key file " + keyPath + ": " + err.Error())
 	}
+
+	// Migrate the legacy co-located key on first start after the upgrade.
+	// We intentionally keep the old file in place so a downgrade still works;
+	// it can be removed in a later release.
+	if keyPath != legacyPath {
+		legacy, legacyErr := os.ReadFile(legacyPath)
+		if legacyErr == nil {
+			db.key = validateKey(legacyPath, legacy)
+			if writeErr := utils.AtomicWriteFile(keyPath, legacy, 0600); writeErr != nil {
+				logger.Fatal("failed to migrate key file to " + keyPath + ": " + writeErr.Error())
+			}
+			logger.Infof("db: migrated encryption key from %s to %s", legacyPath, keyPath)
+			return
+		}
+		if !os.IsNotExist(legacyErr) {
+			logger.Fatal("failed to read legacy key file " + legacyPath + ": " + legacyErr.Error())
+		}
+	}
+
 	key, err := crypto.GenerateKey()
 	if err != nil {
 		logger.Fatal("failed to generate encryption key: " + err.Error())
 	}
-	if err := os.WriteFile(keyPath, key, 0600); err != nil {
+	if err := utils.AtomicWriteFile(keyPath, key, 0600); err != nil {
 		logger.Fatal("failed to write key file " + keyPath + ": " + err.Error())
 	}
 	db.key = key
 }
 
+// validateKey refuses to silently replace a damaged key: doing so would make
+// the existing encrypted database permanently unreadable.
+func validateKey(path string, data []byte) []byte {
+	if len(data) != encryptionKeySize {
+		logger.Fatal("encryption key " + path + " has invalid length " +
+			strconv.Itoa(len(data)) + " (expected 32 bytes); refusing to overwrite it. " +
+			"Restore the key from a backup or remove the database and key together.")
+	}
+	return data
+}
+
 func (db *DB) GetKeyFilePath() string {
+	if db.KeyPath != "" {
+		return db.KeyPath
+	}
 	return filepath.Join(db.Path, ".key")
 }
 
@@ -93,7 +136,8 @@ func (db *DB) writeEncryptedJSON(path string, data any) error {
 		return err
 	}
 
-	return os.WriteFile(path, wrapperJSON, 0600)
+	_ = os.Chmod(filepath.Dir(path), 0700)
+	return utils.AtomicWriteFile(path, wrapperJSON, 0600)
 }
 
 func (db *DB) GetDBConfigFile() string {
@@ -153,7 +197,7 @@ func (db *DB) migrateFileToEncrypted(path string) {
 		logger.Warnf("migration: failed to marshal wrapper for %s: %v", path, err)
 		return
 	}
-	if err := os.WriteFile(path, wrapperJSON, 0600); err != nil {
+	if err := utils.AtomicWriteFile(path, wrapperJSON, 0600); err != nil {
 		logger.Warnf("migration: failed to write %s: %v", path, err)
 	}
 }

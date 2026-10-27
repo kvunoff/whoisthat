@@ -145,14 +145,14 @@ type GRPCSettings struct {
 
 // KCPSettings holds transport settings for mKCP.
 type KCPSettings struct {
-	MTU             *uint32 `json:"mtu,omitempty"`
-	TTI             *uint32 `json:"tti,omitempty"`
-	UplinkCapacity  *uint32 `json:"uplinkCapacity,omitempty"`
+	MTU              *uint32 `json:"mtu,omitempty"`
+	TTI              *uint32 `json:"tti,omitempty"`
+	UplinkCapacity   *uint32 `json:"uplinkCapacity,omitempty"`
 	DownlinkCapacity *uint32 `json:"downlinkCapacity,omitempty"`
-	Congestion      *bool   `json:"congestion,omitempty"`
-	ReadBufferSize  *uint32 `json:"readBufferSize,omitempty"`
-	WriteBufferSize *uint32 `json:"writeBufferSize,omitempty"`
-	Seed            *string `json:"seed,omitempty"`
+	Congestion       *bool   `json:"congestion,omitempty"`
+	ReadBufferSize   *uint32 `json:"readBufferSize,omitempty"`
+	WriteBufferSize  *uint32 `json:"writeBufferSize,omitempty"`
+	Seed             *string `json:"seed,omitempty"`
 }
 
 // XHTTPSettings holds transport settings for xHTTP.

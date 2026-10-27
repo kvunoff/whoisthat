@@ -1,9 +1,11 @@
 package TCPServer
 
 import (
+	"bufio"
 	"encoding/binary"
 	"io"
 	"net"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -164,7 +166,7 @@ func TestHandleConnection_DeferDeleteGuard(t *testing.T) {
 	s.clients["dup"] = cc1
 	handleReturned := make(chan struct{})
 	go func() {
-		s.handleConnection(cc1, "dup")
+		s.handleConnection(cc1, "dup", false)
 		close(handleReturned)
 	}()
 
@@ -315,5 +317,63 @@ func TestBroadcast_FramingOverUnixSocket(t *testing.T) {
 		if string(got) != string(want) {
 			t.Fatalf("payload = %q, want %q", got, want)
 		}
+	}
+}
+
+func writeFramed(t *testing.T, w net.Conn, payload []byte) {
+	t.Helper()
+	length := make([]byte, 4)
+	binary.BigEndian.PutUint32(length, uint32(len(payload)))
+	if _, err := w.Write(length); err != nil {
+		t.Fatalf("write length: %v", err)
+	}
+	if _, err := w.Write(payload); err != nil {
+		t.Fatalf("write payload: %v", err)
+	}
+}
+
+func TestTCPAuthRequiresToken(t *testing.T) {
+	tests := []struct {
+		name    string
+		payload string
+		ok      bool
+	}{
+		{"valid", `{"msg":"hello","data":{"token":"secret","protocol_version":3}}`, true},
+		{"bad-token", `{"msg":"hello","data":{"token":"wrong","protocol_version":3}}`, false},
+		{"bad-protocol", `{"msg":"hello","data":{"token":"secret","protocol_version":2}}`, false},
+		{"wrong-message", `{"msg":"connect","data":{}}`, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server, client := net.Pipe()
+			defer server.Close()
+			defer client.Close()
+
+			s := &Server{tcpToken: "secret"}
+			cc := newClientConn(server)
+			defer closeClient(cc)
+
+			done := make(chan bool, 1)
+			go func() {
+				done <- s.authenticateTCP(cc, bufio.NewReader(server))
+			}()
+
+			writeFramed(t, client, []byte(tt.payload))
+			payload, got := readFramed(t, client, time.Second)
+			if !got {
+				t.Fatal("no handshake response")
+			}
+			if tt.ok {
+				if string(payload) == "" || !strings.Contains(string(payload), "hello-ok") {
+					t.Fatalf("expected hello-ok, got %s", payload)
+				}
+			} else if !strings.Contains(string(payload), "hello-error") {
+				t.Fatalf("expected hello-error, got %s", payload)
+			}
+			if authOK := <-done; authOK != tt.ok {
+				t.Fatalf("authenticateTCP = %v, want %v", authOK, tt.ok)
+			}
+		})
 	}
 }

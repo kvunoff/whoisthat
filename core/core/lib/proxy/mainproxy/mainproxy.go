@@ -5,6 +5,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"whoisthat-core/db"
 	"whoisthat-core/lib"
@@ -20,9 +21,8 @@ import (
 // getStatus -> status
 // test -> limit to 5 concurrent tests, but simple return interface
 
-// coreProc is the union of methods mainproxy uses to drive either xray-core
-// (vless/vmess/trojan/ss/socks) or the official hysteria2 client subprocess.
-// Both xray.XrayCore and hysteria.HysteriaCore satisfy this interface.
+// coreProc is the interface mainproxy uses to drive the Xray subprocess.
+// It is kept as an interface so tests can substitute a fake core.
 type coreProc interface {
 	Start(stdinConfig []byte, assetDir string) error
 	Stop()
@@ -62,6 +62,28 @@ type ProxyManager struct {
 	testMu        sync.RWMutex
 	testConfig    structs.TestConfig
 	testEndpoints []string
+
+	exitHandlerMu    sync.RWMutex
+	onUnexpectedExit func(string)
+}
+
+// SetUnexpectedExitHandler registers a callback invoked when the proxy
+// subprocess exits without a preceding Stop()/Connect(). The daemon uses it to
+// tear down TUN state and re-arm the kill-switch instead of leaving the user
+// with a half-configured network.
+func (p *ProxyManager) SetUnexpectedExitHandler(fn func(string)) {
+	p.exitHandlerMu.Lock()
+	p.onUnexpectedExit = fn
+	p.exitHandlerMu.Unlock()
+}
+
+func (p *ProxyManager) notifyUnexpectedExit(reason string) {
+	p.exitHandlerMu.RLock()
+	fn := p.onUnexpectedExit
+	p.exitHandlerMu.RUnlock()
+	if fn != nil {
+		go fn(reason)
+	}
 }
 
 func (p *ProxyManager) Init() {
@@ -100,13 +122,20 @@ func (p *ProxyManager) Init() {
 // exitWatcher tracks the single goroutine reading p.core.ExitedCh() so we
 // can stop it before swapping core on the next Connect (previously it
 // leaked one goroutine per connect, all racing on the swapped field).
-var exitWatcherDone chan struct{}
-var exitWatcherMu sync.Mutex
+var (
+	exitWatcherDone     chan struct{}
+	exitWatcherMu       sync.Mutex
+	exitWatcherStopping atomic.Bool
+)
 
 // retireExitWatcher signals the active exit-watcher goroutine to stop and
 // clears the package-global reference. Idempotent and nil-safe.
 func (p *ProxyManager) retireExitWatcher() {
 	exitWatcherMu.Lock()
+	// Mark the stop as intentional *before* closing done: the watcher may win
+	// the select race against the closed channel and observe the subprocess
+	// exit, which must not be reported as a crash.
+	exitWatcherStopping.Store(true)
 	if exitWatcherDone != nil {
 		close(exitWatcherDone)
 		exitWatcherDone = nil
@@ -120,6 +149,7 @@ func (p *ProxyManager) retireExitWatcher() {
 func (p *ProxyManager) startExitWatcher() chan struct{} {
 	done := make(chan struct{})
 	exitWatcherMu.Lock()
+	exitWatcherStopping.Store(false)
 	exitWatcherDone = done
 	exitWatcherMu.Unlock()
 	go p.watchExit(done)
@@ -139,9 +169,15 @@ func (p *ProxyManager) watchExit(done chan struct{}) {
 			if !ok {
 				return
 			}
+			if exitWatcherStopping.Load() {
+				// Intentional Stop/Connect: the caller handles cleanup.
+				return
+			}
+			reason := "proxy process exited unexpectedly"
 			p.mu.Lock()
 			p.status = structs.ProxyStatus{
 				Connection: "disconnected",
+				Reason:     reason,
 			}
 			p.mu.Unlock()
 			// Non-blocking send: StatusChanged is buffered (8) and the
@@ -152,12 +188,14 @@ func (p *ProxyManager) watchExit(done chan struct{}) {
 			default:
 				logger.Warn("StatusChanged full; dropping disconnected event")
 			}
+			logger.Warn("proxy: " + reason + "; tearing down TUN state")
+			p.notifyUnexpectedExit(reason)
 		}
 	}
 }
 
-// isHysteriaProtocol reports whether the profile's protocol must run via the
-// official hysteria2 binary instead of xray-core.
+// isHysteriaProtocol reports whether the profile uses the hysteria2 transport.
+// Xray runs it natively, but it is UDP, so the tester must skip the TCP probe.
 func isHysteriaProtocol(protocol string) bool {
 	return protocol == "hysteria2" || protocol == "hy2"
 }

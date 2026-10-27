@@ -196,6 +196,9 @@ func createOutboundObject(uri string) (Outbound, RawData, error) {
 		}
 	} else if effectiveSecurity != nil && *effectiveSecurity == "reality" {
 		spx := ""
+		if rd.SPX != nil {
+			spx = *rd.SPX
+		}
 		streamSettings.RealitySettings = &RealitySettings{
 			PublicKey:   rd.PBK,
 			ServerName:  rd.SNI,

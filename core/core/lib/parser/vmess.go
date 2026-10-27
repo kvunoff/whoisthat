@@ -27,25 +27,47 @@ func parseVmess(uri string) (RawData, VmessOutboundSettings, error) {
 	return rd, createVmessOutboundSettings(rd), nil
 }
 
-func parseVmessBase64(data string) (RawData, error) {
-	decodedStr := URLDecode(data)
-	decodedBytes, err := base64.StdEncoding.DecodeString(decodedStr)
-	if err != nil {
-		decodedBytes, err = base64.URLEncoding.DecodeString(decodedStr)
-		if err != nil {
-			decodedBytes, err = base64.RawStdEncoding.DecodeString(decodedStr)
-			if err != nil {
-				decodedBytes, err = base64.RawURLEncoding.DecodeString(decodedStr)
-				if err != nil {
-					return RawData{}, err
-				}
+// decodeVmessPayload accepts both orderings found in the wild: URL-decode the
+// URI component first and then base64-decode, or base64-decode the raw payload
+// and URL-decode the JSON string afterwards.
+func decodeVmessPayload(data string) ([]byte, error) {
+	candidates := []string{URLDecode(data), data}
+	encodings := []*base64.Encoding{
+		base64.StdEncoding,
+		base64.URLEncoding,
+		base64.RawStdEncoding,
+		base64.RawURLEncoding,
+	}
+	var lastErr error
+	for _, candidate := range candidates {
+		for _, enc := range encodings {
+			decoded, err := enc.DecodeString(candidate)
+			if err == nil {
+				return decoded, nil
 			}
+			lastErr = err
 		}
+	}
+	return nil, lastErr
+}
+
+func parseVmessBase64(data string) (RawData, error) {
+	decodedBytes, err := decodeVmessPayload(data)
+	if err != nil {
+		return RawData{}, err
 	}
 
 	var jsonMap map[string]any
 	if err := json.Unmarshal(decodedBytes, &jsonMap); err != nil {
-		return RawData{}, err
+		// Some clients URL-encode the decoded JSON payload as well.
+		if alt := URLDecode(string(decodedBytes)); alt != string(decodedBytes) {
+			if err2 := json.Unmarshal([]byte(alt), &jsonMap); err2 == nil {
+				err = nil
+			}
+		}
+		if err != nil {
+			return RawData{}, err
+		}
 	}
 
 	getString := func(key string) *string {

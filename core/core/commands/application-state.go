@@ -29,9 +29,11 @@ func (cmd *Cmd) GetApplicationState(data structs.GetApplicationStateData, proxy_
 			Enabled: appconfig.GetConfig().AutoconnectEnabled,
 			Mode:    appconfig.GetConfig().AutoconnectMode,
 		},
-		XrayStatus: xraymgr.GetManager().GetStatus(),
-		CoreVersion: version.CoreVersion,
+		XrayStatus:      xraymgr.GetManager().GetStatus(),
+		CoreVersion:     version.CoreVersion,
 		ProtocolVersion: version.ProtocolVersion,
+		TunName:         appconfig.GetConfig().TunName,
+		TestConfig:      proxy_manager.GetTestConfig(),
 	}
 
 	cmd.send("application-state", application_state)

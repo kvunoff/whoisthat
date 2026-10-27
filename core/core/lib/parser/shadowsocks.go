@@ -6,6 +6,25 @@ import (
 	"strings"
 )
 
+// decodeShadowsocksUserinfo decodes the legacy base64 userinfo used by
+// ss:// links. SIP002 plain userinfo is handled by the caller as a fallback.
+func decodeShadowsocksUserinfo(userinfo string) (string, bool) {
+	encodings := []*base64.Encoding{
+		base64.StdEncoding,
+		base64.URLEncoding,
+		base64.RawStdEncoding,
+		base64.RawURLEncoding,
+	}
+	for _, enc := range encodings {
+		if decoded, err := enc.DecodeString(userinfo); err == nil {
+			if strings.Contains(string(decoded), ":") {
+				return string(decoded), true
+			}
+		}
+	}
+	return "", false
+}
+
 func parseShadowsocks(uri string) (RawData, ShadowSocksOutboundSettings, error) {
 	if !strings.HasPrefix(uri, "ss://") {
 		return RawData{}, ShadowSocksOutboundSettings{}, fmt.Errorf("invalid shadowsocks URI: missing 'ss://'")
@@ -26,21 +45,13 @@ func parseShadowsocks(uri string) (RawData, ShadowSocksOutboundSettings, error) 
 	}
 
 	userinfo := URLDecode(userinfoRaw)
-	decodedBytes, err := base64.StdEncoding.DecodeString(userinfo)
-	if err != nil {
-		decodedBytes, err = base64.URLEncoding.DecodeString(userinfo)
-		if err != nil {
-			decodedBytes, err = base64.RawStdEncoding.DecodeString(userinfo)
-			if err != nil {
-				decodedBytes, err = base64.RawURLEncoding.DecodeString(userinfo)
-				if err != nil {
-					return RawData{}, ShadowSocksOutboundSettings{}, fmt.Errorf("shadowsocks user info is not valid base64: %w", err)
-				}
-			}
-		}
+	decodedStr, ok := decodeShadowsocksUserinfo(userinfo)
+	if !ok {
+		// SIP002 permits a plain, percent-encoded "method:password" userinfo.
+		// Accept it when it is not valid base64.
+		decodedStr = userinfo
 	}
 
-	decodedStr := string(decodedBytes)
 	method, password, ok := splitOnce(decodedStr, ":")
 	if !ok {
 		return RawData{}, ShadowSocksOutboundSettings{}, fmt.Errorf("no ':' found in decoded shadowsocks data")

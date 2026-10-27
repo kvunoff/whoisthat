@@ -22,7 +22,7 @@ func TestGetUriProtocol(t *testing.T) {
 		{"trojan://pw@host:443", "trojan", false},
 		{"hysteria2://pw@host:443", "hysteria2", false},
 		{"hy2://pw@host:443", "hysteria2", false},
-		{"http://host:80", "http", false},
+		{"http://host:80", "", true},
 		{"unknown://host:80", "", true},
 	}
 
@@ -438,3 +438,35 @@ func TestParseUriWithTun(t *testing.T) {
 	}
 }
 
+func TestVlessRealitySpiderX(t *testing.T) {
+	uri := "vless://uuid@example.com:443?security=reality&pbk=pubkey&sid=abcd&spx=%2Fcustom%2Fpath&sni=example.com#R"
+	outbound, _, err := createOutboundObject(uri)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	reality := outbound.StreamSettings.RealitySettings
+	if reality == nil || reality.SpiderX == nil {
+		t.Fatalf("expected reality settings with spiderX, got %+v", reality)
+	}
+	if *reality.SpiderX != "/custom/path" {
+		t.Errorf("spiderX = %q, want /custom/path", *reality.SpiderX)
+	}
+}
+
+func TestShadowsocksSIP002PlainUserinfo(t *testing.T) {
+	// SIP002 allows a plain, percent-encoded method:password userinfo.
+	uri := "ss://aes-256-gcm:sec%3Aret@example.com:8388#Plain"
+	outbound, rd, err := createOutboundObject(uri)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if outbound.Protocol != "shadowsocks" {
+		t.Errorf("expected shadowsocks, got %s", outbound.Protocol)
+	}
+	if rd.ServerMethod == nil || *rd.ServerMethod != "aes-256-gcm" {
+		t.Errorf("method = %v, want aes-256-gcm", rd.ServerMethod)
+	}
+	if rd.UUID == nil || *rd.UUID != "sec:ret" {
+		t.Errorf("password = %v, want sec:ret", rd.UUID)
+	}
+}
