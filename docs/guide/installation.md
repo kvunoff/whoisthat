@@ -144,7 +144,7 @@ Example successful output:
 
 [✓] IPC & Daemon Status
   • Socket path: /run/user/1000/whoisthat/core.sock
-  • Daemon: active (protocol v2, core v0.2.0)
+  • Daemon: active (protocol v1, core v0.2.3)
 
 [✓] Storage & Cryptography
   • Database directory: ~/.local/share/whoisthat/db/ (0700)

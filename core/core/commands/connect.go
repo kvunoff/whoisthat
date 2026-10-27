@@ -20,7 +20,8 @@ func (cmd *Cmd) Disconnect(data structs.DisconnectData, proxy_manager *proxy.Pro
 	tun_manager.Stop()
 
 	if killSwitchEnabled && len(proxyIPs) > 0 {
-		if err := tunmode.SetupKillSwitchBlock(proxyIPs); err != nil {
+		cfg := appconfig.GetConfig()
+		if err := tunmode.SetupKillSwitchBlock(proxyIPs, cfg.TunName, cfg.DnsServers); err != nil {
 			logger.Warn("kill-switch: failed to apply block on disconnect:", err)
 		} else {
 			logger.Info("kill-switch: block applied after disconnect")
@@ -71,7 +72,7 @@ func (cmd *Cmd) Connect(data structs.ConnectData, proxy_manager *proxy.ProxyMana
 	if killSwitchEnabled {
 		proxyIPs := proxy_manager.GetProxyIPs()
 		if len(proxyIPs) > 0 {
-			if err := tunmode.SetupKillSwitchBlock(proxyIPs); err != nil {
+			if err := tunmode.SetupKillSwitchBlock(proxyIPs, tunName, appconfig.GetConfig().DnsServers); err != nil {
 				logger.Warn("kill-switch: failed to apply block:", err)
 			} else {
 				logger.Info("kill-switch: block applied, whitelisted IPs:", proxyIPs)

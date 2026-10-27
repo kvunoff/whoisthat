@@ -30,8 +30,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.25"
-        # Note: Go 1.25+ recommended
+          # Single source of truth: core/core/go.mod. Keeps CI and local
+          # builds on the same toolchain instead of relying on GOTOOLCHAIN
+          # auto-download.
+          go-version-file: core/core/go.mod
+          cache-dependency-path: core/core/go.sum
       - name: vet
         working-directory: core/core
         run: go vet ./...
@@ -39,5 +42,8 @@ jobs:
         working-directory: core/core
         run: go build ./...
       - name: Test
+        # Run every package: routing (lib/proxy/mainproxy), Happ parsing
+        # (lib/happ) and TUN script builders (lib/proxy/tun) are covered by
+        # unit tests that the previous partial list skipped.
         working-directory: core/core
-        run: go test ./lib/parser/... ./lib/crypto/... ./lib/AppConfig/... ./db/...
+        run: go test ./...

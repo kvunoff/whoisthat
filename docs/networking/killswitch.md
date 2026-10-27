@@ -8,24 +8,25 @@ The **Kill-Switch** prevents accidental data and IP leaks by automatically block
 
 When Kill-Switch is active, WhoisThat installs dedicated kernel firewall tables:
 
-* **IPv4 Table**: `inet whoisthat_ks`
-* **IPv6 Table**: `ip6 whoisthat_ks`
+* **nftables backend**: a single `inet whoisthat_ks` table covering IPv4 and IPv6.
+* **iptables fallback**: `WHOISTHAT_KS` chains in the `ip` and `ip6` `filter` tables, inserted at the top of `OUTPUT`.
 
 ```
                     Outbound Packet
                           │
                           ▼
-            Is traffic to Local Loopback (lo)?
+            Loopback interface / 127.0.0.0/8 / ::1?
                           ├─► YES: Allow
-                          │
-            Is traffic to RFC1918 Private LAN?
+            Private LAN, link-local, multicast?
                           ├─► YES: Allow
-                          │
-            Is traffic destined to active VPN Server IP?
+            Configured DNS servers / TUN DNS sink?
+                          ├─► YES: Allow (resolution, tunnel DNS)
+            Socket carries fwmark 1 (direct outbound, split-exclude)?
+                          ├─► YES: Allow
+            Leaving through the TUN adapter?
+                          ├─► YES: Allow
+            Destination is the active VPN Server IP?
                           ├─► YES: Allow (needed for handshake/reconnect)
-                          │
-            Is traffic traversing the TUN adapter?
-                          ├─► YES: Allow
                           │
                           ▼
                 Drop Packet (Unconditionally Blocked)
@@ -43,8 +44,12 @@ Unlike traditional scripts that append rules to your existing firewall chains, W
 ### 2. Whitelisted Traffic
 To prevent breaking local machine communication, the Kill-Switch automatically permits:
 * **Loopback (`127.0.0.0/8`, `::1`)**: Local inter-process communication.
-* **LAN Subnets (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`)**: Access to local printers, routers, and NAS devices.
-* **VPN Server IP**: The exact IP and port of the active proxy server, allowing automatic reconnection attempts.
+* **LAN Subnets (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16`, `fc00::/7`, `fe80::/10`)**: Access to local printers, routers, NAS devices, mDNS and NDP.
+* **Multicast (`224.0.0.0/4`, `ff00::/8`)**: Local service discovery.
+* **Configured DNS servers**: The resolvers from the app configuration, so name resolution keeps working while the tunnel is being established. The reserved TUN DNS sink (`198.18.0.53`, `fd00::53`) is allowed as well.
+* **Direct-marked sockets (`fwmark 1`)**: Xray's `freedom` outbound for `DirectSites`/`DirectIp` and apps launched via `whoisthat run` in exclude mode. Setting `SO_MARK` requires `CAP_NET_ADMIN`, which only `whoisthat-core` holds in the rootless setup.
+* **TUN Interface**: Traffic encapsulated by the tunnel. Once the interface is removed on disconnect the rule stops matching, so the fail-closed behaviour is preserved.
+* **VPN Server IP**: The exact IPs of the active proxy server, allowing automatic reconnection attempts.
 
 ---
 
@@ -53,6 +58,9 @@ To prevent breaking local machine communication, the Kill-Switch automatically p
 ### In the TUI
 1. Open the Settings tab (<kbd>5</kbd>).
 2. Navigate to **Kill Switch** and press <kbd>Enter</kbd> or <kbd>Space</kbd> to toggle `on` / `off`.
+
+Enabling the Kill-Switch while connected arms the firewall immediately; there is
+no need to reconnect.
 
 ### Via CLI
 ```bash

@@ -237,6 +237,20 @@ func (p *ProxyManager) Connect(profile structs.Profile, tunName string, tunEnabl
 		logger.Infof("routing: outbounds %d → %d (source=%s)", prevOutboundsCount, afterOutboundsCount, selection.Source)
 	}
 
+	// Pre-flight: validate the generated config before spawning xray so a bad
+	// profile/routing/DNS config surfaces as an actionable connect error instead
+	// of a silent immediate disconnect. The TUN inbound is omitted from the test
+	// config (see buildPreflightConfig).
+	if preflightCfg, buildErr := buildPreflightConfig(profile, app_config.SocksPort, app_config.HttpPort, apiPort, selection, p.DB != nil); buildErr != nil {
+		logger.Warnf("preflight: could not build test config, skipping validation: %v", buildErr)
+	} else if testErr := validateXrayConfig(preflightCfg, selection.GeoDir); testErr != nil {
+		// The stats port was reserved above but never handed to a running core.
+		if p.portPool != nil && apiPort != 0 {
+			p.portPool.ReleasePort(apiPort)
+		}
+		return testErr
+	}
+
 	p.core = &xray.XrayCore{Exited: make(chan error, 1)}
 	if err := p.core.Start(xray_config, selection.GeoDir); err != nil {
 		return err
