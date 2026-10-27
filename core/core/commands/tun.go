@@ -78,6 +78,41 @@ func pickDns(dnsServers []string) (dns4, dns6 string) {
 	return
 }
 
+// dnsHijackFor selects the port-53 redirect strategy for the active profile.
+// Manual routing (and Happ profiles without DNS settings) keep the legacy
+// behaviour: DNAT to the configured resolver through the physical interface.
+// Happ profiles with DNS use the reserved sink inside TUN, except in include
+// split mode where the hijack must stay disabled.
+func (cmd *Cmd) dnsHijackFor(profile structs.Profile) tunmode.DnsHijack {
+	dns4, dns6 := pickDns(appconfig.GetConfig().DnsServers)
+	legacy := tunmode.DnsHijack{
+		Enabled: true,
+		Legacy:  true,
+		Sink4:   dns4,
+		Sink6:   dns6,
+	}
+
+	if cmd.DB == nil {
+		return legacy
+	}
+	selection, err := cmd.DB.ResolveRouting(profile.GroupId)
+	if err != nil {
+		logger.Warnf("tun: failed to resolve routing for dns hijack: %v", err)
+		return legacy
+	}
+	if selection.Source != "happ" || selection.Config.DNS == nil {
+		return legacy
+	}
+
+	return tunmode.DnsHijack{
+		Enabled:   appconfig.GetConfig().SplitTunnel.Mode != "include",
+		Happ:      true,
+		Sink4:     tunmode.DNSSink4,
+		Sink6:     tunmode.DNSSink6,
+		ScopeMark: 1,
+	}
+}
+
 func (cmd *Cmd) enableTun(profile structs.Profile, proxy_manager *proxy.ProxyManager, tun_manager *tunmode.TunModeManager) {
 	resolved, err := resolveHostAndAddress(profile, appconfig.GetConfig().DnsServers)
 	if err != nil {
@@ -88,8 +123,7 @@ func (cmd *Cmd) enableTun(profile structs.Profile, proxy_manager *proxy.ProxyMan
 
 	logger.Infof("tun: resolved %d IPv4, %d IPv6", len(resolved.IPv4), len(resolved.IPv6))
 
-	dns4, dns6 := pickDns(appconfig.GetConfig().DnsServers)
-	err = tun_manager.Start(resolved.IPv4, resolved.IPv6, dns4, dns6)
+	err = tun_manager.Start(resolved.IPv4, resolved.IPv6, cmd.dnsHijackFor(profile))
 	if err != nil {
 		logger.Warn("tun: failed to start:", err)
 		cmd.warn("enable-tun-failed", err.Error())

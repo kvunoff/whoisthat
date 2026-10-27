@@ -19,8 +19,7 @@ type TunModeManager struct {
 	default_interface_ipv6 string
 	proxy_ipv4s            []string
 	proxy_ipv6s            []string
-	dns                    string
-	dns_ipv6               string
+	dnsHijack              DnsHijack
 	sudoUid                int
 	StatusChanged          chan bool
 	IsEnabled              bool
@@ -38,9 +37,16 @@ func (t *TunModeManager) IsEnabledLocked() bool {
 	return t.IsEnabled
 }
 
-func (t *TunModeManager) Start(proxy_ipv4s []string, proxy_ipv6s []string, dns string, dns_ipv6 string) error {
-	t.tun_name = appconfig.GetConfig().TunName
+func (t *TunModeManager) Start(proxy_ipv4s []string, proxy_ipv6s []string, dns DnsHijack) error {
 	logger.Info("tun: starting...")
+
+	// Tear down the previous session before replacing the fields its cleanup
+	// depends on (old TUN name, DNS routes, proxy IPs).
+	if err := t.clearNetworkRules(); err != nil {
+		return fmt.Errorf("there was an error clearing network rules %w", err)
+	}
+
+	t.tun_name = appconfig.GetConfig().TunName
 	interface_name, interface_ip, interface_ipv6, err := GetDefaultInterfaceAndIP()
 	if err != nil {
 		return fmt.Errorf("failed on getting default interface %w", err)
@@ -51,14 +57,11 @@ func (t *TunModeManager) Start(proxy_ipv4s []string, proxy_ipv6s []string, dns s
 	t.default_interface = interface_name
 	t.proxy_ipv4s = proxy_ipv4s
 	t.proxy_ipv6s = proxy_ipv6s
-	t.dns = dns
-	t.dns_ipv6 = dns_ipv6
-	t.sudoUid = utils.DedicatedUid()
 
-	err = t.clearNetworkRules()
-	if err != nil {
-		return fmt.Errorf("there was an error clearing network rules %w", err)
-	}
+	dns.Exclude = append(append([]string{}, dns.Exclude...), proxy_ipv4s...)
+	dns.Exclude = append(dns.Exclude, proxy_ipv6s...)
+	t.dnsHijack = sanitizeDnsHijack(dns)
+	t.sudoUid = utils.DedicatedUid()
 
 	err = createTun(t.tun_name, t.tun_ip, t.tun_ipv6)
 	if err != nil {
@@ -73,10 +76,18 @@ func (t *TunModeManager) Start(proxy_ipv4s []string, proxy_ipv6s []string, dns s
 		return fmt.Errorf("there was an error setting up proxy ip routes %w", err)
 	}
 
-	err = setupDnsIpRoutes(t.dns, t.dns_ipv6, t.default_interface_ip, t.default_interface_ipv6)
-	if err != nil {
-		t.clearNetworkRules()
-		return fmt.Errorf("there was an error setting up dns ip route %w", err)
+	// The legacy (manual) path keeps the configured resolver reachable through
+	// the physical interface. The Happ path uses the DNS sink inside TUN and
+	// must not install these routes.
+	if t.dnsHijack.Legacy {
+		// Delete first: a previous crash may have left the same routes behind.
+		_ = deleteDnsIpRoutes(t.dnsHijack.Sink4, t.default_interface_ip)
+		_ = deleteDnsIpRoutes6(t.dnsHijack.Sink6, t.default_interface_ipv6)
+		err = setupDnsIpRoutes(t.dnsHijack.Sink4, t.dnsHijack.Sink6, t.default_interface_ip, t.default_interface_ipv6)
+		if err != nil {
+			t.clearNetworkRules()
+			return fmt.Errorf("there was an error setting up dns ip route %w", err)
+		}
 	}
 
 	err = loosenRpFilter(t.tun_name, t.default_interface)
@@ -118,19 +129,15 @@ func (t *TunModeManager) Start(proxy_ipv4s []string, proxy_ipv6s []string, dns s
 		}
 	}
 
-	err = setupDnsHijackRules(t.default_interface, t.dns)
+	err = setupDnsHijackRules(t.default_interface, t.dnsHijack)
 	if err != nil {
 		t.clearNetworkRules()
 		return fmt.Errorf("there was an error setting up dns hijack rules %w", err)
 	}
-	if t.dns_ipv6 != "" {
-		if err2 := setupDnsHijackRules6(t.default_interface, t.dns_ipv6); err2 != nil {
-			logger.Warnf("tun: ipv6 dns hijack failed: %v", err2)
+	if t.dnsHijack.Enabled {
+		if err2 := setupResolvectlDns(t.tun_name, t.dnsHijack.Sink4); err2 != nil {
+			logger.Warnf("tun: resolvectl dns setup: %v", err2)
 		}
-	}
-
-	if err2 := setupResolvectlDns(t.tun_name, t.dns); err2 != nil {
-		logger.Warnf("tun: resolvectl dns setup: %v", err2)
 	}
 
 	// In "include" split mode ONLY the chosen apps use the tunnel, so we must
@@ -173,8 +180,46 @@ func (t *TunModeManager) Stop() {
 	}
 	logger.Info("tun: disabling...")
 	t.clearNetworkRules()
+	t.dnsHijack = DnsHijack{}
 	t.IsEnabled = false
 	t.StatusChanged <- t.IsEnabled
+}
+
+// ReapplyDnsHijack reconciles the port-53 hijack with the current split mode
+// while TUN is running. The legacy (manual) hijack is independent of the split
+// mode and is left untouched.
+func (t *TunModeManager) ReapplyDnsHijack() error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if !t.IsEnabled || !t.dnsHijack.Happ {
+		return nil
+	}
+
+	want := appconfig.GetConfig().SplitTunnel.Mode != "include"
+	if want == t.dnsHijack.Enabled {
+		return nil
+	}
+
+	if want {
+		plan := t.dnsHijack
+		plan.Enabled = true
+		if err := setupDnsHijackRules(t.default_interface, plan); err != nil {
+			return err
+		}
+		if err := setupResolvectlDns(t.tun_name, plan.Sink4); err != nil {
+			logger.Warnf("tun: resolvectl dns setup: %v", err)
+		}
+	} else {
+		if err := cleanDnsHijackRules(); err != nil {
+			return err
+		}
+		if err := revertResolvectlDns(t.tun_name); err != nil {
+			logger.Warnf("tun: resolvectl dns revert: %v", err)
+		}
+	}
+
+	t.dnsHijack.Enabled = want
+	return nil
 }
 
 func (t *TunModeManager) clearNetworkRules() error {
@@ -182,16 +227,19 @@ func (t *TunModeManager) clearNetworkRules() error {
 		deleteTunIpRoute(t.tun_name, t.tun_ip),
 		deleteTunIpRoute6(t.tun_name, t.tun_ipv6),
 		deleteTun(t.tun_name),
-		deleteDnsIpRoutes(t.dns, t.default_interface_ip),
-		deleteDnsIpRoutes6(t.dns_ipv6, t.default_interface_ipv6),
-		cleanDnsHijackRules(t.default_interface, t.dns),
-		cleanDnsHijackRules6(t.default_interface, t.dns_ipv6),
+		cleanDnsHijackRules(),
 		deleteProxyIpRoutes(t.proxy_ipv4s, t.proxy_ipv6s, t.default_interface_ip, t.default_interface_ipv6),
 		removeFwmarkRouting(1, t.default_interface, t.default_interface_ip),
 		removeFwmarkRouting6(1, t.default_interface, t.default_interface_ipv6),
 		cleanConntrackRules(t.tun_name, t.default_interface),
 		t.removeSplitRules(),
 		revertResolvectlDns(t.tun_name),
+	}
+	if t.dnsHijack.Legacy {
+		errs = append(errs,
+			deleteDnsIpRoutes(t.dnsHijack.Sink4, t.default_interface_ip),
+			deleteDnsIpRoutes6(t.dnsHijack.Sink6, t.default_interface_ipv6),
+		)
 	}
 	if t.sudoUid > 0 {
 		errs = append(errs, removeUidRouting(t.sudoUid, t.default_interface, t.default_interface_ip))

@@ -17,11 +17,9 @@ package tunmode
 // deletes fwmark AND uidrange rules regardless of their specific values, so it
 // stays correct even if the dedicated UID differs from the crashed session's.
 //
-// The iptables DNS-hijack nat rules are intentionally NOT reconciled here: they
-// are keyed by the default interface and DNS IP at creation time, which may have
-// changed since the crash, making blind removal unreliable. In practice nft is
-// the default backend and its whole-table delete is complete; on the iptables
-// backend the kill-switch chains (the documented breakage) are still cleaned.
+// The iptables DNS hijack lives in dedicated nat chains, so a crash cannot
+// leave address-specific rules behind: removing the chain jump and flushing the
+// chain is enough regardless of which sink or interface was in use.
 func buildReconcileScript() string {
 	return `
 # --- nftables tables (modern default backend) ---
@@ -38,6 +36,19 @@ for IPT in iptables ip6tables; do
     "$IPT" -D OUTPUT -j WHOISTHAT_KS 2>/dev/null || true
     "$IPT" -F WHOISTHAT_KS 2>/dev/null || true
     "$IPT" -X WHOISTHAT_KS 2>/dev/null || true
+done
+
+# --- iptables DNS hijack chains (legacy backend) ---
+for IPT in iptables ip6tables; do
+    "$IPT" -t nat -D OUTPUT -j WHOISTHAT_DNS_OUT 2>/dev/null || true
+    "$IPT" -t nat -D PREROUTING -j WHOISTHAT_DNS_PRE 2>/dev/null || true
+    "$IPT" -t nat -D POSTROUTING -j WHOISTHAT_DNS_POST 2>/dev/null || true
+    "$IPT" -t nat -F WHOISTHAT_DNS_OUT 2>/dev/null || true
+    "$IPT" -t nat -F WHOISTHAT_DNS_PRE 2>/dev/null || true
+    "$IPT" -t nat -F WHOISTHAT_DNS_POST 2>/dev/null || true
+    "$IPT" -t nat -X WHOISTHAT_DNS_OUT 2>/dev/null || true
+    "$IPT" -t nat -X WHOISTHAT_DNS_PRE 2>/dev/null || true
+    "$IPT" -t nat -X WHOISTHAT_DNS_POST 2>/dev/null || true
 done
 
 # --- policy routing: drop every rule pointing at table 100, then flush it ---

@@ -20,6 +20,11 @@ func (cmd *Cmd) SetSplitTunnel(data structs.SetSplitTunnelData, tun_manager *tun
 			cmd.warn("set-split-tunnel-failed", "failed to apply split tunnel routing")
 			return
 		}
+		if err := tun_manager.ReapplyDnsHijack(); err != nil {
+			logger.Warn("split: failed to reapply dns hijack:", err)
+			cmd.warn("set-split-tunnel-failed", "failed to apply split tunnel dns routing")
+			return
+		}
 		logger.Infof("split: live rules reapplied for mode %q", mode)
 	}
 
