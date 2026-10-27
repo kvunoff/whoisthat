@@ -54,7 +54,7 @@ The diagnostic engine performs comprehensive, non-destructive system inspections
 ### 4. IPC & Daemon Runtime Status
 * **`XDG_RUNTIME_DIR`**: Validates the user runtime directory environment variable and permissions.
 * **Unix Domain Socket**: Resolves `$XDG_RUNTIME_DIR/whoisthat/core.sock`, verifying that file mode is `0600` and owned by the current user.
-* **Daemon Handshake**: Transmits an IPC `get-application-state` probe to verify the daemon is responsive and reports wire protocol version `1`.
+* **Daemon Handshake**: Transmits an IPC `get-application-state` probe to verify the daemon is responsive and reports wire protocol version `3`.
 * **Legacy TCP Port**: If TCP is enabled, checks if `127.0.0.1:4897` is accessible.
 
 ### 5. DNS & Routing
@@ -71,7 +71,7 @@ Reading nftables/iptables state usually requires root. When `whoisthat doctor` r
 
 ### 6. Storage, Database & Cryptography
 * **Database Directory**: Validates that `~/.local/share/whoisthat/db/` exists and has secure Unix permissions (`0700`).
-* **Master Encryption Key**: Inspects `~/.local/share/whoisthat/db/.key`:
+* **Master Encryption Key**: Inspects `~/.config/whoisthat/db.key`:
   * Ensures permissions are strictly `0600`.
   * Verifies key length is exactly 32 bytes (256 bits).
 * **Configuration Syntax**: Parses `~/.config/whoisthat/config.toml` (TUI) and `~/.config/whoisthat/config.json` (Core) for JSON/TOML syntax validity.
@@ -85,9 +85,9 @@ When running `whoisthat doctor --json`:
 
 ```json
 {
-  "client_version": "0.14.1",
-  "core_version": "0.3.1",
-  "core_protocol_version": 1,
+  "client_version": "0.14.3",
+  "core_version": "0.3.3",
+  "core_protocol_version": 3,
   "categories": [
     {
       "name": "Binaries & Runtimes",
@@ -95,7 +95,7 @@ When running `whoisthat doctor --json`:
         {
           "name": "whoisthat",
           "status": "pass",
-          "message": "/usr/local/bin/whoisthat (v0.13.0)",
+          "message": "/usr/local/bin/whoisthat (v0.14.3)",
           "fix": null
         },
         {
@@ -151,5 +151,5 @@ When running `whoisthat doctor --json`:
 | **`neither nftables nor iptables found`** | Host lacks a compatible firewall backend. | Arch: `sudo pacman -S nftables`<br>Debian/Ubuntu: `sudo apt install nftables` |
 | **`systemd linger disabled`** | User services will terminate upon graphical logout. | `sudo loginctl enable-linger $USER` |
 | **`IPC connection refused`** | Daemon is offline or crashed. | `systemctl --user restart whoisthat-core` or `whoisthat-core &` |
-| **`Invalid .key permissions`** | Master key permissions are broader than user-only. | `chmod 0600 ~/.local/share/whoisthat/db/.key` |
+| **`Invalid .key permissions`** | Master key permissions are broader than user-only. | `chmod 0600 ~/.config/whoisthat/db.key` |
 | **`Geo assets missing or corrupt`** | `geoip.dat` or `geosite.dat` smaller than 10 MB. | Remove damaged files and restart client: `rm -rf ~/.config/whoisthat/geo/*` |

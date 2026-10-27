@@ -44,6 +44,7 @@ INSTALL_TUN=true
 TARGET_BRANCH=""
 BUILD_LOCAL=false
 UNINSTALL_MODE=false
+INSECURE_SKIP_VERIFY=false
 MODE="Install"
 ARCH_FAMILY=""
 GO_ARCH=""
@@ -137,6 +138,7 @@ Options:
   -y, --yes          Automatic yes to prompts (install all components)
   --branch <name>    Build from a specific git branch or tag (default: latest release tag)
   --local            Build directly from current repository directory instead of cloning
+  --insecure-skip-verify  Skip Xray archive checksum verification (DANGEROUS, not recommended)
   --uninstall        Remove whoisthat binaries from /usr/local/bin
   -h, --help         Show this help message and exit
 
@@ -246,6 +248,11 @@ parse_args() {
                 ;;
             --local)
                 BUILD_LOCAL=true
+                shift
+                ;;
+            --insecure-skip-verify)
+                INSECURE_SKIP_VERIFY=true
+                warn "Checksum verification disabled by --insecure-skip-verify. This is dangerous."
                 shift
                 ;;
             --uninstall)
@@ -552,6 +559,51 @@ install_binaries() {
     fi
 }
 
+# --- Xray archive verification ------------------------------------------------
+# Fail closed: a missing or mismatched checksum aborts the installation. The
+# digest is fetched from GitHub only (never from the download mirror), so a
+# compromised mirror cannot supply both the archive and its checksum.
+verify_xray_archive() {
+    local archive="$1"
+    local xray_zip="$2"
+    local tmp_dir="$3"
+
+    if [ "$INSECURE_SKIP_VERIFY" = "true" ]; then
+        warn "Skipping Xray checksum verification (--insecure-skip-verify)."
+        return 0
+    fi
+
+    if ! command -v sha256sum &>/dev/null; then
+        err "sha256sum is required to verify the Xray archive but was not found."
+        return 1
+    fi
+
+    local dgst_file="${tmp_dir}/${xray_zip}.dgst"
+    local expected_sha=""
+    if curl -fsSL --connect-timeout 10 \
+        "https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}/${xray_zip}.dgst" \
+        -o "$dgst_file" 2>/dev/null; then
+        expected_sha=$(grep -i "SHA2-256" "$dgst_file" | grep -oE '[a-fA-F0-9]{64}' | head -1 | tr '[:upper:]' '[:lower:]' || true)
+    fi
+
+    if [ -z "$expected_sha" ]; then
+        err "Could not obtain the official Xray SHA-256 checksum."
+        err "Refusing to install an unverified binary. Re-run with --insecure-skip-verify to override (not recommended)."
+        return 1
+    fi
+
+    local actual_sha
+    actual_sha=$(sha256sum "${archive}" | awk '{print $1}')
+    if [ "$actual_sha" != "$expected_sha" ]; then
+        err "Xray checksum mismatch: expected ${expected_sha}, got ${actual_sha}."
+        err "The archive may be corrupted or tampered with. Aborting installation."
+        return 1
+    fi
+
+    info "Xray-core SHA-256 checksum verified OK"
+    return 0
+}
+
 # --- step 6: install Xray-core -----------------------------------------------
 install_xray() {
     step "Step 6/6: Isolated Xray-core runtime (${XRAY_VERSION})"
@@ -612,23 +664,9 @@ install_xray() {
     info "Downloading precompiled Xray-core ${XRAY_VERSION} (${XRAY_ARCH})..."
     mkdir -p "$tmp_dir"
     if download_file_with_fallback "${tmp_dir}/${xray_zip}" "$xray_url1" "$xray_url2"; then
-        # Verify SHA-256 via .dgst if sha256sum is available
-        if command -v sha256sum &>/dev/null; then
-            local dgst_file="${tmp_dir}/${xray_zip}.dgst"
-            if curl -fsSL --connect-timeout 10 "https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}/${xray_zip}.dgst" -o "$dgst_file" 2>/dev/null || \
-               curl -fsSL --connect-timeout 10 "https://ghfast.top/https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}/${xray_zip}.dgst" -o "$dgst_file" 2>/dev/null; then
-                local expected_sha
-                expected_sha=$(grep -i "SHA2-256" "$dgst_file" | grep -oE '[a-fA-F0-9]{64}' | head -1 | tr '[:upper:]' '[:lower:]' || true)
-                if [ -n "$expected_sha" ]; then
-                    local actual_sha
-                    actual_sha=$(sha256sum "${tmp_dir}/${xray_zip}" | awk '{print $1}')
-                    if [ "$actual_sha" = "$expected_sha" ]; then
-                        info "Xray-core SHA-256 checksum verified OK"
-                    else
-                        warn "Xray-core checksum mismatch: expected $expected_sha, got $actual_sha"
-                    fi
-                fi
-            fi
+        if ! verify_xray_archive "${tmp_dir}/${xray_zip}" "$xray_zip" "$tmp_dir"; then
+            rm -rf "$tmp_dir"
+            exit 1
         fi
 
         extract_zip "${tmp_dir}/${xray_zip}" "$tmp_dir"
@@ -674,7 +712,7 @@ print_final_message() {
     echo -e "    ${BOLD}Enter / c${NC}      — connect / reconnect"
     echo -e "    ${BOLD}d${NC}              — disconnect"
     echo -e "    ${BOLD}v${NC}              — toggle TUN mode"
-    echo -e "    ${BOLD}t / T${NC}          — test latency (t = all, T = selected)"
+    echo -e "    ${BOLD}t / T${NC}          — test latency (t = focused profile, T = all)"
     echo -e "    ${BOLD}C${NC}              — cancel running tests"
     echo -e "    ${BOLD}U${NC}              — add new subscription (group)"
     echo -e "    ${BOLD}u${NC}              — update subscription"

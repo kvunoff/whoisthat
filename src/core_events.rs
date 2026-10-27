@@ -28,6 +28,39 @@ pub(crate) async fn handle_core_event(
                 config::save_config(cfg);
             }
             app.apply_state(*s);
+            // Mirror daemon-authoritative settings into the offline cache.
+            let mut cfg_changed = false;
+            if cfg.tun_name != app.tun_name {
+                cfg.tun_name = app.tun_name.clone();
+                cfg_changed = true;
+            }
+            if cfg.kill_switch_enabled != app.kill_switch_enabled {
+                cfg.kill_switch_enabled = app.kill_switch_enabled;
+                cfg_changed = true;
+            }
+            if cfg.test_concurrency != app.test_config.concurrency {
+                cfg.test_concurrency = app.test_config.concurrency;
+                cfg_changed = true;
+            }
+            if cfg.test_timeout_seconds != app.test_config.timeout_seconds {
+                cfg.test_timeout_seconds = app.test_config.timeout_seconds;
+                cfg_changed = true;
+            }
+            if cfg.test_samples != app.test_config.samples_per_test {
+                cfg.test_samples = app.test_config.samples_per_test;
+                cfg_changed = true;
+            }
+            if cfg.test_endpoint != app.test_config.test_endpoint {
+                cfg.test_endpoint = app.test_config.test_endpoint.clone();
+                cfg_changed = true;
+            }
+            if cfg.auto_test_on_subscribe != app.test_config.auto_test_on_subscribe {
+                cfg.auto_test_on_subscribe = app.test_config.auto_test_on_subscribe;
+                cfg_changed = true;
+            }
+            if cfg_changed {
+                config::save_config(cfg);
+            }
             if *first_state {
                 *first_state = false;
                 if !cfg.autoconnect_migrated
@@ -261,6 +294,12 @@ pub(crate) async fn handle_core_event(
         }
         CoreEvent::KillSwitchUpdated(enabled) => {
             app.kill_switch_enabled = enabled;
+            // The core may reject the change (e.g. include-mode split tunnel);
+            // keep config.toml in sync with the authoritative value.
+            if cfg.kill_switch_enabled != enabled {
+                cfg.kill_switch_enabled = enabled;
+                config::save_config(cfg);
+            }
         }
         CoreEvent::SplitTunnelUpdated(mode) => {
             app.split_tunnel = if mode.is_empty() {

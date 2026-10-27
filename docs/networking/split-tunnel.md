@@ -22,6 +22,10 @@ Configure the mode in the TUI (**Settings → Network → Split tunnel**) or via
 In `include` mode, only processes explicitly launched inside the split slice are protected by the VPN. All other applications and background traffic connect unprotected over your physical connection.
 :::
 
+::: danger Kill-Switch incompatibility
+`include` mode cannot be combined with the Kill-Switch: the kill-switch blocks everything outside the tunnel, which is the exact traffic include mode is supposed to leave on the physical interface. The core rejects enabling either setting while the other is active and normalizes a hand-edited config to `kill-switch: false`.
+:::
+
 ### DNS Behaviour
 
 DNS follows the same split boundary:

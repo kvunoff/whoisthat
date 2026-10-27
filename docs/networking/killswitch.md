@@ -32,6 +32,10 @@ When Kill-Switch is active, WhoisThat installs dedicated kernel firewall tables:
                 Drop Packet (Unconditionally Blocked)
 ```
 
+### Incompatibility with include-mode split tunneling
+
+Kill-Switch is **not compatible with `split-tunnel: include`**. Include mode deliberately routes only the apps in the split slice through the VPN and lets everything else use the physical interface; a system-wide kill-switch would block exactly that "everything else". The core rejects enabling either feature while the other is active (and normalizes a hand-edited config to `kill-switch: false`), so the UI cannot end up in a state where it reports a working split tunnel while all other traffic is silently dropped.
+
 ---
 
 ## Key Security Characteristics

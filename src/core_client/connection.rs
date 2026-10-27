@@ -3,7 +3,11 @@ use serde::Serialize;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpStream, UnixStream};
 
-use super::protocol::TcpMessage;
+use super::protocol::{TcpMessage, EXPECTED_CORE_PROTOCOL_VERSION};
+
+/// Maximum accepted IPC frame. Kept in sync with
+/// core/core/lib/TCPServer/TCPServer.go:MaxFrameSize (64 MiB).
+const MAX_FRAME_SIZE: usize = 64 * 1024 * 1024;
 
 /// How to reach the core. UDS is the secure default (filesystem-permission
 /// gated); TCP is the legacy/remote fallback and only used when configured.
@@ -64,7 +68,7 @@ impl CoreReadHalf {
         };
 
         let len = u32::from_be_bytes(len_buf);
-        if len == 0 || len > 10 * 1024 * 1024 {
+        if len == 0 || len as usize > MAX_FRAME_SIZE {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 format!("Invalid message length: {}", len),
@@ -102,7 +106,7 @@ impl CoreWriteHalf {
         let json = serde_json::to_vec(&payload)?;
 
         let len = json.len() as u32;
-        if len == 0 || len > 10 * 1024 * 1024 {
+        if len == 0 || len as usize > MAX_FRAME_SIZE {
             error!("Invalid payload length: {}", len);
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
@@ -127,6 +131,74 @@ impl CoreWriteHalf {
     }
 }
 
+/// Authenticate the opt-in TCP transport with the shared token file written by
+/// the core (0600 in the user's runtime directory). UDS is already protected by
+/// filesystem permissions and does not use this handshake.
+async fn tcp_handshake(stream: &mut TcpStream) -> std::io::Result<()> {
+    let token_path = crate::config::ipc_token_path();
+    let token = std::fs::read_to_string(&token_path).map_err(|e| {
+        std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            format!(
+                "cannot read TCP IPC token at {}: {}. Start whoisthat-core with tcp-enabled first.",
+                token_path, e
+            ),
+        )
+    })?;
+
+    let payload = serde_json::json!({
+        "msg": "hello",
+        "data": {
+            "token": token.trim(),
+            "protocol_version": EXPECTED_CORE_PROTOCOL_VERSION,
+        },
+    });
+    let json = serde_json::to_vec(&payload)?;
+    let len = json.len() as u32;
+    if len == 0 || len as usize > MAX_FRAME_SIZE {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "hello frame too large",
+        ));
+    }
+    stream.write_all(&len.to_be_bytes()).await?;
+    stream.write_all(&json).await?;
+    stream.flush().await?;
+
+    let mut len_buf = [0u8; 4];
+    stream.read_exact(&mut len_buf).await?;
+    let len = u32::from_be_bytes(len_buf);
+    if len == 0 || len as usize > MAX_FRAME_SIZE {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "invalid hello response length",
+        ));
+    }
+    let mut buf = vec![0u8; len as usize];
+    stream.read_exact(&mut buf).await?;
+    let msg: TcpMessage = serde_json::from_slice(&buf)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
+
+    match msg.msg.as_str() {
+        "hello-ok" => Ok(()),
+        "hello-error" => {
+            let reason = msg
+                .data
+                .get("error")
+                .and_then(|v| v.as_str())
+                .unwrap_or("TCP IPC authentication failed");
+            Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                reason.to_string(),
+            ))
+        }
+        other => Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("unexpected handshake response: {other}"),
+        )),
+    }
+}
+
 pub struct CoreConnection {
     stream: Stream,
 }
@@ -137,8 +209,9 @@ impl CoreConnection {
         let stream = match endpoint {
             Endpoint::Unix(path) => Stream::Unix(UnixStream::connect(path).await?),
             Endpoint::Tcp { host, port } => {
-                let s = TcpStream::connect(format!("{}:{}", host, port)).await?;
+                let mut s = TcpStream::connect(format!("{}:{}", host, port)).await?;
                 s.set_nodelay(true)?;
+                tcp_handshake(&mut s).await?;
                 Stream::Tcp(s)
             }
         };
@@ -189,7 +262,7 @@ impl CoreConnection {
         let json = serde_json::to_vec(&payload)?;
 
         let len = json.len() as u32;
-        if len == 0 || len > 10 * 1024 * 1024 {
+        if len == 0 || len as usize > MAX_FRAME_SIZE {
             error!("Invalid payload length: {}", len);
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,

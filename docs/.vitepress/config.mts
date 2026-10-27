@@ -13,7 +13,7 @@ function getClientVersion(): string {
     const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'))
     if (pkg.version) return pkg.version
   } catch {}
-  return '0.14.2'
+  return '0.14.3'
 }
 
 const clientVersion = getClientVersion()

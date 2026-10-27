@@ -340,6 +340,7 @@ mod tests {
         TcpMessage {
             msg: msg.to_string(),
             data,
+            id: None,
         }
     }
 

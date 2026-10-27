@@ -128,6 +128,16 @@ pub fn default_socket_path() -> String {
     }
 }
 
+/// Shared secret for the opt-in TCP transport. Must stay in sync with
+/// `AppConfig.IPCTokenPath()` in the Go core.
+pub fn ipc_token_path() -> String {
+    let uid = unsafe { libc_getuid() };
+    match std::env::var("XDG_RUNTIME_DIR") {
+        Ok(dir) if !dir.is_empty() => format!("{}/whoisthat/ipc.token", dir),
+        _ => format!("/tmp/whoisthat-{}/ipc.token", uid),
+    }
+}
+
 // Minimal getuid without pulling in the libc crate — matches Go's os.Getuid().
 extern "C" {
     #[link_name = "getuid"]

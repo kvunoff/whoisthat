@@ -24,7 +24,7 @@ curl -fsSL https://raw.githubusercontent.com/kvunoff/whoisthat/main/install.sh |
 
 **What the install script does:**
 1. Checks for system tools (`curl`, `tar`, `git`, C compiler, `setcap`, `pkexec`).
-2. Installs or adopts precompiled **Xray-core (pinned v26.9.9)** with SHA256 checksum verification.
+2. Installs or adopts precompiled **Xray-core (pinned v26.9.9)** with SHA256 checksum verification. The installer **fails closed**: a missing or mismatched official checksum aborts the installation (override only with the explicit `--insecure-skip-verify` flag).
 3. Builds `whoisthat-core` (Go) and `whoisthat` (Rust).
 4. Installs binaries into `/usr/local/bin/`.
 5. Grants `cap_net_admin,cap_net_raw,cap_setpcap=+ep` to `/usr/local/bin/whoisthat-core`.
@@ -94,8 +94,8 @@ xdg-mime default whoisthat.desktop x-scheme-handler/wit
 
 WhoisThat relies on a unified proxy engine: **Xray-core v26.9.9**.
 
-* **Automatic Download & Verification**: On startup, `whoisthat-core` inspects `~/.local/share/whoisthat/runtimes/xray/`. If not present, it downloads the official precompiled release archive directly from GitHub, computes its SHA-256 hash against the hardcoded release checksum, unpacks the binary, and marks it executable.
-* **System Binary Adoption**: If `/usr/local/bin/xray` or `/usr/bin/xray` already exists and matches or exceeds the required version, the core automatically adopts the system binary.
+* **Automatic Download & Verification**: On startup, `whoisthat-core` inspects `~/.local/share/whoisthat/runtimes/xray/`. If not present, it downloads the official precompiled release archive directly from GitHub, fetches the official `.dgst` file from GitHub (never from a mirror), verifies SHA-256, and only then unpacks the binary. A missing or mismatched checksum aborts the install.
+* **System Binary Adoption**: If `/usr/local/bin/xray` or `/usr/bin/xray` already exists and exactly matches the pinned version, the core automatically adopts the system binary.
 * **Native Protocols**: Because Hysteria2 protocol support is compiled directly into modern Xray-core, **no separate hysteria binary is required**.
 * **Missing-Binary UX & Hints**: On startup, the core daemon proactively tests for Xray availability. If missing and automatic download cannot proceed (e.g. offline setup), the core unicasts a high-priority `warn` event to the TUI with an actionable installation hint, and connect-time errors forward the exact underlying `err.Error()` to the interface.
 
@@ -129,7 +129,7 @@ Example successful output:
 === WhoisThat Doctor ===
 
 [✓] Binaries
-  • whoisthat: /usr/local/bin/whoisthat (v0.13.0)
+  • whoisthat: /usr/local/bin/whoisthat (v0.14.3)
   • whoisthat-core: /usr/local/bin/whoisthat-core
 
 [✓] Capabilities
@@ -144,11 +144,11 @@ Example successful output:
 
 [✓] IPC & Daemon Status
   • Socket path: /run/user/1000/whoisthat/core.sock
-  • Daemon: active (protocol v1, core v0.3.1)
+  • Daemon: active (protocol v3, core v0.3.3)
 
 [✓] Storage & Cryptography
   • Database directory: ~/.local/share/whoisthat/db/ (0700)
-  • Master key: ~/.local/share/whoisthat/db/.key (0600)
+  • Master key: ~/.config/whoisthat/db.key (0600)
 
 All checks passed! System is ready.
 ```

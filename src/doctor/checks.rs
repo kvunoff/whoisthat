@@ -1011,25 +1011,58 @@ fn check_config_and_storage(cfg: &AppConfig) -> CheckCategory {
     // 3. Encrypted DB directory
     let db_dir = config::data_dir().join("db");
     if db_dir.exists() {
-        let key_file = db_dir.join(".key");
+        // The key moved out of the DB directory; accept the legacy location
+        // during the migration window so doctor stays useful on old installs.
+        let new_key = config::config_dir().join("db.key");
+        let key_file = if new_key.exists() {
+            new_key
+        } else {
+            db_dir.join(".key")
+        };
         if key_file.exists() {
-            let key_size = fs::metadata(&key_file).map(|m| m.len()).unwrap_or(0);
-            if key_size == 32 {
-                items.push(CheckItem::pass(
-                    "encrypted db",
-                    format!("{} (AES-256-GCM key present)", db_dir.display()),
-                ));
-            } else {
+            let meta = fs::metadata(&key_file);
+            let key_size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
+            let mode = meta
+                .as_ref()
+                .map(|m| m.permissions().mode() & 0o777)
+                .unwrap_or(0);
+            if key_size != 32 {
                 items.push(CheckItem::warn(
                     "encrypted db",
-                    format!("key file size {} bytes (expected 32 bytes)", key_size),
-                    None,
+                    format!(
+                        "key file {} is {} bytes (expected 32 bytes)",
+                        key_file.display(),
+                        key_size
+                    ),
+                    Some("Restore the key from a backup; do not delete it while encrypted data exists".into()),
+                ));
+            } else if mode & 0o077 != 0 {
+                items.push(CheckItem::warn(
+                    "encrypted db",
+                    format!(
+                        "key file {} has mode {:o} (expected 0600)",
+                        key_file.display(),
+                        mode
+                    ),
+                    Some(format!("chmod 600 {}", key_file.display())),
+                ));
+            } else {
+                items.push(CheckItem::pass(
+                    "encrypted db",
+                    format!(
+                        "{} (AES-256-GCM key present at {})",
+                        db_dir.display(),
+                        key_file.display()
+                    ),
                 ));
             }
         } else {
             items.push(CheckItem::warn(
                 "encrypted db",
-                format!("{} exists but .key file is missing", db_dir.display()),
+                format!(
+                    "{} exists but the encryption key is missing",
+                    db_dir.display()
+                ),
                 Some("Core will generate a new AES key on startup".into()),
             ));
         }

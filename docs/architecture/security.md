@@ -15,15 +15,16 @@ All subscription credentials, server hostnames, tokens, and routing configuratio
 ### Encryption Architecture
 
 1. **Master Key Generation**: On first launch, the daemon generates a 32-byte cryptographically secure random key using Linux kernel entropy (`crypto/rand`).
-2. **File Permissions**: The key is written to `~/.local/share/whoisthat/db/.key` with strict Unix permissions `0600` (readable and writable only by the user account).
-3. **AEAD Cipher**: Data is encrypted using **AES-256-GCM** (Galois/Counter Mode), providing both confidentiality and cryptographic integrity verification.
-4. **Encrypted JSON Storage**: Files on disk are stored with an encrypted wrapper:
+2. **File Permissions**: The key is written to `~/.config/whoisthat/db.key` (or `$XDG_CONFIG_HOME/whoisthat/db.key`) with strict Unix permissions `0600`; the database directory is `0700`. Keeping the key outside the data directory means a backup of `~/.local/share/whoisthat/db/` does not also contain the material needed to decrypt it. Legacy installations are migrated automatically on first start, and a corrupted key is never silently overwritten.
+3. **Atomic Writes**: Database files, the key and core `config.json` are written via a temporary file in the same directory, `fsync`, `rename`, and a directory `fsync`. A crash or power loss leaves either the previous or the new file, never a truncated one.
+4. **AEAD Cipher**: Data is encrypted using **AES-256-GCM** (Galois/Counter Mode), providing both confidentiality and cryptographic integrity verification.
+5. **Encrypted JSON Storage**: Files on disk are stored with an encrypted wrapper:
    ```json
    {
      "ciphertext": "<base64-encoded nonce + ciphertext + GCM tag>"
    }
    ```
-5. **Tamper Detection**: If any encrypted file is modified externally or corrupted, decryption fails cleanly with an integrity authentication error, preventing invalid state injection.
+6. **Tamper Detection**: If any encrypted file is modified externally or corrupted, decryption fails cleanly with an integrity authentication error, preventing invalid state injection.
 
 ---
 

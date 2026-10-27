@@ -45,7 +45,9 @@ $XDG_RUNTIME_DIR/whoisthat/core.sock
 
 ### 2. TCP Socket (Opt-In / Legacy)
 
-For specialized environments (e.g. headless containers, network namespaces, or development inspection), WhoisThat supports a standard loopback TCP listener on `127.0.0.1:4897`.
+For specialized environments (e.g. headless containers, network namespaces, or development inspection), WhoisThat supports a standard loopback TCP listener on `127.0.0.1:4897` and `[::1]:4897`.
+
+TCP is **not unauthenticated**: the core writes a per-user token to `$XDG_RUNTIME_DIR/whoisthat/ipc.token` (`0600`), and the first frame must be a `hello` carrying that token plus the protocol version. A connection that fails the handshake within 5 seconds is closed without processing any commands. The UDS path does not require the token because filesystem permissions already restrict it to the owning user.
 
 To enable TCP transport:
 

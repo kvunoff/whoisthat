@@ -45,7 +45,7 @@ whoisthat/
 │   │   ├── types.rs    ← Diagnostic models, pass/warn/fail statuses, reports
 │   │   └── checks.rs   ← Diagnostic checks: binaries, capabilities, polkit, IPC, config/storage
 │   ├── event_loop.rs   ← AppEvent enum + run_loop (tokio::select! core_rx ↔ input_rx ↔ ticks)
-│   ├── core_events.rs  ← handle_core_event — dispatches 22+ CoreEvent broadcasts
+│   ├── core_events.rs  ← handle_core_event — dispatches all CoreEvent broadcasts
 │   ├── input.rs        ← handle_input + handle_normal_input — keyboard & mouse dispatch by tab/focus
 │   ├── popups.rs       ← Modal dialogs & routing popup key handlers, two-field forms
 │   ├── testing.rs      ← build_test_list, run_test_batch, persist_and_sync_test_config
@@ -65,7 +65,7 @@ whoisthat/
 │   └── ui/             ← Ratatui UI components
 │       ├── app/        ← Main app state & rendering (state, tree, details, popups, helpers)
 │       ├── layout.rs   ← Responsive layout geometry engine (width/height tiers, adaptive splits)
-│       ├── theme.rs    ← Curated color palettes (8 dark themes: Tokyo Night, Catppuccin, Nord, etc.)
+│       ├── theme.rs    ← Curated color palettes (4 themes: Graphite Dark, Graphite Light, Tokyo Night, Dracula)
 │       ├── settings.rs ← Settings screen
 │       ├── routing.rs  ← Routing rules tab + presets catalog + popups
 │       ├── traffic.rs  ← Real-time traffic monitoring tab (Braille charts + live transfer stats)
@@ -112,14 +112,14 @@ whoisthat/
 
 Both the Rust client and Go daemon feature extensive unit test suites that run entirely in memory in milliseconds without requiring network access.
 
-### 1. Rust Test Suite (148 Tests)
+### 1. Rust Test Suite (149 Tests)
 
 ```bash
 cargo test
 ```
 
 **Areas Covered:**
-* **Protocol Framing & Dispatch** (`src/core_client/`): Tests handling of all 22+ core notification types, deserialization resilience, profile moving, and reordering.
+* **Protocol Framing & Dispatch** (`src/core_client/`): Tests handling of all core notification types, deserialization resilience, profile moving, and reordering.
 * **Responsive Layout Tiers** (`src/ui/layout.rs`, `src/ui/app/helpers.rs`): Tests width tiers (Compact, Medium, Wide, UltraWide), height tiers (Tiny, Short, Normal, Tall), adaptive panel collapsing, and safety threshold (<45x8).
 * **Routing Logic & Presets** (`src/ui/routing.rs`): Form-to-rule and rule-to-form round trips for all 6 match types, preset idempotency, live rule toggling, and Global / inherited / custom page rendering.
 * **Global & Per-Group Routing State** (`src/ui/app/state.rs`): Page navigation including the Global page, inheritance fallback, custom-rule seeding, cached overrides, and page clamping after group deletion.
@@ -140,6 +140,37 @@ go test ./...
 * **Proxy URI Parsers** (`lib/parser`): In-memory compilation of VLESS (Reality, Vision, xHTTP, gRPC), VMess, Trojan, Shadowsocks, SOCKS5, and Hysteria2 URIs into Xray JSON.
 * **PortPool Allocator** (`lib/PortPool`): Concurrent ephemeral port lease and release without race conditions.
 * **Startup Reconcile & Split** (`lib/proxy/tun`): Idempotency of nftables teardown scripts and routing table rule restoration.
+
+### 3. Privileged network-namespace tests
+
+`go test ./...` only checks the *text* of the ip/nftables scripts. The
+`integration` build tag adds tests that actually execute them inside a
+throwaway network namespace: TUN create/delete, startup reconcile after a
+simulated crash, kill-switch install/remove, and `rp_filter` save/restore.
+
+```bash
+sudo -E go test -tags=integration ./lib/proxy/tun/ -run 'TestNetns' -v
+# or, equivalently
+sudo -E make integration
+```
+
+They require root (or `CAP_NET_ADMIN`), `nft` and `ip`, and skip themselves
+when `/dev/net/tun` is unavailable. CI runs them on every push.
+
+---
+
+## Unified build commands
+
+A root `Makefile` wraps the common workflows:
+
+```bash
+make build        # whoisthat-core + release TUI
+make test         # cargo test + go test ./...
+make lint         # rustfmt --check, clippy, go vet, gofmt
+make integration  # privileged netns suite
+make docs         # VitePress build
+make install      # install both binaries and set capabilities
+```
 
 ---
 
@@ -181,7 +212,9 @@ Continuous integration is handled via GitHub Actions in `.github/workflows/`:
 
 * **`ci.yml`**: Runs on push and PRs targeting `main`:
   * Rust: `cargo fmt --all --check`, `cargo clippy --all-targets --no-deps`, `cargo test`.
-  * Go: `go vet ./...`, `go build ./...`, `go test ./...`.
+  * Go: `go vet ./...`, `go build ./...`, `go test ./...`, `go mod tidy -diff`, `govulncheck`.
+  * Shell: `shellcheck install.sh`.
+  * Integration: privileged netns suite (`-tags=integration`).
 * **`aur-publish.yml`**: Triggers on every `v*` tag push:
   1. Parses version from tag.
   2. Clones the live AUR repo.
