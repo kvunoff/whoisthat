@@ -72,9 +72,9 @@ When running `whoisthat doctor --json`:
 
 ```json
 {
-  "client_version": "0.13.0",
-  "core_version": "0.2.0",
-  "core_protocol_version": 2,
+  "client_version": "0.13.3",
+  "core_version": "0.2.3",
+  "core_protocol_version": 1,
   "categories": [
     {
       "name": "Binaries & Runtimes",

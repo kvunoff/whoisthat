@@ -417,7 +417,7 @@ func (s *Server) handleConnection(cc *clientConn, clientID string) {
 				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
-			command_handler.SetKillSwitch(data)
+			command_handler.SetKillSwitch(data, s.proxy_manager)
 
 		case "set-split-tunnel":
 			var data structs.SetSplitTunnelData

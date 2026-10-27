@@ -1,25 +1,15 @@
 package mainproxy
 
 import (
-	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
-	"os"
-	"os/exec"
 	"strings"
-	"syscall"
 	"time"
 	"whoisthat-core/lib"
 	appconfig "whoisthat-core/lib/AppConfig"
-	"whoisthat-core/lib/geo"
 	"whoisthat-core/lib/logger"
 	"whoisthat-core/lib/proxy/xray"
-	"whoisthat-core/lib/xraymgr"
 	"whoisthat-core/structs"
-	"whoisthat-core/utils"
-
-	"golang.org/x/sys/unix"
 )
 
 func injectRoutingConfig(configJSON []byte, selection structs.RoutingSelection) ([]byte, error) {
@@ -236,47 +226,21 @@ func (p *ProxyManager) reloadCoreLocked(tunName string) error {
 	}
 
 	// Pre-flight test the new configuration before terminating the active core.
-	// If xray detects an invalid rule (e.g. malformed geoip/geosite or syntax),
-	// the running connection is preserved intact.
-	// We test using the base config (without the tun inbound) to validate routing,
-	// domains, and syntax without contending on the TUN device or capabilities.
+	// If xray detects an invalid rule (e.g. malformed geoip/geosite or a broken
+	// DNS section), the running connection is preserved intact.
+	validate := true
 	testConfigBytes := xray_config
 	if p.tunEnabled {
-		if testBase, err := lib.ParseUriWithTun(profile.Uri, app_config.SocksPort, app_config.HttpPort, ""); err == nil {
-			if testBase, err = injectStatsConfig(testBase, apiPort); err == nil {
-				if p.DB != nil {
-					if testBase, err = injectRoutingConfig(testBase, selection); err == nil {
-						testConfigBytes = testBase
-					}
-				} else {
-					testConfigBytes = testBase
-				}
-			}
+		if testBase, buildErr := buildPreflightConfig(profile, app_config.SocksPort, app_config.HttpPort, apiPort, selection, p.DB != nil); buildErr != nil {
+			logger.Warnf("preflight: could not build tun-less test config, skipping validation: %v", buildErr)
+			validate = false
+		} else {
+			testConfigBytes = testBase
 		}
 	}
-
-	xraybin, err := xraymgr.GetManager().GetXrayBin()
-	if err != nil {
-		xraybin, _ = utils.GetXrayBin()
-	}
-	if xraybin != "" {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		cmd := exec.CommandContext(ctx, xraybin, "run", "-test")
-		cmd.SysProcAttr = &syscall.SysProcAttr{
-			AmbientCaps: []uintptr{unix.CAP_NET_ADMIN, unix.CAP_NET_RAW},
-		}
-		ad := selection.GeoDir
-		if ad == "" {
-			ad = geo.AssetDir()
-		}
-		if ad != "" {
-			cmd.Env = append(os.Environ(), "XRAY_LOCATION_ASSET="+ad)
-		}
-		cmd.Stdin = bytes.NewReader(testConfigBytes)
-		out, testErr := cmd.CombinedOutput()
-		cancel()
-		if testErr != nil {
-			return fmt.Errorf("xray test failed: %s", strings.TrimSpace(string(out)))
+	if validate {
+		if err := validateXrayConfig(testConfigBytes, selection.GeoDir); err != nil {
+			return err
 		}
 	}
 
