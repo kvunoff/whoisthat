@@ -116,7 +116,68 @@ You can configure desktop applications to **always** launch into Split Tunneling
    update-desktop-database ~/.local/share/applications
    ```
 
-Now clicking the Spotify icon from your desktop dock will automatically launch it into the split slice!
+---
+
+## Gaming & Steam Integration
+
+WhoisThat offers a seamless gaming experience on Linux: you can keep your **entire operating system connected to your VPN** (for private browsing, background services, or unblocking Discord/streaming), while routing **individual games directly through your physical ISP** with **lowest native ping**, zero VPN jitter, and no Anti-Cheat VPN bans.
+
+### Per-Game Launch Options in Steam (`%command%`)
+
+You can direct any specific game to bypass the VPN without touching other games or restarting Steam:
+
+1. In your **Steam Library**, right-click the game and select **Properties...**
+2. In the **General** tab, scroll down to **Launch Options**.
+3. Enter:
+   ```bash
+   whoisthat run %command%
+   ```
+4. Start the game.
+
+That's it! The game, its Proton/Wine environment, runtime containers (pressure-vessel), and anti-cheat modules will route directly via your physical gateway.
+
+::: danger NEVER Use `-d` or `--detach` in Steam Launch Options
+Always use `whoisthat run %command%` without `-d` or `-b`.
+
+Steam tracks the game lifecycle through the launcher command. When `-d` is used, the launcher detaches and exits immediately; Steam will mistakenly assume the game closed, abort your "In-Game" status, break the Steam Overlay, and attempt to upload Cloud Saves while the game is still running!
+
+Without `-d`, `whoisthat run` creates a transient systemd `--scope`, staying synchronously attached to the game until you exit.
+:::
+
+### Compatibility with MangoHud, GameMode & Gamescope
+
+`whoisthat run` integrates seamlessly with popular Linux gaming wrappers. Always place `whoisthat run` at the very beginning of the pipeline:
+
+```bash
+# GameMode + MangoHud
+whoisthat run gamemoderun mangohud %command%
+
+# Gamescope + GameMode + MangoHud
+whoisthat run gamescope -W 1920 -H 1080 -f -- gamemoderun mangohud %command%
+```
+
+Every tool in the chain, along with the game itself, will be grouped into the split-tunnel slice.
+
+### Third-Party Game Launchers
+
+* **Heroic Games Launcher (Epic Games / GOG)**:
+  Open Game Settings → **Other** → **Wrapper Command** (or **Game Arguments Prefix**): enter `whoisthat run`.
+* **Lutris**:
+  Right-click game → **Configure** → **System options** → enable **Command prefix** and enter `whoisthat run`.
+* **Bottles**:
+  Go to Bottle Preferences → **System** → **Command Prefix** and set `whoisthat run`.
+
+### Bypassing the Entire Steam Client
+
+If you prefer to route the entire Steam client — including multi-gigabyte library downloads and Steam Voice chat — directly through your physical ISP:
+
+```bash
+whoisthat run -d steam
+```
+
+::: tip Single-Instance Reminder
+If Steam is already minimized to your system tray, close it completely (`pkill -9 steam` or right-click tray icon → **Exit Steam**) before launching it via `whoisthat run -d steam`.
+:::
 
 ---
 

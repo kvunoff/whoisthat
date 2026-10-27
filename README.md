@@ -111,6 +111,7 @@ whoisthat -mt            # Toggle between TUN mode and Proxy mode
 whoisthat -kt            # Toggle Kill-Switch protection
 whoisthat status -s      # Compact status (e.g. [Connected] [TUN] ↓ 2.4 MB/s ↑ 410.0 KB/s)
 whoisthat run -d spotify # Launch Spotify bypassing the VPN tunnel
+whoisthat run %command%  # Steam Launch Options: bypass VPN for lowest native ping
 whoisthat doctor         # Run system capability and runtime diagnostic suite
 ```
 

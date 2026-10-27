@@ -70,9 +70,11 @@ All modern circumvention and proxy protocols are supported natively through a pi
 ### 3. Application-Based Split Tunneling
 Bypass the VPN tunnel for gaming, domestic banking, or local network services using pure Linux kernel primitives (cgroup v2 and nftables policy routing):
 ```bash
-whoisthat run -d spotify           # Spotify bypasses the VPN tunnel
+whoisthat run -d spotify           # Spotify bypasses the VPN tunnel in background
+whoisthat run %command%            # In Steam launch options: zero-ping direct gaming
 whoisthat run curl 2ip.io          # Runs directly attached in terminal
 ```
+See the [Split Tunneling & Steam Guide](/networking/split-tunnel#gaming-steam-integration) for technical details and setup.
 
 ### 4. Rich Routing & Happ Profiles
 Define fine-grained routing policies based on domain names, IP subnets, protocols, GeoIP, and GeoSite databases. Ingest provider **Happ routing profiles** (`happ://routing/...`) with per-group routing modes (`auto`, `manual`, `subscription`).
