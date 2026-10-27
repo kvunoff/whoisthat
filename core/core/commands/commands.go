@@ -7,12 +7,14 @@ import (
 	"whoisthat-core/lib"
 	"whoisthat-core/lib/logger"
 	"whoisthat-core/lib/proxy/mainproxy"
+	tunmode "whoisthat-core/lib/proxy/tun"
 	"whoisthat-core/structs"
 )
 
 type Cmd struct {
-	Broadcast func([]byte)
-	DB        *db.DB
+	Broadcast  func([]byte)
+	DB         *db.DB
+	TunManager *tunmode.TunModeManager
 }
 
 func (cmd *Cmd) DeleteGroup(data structs.DeleteGroupData) {

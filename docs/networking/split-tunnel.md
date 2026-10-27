@@ -27,7 +27,7 @@ In `include` mode, only processes explicitly launched inside the split slice are
 DNS follows the same split boundary:
 
 * **`exclude`** — the system-wide Happ DNS hijack stays active. Excluded applications carry `fwmark 1`, and the DNS hijack returns early for marked sockets, so they resolve directly through their normal resolver instead of the tunnel sink.
-* **`include`** — the Happ DNS hijack is disabled. Included applications still use the system resolver, which lives outside the split slice, so their DNS is not tunnelled. This is intentional: hijacking port 53 system-wide would break every non-included application.
+* **`include`** — the Happ DNS hijack is disabled, and FakeDNS is therefore off as well. Included applications still use the system resolver, which lives outside the split slice, so their DNS is not tunnelled. This is intentional: hijacking port 53 system-wide would break every non-included application.
 * **`off`** — no split rules are installed; all DNS follows the normal TUN/Happ path.
 * **Manual routing** — the legacy hijack to the configured resolver remains in place in every split mode.
 

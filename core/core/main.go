@@ -179,7 +179,7 @@ func bootAutoconnect(database *db.DB, proxy_manager *proxy.ProxyManager, tun_man
 
 	time.Sleep(5 * time.Second)
 
-	command_handler := cmd.Cmd{DB: database, Broadcast: server.Broadcast}
+	command_handler := cmd.Cmd{DB: database, Broadcast: server.Broadcast, TunManager: tun_manager}
 	connectData := structs.ConnectData{
 		Profile: structs.ProfileID{
 			Id:      cfg.AutoconnectProfileId,

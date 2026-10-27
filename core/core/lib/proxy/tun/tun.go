@@ -200,26 +200,49 @@ func (t *TunModeManager) ReapplyDnsHijack() error {
 		return nil
 	}
 
-	if want {
-		plan := t.dnsHijack
-		plan.Enabled = true
-		if err := setupDnsHijackRules(t.default_interface, plan); err != nil {
-			return err
-		}
-		if err := setupResolvectlDns(t.tun_name, plan.Sink4); err != nil {
-			logger.Warnf("tun: resolvectl dns setup: %v", err)
-		}
-	} else {
-		if err := cleanDnsHijackRules(); err != nil {
-			return err
-		}
-		if err := revertResolvectlDns(t.tun_name); err != nil {
-			logger.Warnf("tun: resolvectl dns revert: %v", err)
-		}
+	plan := t.dnsHijack
+	plan.Enabled = want
+	return t.setDnsHijackLocked(plan)
+}
+
+// SetDnsHijack replaces the active port-53 redirect plan while TUN is running.
+// It is used when the effective routing profile changes (active Happ profile,
+// group mode, subscription update) so the kernel rules match the new Xray DNS
+// configuration without restarting TUN.
+func (t *TunModeManager) SetDnsHijack(dns DnsHijack) error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.setDnsHijackLocked(dns)
+}
+
+func (t *TunModeManager) setDnsHijackLocked(dns DnsHijack) error {
+	if !t.IsEnabled {
+		return nil
 	}
 
-	t.dnsHijack.Enabled = want
-	return nil
+	dns.Exclude = append(append([]string{}, dns.Exclude...), t.proxy_ipv4s...)
+	dns.Exclude = append(dns.Exclude, t.proxy_ipv6s...)
+	dns = sanitizeDnsHijack(dns)
+
+	var errs []error
+	if t.dnsHijack.Legacy {
+		errs = append(errs,
+			deleteDnsIpRoutes(t.dnsHijack.Sink4, t.default_interface_ip),
+			deleteDnsIpRoutes6(t.dnsHijack.Sink6, t.default_interface_ipv6),
+		)
+	}
+	errs = append(errs, cleanDnsHijackRules(), revertResolvectlDns(t.tun_name))
+
+	t.dnsHijack = dns
+
+	if dns.Legacy {
+		errs = append(errs, setupDnsIpRoutes(dns.Sink4, dns.Sink6, t.default_interface_ip, t.default_interface_ipv6))
+	}
+	if dns.Enabled {
+		errs = append(errs, setupDnsHijackRules(t.default_interface, dns))
+		errs = append(errs, setupResolvectlDns(t.tun_name, dns.Sink4))
+	}
+	return errors.Join(errs...)
 }
 
 func (t *TunModeManager) clearNetworkRules() error {

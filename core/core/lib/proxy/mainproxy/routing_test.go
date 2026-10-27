@@ -3,6 +3,8 @@ package mainproxy
 import (
 	"encoding/json"
 	"testing"
+
+	appconfig "whoisthat-core/lib/AppConfig"
 	"whoisthat-core/structs"
 )
 
@@ -463,8 +465,7 @@ func TestInjectRoutingConfig_HappDNSFallsBackToConfiguredServers(t *testing.T) {
 		GlobalProxy: true,
 		Config: structs.RoutingConfig{
 			DNS: &structs.HappDNSConfig{
-				FakeDNSEnabled: true,
-				Hosts:          map[string]string{"static.example": "203.0.113.5"},
+				Hosts: map[string]string{"static.example": "203.0.113.5"},
 			},
 		},
 	}
@@ -555,6 +556,242 @@ func hasOutbound(parsed map[string]interface{}, tag, protocol string) bool {
 			continue
 		}
 		if outbound["tag"] == tag && outbound["protocol"] == protocol {
+			return true
+		}
+	}
+	return false
+}
+
+func sampleTunBaseConfig() []byte {
+	m := map[string]interface{}{
+		"inbounds": []interface{}{
+			map[string]interface{}{
+				"tag":      "socks-in",
+				"protocol": "socks",
+				"sniffing": map[string]interface{}{
+					"enabled":      true,
+					"routeOnly":    true,
+					"destOverride": []interface{}{"http", "tls"},
+				},
+			},
+			map[string]interface{}{
+				"tag":      "tun-in",
+				"protocol": "tun",
+				"sniffing": map[string]interface{}{
+					"enabled":      true,
+					"routeOnly":    true,
+					"destOverride": []interface{}{"http", "tls"},
+				},
+			},
+		},
+		"outbounds": []interface{}{
+			map[string]interface{}{"tag": "proxy", "protocol": "vless"},
+		},
+	}
+	b, _ := json.Marshal(m)
+	return b
+}
+
+func TestFakeDNSActiveMatrix(t *testing.T) {
+	appconfig.SetSplitTunnelMode("off")
+	t.Cleanup(func() { appconfig.SetSplitTunnelMode("off") })
+
+	base := structs.RoutingSelection{
+		Source:      "happ",
+		GlobalProxy: true,
+		Config: structs.RoutingConfig{
+			DNS: &structs.HappDNSConfig{FakeDNSEnabled: true},
+		},
+	}
+
+	if !fakeDNSActive(base, true) {
+		t.Error("expected fake DNS to be active in TUN mode")
+	}
+	if fakeDNSActive(base, false) {
+		t.Error("fake DNS must be inactive without TUN")
+	}
+
+	globalFalse := base
+	globalFalse.GlobalProxy = false
+	if fakeDNSActive(globalFalse, true) {
+		t.Error("fake DNS must be inactive with GlobalProxy=false")
+	}
+
+	fakeFalse := base
+	fakeFalse.Config.DNS = &structs.HappDNSConfig{FakeDNSEnabled: false}
+	if fakeDNSActive(fakeFalse, true) {
+		t.Error("fake DNS must be inactive when the profile disables it")
+	}
+
+	manual := base
+	manual.Source = "manual"
+	if fakeDNSActive(manual, true) {
+		t.Error("fake DNS must be inactive for manual routing")
+	}
+
+	noDNS := base
+	noDNS.Config.DNS = nil
+	if fakeDNSActive(noDNS, true) {
+		t.Error("fake DNS must be inactive without a DNS section")
+	}
+
+	appconfig.SetSplitTunnelMode("exclude")
+	if !fakeDNSActive(base, true) {
+		t.Error("fake DNS must stay active in exclude mode")
+	}
+	appconfig.SetSplitTunnelMode("include")
+	if fakeDNSActive(base, true) {
+		t.Error("fake DNS must be inactive in include mode")
+	}
+}
+
+func TestInjectRoutingConfig_FakeDNSInTun(t *testing.T) {
+	appconfig.SetSplitTunnelMode("off")
+	t.Cleanup(func() { appconfig.SetSplitTunnelMode("off") })
+
+	sel := structs.RoutingSelection{
+		Source:      "happ",
+		GlobalProxy: true,
+		Config: structs.RoutingConfig{
+			DomainStrategy: "AsIs",
+			DNS: &structs.HappDNSConfig{
+				FakeDNSEnabled:  true,
+				RemoteDNSType:   "DoU",
+				RemoteDNSIP:     "1.1.1.1",
+				DomesticDNSType: "DoU",
+				DomesticDNSIP:   "8.8.8.8",
+			},
+			Rules: []structs.RoutingRule{
+				{Type: "field", Domain: "direct.example", OutboundTag: "direct", Enabled: true},
+				{Type: "field", Domain: "proxy.example", OutboundTag: "proxy", Enabled: true},
+			},
+		},
+	}
+
+	injected, err := injectRoutingConfig(sampleTunBaseConfig(), sel, true)
+	if err != nil {
+		t.Fatalf("injectRoutingConfig failed: %v", err)
+	}
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(injected, &parsed); err != nil {
+		t.Fatal(err)
+	}
+
+	pools, ok := parsed["fakedns"].([]interface{})
+	if !ok || len(pools) != 2 {
+		t.Fatalf("expected two fakedns pools, got %#v", parsed["fakedns"])
+	}
+	if pools[0].(map[string]interface{})["ipPool"] != fakeDNSPool4 {
+		t.Errorf("unexpected v4 pool: %+v", pools[0])
+	}
+	if pools[1].(map[string]interface{})["ipPool"] != fakeDNSPool6 {
+		t.Errorf("unexpected v6 pool: %+v", pools[1])
+	}
+
+	servers := parsed["dns"].(map[string]interface{})["servers"].([]interface{})
+	first := servers[0].(map[string]interface{})
+	if first["address"] != "fakedns" || first["tag"] != "fakedns" {
+		t.Errorf("fakedns server must be first: %+v", first)
+	}
+	if _, hasDomains := first["domains"]; hasDomains {
+		t.Errorf("fakedns server must not have domain filters: %+v", first)
+	}
+
+	tunIn := findInbound(parsed, "tun-in")
+	if tunIn == nil {
+		t.Fatal("tun-in inbound missing")
+	}
+	sniffing := tunIn["sniffing"].(map[string]interface{})
+	if !hasDestOverride(sniffing, "fakedns") {
+		t.Errorf("tun-in must sniff fakedns: %+v", sniffing)
+	}
+	if sniffing["routeOnly"] != false {
+		t.Errorf("routeOnly must stay false: %+v", sniffing)
+	}
+
+	socks := findInbound(parsed, "socks-in")
+	if socks == nil {
+		t.Fatal("socks-in inbound missing")
+	}
+	if hasDestOverride(socks["sniffing"].(map[string]interface{}), "fakedns") {
+		t.Error("fakedns must only be added to tun-in")
+	}
+
+	routing := parsed["routing"].(map[string]interface{})
+	if routing["domainStrategy"] != "IPIfNonMatch" {
+		t.Errorf("AsIs must be forced to IPIfNonMatch with fake DNS: %v", routing["domainStrategy"])
+	}
+}
+
+func TestInjectRoutingConfig_FakeDNSProxyMode(t *testing.T) {
+	appconfig.SetSplitTunnelMode("off")
+	t.Cleanup(func() { appconfig.SetSplitTunnelMode("off") })
+
+	sel := structs.RoutingSelection{
+		Source:      "happ",
+		GlobalProxy: true,
+		Config: structs.RoutingConfig{
+			DNS: &structs.HappDNSConfig{FakeDNSEnabled: true},
+		},
+	}
+
+	injected, err := injectRoutingConfig(sampleTunBaseConfig(), sel, false)
+	if err != nil {
+		t.Fatalf("injectRoutingConfig failed: %v", err)
+	}
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(injected, &parsed); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := parsed["fakedns"]; ok {
+		t.Error("fakedns must not be emitted outside TUN")
+	}
+	tunIn := findInbound(parsed, "tun-in")
+	if hasDestOverride(tunIn["sniffing"].(map[string]interface{}), "fakedns") {
+		t.Error("tun-in must not sniff fakedns outside TUN")
+	}
+}
+
+func TestInjectRoutingConfig_FakeDNSDisabledByGlobalProxy(t *testing.T) {
+	appconfig.SetSplitTunnelMode("off")
+	t.Cleanup(func() { appconfig.SetSplitTunnelMode("off") })
+
+	sel := structs.RoutingSelection{
+		Source:      "happ",
+		GlobalProxy: false,
+		Config: structs.RoutingConfig{
+			DNS: &structs.HappDNSConfig{FakeDNSEnabled: true},
+		},
+	}
+
+	injected, err := injectRoutingConfig(sampleTunBaseConfig(), sel, true)
+	if err != nil {
+		t.Fatalf("injectRoutingConfig failed: %v", err)
+	}
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(injected, &parsed); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := parsed["fakedns"]; ok {
+		t.Error("fakedns must not be emitted with GlobalProxy=false")
+	}
+}
+
+func findInbound(parsed map[string]interface{}, tag string) map[string]interface{} {
+	inbounds, _ := parsed["inbounds"].([]interface{})
+	for _, raw := range inbounds {
+		inbound, ok := raw.(map[string]interface{})
+		if ok && inbound["tag"] == tag {
+			return inbound
+		}
+	}
+	return nil
+}
+
+func hasDestOverride(sniffing map[string]interface{}, value string) bool {
+	overrides, _ := sniffing["destOverride"].([]interface{})
+	for _, item := range overrides {
+		if item == value {
 			return true
 		}
 	}

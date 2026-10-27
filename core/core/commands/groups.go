@@ -97,6 +97,13 @@ func (cmd *Cmd) UpdateSubscription(data structs.UpdateSubscriptionData, proxy_ma
 		RoutingProfiles: routingProfiles,
 	})
 
+	if proxy_manager != nil {
+		st := proxy_manager.GetStatus()
+		if st.Connection == "connected" && st.Profile.GroupId == data.GroupId {
+			cmd.refreshDnsHijackFor(st.Profile)
+		}
+	}
+
 	if len(profilesNeedingGeo) > 0 {
 		go func(gID int, profs []structs.RoutingProfile) {
 			for _, p := range profs {
@@ -117,6 +124,7 @@ func (cmd *Cmd) UpdateSubscription(data structs.UpdateSubscriptionData, proxy_ma
 						st := proxy_manager.GetStatus()
 						if st.Connection == "connected" && st.Profile.GroupId == gID && grp.ActiveRoutingProfileId == p.Id {
 							_ = proxy_manager.ReloadRouting(appconfig.GetConfig().TunName)
+							cmd.refreshDnsHijackFor(st.Profile)
 						}
 					}
 					rProfiles, _ := cmd.DB.ListRoutingProfileInfos(gID, grp.ActiveRoutingProfileId)

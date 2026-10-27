@@ -265,7 +265,7 @@ Once Base64-decoded, the payload must be a valid UTF-8 JSON document adhering to
 | **`DomesticDNSDomain`** | `string` | No | Domestic DoH URL. |
 | **`DomesticDNSIP`** | `string` | No | Domestic DoU address / DoH bootstrap IP. |
 | **`DnsHosts`** | `object` | No | Static `domain -> literal IP` mappings copied into Xray's `dns.hosts`. Invalid entries are ignored with a warning. |
-| **`FakeDNS`** | `FlexibleBool` | No | FakeDNS preference from the provider. The flag is parsed and stored; FakeDNS allocation itself is not enabled yet. |
+| **`FakeDNS`** | `FlexibleBool` | No | Provider preference for fake IPs. Active only with TUN + `GlobalProxy=true` and split mode `off`/`exclude`. In proxy mode, `include`, and `GlobalProxy=false` it is parsed and stored but not applied. |
 | **`LastUpdated`** | `FlexibleUnix` | No | Epoch timestamp in seconds indicating when the provider generated the profile. |
 
 DNS values are validated defensively. A malformed DoH URL or non-IP DoU address produces a warning and a safe fallback instead of rejecting the entire routing profile. Profiles created before DNS support are decoded lazily from their stored raw JSON, so re-importing is not required.
@@ -349,9 +349,40 @@ When the active Happ profile supplies DNS fields, the core **replaces** the Xray
 
 The last entry is essential in TUN mode: the system resolver is already captured when Xray reconnects, so the server domain must be resolvable without asking the tunnel it is about to establish.
 
-### FakeDNS status
+### FakeDNS
 
-The `FakeDNS` flag is parsed, validated, and stored with the profile. FakeDNS address allocation, the `fakedns` DNS server, and sniffing changes are **not enabled yet**; `FakeDNS: "true"` currently has no effect on routing. This is reserved for the next DNS stage, together with the IPv6 fake pool and AAAA policy.
+FakeDNS is enabled only when **all** of these are true:
+
+* TUN mode is active;
+* the active source is a Happ profile with a DNS section;
+* the profile sets `FakeDNS: "true"`;
+* `GlobalProxy == true`;
+* split mode is `off` or `exclude` (not `include`).
+
+In every other combination the flag is parsed and stored but has no effect.
+
+When active, WhoisThat:
+
+* adds two fake pools to Xray:
+
+  ```json
+  "fakedns": [
+    { "ipPool": "198.19.0.0/16", "poolSize": 32768 },
+    { "ipPool": "fc00::/18",     "poolSize": 32768 }
+  ]
+  ```
+
+* prepends a tagged `fakedns` server to `dns.servers`;
+* adds `fakedns` to `destOverride` on the `tun-in` inbound only;
+* keeps `routeOnly: false`, and forces `IPIfNonMatch` if the profile asked for `AsIs` (otherwise IP rules would see a fake address).
+
+The pools do not overlap the TUN address (`198.18.0.1`), the DNS sink (`198.18.0.53`), or their IPv6 counterparts.
+
+Limitations:
+
+* ICMP is not mapped back to the real host. The TUN stack may answer `ping <fake-ip>` locally (typically `ttl 64` and sub-millisecond latency), so a successful ping does **not** prove that the remote host is reachable. Use TCP/HTTP (`curl`, browser) for fake-IP checks.
+* QUIC/HTTP-3 is not added to `destOverride` (it conflicts with the screen-share latency fix), so HTTP/3 to a fake domain may bypass domain sniffing.
+* Fake allocations are per Xray process: a reload/reset invalidates old fake addresses.
 
 ---
 
@@ -465,7 +496,7 @@ In the TUI on Tab 2 (*Routing*), pressing <kbd>H</kbd> opens the **Happ Routing 
 │                                                                                         │
 │  ▸ [● Active]  [ready]       Provider Comprehensive Bypass                              │
 │        rules: 142 │ strategy: IPIfNonMatch │ updated: 2h ago │ geo: 2h ago              │
-│        DNS: DoH cloudflare-dns.com │ DoU 8.8.8.8                                        │
+│        DNS: DoH cloudflare-dns.com │ DoU 8.8.8.8 │ FakeDNS: on                           │
 │                                                                                         │
 │    [○ Inactive] [ready]       Streaming & Social Only                                   │
 │        rules: 38  │ strategy: AsIs │ updated: 3d ago                                    │

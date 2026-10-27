@@ -60,6 +60,8 @@ Happ profiles use reserved **sink addresses** instead of the configured resolver
 * `resolvectl dns <tun> 198.18.0.53` plus `~.` makes systemd-resolved send its queries to the same sink.
 * The DNS query then follows `tun-in :53 -> dns-out`, where the tagged `domestic-dns` and `remote-dns` servers decide whether to resolve directly or through the proxy. Hosts and bootstrap entries are described in [Happ Routing](happ-routing.md#dns-and-fakedns).
 
+When the profile also enables FakeDNS, the `fakedns` server is placed before the real resolvers and `tun-in` sniffs fake addresses back into domains. This only happens with `GlobalProxy=true` and split mode `off`/`exclude`; proxy mode, `GlobalProxy=false`, and `include` leave FakeDNS off. The fake pools (`198.19.0.0/16`, `fc00::/18`) never overlap the TUN address or the DNS sink.
+
 In `include` split mode the hijack and `resolvectl` changes are disabled entirely: only explicitly launched apps use the tunnel, while the rest of the system keeps its physical resolver. This is a deliberate limitation — `systemd-resolved` lives outside the split slice and cannot be tunnelled per-app.
 
 ::: tip Manual mode is unchanged

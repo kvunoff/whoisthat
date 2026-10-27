@@ -154,7 +154,7 @@ Subscription metadata (`sub_*`) is automatically populated from the standard `su
 }
 ```
 
-* **`fake_dns_enabled`**: the provider's FakeDNS preference. It is parsed and stored; FakeDNS allocation is not active yet.
+* **`fake_dns_enabled`**: the provider's FakeDNS preference. It is applied only in TUN mode with `GlobalProxy=true` and split mode `off`/`exclude`; other modes parse and store it without enabling fake allocation.
 * **`remote_dns` / `domestic_dns`**: short display labels derived from the profile (`DoH host`, `DoU address`). Empty when the profile has no usable DNS server.
 * These fields are additive: older clients can ignore them, and `ProtocolVersion` is unchanged.
 
