@@ -90,6 +90,10 @@ jobs:
           if [ "${AUR_VER}" = "${NEW_VER}" ]; then
             PKGREL=$(( AUR_REL + 1 ))
             echo "AUR pkgver=${AUR_VER} matches → bump pkgrel ${AUR_REL} -> ${PKGREL}"
+          elif [ "$(printf '%s\n%s\n' "${AUR_VER}" "${NEW_VER}" | sort -V | head -1)" = "${NEW_VER}" ]; then
+            # Rolling back to an older pkgver: honour the pkgrel from the tag.
+            PKGREL=$(grep '^pkgrel=' pkg/aur/PKGBUILD | cut -d= -f2)
+            echo "Rollback ${AUR_VER} -> ${NEW_VER} → pkgrel=${PKGREL} from PKGBUILD"
           else
             PKGREL=1
             echo "New version ${NEW_VER} (was ${AUR_VER}) → pkgrel=1"
