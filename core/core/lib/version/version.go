@@ -9,7 +9,7 @@ import (
 // CoreVersion is the single source of truth for the whoisthat-core daemon
 // version. Bumped independently from the Rust TUI (Cargo.toml).
 // Release tags: core-vX.Y.Z
-const CoreVersion = "0.3.7"
+const CoreVersion = "0.3.8"
 
 // protocol.txt is the shared wire-contract version. The Rust client embeds the
 // same file, so the two sides can no longer drift silently.
