@@ -66,6 +66,7 @@ func (db *DB) loadOrCreateKey() {
 	case prefValid && legacyValid:
 		if bytes.Equal(prefKey, legacyKey) {
 			db.key = prefKey
+			db.removeLegacyKey(legacy)
 			return
 		}
 		// Both files exist but disagree. This happens after a failed migration
@@ -76,24 +77,32 @@ func (db *DB) loadOrCreateKey() {
 		if prefMatches {
 			db.key = prefKey
 			_ = os.Chmod(preferred, 0600)
+			db.removeLegacyKey(legacy)
 			return
 		}
 		legacyMatches, _ := db.keyMatchesDatabase(legacyKey)
 		if legacyMatches {
 			db.adoptLegacyKey(preferred, prefKey, legacyKey)
 			db.key = legacyKey
+			db.removeLegacyKey(legacy)
 			return
 		}
 		if checked {
-			logger.Warnf("db: neither %s nor %s decrypts the existing database; keeping %s", preferred, legacy, preferred)
+			// Keep both keys: the database is unreadable, and the legacy file
+			// may still be the only way to recover it.
+			logger.Warnf("db: neither %s nor %s decrypts the existing database; keeping both keys", preferred, legacy)
 		} else {
 			logger.Warnf("db: %s and %s differ but no encrypted database was found; keeping %s", preferred, legacy, preferred)
+			db.removeLegacyKey(legacy)
 		}
 		db.key = prefKey
 
 	case prefValid:
 		db.key = prefKey
 		_ = os.Chmod(preferred, 0600)
+		if legacyExists {
+			db.removeLegacyKey(legacy)
+		}
 
 	case legacyValid:
 		// First start after the key moved out of the DB directory.
@@ -102,6 +111,7 @@ func (db *DB) loadOrCreateKey() {
 		}
 		logger.Infof("db: migrated encryption key from %s to %s", legacy, preferred)
 		db.key = legacyKey
+		db.removeLegacyKey(legacy)
 
 	case prefExists || legacyExists:
 		logger.Fatal("encryption key is invalid; refusing to overwrite it. " +
@@ -151,6 +161,21 @@ func (db *DB) keyMatchesDatabase(key []byte) (bool, bool) {
 		}
 	}
 	return false, checked
+}
+
+// removeLegacyKey removes the old co-located key after it has been migrated,
+// so only one authoritative key remains on disk.
+func (db *DB) removeLegacyKey(path string) {
+	if path == "" || path == db.GetKeyFilePath() {
+		return
+	}
+	if err := os.Remove(path); err != nil {
+		if !os.IsNotExist(err) {
+			logger.Warnf("db: failed to remove legacy key %s: %v", path, err)
+		}
+		return
+	}
+	logger.Infof("db: removed legacy key %s", path)
 }
 
 func (db *DB) adoptLegacyKey(preferred string, staleKey, legacyKey []byte) {

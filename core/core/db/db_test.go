@@ -479,8 +479,8 @@ func TestLoadOrCreateKeyMigratesLegacyKey(t *testing.T) {
 	if string(data) != string(legacyKey) {
 		t.Fatal("new key file content differs from legacy key")
 	}
-	if _, err := os.Stat(filepath.Join(legacyDir, ".key")); err != nil {
-		t.Fatal("legacy key should be kept for downgrade compatibility")
+	if _, err := os.Stat(filepath.Join(legacyDir, ".key")); !os.IsNotExist(err) {
+		t.Fatal("legacy key should be removed after migration")
 	}
 }
 
@@ -521,6 +521,9 @@ func TestLoadOrCreateKeyRestoresLegacyWhenPreferredIsStale(t *testing.T) {
 	if len(backups) != 1 {
 		t.Errorf("expected one stale-key backup, got %d", len(backups))
 	}
+	if _, err := os.Stat(filepath.Join(dataDir, ".key")); !os.IsNotExist(err) {
+		t.Error("legacy key should be removed after restoring the preferred key")
+	}
 }
 
 func TestLoadOrCreateKeyKeepsPreferredWhenItDecryptsDatabase(t *testing.T) {
@@ -551,5 +554,8 @@ func TestLoadOrCreateKeyKeepsPreferredWhenItDecryptsDatabase(t *testing.T) {
 	}
 	if backups, _ := filepath.Glob(preferred + ".stale-*"); len(backups) != 0 {
 		t.Errorf("unexpected stale-key backup: %v", backups)
+	}
+	if _, err := os.Stat(filepath.Join(dataDir, ".key")); !os.IsNotExist(err) {
+		t.Error("legacy key should be removed when the preferred key is valid")
 	}
 }
