@@ -6,7 +6,7 @@ WhoisThat registers the custom desktop URL scheme `wit://`. This enables web das
 
 ## Protocol Registration
 
-When you launch the WhoisThat TUI for the first time, it automatically verifies and registers the desktop scheme handler in the background.
+When you launch the WhoisThat TUI, it verifies and re-registers the desktop scheme handler in the background (idempotent, not just on first run).
 
 To register or refresh the handler manually from the CLI:
 
@@ -46,8 +46,9 @@ Imports an individual server profile into a specified group:
 
 * **Query Parameter Format**:
   ```
-  wit://import?uri=vless%3A%2F%2F...&name=Frankfurt-01&group=MyServers
+  wit://import?uri=vless%3A%2F%2F...&group=MyServers
   ```
+  The optional `group` parameter selects the target group; a `name` parameter is accepted but ignored (the profile name comes from the URI remark).
 * **Direct Proxy Protocol Prefix**:
   ```
   wit://vless://uuid@host:443?security=reality&...#Frankfurt-01
@@ -72,10 +73,9 @@ Imports a provider Happ routing profile into an existing or auto-detected group:
 ---
 
 ### 4. Direct Browser Actions
-Control connection state directly from bookmarks or shell scripts:
+Control connection state directly from bookmarks or shell scripts. `connect` takes no query parameters: it connects to the last used profile.
 
-* `wit://connect?name=Frankfurt-01`
-* `wit://connect?profile=2`
+* `wit://connect`
 * `wit://disconnect`
 * `wit://toggle`
 

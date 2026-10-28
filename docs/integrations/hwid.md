@@ -11,7 +11,7 @@ When updating subscription groups, providers often enforce multi-device limits (
 | HTTP Header | Example Value | Source |
 | :--- | :--- | :--- |
 | `x-hwid` | `1fb1e0141ab3e35a` | Unique 16-character hexadecimal token auto-generated on first run. |
-| `x-device-os` | `Linux` | System OS architecture identifier (`runtime.GOOS`). |
+| `x-device-os` | `linux` | Go `runtime.GOOS` identifier (lowercase OS name, not architecture). |
 | `x-ver-os` | `6.12.0-arch1-1` | Active Linux kernel release (`uname -r`). |
 | `x-device-model` | `Arch Linux` | Distribution name extracted from `/etc/os-release` (`PRETTY_NAME`). |
 | `user-agent` | `whoisthat-core/v0.3.5` | Configurable HTTP User-Agent header. |
@@ -20,17 +20,13 @@ When updating subscription groups, providers often enforce multi-device limits (
 
 ## Response Header Handling
 
-Subscription servers validate the incoming HWID and respond with metadata headers that WhoisThat inspects:
-
-* **`x-hwid-max-devices-reached`**: Indicates your account has exceeded its allowed device quota. The TUI surfaces an actionable warning prompt.
-* **`x-hwid-limit`**: Informs the client of the maximum allowed devices.
-* **`x-hwid-not-supported`**: Sent by servers that do not require device tracking.
+WhoisThat parses only the standard `subscription-userinfo` response header (traffic quota, expiry, last update). Provider-specific `x-hwid-*` response headers (`x-hwid-max-devices-reached`, `x-hwid-limit`, `x-hwid-not-supported`) are currently **not** interpreted and do not produce an in-app warning; the subscription fetch succeeds or fails based on the HTTP status and body.
 
 ---
 
 ## Privacy & Customization Controls
 
-You maintain full control over device tracking in **Settings → HWID**:
+You maintain full control over device tracking in **Settings → Hardware**:
 
 ### 1. Toggle HWID Off
 If your subscription provider does not require HWID, or if you prefer not to transmit device headers, toggle **HWID: Enabled** to `off`. Subsequent subscription requests will omit all `x-hwid-*` headers.

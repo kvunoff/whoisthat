@@ -28,10 +28,10 @@ WhoisThat includes 4 curated palettes designed for high readability, contrast, a
 Terminals come in all shapes and sizes—from a compact 80x24 window to tiled splits on an ultrawide monitor. WhoisThat features a custom viewport geometry engine that classifies window dimensions into tiers:
 
 ### Width Tiers
-* **Compact (< 80 columns)**: Automatically collapses side-by-side splits into a full-width single panel. Press <kbd>Tab</kbd> to switch focus between the Profile Tree and Server Details views.
-* **Medium (80–125 columns)**: Balanced side-by-side layout (40% tree, 60% details/routing). Press <kbd>Tab</kbd> to toggle focus between panes.
-* **Wide (126–160 columns)**: Expanded details view with full server parameters, TLS properties, and multi-column statistics.
-* **UltraWide (> 160 columns)**: Dual-column details cards, extended traffic history, and verbose routing paths.
+* **Compact (< 80 columns)**: Splits collapse into a stacked layout (60% tree / 40% details) when the content area is at least 18 rows tall; below that, only the tree panel is shown. Press <kbd>Tab</kbd> to switch focus.
+* **Medium (80–125 columns)**: Balanced side-by-side layout (55% tree, 45% details/routing). Press <kbd>Tab</kbd> to toggle focus between panes.
+* **Wide (126–160 columns)**: Expanded details view (45% tree, 55% details) with full server parameters, TLS properties, and statistics.
+* **UltraWide (> 160 columns)**: Same 45/55 split with the widest details/routing canvases.
 
 ### Height Tiers
 * **Tiny (< 16 rows)**: Compresses header and hides auxiliary cards to maximize server list visibility.

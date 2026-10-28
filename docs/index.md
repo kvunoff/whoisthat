@@ -68,7 +68,7 @@ All modern circumvention and proxy protocols are supported natively through a pi
 * **VMess**, **Trojan**, **Shadowsocks** (2022 specs), and **SOCKS5**.
 
 ### 3. Application-Based Split Tunneling
-Bypass the VPN tunnel for gaming, domestic banking, or local network services using pure Linux kernel primitives (cgroup v2 and nftables policy routing):
+Bypass the VPN tunnel for gaming, domestic banking, or local network services using pure Linux kernel primitives (cgroup v2 and nftables policy routing). Set **Split tunnel** to `exclude` (apps bypass the VPN) or `include` (only these apps use it) in Settings first — with the default `off`, the commands below do not change routing:
 ```bash
 whoisthat run -d spotify           # Spotify bypasses the VPN tunnel in background
 whoisthat run %command%            # In Steam launch options: zero-ping direct gaming
@@ -85,6 +85,10 @@ All subscription tokens, server configs, and routing rules are saved locally und
 ---
 
 ## Visual Preview
+
+::: info
+These screenshots were captured from an earlier release and show the legacy TUN name `tun0`; the current default is `whoisthattun` and the layout has evolved.
+:::
 
 <div style="display: flex; flex-direction: column; gap: 1.5rem; margin: 1.5rem 0;">
   <div>

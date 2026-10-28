@@ -35,7 +35,7 @@ When `whoisthat-core` starts, it executes a rigorous preparation sequence:
 ### Key Initialization Steps
 
 ### 1. Ambient Capabilities Elevation
-Before any file or network operations, the daemon elevates permitted capabilities (`CAP_NET_ADMIN`, `CAP_NET_RAW`, `CAP_SETPCAP`) into the inheritable and ambient sets via `prctl(PR_CAP_AMBIENT_RAISE)`. This ensures child processes (`ip`, `nft`, `iptables`, and `xray`) automatically inherit network management permissions without requiring `root` or `sudo`.
+Before any file or network operations, the daemon elevates permitted capabilities (`CAP_NET_ADMIN`, `CAP_NET_RAW`) into the inheritable and ambient sets via `capset`/`prctl(PR_CAP_AMBIENT_RAISE)`. `CAP_SETPCAP` is granted to the binary by `setcap` but is not raised by the daemon itself. Child processes (`ip`, `nft`, `iptables`, and `xray`) automatically inherit the two network capabilities without requiring `root` or `sudo`.
 
 ### 2. Startup Orphan Reconciliation
 If a previous daemon session crashed, experienced an ungraceful shutdown, or lost power while TUN or kill-switch was active, dangling rules in `iptables` or `nftables` could leave network routes broken. 
@@ -43,7 +43,7 @@ If a previous daemon session crashed, experienced an ungraceful shutdown, or los
 On startup, before binding sockets, the daemon runs `tunmode.ReconcileOrphanedRules()`. If no other live core instance is detected, it tears down all leftover `whoisthat_*` tables and restores default gateway routing.
 
 ### 3. Isolated Geo Assets Management
-The daemon verifies the existence and integrity of `geoip.dat` and `geosite.dat` under `~/.config/whoisthat/geo/`. If missing or corrupted (< 10 MB), it automatically initiates an exponential backoff download from official v2fly release repositories.
+The daemon verifies the existence and integrity of `geoip.dat` and `geosite.dat` under `~/.config/whoisthat/geo/`. `geoip.dat` is re-downloaded when it is missing or smaller than 10 MiB; `geosite.dat` has a 1 MiB floor. Downloads use official v2fly releases with exponential backoff, and `geoip.dat` is additionally validated with `xray` before installation.
 
 ---
 
@@ -54,7 +54,7 @@ Instead of relying on fragile static configuration files on disk, `whoisthat-cor
 1. **Protocol Parsing**: Decodes proxy URIs (`vless://`, `vmess://`, `trojan://`, `ss://`, `socks://`, `hysteria2://`) into strongly typed Go configuration structures.
 2. **Stream Settings Injection**: Configures TLS, Reality, xHTTP, gRPC, or Vision flow parameters based on server specifications.
 3. **Routing Table Injection**: Merges default private-range bypasses, user-defined rules, and active Happ routing profiles into Xray's routing block.
-4. **Execution**: Launches the pinned Xray-core binary with `-config stdin:`, piping the generated JSON directly to standard input.
+4. **Execution**: Launches the pinned Xray-core binary with `xray run`, piping the generated JSON config directly to its standard input.
 
 ---
 
@@ -70,7 +70,7 @@ For latency testing, WhoisThat spins up lightweight temporary Xray instances run
 
 ## Graceful Signal Handling & Teardown
 
-The daemon listens for OS termination signals (`SIGINT`, `SIGTERM`, `SIGHUP`):
+The daemon listens for OS termination signals (`SIGINT`, `SIGTERM`):
 
 1. Closes client IPC connections.
 2. Stops active proxy processes.

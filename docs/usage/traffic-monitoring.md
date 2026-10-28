@@ -33,14 +33,14 @@ The traffic screen displays structured cards detailing active transfer metrics:
 ### 1. Live Throughput
 * **Current Download Rate**: Real-time incoming bandwidth (e.g. `4.8 MB/s`).
 * **Current Upload Rate**: Real-time outgoing bandwidth (e.g. `620.0 KB/s`).
-* **Peak Speeds**: Maximum recorded RX and TX speeds observed during the current connection session.
+* **Peak Speeds**: Maximum RX and TX rates recorded since the TUI started (not reset on reconnect).
 
 ### 2. Session Data Totals
-* **Session Download**: Total bytes downloaded through the proxy since establishing connection.
-* **Session Upload**: Total bytes uploaded through the proxy.
-* **Direct vs Proxy Split**: Separates bytes forwarded over the encrypted VPN tunnel from traffic matching `direct` routing rules routed over the physical gateway.
+* **Proxy Download / Upload**: Cumulative bytes transferred through the proxy since the TUI started.
+* **Direct Bypass / Total Direct**: Bytes matching `direct` routing rules, shown live and cumulatively in the footer.
+* **Profile / Status**: Current connection state and profile name.
 
-### 3. Interface & TUN Status
-* **TUN State**: Indicates whether the virtual network interface (`whoisthattun`) is currently UP, DOWN, or UNCONFIGURED.
-* **Firewall Engine**: Active backend (`nftables` or `iptables`).
-* **MTU & Packet Counters**: Operational parameters of the active network interface.
+### 3. Interface & TUN Footer
+* **TUN State**: `TUN: active (<name>)` or `TUN: disabled`.
+* **Direct Bypass**: Live and cumulative bytes routed directly over the physical gateway.
+* The firewall backend, MTU and packet counters are not part of the Traffic tab; use `whoisthat doctor` or `nft`/`ip` for those.

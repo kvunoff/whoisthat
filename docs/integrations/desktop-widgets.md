@@ -6,7 +6,7 @@ WhoisThat is engineered for integration with Linux desktop status bars, tiling w
 
 ## The JSON Status Schema
 
-Running `whoisthat status --json` (or streaming with `whoisthat status --watch --json`) emits a structured JSON object:
+Running `whoisthat status --json` (or streaming with `whoisthat status --watch --json`) emits a structured JSON object. In watch mode a line is printed per `traffic-stats` tick (1/s while connected) plus on status/TUN/state changes; an idle disconnected client can stay silent. Optional fields (`group_id`, `profile_name`, `xray_version`, …) are omitted when empty.
 
 ```json
 {
@@ -20,6 +20,7 @@ Running `whoisthat status --json` (or streaming with `whoisthat status --watch -
   "profile_id": 4,
   "profile_name": "Frankfurt-10G",
   "protocol": "vless",
+  "xray_version": "v26.9.9",
   "rx_speed_bytes": 4823449,
   "tx_speed_bytes": 524288,
   "rx_speed_human": "4.6 MB/s",
@@ -31,13 +32,13 @@ Running `whoisthat status --json` (or streaming with `whoisthat status --watch -
 
 ## 1. Waybar Integration
 
-Waybar can consume the continuous stream natively via `custom/whoisthat`.
+Waybar's `custom` module substitutes `{}`/`{icon}` only from the `text`/`alt`/`class` keys. Raw `status --json` deliberately exposes machine fields (`connected`, `mode`, `rx_speed_human`, …) instead, so use the wrapper script below.
 
 ### `~/.config/waybar/config`
 
 ```json
 "custom/whoisthat": {
-    "exec": "whoisthat status --watch --json",
+    "exec": "~/.config/waybar/scripts/whoisthat-waybar.sh",
     "return-type": "json",
     "format": "{icon} {}",
     "format-icons": {
@@ -51,8 +52,8 @@ Waybar can consume the continuous stream natively via `custom/whoisthat`.
 }
 ```
 
-### Script Formatter (Optional Helper)
-To customize Waybar's JSON output (e.g. mapping `rx_speed_human` into `text` and `tooltip`):
+### Wrapper Script
+Maps the stable JSON fields into Waybar's `text` / `alt` / `tooltip` / `class` contract:
 
 ```bash
 #!/usr/bin/env bash

@@ -6,7 +6,7 @@ This guide explains how to build, test, debug, and contribute to the WhoisThat c
 
 ## Local Development Loop
 
-No installation step is required during development. The Rust TUI automatically searches for the core binary in `./core/core/whoisthat-core`, falling back to `PATH` and `/usr/local/bin/`.
+No installation step is required during development. The Rust TUI resolves `whoisthat-core` in this order: `PATH`, `./whoisthat-core`, `./core/core/whoisthat-core`, `./bin/whoisthat-core`, `/usr/local/bin`, `/usr/bin`.
 
 ```bash
 # 1. Build the Go core daemon (must be built first)
@@ -53,7 +53,7 @@ whoisthat/
 │   ├── logger.rs       ← FileLogger (custom) + init/configure logger
 │   ├── core_spawn.rs   ← spawn_core, find_core_binary, ensure_core_caps (pkexec fallback)
 │   ├── systemd.rs      ← Unit-file generation, linger, enable/disable service
-│   ├── net_info.rs     ← fetch_public_ip / fetch_public_ipv6 (raw TCP to ipify)
+│   ├── net_info.rs     ← fetch_public_ip / fetch_public_ipv6 (HTTPS via ureq to ipify)
 │   ├── deeplink.rs     ← Deep link routing (wit:// scheme parser, subscription & profile import)
 │   ├── launcher.rs     ← `whoisthat run <app>` — launch into split-tunnel slice (foreground/background)
 │   ├── config.rs       ← Config loader (~/.config/whoisthat/config.toml)
@@ -82,7 +82,7 @@ whoisthat/
 │       └── lib/        ← Core libraries
 │           ├── parser/      ← Native in-memory URI parser & Xray JSON config generator
 │           ├── xraymgr/     ← Pinned Xray-core runtime manager (v26.9.9 download & checksum verification)
-│           ├── logger/      ← Structured logger (lumberjack rotation, 20 MB)
+│           ├── logger/      ← Level-filtered log wrapper (rotation configured in main.go)
 │           ├── TCPServer/   ← IPC server + dispatcher (Unix socket / TCP, length-prefixed JSON)
 │           ├── AppConfig/   ← Core configuration, defaults, HWID gen
 │           ├── PortPool/    ← Dynamic port allocator for test/profile instances
@@ -178,9 +178,15 @@ make install      # install both binaries and set capabilities
 
 ### Verbose Logging
 
+The TUI reads its level from `config.toml` (`log_level`) and only writes to `tui.log` when `log_enabled = true` (Settings → **TUI log**). `WHOISTHAT_LOG_LEVEL` is not read by the Rust logger; the TUI overwrites it when spawning the core.
+
+For a standalone daemon with debug logging:
+
 ```bash
-WHOISTHAT_LOG_LEVEL=debug cargo run
+WHOISTHAT_LOG_LEVEL=debug ./core/core/whoisthat-core
 ```
+
+`cargo run` with the environment variable alone will not enable TUI debug output.
 
 ### Manual Socket and Daemon Inspection
 
@@ -213,12 +219,13 @@ Continuous integration is handled via GitHub Actions in `.github/workflows/`:
 * **`ci.yml`**: Runs on push and PRs targeting `main`:
   * Rust: `cargo fmt --all --check`, `cargo clippy --all-targets --no-deps`, `cargo test`.
   * Go: `go vet ./...`, `go build ./...`, `go test ./...`, `go mod tidy -diff`, `govulncheck`.
-  * Shell: `shellcheck install.sh`.
+  * Shell: `shellcheck -S error install.sh scripts/check-versions.sh`.
+  * Version consistency: `./scripts/check-versions.sh` (Cargo/package/PKGBUILD/.SRCINFO/docs/Xray pins).
   * Integration: privileged netns suite (`-tags=integration`).
 * **`aur-publish.yml`**: Triggers on every `v*` tag push:
-  1. Parses version from tag.
+  1. Parses version from tag and runs `./scripts/check-versions.sh --tag <tag>`.
   2. Clones the live AUR repo.
-  3. Computes `pkgrel` (increments if `pkgver` matches latest AUR, otherwise resets to 1).
+  3. Computes `pkgrel` (increments if `pkgver` matches latest AUR, resets to 1 for a new version, and reuses the repo `pkgrel` when rolling back to an older version).
   4. Regenerates `PKGBUILD` and `.SRCINFO` in CI.
   5. Pushes to AUR using the `AUR_SSH_KEY` secret.
 * **`deploy-docs.yml`**: Builds and deploys this VitePress documentation to GitHub Pages whenever changes are committed to `docs/**`.

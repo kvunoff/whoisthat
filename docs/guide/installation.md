@@ -23,12 +23,12 @@ curl -fsSL https://raw.githubusercontent.com/kvunoff/whoisthat/main/install.sh |
 ```
 
 **What the install script does:**
-1. Checks for system tools (`curl`, `tar`, `git`, C compiler, `setcap`, `pkexec`).
+1. Installs distribution build prerequisites (C compiler/make, `git`, `curl`, `unzip`, `libcap`/`setcap`). `pkexec` is optional and only checked by `whoisthat doctor`.
 2. Installs or adopts precompiled **Xray-core (pinned v26.9.9)** with SHA256 checksum verification. The installer **fails closed**: a missing or mismatched official checksum aborts the installation (override only with the explicit `--insecure-skip-verify` flag).
 3. Builds `whoisthat-core` (Go) and `whoisthat` (Rust).
 4. Installs binaries into `/usr/local/bin/`.
 5. Grants `cap_net_admin,cap_net_raw,cap_setpcap=+ep` to `/usr/local/bin/whoisthat-core`.
-6. Registers the `whoisthat.desktop` file and `wit://` protocol handler with `xdg-mime`.
+6. Installs `whoisthat.desktop` into `/usr/share/applications` and refreshes the desktop database. The `wit://` scheme handler is registered per-user by the TUI on launch (`xdg-mime`), not by the installer.
 
 ---
 
@@ -56,7 +56,7 @@ The AUR package automatically installs:
 ### Prerequisites
 
 Ensure you have the following installed on your machine:
-* **Rust**: `1.80+` ([rustup.rs](https://rustup.rs/))
+* **Rust**: recent stable toolchain (edition 2021, [rustup.rs](https://rustup.rs/))
 * **Go**: `1.26+` ([go.dev](https://go.dev/))
 * **Git**, **curl**, and a C compiler (`gcc` or `clang`)
 * **iproute2** and either **nftables** or **iptables**
@@ -94,7 +94,7 @@ xdg-mime default whoisthat.desktop x-scheme-handler/wit
 
 WhoisThat relies on a unified proxy engine: **Xray-core v26.9.9**.
 
-* **Automatic Download & Verification**: On startup, `whoisthat-core` inspects `~/.local/share/whoisthat/runtimes/xray/`. If not present, it downloads the official precompiled release archive directly from GitHub, fetches the official `.dgst` file from GitHub (never from a mirror), verifies SHA-256, and only then unpacks the binary. A missing or mismatched checksum aborts the install.
+* **Automatic Download & Verification**: On startup, `whoisthat-core` inspects `~/.local/share/whoisthat/runtimes/xray/v26.9.9/`. If the pinned binary is not present, it downloads the official precompiled release archive (GitHub first, then the `ghfast.top` mirror), fetches the official `.dgst` file **only from GitHub**, verifies SHA-256, and only then unpacks the binary. A missing or mismatched checksum aborts the install.
 * **System Binary Adoption**: If `/usr/local/bin/xray` or `/usr/bin/xray` already exists and exactly matches the pinned version, the core automatically adopts the system binary.
 * **Native Protocols**: Because Hysteria2 protocol support is compiled directly into modern Xray-core, **no separate hysteria binary is required**.
 * **Missing-Binary UX & Hints**: On startup, the core daemon proactively tests for Xray availability. If missing and automatic download cannot proceed (e.g. offline setup), the core unicasts a high-priority `warn` event to the TUI with an actionable installation hint, and connect-time errors forward the exact underlying `err.Error()` to the interface.
@@ -109,8 +109,8 @@ TUN mode creates virtual network interfaces and manipulates routing rules withou
 sudo setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep /path/to/whoisthat-core
 ```
 
-::: tip One-Time Setup Prompt
-If you run `whoisthat` and attempt to activate TUN mode without capabilities set, the TUI detects the missing privileges and automatically displays an interactive `pkexec` dialog to configure capabilities with a single password prompt.
+::: tip Capability Setup Prompt
+If `whoisthat` cannot find a `whoisthat-core` with the required capabilities when it starts (or spawns) the daemon, it offers a one-time `pkexec` prompt in the terminal **before** the TUI appears. Toggling TUN later in the TUI does not re-run `pkexec`; it reports the missing capabilities and points to the `setcap` command above.
 :::
 
 ---
@@ -126,29 +126,43 @@ whoisthat doctor
 Example successful output:
 
 ```
-=== WhoisThat Doctor ===
+WhoisThat Doctor v0.14.3 / core v0.3.5 (protocol 3) — System Diagnostics
 
-[✓] Binaries
-  • whoisthat: /usr/local/bin/whoisthat (v0.14.3)
-  • whoisthat-core: /usr/local/bin/whoisthat-core
+[+] Binaries & Runtimes
+  ✓ whoisthat: /usr/local/bin/whoisthat (v0.14.3)
+  ✓ whoisthat-core: /usr/local/bin/whoisthat-core
+  ✓ xray-core: ~/.local/share/whoisthat/runtimes/xray/v26.9.9/xray (v26.9.9)
+  ✓ system tools: ip, getcap, setcap, pkexec available
 
-[✓] Capabilities
-  • cap_net_admin: granted
-  • cap_net_raw: granted
-  • cap_setpcap: granted
+[+] Linux Capabilities & Kernel
+  ✓ whoisthat-core caps: cap_net_admin,cap_net_raw,cap_setpcap=+ep
+  ✓ /dev/net/tun: available (char device, mode 0666)
+  ✓ firewall backend: nftables active (recommended)
+  ✓ cgroup v2: available — split-tunneling supported
 
-[✓] Polkit & Helper Tools
-  • pkexec: /usr/bin/pkexec
-  • iproute2: /usr/bin/ip
-  • firewall backend: nftables
+[+] Polkit & Permissions
+  ✓ polkit daemon: active (polkit.service)
+  ✓ pkexec: /usr/bin/pkexec
+  ℹ systemd linger: disabled for user 'kvunoff' (enable with: loginctl enable-linger kvunoff ...)
 
-[✓] IPC & Daemon Status
-  • Socket path: /run/user/1000/whoisthat/core.sock
-  • Daemon: active (protocol v3, core v0.3.5)
+[+] IPC & Daemon
+  ✓ XDG_RUNTIME_DIR: /run/user/1000
+  ✓ IPC socket: /run/user/1000/whoisthat/core.sock (mode 0600, secure)
+  ✓ daemon connection: active & responsive (VPN: connected, TUN active, profile: #2 (Frankfurt))
+  ℹ systemd user service: whoisthat-core.service (status: inactive, autostart: disabled)
 
-[✓] Storage & Cryptography
-  • Database directory: ~/.local/share/whoisthat/db/ (0700)
-  • Master key: ~/.config/whoisthat/db.key (0600)
+[+] DNS & Routing
+  ✓ DNS sink address: 198.18.0.53 / fd00::53 not assigned
+  ✓ DNS hijack rules: legacy resolver
+  ...
 
-All checks passed! System is ready.
+[+] Configuration & Storage
+  ✓ TUI config: ~/.config/whoisthat/config.toml (theme: graphite-dark, test: http-get)
+  ✓ core config: ~/.config/whoisthat/config.json (SOCKS: 3090, HTTP: 3091)
+  ✓ encrypted db: ~/.local/share/whoisthat/db (AES-256-GCM key present at ~/.config/whoisthat/db.key)
+  ✓ geo assets: geoip.dat (11.8 MB), geosite.dat (4.2 MB)
+
+Result: 21 passed, 0 warnings, 0 failed, 3 info. All systems operational!
 ```
+
+Categories and item counts vary with the host; the exact JSON schema is documented in [Doctor Diagnostics](/reference/doctor).
