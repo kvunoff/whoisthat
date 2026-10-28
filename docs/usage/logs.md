@@ -26,7 +26,7 @@ WhoisThat writes structured logs to designated disk locations based on component
 | `~/.config/whoisthat/core.log` | Go Core Daemon | Lumberjack rotation (20 MB max, 1 backup) | Primary daemon log: connection states, Xray output, routing tables. |
 | `/tmp/whoisthat-core.log` | Go Core Daemon | Plain text | Emergency fallback if `~/.config/` is read-only or inaccessible. |
 | `~/.local/share/whoisthat/tui.log` | Rust TUI | Plain text | TUI debug log (active when **TUI Log** is enabled in Settings). |
-| `whoisthat.log` (in CWD) | Rust TUI | Plain text | Startup errors if TUI cannot initialize the terminal backend. |
+| `/tmp/whoisthat-tui.log` | Rust TUI | Plain text | Emergency fallback if `~/.local/share/whoisthat/` is not writable. |
 
 ---
 

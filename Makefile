@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: all build core rust test test-go test-rust lint fmt integration docs install clean
+.PHONY: all build core rust test test-go test-rust lint version-check fmt integration docs install clean
 
 all: build
 
@@ -26,11 +26,16 @@ test-rust:
 integration:
 	cd core/core && go test -tags=integration ./lib/proxy/tun/ -run 'TestNetns' -v
 
-lint:
+lint: version-check
 	cargo fmt --all --check
 	cargo clippy --all-targets --no-deps
 	cd core/core && go vet ./...
 	gofmt -l core/core | (! grep .)
+
+# Every version mirror must agree with its source of truth (Cargo.toml,
+# version.go, protocol.txt, PKGBUILD). Also gates release tags.
+version-check:
+	./scripts/check-versions.sh
 
 fmt:
 	cargo fmt --all

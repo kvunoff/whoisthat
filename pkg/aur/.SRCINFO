@@ -16,7 +16,8 @@ pkgbase = whoisthat
 	optdepends = iptables: legacy firewall backend for TUN mode
 	optdepends = polkit: pkexec-based capability setup from the TUI
 	optdepends = xray: system Xray-core binary (managed runtime used automatically if absent)
-	source = whoisthat-0.14.2.tar.gz::https://github.com/kvunoff/whoisthat/archive/refs/tags/v0.14.2.tar.gz
+	options = !lto
+	source = whoisthat-0.14.3.tar.gz::https://github.com/kvunoff/whoisthat/archive/refs/tags/v0.14.3.tar.gz
 	sha256sums = SKIP
 
 pkgname = whoisthat

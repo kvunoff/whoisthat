@@ -13,7 +13,9 @@ function getClientVersion(): string {
     const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'))
     if (pkg.version) return pkg.version
   } catch {}
-  return '0.14.3'
+  throw new Error(
+    'cannot determine the client version: read Cargo.toml or package.json from the repo root'
+  )
 }
 
 const clientVersion = getClientVersion()
