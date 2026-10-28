@@ -129,7 +129,7 @@ Example successful output:
 === WhoisThat Doctor ===
 
 [✓] Binaries
-  • whoisthat: /usr/local/bin/whoisthat (v0.14.3)
+  • whoisthat: /usr/local/bin/whoisthat (v0.14.4)
   • whoisthat-core: /usr/local/bin/whoisthat-core
 
 [✓] Capabilities
