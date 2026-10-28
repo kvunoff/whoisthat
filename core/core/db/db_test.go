@@ -1,6 +1,7 @@
 package db
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -480,5 +481,75 @@ func TestLoadOrCreateKeyMigratesLegacyKey(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(legacyDir, ".key")); err != nil {
 		t.Fatal("legacy key should be kept for downgrade compatibility")
+	}
+}
+
+func TestLoadOrCreateKeyRestoresLegacyWhenPreferredIsStale(t *testing.T) {
+	dataDir := t.TempDir()
+	configDir := t.TempDir()
+	legacyKey := bytes.Repeat([]byte{0x11}, 32)
+	staleKey := bytes.Repeat([]byte{0x22}, 32)
+	preferred := filepath.Join(configDir, "db.key")
+
+	if err := os.WriteFile(filepath.Join(dataDir, ".key"), legacyKey, 0600); err != nil {
+		t.Fatalf("write legacy key: %v", err)
+	}
+	if err := os.WriteFile(preferred, staleKey, 0600); err != nil {
+		t.Fatalf("write stale key: %v", err)
+	}
+
+	writer := &DB{Path: dataDir, KeyPath: preferred}
+	writer.key = legacyKey
+	if err := writer.writeEncryptedJSON(writer.GetDBConfigFile(), structs.DBConfig{}); err != nil {
+		t.Fatalf("write encrypted db config: %v", err)
+	}
+
+	db := &DB{Path: dataDir, KeyPath: preferred}
+	db.loadOrCreateKey()
+
+	if !bytes.Equal(db.key, legacyKey) {
+		t.Fatal("core did not fall back to the legacy key")
+	}
+	restored, err := os.ReadFile(preferred)
+	if err != nil {
+		t.Fatalf("read restored key: %v", err)
+	}
+	if !bytes.Equal(restored, legacyKey) {
+		t.Fatal("preferred key was not replaced with the working legacy key")
+	}
+	backups, _ := filepath.Glob(preferred + ".stale-*")
+	if len(backups) != 1 {
+		t.Errorf("expected one stale-key backup, got %d", len(backups))
+	}
+}
+
+func TestLoadOrCreateKeyKeepsPreferredWhenItDecryptsDatabase(t *testing.T) {
+	dataDir := t.TempDir()
+	configDir := t.TempDir()
+	preferredKey := bytes.Repeat([]byte{0x33}, 32)
+	legacyKey := bytes.Repeat([]byte{0x44}, 32)
+	preferred := filepath.Join(configDir, "db.key")
+
+	if err := os.WriteFile(filepath.Join(dataDir, ".key"), legacyKey, 0600); err != nil {
+		t.Fatalf("write legacy key: %v", err)
+	}
+	if err := os.WriteFile(preferred, preferredKey, 0600); err != nil {
+		t.Fatalf("write preferred key: %v", err)
+	}
+
+	writer := &DB{Path: dataDir, KeyPath: preferred}
+	writer.key = preferredKey
+	if err := writer.writeEncryptedJSON(writer.GetDBConfigFile(), structs.DBConfig{}); err != nil {
+		t.Fatalf("write encrypted db config: %v", err)
+	}
+
+	db := &DB{Path: dataDir, KeyPath: preferred}
+	db.loadOrCreateKey()
+
+	if !bytes.Equal(db.key, preferredKey) {
+		t.Fatal("core replaced a working preferred key")
+	}
+	if backups, _ := filepath.Glob(preferred + ".stale-*"); len(backups) != 0 {
+		t.Errorf("unexpected stale-key backup: %v", backups)
 	}
 }
