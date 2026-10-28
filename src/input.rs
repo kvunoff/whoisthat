@@ -816,15 +816,18 @@ async fn handle_normal_input(
                     app.focus = Focus::Popup;
                 }
                 8 => {
-                    app.kill_switch_enabled = !app.kill_switch_enabled;
-                    let _ = client.set_kill_switch(app.kill_switch_enabled).await;
-                    cfg.kill_switch_enabled = app.kill_switch_enabled;
-                    config::save_config(cfg);
+                    // Wait for `kill-switch-updated` before changing what the
+                    // UI shows: an unconfirmed optimistic toggle is what made
+                    // settings look "reset" after a restart.
+                    if let Err(e) = client.set_kill_switch(!app.kill_switch_enabled).await {
+                        app.msg(format!("Error: {e}"));
+                    }
                 }
                 9 => {
                     let next = next_split_tunnel_mode(&app.split_tunnel);
-                    app.split_tunnel = next.to_string();
-                    let _ = client.set_split_tunnel(next).await;
+                    if let Err(e) = client.set_split_tunnel(next).await {
+                        app.msg(format!("Error: {e}"));
+                    }
                 }
                 10 => {
                     let methods = ["tcp", "http-get", "http-head"];

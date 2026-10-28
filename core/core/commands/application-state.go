@@ -13,9 +13,12 @@ import (
 func (cmd *Cmd) GetApplicationState(data structs.GetApplicationStateData, proxy_manager *proxy.ProxyManager, tun_manager *tunmode.TunModeManager) {
 	groups, err := cmd.DB.GetAllGroupsAndProfiles()
 	if err != nil {
-		logger.Warn("failed to read application state:", err)
-		cmd.warn("read-application-state-failed", "failed to read application state")
-		return
+		// The TUI mirrors split/tun/autoconnect from this frame, so dropping the
+		// whole reply makes every setting look reset until the next reconnect.
+		// Degrade to an empty profile list instead.
+		logger.Warn("failed to read groups for application state:", err)
+		cmd.warn("read-groups-failed", "failed to read groups")
+		groups = []structs.GroupWithProfiles{}
 	}
 
 	application_state := structs.ApplicationState{
