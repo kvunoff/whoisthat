@@ -172,6 +172,10 @@ make docs         # VitePress build
 make install      # install both binaries and set capabilities
 ```
 
+The TUI needs **Rust 1.79 or newer** (`Cargo.toml` declares `rust-version`).
+`make build` and `install.sh` build with `--locked`, so `Cargo.lock` is the
+authoritative dependency set; update it deliberately with `cargo update`.
+
 ---
 
 ## Runtime Debugging & Inspection

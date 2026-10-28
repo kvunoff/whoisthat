@@ -291,6 +291,28 @@ uninstall_whoisthat() {
         info "WhoisThat binaries removed successfully."
     fi
 
+    # Systemd user unit (created by the TUI's autostart toggle) and the desktop
+    # entries (installed by the package or registered by the wit:// handler).
+    systemctl --user disable --now whoisthat-core.service >/dev/null 2>&1 || true
+    local unit="$HOME/.config/systemd/user/whoisthat-core.service"
+    if [ -f "$unit" ]; then
+        rm -f "$unit"
+        systemctl --user daemon-reload >/dev/null 2>&1 || true
+        info "Removed $unit"
+    fi
+
+    local user_desktop="$HOME/.local/share/applications/whoisthat.desktop"
+    if [ -f "$user_desktop" ]; then
+        rm -f "$user_desktop"
+        info "Removed $user_desktop"
+    fi
+    if [ -f "/usr/share/applications/whoisthat.desktop" ]; then
+        $SUDO rm -f "/usr/share/applications/whoisthat.desktop"
+        info "Removed /usr/share/applications/whoisthat.desktop"
+    fi
+    update-desktop-database "$HOME/.local/share/applications" >/dev/null 2>&1 || true
+    update-desktop-database /usr/share/applications >/dev/null 2>&1 || true
+
     echo
     warn "User configuration (~/.config/whoisthat) and database/runtimes (~/.local/share/whoisthat) were preserved."
     warn "To completely delete all user data, credentials, and isolated runtimes, run:"
@@ -453,6 +475,11 @@ install_rust() {
     if command -v cargo &>/dev/null && command -v rustc &>/dev/null; then
         local rust_ver
         rust_ver=$(rustc --version | awk '{print $2}')
+        if ! version_ge "$rust_ver" "1.79"; then
+            err "Rust ${rust_ver} is too old: whoisthat needs 1.79 or newer."
+            err "Update it with: rustup update stable"
+            exit 1
+        fi
         info "Rust ${rust_ver} detected, skipping installation"
         return
     fi
@@ -521,7 +548,7 @@ build_whoisthat() {
 
     # 2. whoisthat TUI (Rust)
     info "2/2 Building whoisthat TUI..."
-    cargo build --release
+    cargo build --release --locked
     [ -f target/release/whoisthat ] || { err "whoisthat TUI build failed"; exit 1; }
 
     BUILD_SRC_DIR="$src_dir"

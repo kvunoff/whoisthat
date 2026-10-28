@@ -11,7 +11,7 @@ core:
 	cd core/core && go build -o whoisthat-core
 
 rust:
-	cargo build --release
+	cargo build --release --locked
 
 test: test-go test-rust
 
