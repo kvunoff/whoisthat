@@ -1012,7 +1012,12 @@ async fn wait_killswitch_reply(
     config::save_config(cfg);
 
     if reply.enabled != requested {
-        return Err("kill-switch was not armed; see core.log".into());
+        let reason = if requested {
+            "kill-switch was not armed; see core.log"
+        } else {
+            "kill-switch was not disarmed; see core.log"
+        };
+        return Err(reason.into());
     }
     Ok(())
 }
