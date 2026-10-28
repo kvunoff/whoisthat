@@ -54,8 +54,14 @@ func splitCgroupLevel(relPath string) int {
 
 // buildSplitSetupScript returns the shell script that installs split-tunnel
 // marking + routing for the given mode. Returns "" for "off"/unknown modes.
+//
+// tunV6: the TUN device carries IPv6 (include mode routes v6 into the tunnel).
+// physV6: the physical link has an IPv6 default gateway (exclude mode points
+// excluded apps at the physical link through table 100; without v6 they must
+// be blackholed instead of leaking into the tunnel).
+//
 // Pure text so it is unit-testable without root or a live cgroup tree.
-func buildSplitSetupScript(mode string, uid int, tunName string, hasV6 bool) string {
+func buildSplitSetupScript(mode string, uid int, tunName string, tunV6, physV6 bool) string {
 	paths := splitCgroupRelPaths(uid)
 
 	var mark int
@@ -103,12 +109,12 @@ func buildSplitSetupScript(mode string, uid int, tunName string, hasV6 bool) str
 		// through to the main table (physical), so it bypasses the tunnel.
 		fmt.Fprintf(&b, "ip rule add fwmark %d table %d 2>/dev/null || true\n", mark, splitIncludeTable)
 		fmt.Fprintf(&b, "ip route replace default dev %s table %d\n", tunName, splitIncludeTable)
-		if hasV6 {
+		if tunV6 {
 			fmt.Fprintf(&b, "ip -6 rule add fwmark %d table %d 2>/dev/null || true\n", mark, splitIncludeTable)
 			fmt.Fprintf(&b, "ip -6 route replace default dev %s table %d\n", tunName, splitIncludeTable)
 		}
 	} else if mode == "exclude" {
-		if !hasV6 {
+		if !physV6 {
 			// Physical interface has no IPv6 default gateway. Excluded apps must NOT
 			// leak into the tunnel's default IPv6 route. Route mark 1 IPv6 packets
 			// to unreachable so dual-stack apps fall back cleanly to IPv4 (physical).
@@ -123,15 +129,23 @@ func buildSplitSetupScript(mode string, uid int, tunName string, hasV6 bool) str
 // buildSplitTeardownScript removes everything buildSplitSetupScript can create.
 // Idempotent: a clean no-op when nothing exists. The whoisthat_split table drop
 // covers both modes' nft state; the table-200 cleanup covers include mode.
-func buildSplitTeardownScript() string {
-	return fmt.Sprintf(`nft delete table inet whoisthat_split 2>/dev/null || true
-ip rule del fwmark %d table %d 2>/dev/null || true
-ip route flush table %d 2>/dev/null || true
-ip -6 rule del fwmark %d table %d 2>/dev/null || true
-ip -6 route flush table %d 2>/dev/null || true
-ip -6 rule del fwmark %d table 100 2>/dev/null || true
-ip -6 route flush table 100 2>/dev/null || true
-`, splitIncludeMark, splitIncludeTable, splitIncludeTable, splitIncludeMark, splitIncludeTable, splitIncludeTable, splitExcludeMark)
+//
+// Table 100 is shared with Xray's fwmark routing (addFwmarkRouting6), so it is
+// only flushed when setup installed the v4-only unreachable fallback there
+// (physV6 == false). Flushing it unconditionally breaks Xray's direct IPv6
+// traffic on a live TUN.
+func buildSplitTeardownScript(physV6 bool) string {
+	var b strings.Builder
+	b.WriteString("nft delete table inet whoisthat_split 2>/dev/null || true\n")
+	fmt.Fprintf(&b, "ip rule del fwmark %d table %d 2>/dev/null || true\n", splitIncludeMark, splitIncludeTable)
+	fmt.Fprintf(&b, "ip route flush table %d 2>/dev/null || true\n", splitIncludeTable)
+	fmt.Fprintf(&b, "ip -6 rule del fwmark %d table %d 2>/dev/null || true\n", splitIncludeMark, splitIncludeTable)
+	fmt.Fprintf(&b, "ip -6 route flush table %d 2>/dev/null || true\n", splitIncludeTable)
+	if !physV6 {
+		fmt.Fprintf(&b, "ip -6 rule del fwmark %d table 100 2>/dev/null || true\n", splitExcludeMark)
+		b.WriteString("ip -6 route flush table 100 2>/dev/null || true\n")
+	}
+	return b.String()
 }
 
 func (t *TunModeManager) applySplitRules() error {
@@ -144,7 +158,13 @@ func (t *TunModeManager) applySplitRules() error {
 		logger.Warn("split: no real login user detected; split tunnel needs a user session (skipping)")
 		return nil
 	}
-	script := buildSplitSetupScript(cfg.Mode, uid, t.tun_name, t.tun_ipv6 != "")
+	script := buildSplitSetupScript(
+		cfg.Mode,
+		uid,
+		t.tun_name,
+		t.tun_ipv6 != "",
+		t.default_interface_ipv6 != "",
+	)
 	if script == "" {
 		return nil
 	}
@@ -154,7 +174,7 @@ func (t *TunModeManager) applySplitRules() error {
 }
 
 func (t *TunModeManager) removeSplitRules() error {
-	_, err := runScriptWithSh(buildSplitTeardownScript())
+	_, err := runScriptWithSh(buildSplitTeardownScript(t.default_interface_ipv6 != ""))
 	return err
 }
 

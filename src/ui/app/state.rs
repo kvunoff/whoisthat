@@ -12,6 +12,7 @@ use crate::ui::settings::SettingsState;
 use crate::ui::traffic::TrafficHistory;
 use crate::ui::uri::{self, ParsedUri};
 
+use super::helpers::clean_label;
 use super::types::*;
 
 #[derive(Debug, Clone, Default)]
@@ -604,12 +605,24 @@ impl App {
     }
 
     pub fn msg(&mut self, text: impl Into<String>) {
-        self.last_msg = Some(text.into());
+        self.last_msg = Some(clean_label(&text.into()));
     }
 
     // --- state mutations ---
 
-    pub fn apply_state(&mut self, state: ApplicationState) {
+    pub fn apply_state(&mut self, mut state: ApplicationState) {
+        for g in state.groups.iter_mut() {
+            clean_group(&mut g.group);
+            for p in g.profiles.iter_mut() {
+                clean_profile(p);
+            }
+            for r in g.routing_profiles.iter_mut() {
+                clean_routing_profile(r);
+            }
+        }
+        if let Some(p) = state.connection_status.profile.as_mut() {
+            clean_profile(p);
+        }
         self.groups = state.groups;
         self.connection_status = state.connection_status;
         self.tun_enabled = state.tun_status;
@@ -646,7 +659,8 @@ impl App {
 
     pub fn apply_profiles_added(&mut self, profiles: Vec<Profile>) {
         self.invalidate_uri_cache();
-        for p in profiles {
+        for mut p in profiles {
+            clean_profile(&mut p);
             if let Some(g) = self.groups.iter_mut().find(|g| g.group.id == p.group_id) {
                 g.profiles.push(p);
             }
@@ -665,11 +679,20 @@ impl App {
 
     pub fn apply_subscription_updated(
         &mut self,
-        group: Group,
+        mut group: Group,
         profiles: Vec<Profile>,
         routing_profiles: Vec<RoutingProfileInfo>,
     ) {
         self.invalidate_uri_cache();
+        clean_group(&mut group);
+        let mut profiles = profiles;
+        for p in profiles.iter_mut() {
+            clean_profile(p);
+        }
+        let mut routing_profiles = routing_profiles;
+        for r in routing_profiles.iter_mut() {
+            clean_routing_profile(r);
+        }
         if let Some(g) = self.groups.iter_mut().find(|g| g.group.id == group.id) {
             g.group = group;
             g.profiles = profiles;
@@ -680,9 +703,15 @@ impl App {
 
     pub fn apply_profile_updated(&mut self, p: &Profile) {
         self.invalidate_uri_cache();
-        if let Some(g) = self.groups.iter_mut().find(|g| g.group.id == p.group_id) {
-            if let Some(existing) = g.profiles.iter_mut().find(|pr| pr.id == p.id) {
-                *existing = p.clone();
+        let mut fresh = p.clone();
+        clean_profile(&mut fresh);
+        if let Some(g) = self
+            .groups
+            .iter_mut()
+            .find(|g| g.group.id == fresh.group_id)
+        {
+            if let Some(existing) = g.profiles.iter_mut().find(|pr| pr.id == fresh.id) {
+                *existing = fresh;
             }
         }
     }
@@ -698,7 +727,8 @@ impl App {
         }
     }
 
-    pub fn apply_group_added(&mut self, g: Group) {
+    pub fn apply_group_added(&mut self, mut g: Group) {
+        clean_group(&mut g);
         self.groups.push(GroupWithProfiles {
             group: g,
             profiles: Vec::new(),
@@ -718,8 +748,10 @@ impl App {
     }
 
     pub fn apply_group_updated(&mut self, g: &Group) {
-        if let Some(existing) = self.groups.iter_mut().find(|gw| gw.group.id == g.id) {
-            existing.group = g.clone();
+        let mut fresh = g.clone();
+        clean_group(&mut fresh);
+        if let Some(existing) = self.groups.iter_mut().find(|gw| gw.group.id == fresh.id) {
+            existing.group = fresh;
         }
     }
 
@@ -939,6 +971,23 @@ impl App {
     }
 }
 
+fn clean_group(g: &mut Group) {
+    g.name = clean_label(&g.name);
+}
+
+fn clean_profile(p: &mut Profile) {
+    p.name = clean_label(&p.name);
+    p.address = clean_label(&p.address);
+    p.host = clean_label(&p.host);
+}
+
+fn clean_routing_profile(r: &mut RoutingProfileInfo) {
+    r.name = clean_label(&r.name);
+    r.last_error = clean_label(&r.last_error);
+    r.remote_dns = clean_label(&r.remote_dns);
+    r.domestic_dns = clean_label(&r.domestic_dns);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -991,6 +1040,33 @@ mod tests {
         app.mark_pending(1, 999);
         app.mark_pending(999, 7);
         assert_eq!(app.groups[0].profiles[0].test_result, 100);
+    }
+
+    #[test]
+    fn apply_state_strips_terminal_escapes() {
+        let mut app = make_app_with_profile();
+        let state: ApplicationState = serde_json::from_value(serde_json::json!({
+            "groups": [{
+                "group": {"id": 3, "name": "evil\u{1b}[2Jname"},
+                "profiles": [{
+                    "id": 9,
+                    "group_id": 3,
+                    "name": "p\r\nx",
+                    "address": "a\u{1b}]0;title\u{7}"
+                }],
+                "routing_profiles": [{"name": "r\u{7}"}]
+            }],
+            "connection-status": {"connection": "disconnected"}
+        }))
+        .unwrap();
+
+        app.apply_state(state);
+
+        let g = &app.groups[0];
+        assert_eq!(g.group.name, "evil[2Jname");
+        assert_eq!(g.profiles[0].name, "px");
+        assert!(!g.profiles[0].address.contains('\x1b'));
+        assert_eq!(g.routing_profiles[0].name, "r");
     }
 
     #[test]

@@ -86,7 +86,7 @@ impl App {
         if !g.group.subscription_url.is_empty() {
             rows.push(Line::from(""));
             rows.push(section_header("Subscription"));
-            rows.push(kv_row("URL", &g.group.subscription_url));
+            rows.push(kv_row("URL", redact_url(&g.group.subscription_url)));
 
             if g.group.sub_last_updated > 0 {
                 let ago = format_relative(g.group.sub_last_updated);
@@ -218,7 +218,7 @@ impl App {
 
         if let Some(g) = self.current_group() {
             if !g.group.subscription_url.is_empty() {
-                rows.push(kv_row("Sub", &g.group.subscription_url));
+                rows.push(kv_row("Sub", redact_url(&g.group.subscription_url)));
             }
         }
 
@@ -277,7 +277,7 @@ impl App {
             ];
             if let Some(g) = self.current_group() {
                 if !g.group.subscription_url.is_empty() {
-                    left_rows.push(kv_row("Sub", &g.group.subscription_url));
+                    left_rows.push(kv_row("Sub", redact_url(&g.group.subscription_url)));
                 }
             }
             left_rows.push(Line::from(""));

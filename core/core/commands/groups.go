@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -18,6 +19,18 @@ import (
 )
 
 var subscription_mutex = sync.Mutex{}
+
+var (
+	userinfoRe = regexp.MustCompile(`://[^/\s@]+@`)
+	queryRe    = regexp.MustCompile(`\?[^\s"']*`)
+)
+
+// redactSecret removes credentials from a URL before it reaches a log line or
+// a notification: provider tokens live in the query string or in userinfo.
+func redactSecret(s string) string {
+	s = userinfoRe.ReplaceAllString(s, "://…@")
+	return queryRe.ReplaceAllString(s, "?…")
+}
 
 func (cmd *Cmd) UpdateSubscription(data structs.UpdateSubscriptionData, proxy_manager *proxy.ProxyManager) {
 	if subscription_mutex.TryLock() == false {
@@ -34,8 +47,8 @@ func (cmd *Cmd) UpdateSubscription(data structs.UpdateSubscriptionData, proxy_ma
 
 	subscription_content, resp, err := fetchSubscription(group)
 	if err != nil {
-		logger.Warnf("update-subscription: failed to GET %s: %v", group.SubscriptionUrl, err)
-		cmd.warn("update-subscription-failed", fmt.Sprintf("Failed to get subscription: %v", err))
+		logger.Warnf("update-subscription: failed to GET %s: %s", redactSecret(group.SubscriptionUrl), redactSecret(err.Error()))
+		cmd.warn("update-subscription-failed", "Failed to get subscription")
 		return
 	}
 

@@ -31,7 +31,8 @@ func ResolveDomain(domain string, dnsServers []string) (*ResolvedIPs, error) {
 	ipSet6 := make(map[string]bool)
 
 	for _, server := range dnsServers {
-		v4, err := queryDNSServer(domain, server+":53", dns.TypeA)
+		addr := dnsServerAddr(server)
+		v4, err := queryDNSServer(domain, addr, dns.TypeA)
 		if err != nil {
 			logger.Warnf("A query to %s failed: %v", server, err)
 		} else {
@@ -40,7 +41,7 @@ func ResolveDomain(domain string, dnsServers []string) (*ResolvedIPs, error) {
 			}
 		}
 
-		v6, err := queryDNSServer(domain, server+":53", dns.TypeAAAA)
+		v6, err := queryDNSServer(domain, addr, dns.TypeAAAA)
 		if err != nil {
 			logger.Warnf("AAAA query to %s failed: %v", server, err)
 		} else {
@@ -80,6 +81,12 @@ func ResolveDomainIpv4(domain string, dnsServers []string) ([]string, error) {
 		return nil, fmt.Errorf("no A records found for %s", domain)
 	}
 	return r.IPv4, nil
+}
+
+// dnsServerAddr joins a configured resolver IP with the DNS port. IPv6
+// literals must be bracketed, which plain string concatenation does not do.
+func dnsServerAddr(server string) string {
+	return net.JoinHostPort(server, "53")
 }
 
 func queryDNSServer(domain, server string, recordType uint16) ([]string, error) {

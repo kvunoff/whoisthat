@@ -328,7 +328,8 @@ pub async fn run_deeplink_action(action: DeepLinkAction) -> Result<(), Box<dyn s
 
     match action {
         DeepLinkAction::AddSubscription { name, url } => {
-            println!("Adding subscription '{name}' ({url})...");
+            // The URL carries provider tokens: never echo it to stdout/desktop.
+            println!("Adding subscription '{name}'...");
             let conn = ensure_core_connected(&cfg).await?;
             let (mut read_half, mut write_half) = conn.into_split();
 

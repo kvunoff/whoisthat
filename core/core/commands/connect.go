@@ -19,7 +19,9 @@ func (cmd *Cmd) Disconnect(data structs.DisconnectData, proxy_manager *proxy.Pro
 	proxy_manager.Stop()
 	tun_manager.Stop()
 
-	if killSwitchEnabled && len(proxyIPs) > 0 {
+	// Fail closed: with no connection the machine must not leak, so the block is
+	// armed even when the server IP list is empty (LAN/DNS/TUN stay allowed).
+	if killSwitchEnabled {
 		cfg := appconfig.GetConfig()
 		if err := tunmode.SetupKillSwitchBlock(proxyIPs, cfg.TunName, cfg.DnsServers); err != nil {
 			logger.Warn("kill-switch: failed to apply block on disconnect:", err)
@@ -91,7 +93,11 @@ func (cmd *Cmd) Connect(data structs.ConnectData, proxy_manager *proxy.ProxyMana
 				logger.Info("kill-switch: block applied, whitelisted IPs:", proxyIPs)
 			}
 		} else {
-			logger.Warn("kill-switch: no proxy IPs resolved, skipping block")
+			// Do NOT arm a fail-closed block here: the connection is alive, but
+			// the server IP is unknown, so the block would drop the tunnel the
+			// user just established.
+			logger.Warn("kill-switch: server IP unknown, block not armed (traffic is not covered)")
+			cmd.warn("set-kill-switch-failed", "kill-switch not armed: server IP unknown")
 		}
 	}
 

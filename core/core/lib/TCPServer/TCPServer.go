@@ -21,6 +21,7 @@ import (
 	tunmode "whoisthat-core/lib/proxy/tun"
 	"whoisthat-core/lib/version"
 	"whoisthat-core/structs"
+	"whoisthat-core/utils"
 )
 
 // MaxFrameSize is the maximum accepted IPC frame. Kept in sync with
@@ -170,8 +171,13 @@ func (s *Server) Start() {
 	if err := os.MkdirAll(filepath.Dir(sockPath), 0700); err != nil {
 		logger.Warn("failed to create socket dir:", err)
 	}
-	// Remove a stale socket left by a previous core. Safe: startup already
-	// confirmed no live core is listening before we reach here.
+	// Remove a stale socket left by a previous core. A live one must never be
+	// replaced: a core from an older build holds no flock, and stealing its
+	// socket would leave two daemons fighting over the same TUN/firewall state.
+	if utils.SocketIsLive(sockPath) {
+		logger.Warn("refusing to replace a live core socket at ", sockPath)
+		os.Exit(0) // this process is a redundant instance; nothing of ours exists yet
+	}
 	_ = os.Remove(sockPath)
 	if uds, err := net.Listen("unix", sockPath); err != nil {
 		logger.Fatal("failed to listen on unix socket:", err)
@@ -323,7 +329,7 @@ func (s *Server) handleConnection(cc *clientConn, clientID string, requireAuth b
 		sendMissingBinaryWarnings(cc, s.missingBinaries)
 	}
 
-	command_handler := cmd.Cmd{DB: s.DB, Broadcast: s.Broadcast, TunManager: s.tun_manager}
+	baseHandler := cmd.Cmd{DB: s.DB, Broadcast: s.Broadcast, TunManager: s.tun_manager}
 
 	for {
 		raw_tcp_message, err := readTCPMessage(reader)
@@ -334,7 +340,11 @@ func (s *Server) handleConnection(cc *clientConn, clientID string, requireAuth b
 			return
 		}
 
-		command_handler.RequestID = raw_tcp_message.ID
+		// Each request gets its own copy: async commands (test-profile,
+		// test-group, update-subscription) outlive this iteration and must not
+		// read the id of a later request.
+		handler := baseHandler
+		handler.RequestID = raw_tcp_message.ID
 		switch raw_tcp_message.Msg {
 		case "die":
 			s.stop_sig <- true
@@ -344,7 +354,7 @@ func (s *Server) handleConnection(cc *clientConn, clientID string, requireAuth b
 				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
-			command_handler.AddProfiles(data)
+			handler.AddProfiles(data)
 
 		case "delete-profiles":
 			var data structs.DeleteProfilesData
@@ -352,7 +362,7 @@ func (s *Server) handleConnection(cc *clientConn, clientID string, requireAuth b
 				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
-			command_handler.DeleteProfiles(data)
+			handler.DeleteProfiles(data)
 
 		case "reorder-profiles":
 			var data structs.ReorderProfilesData
@@ -360,7 +370,7 @@ func (s *Server) handleConnection(cc *clientConn, clientID string, requireAuth b
 				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
-			command_handler.ReorderProfiles(data)
+			handler.ReorderProfiles(data)
 
 		case "reorder-groups":
 			var data structs.ReorderGroupsData
@@ -368,7 +378,7 @@ func (s *Server) handleConnection(cc *clientConn, clientID string, requireAuth b
 				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
-			command_handler.ReorderGroups(data)
+			handler.ReorderGroups(data)
 
 		case "move-profile":
 			var data structs.MoveProfileData
@@ -376,7 +386,7 @@ func (s *Server) handleConnection(cc *clientConn, clientID string, requireAuth b
 				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
-			command_handler.MoveProfile(data, s.proxy_manager)
+			handler.MoveProfile(data, s.proxy_manager)
 
 		case "add-group":
 			var data structs.AddGroupData
@@ -384,7 +394,7 @@ func (s *Server) handleConnection(cc *clientConn, clientID string, requireAuth b
 				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
-			command_handler.AddGroup(data, s.proxy_manager)
+			handler.AddGroup(data, s.proxy_manager)
 
 		case "delete-group":
 			var data structs.DeleteGroupData
@@ -392,7 +402,7 @@ func (s *Server) handleConnection(cc *clientConn, clientID string, requireAuth b
 				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
-			command_handler.DeleteGroup(data)
+			handler.DeleteGroup(data)
 
 		case "connect":
 			var data structs.ConnectData
@@ -400,7 +410,7 @@ func (s *Server) handleConnection(cc *clientConn, clientID string, requireAuth b
 				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
-			command_handler.Connect(data, s.proxy_manager, s.tun_manager)
+			handler.Connect(data, s.proxy_manager, s.tun_manager)
 
 		case "disconnect":
 			var data structs.DisconnectData
@@ -408,7 +418,7 @@ func (s *Server) handleConnection(cc *clientConn, clientID string, requireAuth b
 				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
-			command_handler.Disconnect(data, s.proxy_manager, s.tun_manager)
+			handler.Disconnect(data, s.proxy_manager, s.tun_manager)
 
 		case "test-profile":
 			var data structs.TestProfileData
@@ -416,7 +426,7 @@ func (s *Server) handleConnection(cc *clientConn, clientID string, requireAuth b
 				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
-			go command_handler.TestProfile(data, s.proxy_manager)
+			go handler.TestProfile(data, s.proxy_manager)
 
 		case "test-group":
 			var data structs.TestGroupData
@@ -424,7 +434,7 @@ func (s *Server) handleConnection(cc *clientConn, clientID string, requireAuth b
 				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
-			go command_handler.TestGroup(data, s.proxy_manager)
+			go handler.TestGroup(data, s.proxy_manager)
 
 		case "cancel-tests":
 			var data structs.CancelTestsData
@@ -432,7 +442,7 @@ func (s *Server) handleConnection(cc *clientConn, clientID string, requireAuth b
 				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
-			command_handler.CancelTests(data, s.proxy_manager)
+			handler.CancelTests(data, s.proxy_manager)
 
 		case "set-test-config":
 			var data structs.SetTestConfigData
@@ -440,7 +450,7 @@ func (s *Server) handleConnection(cc *clientConn, clientID string, requireAuth b
 				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
-			command_handler.SetTestConfig(data, s.proxy_manager)
+			handler.SetTestConfig(data, s.proxy_manager)
 
 		case "get-application-state":
 			var data structs.GetApplicationStateData
@@ -448,7 +458,7 @@ func (s *Server) handleConnection(cc *clientConn, clientID string, requireAuth b
 				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
-			command_handler.GetApplicationState(data, s.proxy_manager, s.tun_manager)
+			handler.GetApplicationState(data, s.proxy_manager, s.tun_manager)
 
 		case "update-subscription":
 			var data structs.UpdateSubscriptionData
@@ -456,7 +466,7 @@ func (s *Server) handleConnection(cc *clientConn, clientID string, requireAuth b
 				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
-			go command_handler.UpdateSubscription(data, s.proxy_manager)
+			go handler.UpdateSubscription(data, s.proxy_manager)
 
 		case "enable-tun":
 			var data structs.EnableTunData
@@ -464,7 +474,7 @@ func (s *Server) handleConnection(cc *clientConn, clientID string, requireAuth b
 				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
-			command_handler.EnableTun(data, s.proxy_manager, s.tun_manager)
+			handler.EnableTun(data, s.proxy_manager, s.tun_manager)
 
 		case "disable-tun":
 			var data structs.DisableTunData
@@ -472,7 +482,7 @@ func (s *Server) handleConnection(cc *clientConn, clientID string, requireAuth b
 				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
-			command_handler.DisableTun(data, s.proxy_manager, s.tun_manager)
+			handler.DisableTun(data, s.proxy_manager, s.tun_manager)
 
 		case "is-root":
 			var data structs.IsRootData
@@ -480,7 +490,7 @@ func (s *Server) handleConnection(cc *clientConn, clientID string, requireAuth b
 				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
-			command_handler.IsRoot(data)
+			handler.IsRoot(data)
 
 		case "set-tun-name":
 			var data structs.SetTunNameData
@@ -488,7 +498,7 @@ func (s *Server) handleConnection(cc *clientConn, clientID string, requireAuth b
 				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
-			command_handler.SetTunName(data)
+			handler.SetTunName(data)
 
 		case "set-hwid":
 			var data structs.SetHwidData
@@ -496,7 +506,7 @@ func (s *Server) handleConnection(cc *clientConn, clientID string, requireAuth b
 				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
-			command_handler.SetHwid(data)
+			handler.SetHwid(data)
 
 		case "update-profile":
 			var data structs.UpdateProfileData
@@ -504,7 +514,7 @@ func (s *Server) handleConnection(cc *clientConn, clientID string, requireAuth b
 				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
-			command_handler.UpdateProfile(data)
+			handler.UpdateProfile(data)
 
 		case "update-group":
 			var data structs.UpdateGroupData
@@ -512,7 +522,7 @@ func (s *Server) handleConnection(cc *clientConn, clientID string, requireAuth b
 				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
-			command_handler.UpdateGroup(data, s.proxy_manager)
+			handler.UpdateGroup(data, s.proxy_manager)
 
 		case "set-kill-switch":
 			var data structs.SetKillSwitchData
@@ -520,7 +530,7 @@ func (s *Server) handleConnection(cc *clientConn, clientID string, requireAuth b
 				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
-			command_handler.SetKillSwitch(data, s.proxy_manager)
+			handler.SetKillSwitch(data, s.proxy_manager)
 
 		case "set-split-tunnel":
 			var data structs.SetSplitTunnelData
@@ -528,7 +538,7 @@ func (s *Server) handleConnection(cc *clientConn, clientID string, requireAuth b
 				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
-			command_handler.SetSplitTunnel(data, s.proxy_manager, s.tun_manager)
+			handler.SetSplitTunnel(data, s.proxy_manager, s.tun_manager)
 
 		case "set-autoconnect":
 			var data structs.SetAutoconnectData
@@ -536,7 +546,7 @@ func (s *Server) handleConnection(cc *clientConn, clientID string, requireAuth b
 				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
-			command_handler.SetAutoconnect(data)
+			handler.SetAutoconnect(data)
 
 		case "get-routing":
 			var data structs.GetRoutingData
@@ -544,7 +554,7 @@ func (s *Server) handleConnection(cc *clientConn, clientID string, requireAuth b
 				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
-			command_handler.GetRouting(data)
+			handler.GetRouting(data)
 
 		case "update-routing":
 			var data structs.UpdateRoutingData
@@ -552,7 +562,7 @@ func (s *Server) handleConnection(cc *clientConn, clientID string, requireAuth b
 				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
-			command_handler.UpdateRouting(data, s.proxy_manager)
+			handler.UpdateRouting(data, s.proxy_manager)
 
 		case "set-manual-routing-source":
 			var data structs.SetManualRoutingSourceData
@@ -560,7 +570,7 @@ func (s *Server) handleConnection(cc *clientConn, clientID string, requireAuth b
 				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
-			command_handler.SetManualRoutingSource(data, s.proxy_manager)
+			handler.SetManualRoutingSource(data, s.proxy_manager)
 
 		case "import-happ-routing":
 			var data structs.ImportHappRoutingData
@@ -568,7 +578,7 @@ func (s *Server) handleConnection(cc *clientConn, clientID string, requireAuth b
 				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
-			command_handler.ImportHappRouting(data, s.proxy_manager)
+			handler.ImportHappRouting(data, s.proxy_manager)
 
 		case "set-group-routing-mode":
 			var data structs.SetGroupRoutingModeData
@@ -576,7 +586,7 @@ func (s *Server) handleConnection(cc *clientConn, clientID string, requireAuth b
 				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
-			command_handler.SetGroupRoutingMode(data, s.proxy_manager)
+			handler.SetGroupRoutingMode(data, s.proxy_manager)
 
 		case "set-active-routing-profile":
 			var data structs.SetActiveRoutingProfileData
@@ -584,7 +594,7 @@ func (s *Server) handleConnection(cc *clientConn, clientID string, requireAuth b
 				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
-			command_handler.SetActiveRoutingProfile(data, s.proxy_manager)
+			handler.SetActiveRoutingProfile(data, s.proxy_manager)
 
 		case "delete-routing-profile":
 			var data structs.DeleteRoutingProfileData
@@ -592,7 +602,7 @@ func (s *Server) handleConnection(cc *clientConn, clientID string, requireAuth b
 				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
 				return
 			}
-			command_handler.DeleteRoutingProfile(data, s.proxy_manager)
+			handler.DeleteRoutingProfile(data, s.proxy_manager)
 
 		default:
 			logger.Warn("Unknown message:", raw_tcp_message.Msg)

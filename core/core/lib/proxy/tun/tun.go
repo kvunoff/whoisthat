@@ -28,7 +28,9 @@ type TunModeManager struct {
 func (t *TunModeManager) Init() {
 	t.tun_ip = "198.18.0.1"
 	t.tun_ipv6 = "fd00::1"
-	t.StatusChanged = make(chan bool)
+	// Buffered so a status emit never blocks the command that changed the state;
+	// the consumer (TCPServer) does not take t.mu, so this cannot deadlock.
+	t.StatusChanged = make(chan bool, 1)
 }
 
 func (t *TunModeManager) IsEnabledLocked() bool {
@@ -39,6 +41,11 @@ func (t *TunModeManager) IsEnabledLocked() bool {
 
 func (t *TunModeManager) Start(proxy_ipv4s []string, proxy_ipv6s []string, dns DnsHijack) error {
 	logger.Info("tun: starting...")
+
+	// Serialise with Stop/ReapplySplit/SetDnsHijack: refreshDnsHijackFor runs
+	// from a background subscription update and used to race these field writes.
+	t.mu.Lock()
+	defer t.mu.Unlock()
 
 	// Tear down the previous session before replacing the fields its cleanup
 	// depends on (old TUN name, DNS routes, proxy IPs).
@@ -176,6 +183,9 @@ func (t *TunModeManager) Stop() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if !t.IsEnabled {
+		// Still answer: callers (CLI --mode-proxy) wait for the notification and
+		// would otherwise time out when TUN was already off.
+		t.StatusChanged <- false
 		return
 	}
 	logger.Info("tun: disabling...")

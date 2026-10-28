@@ -2,10 +2,12 @@ package utils
 
 import (
 	"fmt"
+	"net"
 	"os"
 	osuser "os/user"
 	"path/filepath"
 	"strconv"
+	"time"
 )
 
 // ConfigDir returns the XDG config directory for WhoisThat.
@@ -50,6 +52,18 @@ func RuntimeDir() string {
 		return filepath.Join(dir, "whoisthat")
 	}
 	return filepath.Join("/tmp", fmt.Sprintf("whoisthat-%d", os.Getuid()))
+}
+
+// SocketIsLive reports whether something is accepting connections on the unix
+// socket at path. Used to avoid stealing the socket of a running core and to
+// skip the orphaned-firewall reconcile while another core owns the rules.
+func SocketIsLive(path string) bool {
+	conn, err := net.DialTimeout("unix", path, 300*time.Millisecond)
+	if err != nil {
+		return false
+	}
+	conn.Close()
+	return true
 }
 
 func GetXrayBin() (string, error) {

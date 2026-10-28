@@ -318,12 +318,9 @@ async fn query_core_state(
         .send("get-application-state", &GetApplicationStateData {})
         .await
         .ok()?;
-    let msg = tokio::time::timeout(Duration::from_secs(2), read_half.recv())
+    let msg = read_half
+        .recv_until(Duration::from_secs(2), |m| m.msg == "application-state")
         .await
-        .ok()?
         .ok()?;
-    if msg.msg != "application-state" {
-        return None;
-    }
     serde_json::from_value(msg.data).ok()
 }
