@@ -147,8 +147,12 @@ pub(crate) async fn handle_popup_input(
             KeyCode::Enter => {
                 let name = input.trim().to_string();
                 if !name.is_empty() {
-                    app.tun_name = name.clone();
-                    let _ = client.set_tun_name(&name).await;
+                    // Do not apply optimistically: the daemon is the source of
+                    // truth and may reject the name. The UI follows the
+                    // `tun-name-updated` broadcast instead.
+                    if let Err(e) = client.set_tun_name(&name).await {
+                        app.msg(format!("Error: {e}"));
+                    }
                 }
                 app.popup = None;
                 app.focus = Focus::LeftPanel;
