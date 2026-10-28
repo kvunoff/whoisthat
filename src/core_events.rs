@@ -10,6 +10,29 @@ use crate::event_loop::AppEvent;
 use crate::net_info::{fetch_public_ip, fetch_public_ipv6};
 use crate::ui::App;
 
+/// Fetch the public IPv4/IPv6 pair once and push it into the UI event stream.
+/// Skipped entirely while "Show IP" is off: the old code queried ipify even
+/// when the address was never rendered.
+pub(crate) fn refresh_public_ip(tx: mpsc::UnboundedSender<AppEvent>, delay: Duration) {
+    tokio::spawn(async move {
+        if !delay.is_zero() {
+            tokio::time::sleep(delay).await;
+        }
+        if let Some(ip) = tokio::task::spawn_blocking(fetch_public_ip)
+            .await
+            .unwrap_or(None)
+        {
+            let _ = tx.send(AppEvent::PublicIp(ip));
+        }
+        if let Some(ip) = tokio::task::spawn_blocking(fetch_public_ipv6)
+            .await
+            .unwrap_or(None)
+        {
+            let _ = tx.send(AppEvent::PublicIpv6(ip));
+        }
+    });
+}
+
 pub(crate) async fn handle_core_event(
     app: &mut App,
     client: &CoreClient,
@@ -112,22 +135,9 @@ pub(crate) async fn handle_core_event(
             app.connection_status = *s;
             if was != app.is_connected() {
                 app.clear_msg();
-                let tx = ip_tx.clone();
-                tokio::spawn(async move {
-                    tokio::time::sleep(Duration::from_secs(1)).await;
-                    if let Some(ip) = tokio::task::spawn_blocking(fetch_public_ip)
-                        .await
-                        .unwrap_or(None)
-                    {
-                        let _ = tx.send(AppEvent::PublicIp(ip));
-                    }
-                    if let Some(ip) = tokio::task::spawn_blocking(fetch_public_ipv6)
-                        .await
-                        .unwrap_or(None)
-                    {
-                        let _ = tx.send(AppEvent::PublicIpv6(ip));
-                    }
-                });
+                if app.show_ip {
+                    refresh_public_ip(ip_tx.clone(), Duration::from_secs(1));
+                }
             }
             if app.is_connected() {
                 if let Some(ref p) = app.connection_status.profile {
@@ -165,22 +175,9 @@ pub(crate) async fn handle_core_event(
         CoreEvent::TunStatusChanged(e) => {
             app.tun_enabled = e;
             app.msg(if e { "Warning: TUN mode active" } else { "Ok" });
-            let tx = ip_tx.clone();
-            tokio::spawn(async move {
-                tokio::time::sleep(Duration::from_secs(1)).await;
-                if let Some(ip) = tokio::task::spawn_blocking(fetch_public_ip)
-                    .await
-                    .unwrap_or(None)
-                {
-                    let _ = tx.send(AppEvent::PublicIp(ip));
-                }
-                if let Some(ip) = tokio::task::spawn_blocking(fetch_public_ipv6)
-                    .await
-                    .unwrap_or(None)
-                {
-                    let _ = tx.send(AppEvent::PublicIpv6(ip));
-                }
-            });
+            if app.show_ip {
+                refresh_public_ip(ip_tx.clone(), Duration::from_secs(1));
+            }
         }
 
         CoreEvent::IsRootAnswer(root) => {
@@ -265,23 +262,8 @@ pub(crate) async fn handle_core_event(
             custom,
         } => {
             app.apply_routing_updated(group_id, config, source, custom);
-            if app.is_connected() {
-                let tx = ip_tx.clone();
-                tokio::spawn(async move {
-                    tokio::time::sleep(Duration::from_millis(600)).await;
-                    if let Some(ip) = tokio::task::spawn_blocking(fetch_public_ip)
-                        .await
-                        .unwrap_or(None)
-                    {
-                        let _ = tx.send(AppEvent::PublicIp(ip));
-                    }
-                    if let Some(ip) = tokio::task::spawn_blocking(fetch_public_ipv6)
-                        .await
-                        .unwrap_or(None)
-                    {
-                        let _ = tx.send(AppEvent::PublicIpv6(ip));
-                    }
-                });
+            if app.is_connected() && app.show_ip {
+                refresh_public_ip(ip_tx.clone(), Duration::from_millis(600));
             }
         }
         CoreEvent::HwidUpdated(hw) => {

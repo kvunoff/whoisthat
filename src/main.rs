@@ -17,7 +17,7 @@ mod testing;
 mod text_edit;
 mod ui;
 
-use std::io;
+use std::io::{self, IsTerminal};
 use std::time::Duration;
 
 use crossterm::{
@@ -29,6 +29,7 @@ use io::Write;
 use ratatui::backend::CrosstermBackend;
 use tokio::sync::mpsc;
 
+use crate::core_events::refresh_public_ip;
 use core_client::protocol::{
     ApplicationState, DieData, GetApplicationStateData, TestConfig, EXPECTED_CORE_PROTOCOL_VERSION,
 };
@@ -127,7 +128,9 @@ async fn main() -> io::Result<()> {
 
     if !core_alive {
         log::info!("Spawning fresh core for tui v{tui_version}");
-        core_spawn::ensure_core_caps(&core_spawn::find_core_binary());
+        if std::io::stdin().is_terminal() && config::core_autoconnect_tun() {
+            core_spawn::ensure_core_caps(&core_spawn::find_core_binary());
+        }
         core_spawn::spawn_core(&cfg.log_level)?;
         let mut retries = 0u32;
         loop {
@@ -224,41 +227,12 @@ async fn main() -> io::Result<()> {
         })
     };
 
-    {
+    if cfg.show_ip {
         let ip_tx = input_tx.clone();
         tokio::spawn(async move {
             loop {
-                if let Some(ip) = tokio::task::spawn_blocking(net_info::fetch_public_ip)
-                    .await
-                    .unwrap_or(None)
-                {
-                    let _ = ip_tx.send(AppEvent::PublicIp(ip));
-                }
-                if let Some(ip) = tokio::task::spawn_blocking(net_info::fetch_public_ipv6)
-                    .await
-                    .unwrap_or(None)
-                {
-                    let _ = ip_tx.send(AppEvent::PublicIpv6(ip));
-                }
+                refresh_public_ip(ip_tx.clone(), Duration::ZERO);
                 tokio::time::sleep(Duration::from_secs(30)).await;
-            }
-        })
-    };
-
-    {
-        let ip_tx = input_tx.clone();
-        tokio::spawn(async move {
-            if let Some(ip) = tokio::task::spawn_blocking(net_info::fetch_public_ip)
-                .await
-                .unwrap_or(None)
-            {
-                let _ = ip_tx.send(AppEvent::PublicIp(ip));
-            }
-            if let Some(ip) = tokio::task::spawn_blocking(net_info::fetch_public_ipv6)
-                .await
-                .unwrap_or(None)
-            {
-                let _ = ip_tx.send(AppEvent::PublicIpv6(ip));
             }
         });
     }

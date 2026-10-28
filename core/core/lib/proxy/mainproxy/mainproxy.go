@@ -5,7 +5,6 @@ import (
 	"net"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 	"whoisthat-core/db"
 	"whoisthat-core/lib"
@@ -65,6 +64,13 @@ type ProxyManager struct {
 
 	exitHandlerMu    sync.RWMutex
 	onUnexpectedExit func(string)
+
+	// exit-watcher state. The mutex is separate from p.mu so retire/start stay
+	// safe from any caller, including Stop() which already holds p.mu.
+	watchMu       sync.Mutex
+	watchDone     chan struct{}
+	watchGen      uint64
+	watchStopping bool
 }
 
 // SetUnexpectedExitHandler registers a callback invoked when the proxy
@@ -119,28 +125,20 @@ func (p *ProxyManager) Init() {
 	p.portPool = portpool.CreatePortPool(test_port_range.Start, test_port_range.End)
 }
 
-// exitWatcher tracks the single goroutine reading p.core.ExitedCh() so we
-// can stop it before swapping core on the next Connect (previously it
-// leaked one goroutine per connect, all racing on the swapped field).
-var (
-	exitWatcherDone     chan struct{}
-	exitWatcherMu       sync.Mutex
-	exitWatcherStopping atomic.Bool
-)
-
-// retireExitWatcher signals the active exit-watcher goroutine to stop and
-// clears the package-global reference. Idempotent and nil-safe.
+// retireExitWatcher signals the active exit-watcher goroutine to stop.
+// Idempotent and nil-safe.
 func (p *ProxyManager) retireExitWatcher() {
-	exitWatcherMu.Lock()
+	p.watchMu.Lock()
+	defer p.watchMu.Unlock()
 	// Mark the stop as intentional *before* closing done: the watcher may win
 	// the select race against the closed channel and observe the subprocess
 	// exit, which must not be reported as a crash.
-	exitWatcherStopping.Store(true)
-	if exitWatcherDone != nil {
-		close(exitWatcherDone)
-		exitWatcherDone = nil
+	p.watchStopping = true
+	if p.watchDone != nil {
+		close(p.watchDone)
+		p.watchDone = nil
 	}
-	exitWatcherMu.Unlock()
+	p.watchGen++
 }
 
 // startExitWatcher registers a fresh done channel for this Connect cycle and
@@ -148,19 +146,31 @@ func (p *ProxyManager) retireExitWatcher() {
 // have been retired by the caller.
 func (p *ProxyManager) startExitWatcher() chan struct{} {
 	done := make(chan struct{})
-	exitWatcherMu.Lock()
-	exitWatcherStopping.Store(false)
-	exitWatcherDone = done
-	exitWatcherMu.Unlock()
-	go p.watchExit(done)
+	p.watchMu.Lock()
+	p.watchStopping = false
+	p.watchDone = done
+	p.watchGen++
+	gen := p.watchGen
+	p.watchMu.Unlock()
+	go p.watchExit(done, gen)
 	return done
+}
+
+// watcherIsStale reports whether gen belongs to a watcher that has been retired
+// or superseded. This closes the window where a retired goroutine wins the
+// select race against a closed done channel and reports an intentional Stop as
+// a crash.
+func (p *ProxyManager) watcherIsStale(gen uint64) bool {
+	p.watchMu.Lock()
+	defer p.watchMu.Unlock()
+	return gen != p.watchGen || p.watchStopping
 }
 
 // watchExit is the Exited-watcher goroutine body. On xray exit it flips the
 // status to disconnected and emits a non-blocking StatusChanged update (the
 // channel is buffered at 8; if full we drop rather than deadlock the daemon).
 // It returns when done is closed (retire) or Exited is closed.
-func (p *ProxyManager) watchExit(done chan struct{}) {
+func (p *ProxyManager) watchExit(done chan struct{}, gen uint64) {
 	for {
 		select {
 		case <-done:
@@ -169,8 +179,9 @@ func (p *ProxyManager) watchExit(done chan struct{}) {
 			if !ok {
 				return
 			}
-			if exitWatcherStopping.Load() {
-				// Intentional Stop/Connect: the caller handles cleanup.
+			if p.watcherIsStale(gen) {
+				// Intentional Stop/Connect or a newer connect cycle: the caller
+				// handles cleanup.
 				return
 			}
 			reason := "proxy process exited unexpectedly"
@@ -179,12 +190,13 @@ func (p *ProxyManager) watchExit(done chan struct{}) {
 				Connection: "disconnected",
 				Reason:     reason,
 			}
+			status := p.status
 			p.mu.Unlock()
 			// Non-blocking send: StatusChanged is buffered (8) and the
 			// server's handleStatusChange drains it; if it's somehow
 			// full we'd rather drop than deadlock the daemon.
 			select {
-			case p.StatusChanged <- p.status:
+			case p.StatusChanged <- status:
 			default:
 				logger.Warn("StatusChanged full; dropping disconnected event")
 			}

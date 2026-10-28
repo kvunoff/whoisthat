@@ -110,7 +110,7 @@ sudo setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep /path/to/whoisthat-core
 ```
 
 ::: tip Capability Setup Prompt
-If `whoisthat` cannot find a `whoisthat-core` with the required capabilities when it starts (or spawns) the daemon, it offers a one-time `pkexec` prompt in the terminal **before** the TUI appears. Toggling TUN later in the TUI does not re-run `pkexec`; it reports the missing capabilities and points to the `setcap` command above.
+If `whoisthat` starts (or spawns) the daemon without the required capabilities **and** TUN autostart is configured (`autoconnect-mode = "tun"`), it offers a one-time `pkexec` prompt in the terminal before the TUI appears. In every other case (proxy-only, no autostart, or no terminal) there is no prompt: toggling TUN in the TUI reports the missing capabilities and points to the `setcap` command above.
 :::
 
 ---

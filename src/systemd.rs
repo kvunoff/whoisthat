@@ -38,7 +38,25 @@ fn linger_is_enabled() -> bool {
         .unwrap_or(false)
 }
 
+/// Escape a value for a systemd unit: `%` starts a specifier and must be
+/// doubled, and `ExecStart`/`Environment` values are quoted.
+fn unit_escape(value: &str) -> String {
+    value
+        .replace('%', "%%")
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+}
+
+fn valid_log_level(level: &str) -> &str {
+    match level {
+        "error" | "warn" | "info" | "debug" | "trace" => level,
+        _ => "warn",
+    }
+}
+
 fn generate_unit_file(core_path: &str, log_level: &str) -> String {
+    let core = unit_escape(core_path);
+    let level = unit_escape(valid_log_level(log_level));
     format!(
         "[Unit]\n\
          Description=WhoisThat VPN Core\n\
@@ -47,15 +65,13 @@ fn generate_unit_file(core_path: &str, log_level: &str) -> String {
          \n\
          [Service]\n\
          Type=simple\n\
-         ExecStart={core} \n\
-         Environment=WHOISTHAT_LOG_LEVEL={log_level}\n\
+         ExecStart=\"{core}\"\n\
+         Environment=\"WHOISTHAT_LOG_LEVEL={level}\"\n\
          Restart=on-failure\n\
          RestartSec=5\n\
          \n\
          [Install]\n\
-         WantedBy=default.target\n",
-        core = core_path,
-        log_level = log_level,
+         WantedBy=default.target\n"
     )
 }
 
@@ -143,4 +159,25 @@ pub(crate) fn teardown_systemd_service() -> Result<(), String> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unit_file_escapes_paths_and_levels() {
+        let unit = generate_unit_file("/tmp/with space/100%/whoisthat-core", "debug");
+
+        assert!(unit.contains("ExecStart=\"/tmp/with space/100%%/whoisthat-core\""));
+        assert!(unit.contains("Environment=\"WHOISTHAT_LOG_LEVEL=debug\""));
+        // A stray space after the executable breaks systemd's argument parsing.
+        assert!(!unit.contains("\" \n"));
+    }
+
+    #[test]
+    fn unit_file_coerces_invalid_log_levels() {
+        let unit = generate_unit_file("/usr/bin/whoisthat-core", "verbose; rm -rf /");
+        assert!(unit.contains("WHOISTHAT_LOG_LEVEL=warn"));
+    }
 }

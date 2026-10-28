@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 use crate::config;
-use crate::core_client::connection::CoreConnection;
+use crate::core_client::connection::{CoreConnection, CoreReadHalf};
 use crate::core_client::protocol::*;
 use crate::core_spawn::find_core_binary;
 use crate::net_info;
@@ -810,12 +810,15 @@ async fn handle_toggle_tun() -> Result<(), Box<dyn std::error::Error>> {
 
     if state.tun_status {
         write_half.send("disable-tun", &DisableTunData {}).await?;
-        println!("Mode switched to: Proxy (TUN disabled).");
     } else {
         write_half.send("enable-tun", &EnableTunData {}).await?;
-        println!("Mode switched to: TUN (system-wide VPN).");
     }
 
+    if wait_tun_reply(&mut read_half).await? {
+        println!("Mode switched to: TUN (system-wide VPN).");
+    } else {
+        println!("Mode switched to: Proxy (TUN disabled).");
+    }
     Ok(())
 }
 
@@ -843,20 +846,26 @@ async fn handle_set_tun(enable: bool) -> Result<(), Box<dyn std::error::Error>> 
     })
     .await??;
 
-    if enable {
-        if state.tun_status {
+    if enable == state.tun_status {
+        if enable {
             println!("TUN mode is already enabled.");
         } else {
-            write_half.send("enable-tun", &EnableTunData {}).await?;
-            println!("TUN mode enabled.");
+            println!("Proxy mode is already active (TUN disabled).");
         }
-    } else if !state.tun_status {
-        println!("Proxy mode is already active (TUN disabled).");
-    } else {
-        write_half.send("disable-tun", &DisableTunData {}).await?;
-        println!("Proxy mode enabled (TUN disabled).");
+        return Ok(());
     }
 
+    if enable {
+        write_half.send("enable-tun", &EnableTunData {}).await?;
+    } else {
+        write_half.send("disable-tun", &DisableTunData {}).await?;
+    }
+
+    if wait_tun_reply(&mut read_half).await? {
+        println!("TUN mode enabled.");
+    } else {
+        println!("Proxy mode enabled (TUN disabled).");
+    }
     Ok(())
 }
 
@@ -878,17 +887,13 @@ async fn handle_systemd_set(enable: bool) -> Result<(), Box<dyn std::error::Erro
             return Ok(());
         }
         let core_bin = find_core_binary();
-        match setup_systemd_service(&core_bin, &cfg.log_level) {
-            Ok(_) => println!("Systemd user service enabled (whoisthat-core.service)."),
-            Err(e) => eprintln!("Error enabling systemd service: {e}"),
-        }
+        setup_systemd_service(&core_bin, &cfg.log_level)?;
+        println!("Systemd user service enabled (whoisthat-core.service).");
     } else if !systemd_is_enabled() {
         println!("Systemd user service is already disabled.");
     } else {
-        match teardown_systemd_service() {
-            Ok(_) => println!("Systemd user service disabled."),
-            Err(e) => eprintln!("Error disabling systemd service: {e}"),
-        }
+        teardown_systemd_service()?;
+        println!("Systemd user service disabled.");
     }
     Ok(())
 }
@@ -926,9 +931,7 @@ async fn handle_killswitch_toggle() -> Result<(), Box<dyn std::error::Error>> {
     write_half
         .send("set-kill-switch", &SetKillSwitchData { enabled: new_val })
         .await?;
-
-    cfg.kill_switch_enabled = new_val;
-    config::save_config(&cfg);
+    wait_killswitch_reply(&mut read_half, new_val, &mut cfg).await?;
 
     if new_val {
         println!("Kill-switch: ENABLED");
@@ -944,19 +947,72 @@ async fn handle_killswitch_set(enable: bool) -> Result<(), Box<dyn std::error::E
     let conn = CoreConnection::connect_endpoint(&endpoint)
         .await
         .map_err(|e| format!("Failed to connect to core: {e}"))?;
-    let (_read_half, mut write_half) = conn.into_split();
+    let (mut read_half, mut write_half) = conn.into_split();
 
     write_half
         .send("set-kill-switch", &SetKillSwitchData { enabled: enable })
         .await?;
-
-    cfg.kill_switch_enabled = enable;
-    config::save_config(&cfg);
+    wait_killswitch_reply(&mut read_half, enable, &mut cfg).await?;
 
     if enable {
         println!("Kill-switch: ENABLED");
     } else {
         println!("Kill-switch: DISABLED");
+    }
+    Ok(())
+}
+
+/// The core sends `enable-tun-failed` when TUN could not be started; any other
+/// warning (e.g. the preflight "missing xray" notice sent on connect) is not a
+/// reply to this command and must be skipped.
+const TUN_WARN_KEY: &str = "enable-tun-failed";
+
+fn tun_reply(msg: &TcpMessage) -> Option<Result<bool, String>> {
+    match msg.msg.as_str() {
+        "tun-status-changed" => Some(
+            serde_json::from_value::<TunStatus>(msg.data.clone())
+                .map(|s| s.is_enabled)
+                .map_err(|e| e.to_string()),
+        ),
+        "warn" => {
+            let w: Warning = serde_json::from_value(msg.data.clone()).ok()?;
+            (w.key == TUN_WARN_KEY).then_some(Err(w.content))
+        }
+        _ => None,
+    }
+}
+
+/// `kill-switch-updated` is sent exactly once per command, including the
+/// failure path (with the reverted value), so comparing request vs reply is
+/// enough — no warning-key filtering needed.
+async fn wait_tun_reply(read_half: &mut CoreReadHalf) -> Result<bool, Box<dyn std::error::Error>> {
+    let msg = read_half
+        .recv_until(Duration::from_secs(3), |m| tun_reply(m).is_some())
+        .await?;
+    match tun_reply(&msg) {
+        Some(Ok(enabled)) => Ok(enabled),
+        Some(Err(reason)) => Err(reason.into()),
+        None => Err("no reply from core".into()),
+    }
+}
+
+async fn wait_killswitch_reply(
+    read_half: &mut CoreReadHalf,
+    requested: bool,
+    cfg: &mut config::AppConfig,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let msg = read_half
+        .recv_until(Duration::from_secs(3), |m| m.msg == "kill-switch-updated")
+        .await?;
+    let reply: SetKillSwitchData = serde_json::from_value(msg.data)?;
+
+    // The daemon is authoritative: it reverts the setting when the block could
+    // not be armed, and config.toml must not keep claiming the old value.
+    cfg.kill_switch_enabled = reply.enabled;
+    config::save_config(cfg);
+
+    if reply.enabled != requested {
+        return Err("kill-switch was not armed; see core.log".into());
     }
     Ok(())
 }
@@ -1082,6 +1138,41 @@ pub async fn fetch_core_version_ipc() -> Option<(String, u32)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn msg(json: serde_json::Value) -> TcpMessage {
+        serde_json::from_value(json).unwrap()
+    }
+
+    #[test]
+    fn tun_reply_matches_status_and_only_its_own_warning() {
+        assert_eq!(
+            tun_reply(&msg(serde_json::json!({
+                "msg": "tun-status-changed",
+                "data": {"is_enabled": true}
+            }))),
+            Some(Ok(true))
+        );
+        assert_eq!(
+            tun_reply(&msg(serde_json::json!({
+                "msg": "warn",
+                "data": {"key": "enable-tun-failed", "content": "boom"}
+            }))),
+            Some(Err("boom".into()))
+        );
+        assert_eq!(
+            tun_reply(&msg(serde_json::json!({
+                "msg": "warn",
+                "data": {"key": "xray-missing", "content": "not our reply"}
+            }))),
+            None
+        );
+        assert_eq!(
+            tun_reply(&msg(
+                serde_json::json!({"msg": "traffic-stats", "data": {}})
+            )),
+            None
+        );
+    }
 
     #[test]
     fn test_format_speed_bytes() {

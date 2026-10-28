@@ -2,6 +2,7 @@ target/
 .claude/
 .vscode/
 .opencode/
+opencode.json
 *.log
 whoisthat-core
 .local/
