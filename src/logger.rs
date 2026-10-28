@@ -41,6 +41,16 @@ pub(crate) fn init_logger() -> &'static FileLogger {
     let _ = std::fs::create_dir_all(&log_dir);
     let log_path = log_dir.join("tui.log");
 
+    // shortcut: rotate only at startup; a single long session can still grow
+    // the file past the cap. Add live rotation if that becomes real.
+    const MAX_LOG_BYTES: u64 = 10 * 1024 * 1024;
+    if std::fs::metadata(&log_path)
+        .map(|m| m.len() > MAX_LOG_BYTES)
+        .unwrap_or(false)
+    {
+        let _ = std::fs::rename(&log_path, log_dir.join("tui.log.1"));
+    }
+
     let file = OpenOptions::new()
         .create(true)
         .append(true)

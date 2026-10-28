@@ -7,7 +7,7 @@
   <p>
     <a href="https://docs.tuqise.com/"><img src="https://img.shields.io/badge/Documentation-VitePress-black?style=for-the-badge&logo=vitepress" alt="Documentation" /></a>
     <a href="https://aur.archlinux.org/packages/whoisthat"><img src="https://img.shields.io/aur/version/whoisthat?color=black&label=AUR&style=for-the-badge&logo=archlinux" alt="AUR" /></a>
-    <a href="https://extensions.gnome.org/extension/10998/whoisthat-vpn-indicator/"><img src="https://img.shields.io/badge/GNOME-Extension-black?style=for-the-badge&logo=gnome" alt="GNOME Extension" /></a>
+    <a href="https://github.com/kvunoff/whoisthat-extension"><img src="https://img.shields.io/badge/GNOME-Extension-black?style=for-the-badge&logo=gnome" alt="GNOME Extension" /></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-black?style=for-the-badge" alt="License" /></a>
   </p>
 
@@ -136,7 +136,7 @@ Full, comprehensive documentation with technical deep-dives, configuration guide
 
 ## Ecosystem & Extensions
 
-- **[GNOME Shell Extension](https://extensions.gnome.org/extension/10998/whoisthat-vpn-indicator/)** — Top-bar status badge, real-time speed monitor, and quick controls.
+- **[GNOME Shell Extension](https://github.com/kvunoff/whoisthat-extension)** — Top-bar status badge, real-time speed monitor, and quick controls.
 - **[Deep Links (`wit://`)](https://docs.tuqise.com/integrations/deeplinks)** — One-click profile and subscription imports directly from web browsers.
 
 ---
