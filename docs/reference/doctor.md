@@ -86,7 +86,7 @@ When running `whoisthat doctor --json`:
 ```json
 {
   "client_version": "0.14.3",
-  "core_version": "0.3.3",
+  "core_version": "0.3.5",
   "core_protocol_version": 3,
   "categories": [
     {
