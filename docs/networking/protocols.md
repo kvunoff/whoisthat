@@ -8,11 +8,11 @@ WhoisThat uses a unified proxy architecture powered by **Xray-core v26.9.9**. Al
 
 | Protocol | URI Scheme | Transports & Features |
 | :--- | :--- | :--- |
-| **VLESS** | `vless://` | Reality, Vision flow, xHTTP (SplitHTTP), gRPC, WebSocket, TCP TLS |
-| **VMess** | `vmess://` | TCP, WebSocket, gRPC, HTTP/2, TLS, AEAD |
-| **Trojan** | `trojan://` | Native TLS, Reality, WebSocket, gRPC |
+| **VLESS** | `vless://` | Reality, Vision flow, xHTTP (SplitHTTP), gRPC, WebSocket, HTTPUpgrade, QUIC, mKCP, TCP/TLS |
+| **VMess** | `vmess://` | TCP, WebSocket, gRPC, HTTPUpgrade, QUIC, mKCP, TLS, AEAD |
+| **Trojan** | `trojan://` | Native TLS, Reality, WebSocket, gRPC, HTTPUpgrade, QUIC, mKCP |
 | **Shadowsocks**| `ss://` | AEAD (AES-256-GCM, ChaCha20-Poly1305), Shadowsocks 2022 |
-| **SOCKS5** | `socks://`, `socks5://` | Standard SOCKS5 with optional username/password authentication |
+| **SOCKS** | `socks://`, `socks5://`, `socks4://` | SOCKS5 with optional username/password authentication; SOCKS4 accepted as a legacy alias |
 | **Hysteria2** | `hysteria2://`, `hy2://` | Native QUIC, TLS, Salamander obfuscation, UDP Port Hopping |
 
 ---

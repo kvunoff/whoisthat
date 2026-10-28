@@ -15,20 +15,20 @@ WhoisThat features a rich command-line interface allowing complete control over 
 | `whoisthat --mode-tun` / `--tun` | — | Force enable TUN mode. |
 | `whoisthat --mode-proxy` / `--proxy` | — | Force enable Proxy mode (TUN disabled). |
 | `whoisthat --systemd-toggle` | `-st` | Toggle systemd user service (`whoisthat-core.service`). |
-| `whoisthat --systemd-on` / `--enable` | — | Enable and start systemd user service (auto-configures linger). |
-| `whoisthat --systemd-off` / `--disable` | — | Disable and stop systemd user service. |
+| `whoisthat --systemd-on` / `--systemd-enable` | — | Enable the systemd user service and configure linger (does **not** start it immediately). |
+| `whoisthat --systemd-off` / `--systemd-disable` | — | Disable the systemd user service and remove the unit (does **not** stop a running daemon). |
 | `whoisthat --systemd-status` | — | Check if systemd user service is currently enabled or disabled. |
 | `whoisthat --killswitch-toggle` | `-kt` | Toggle Kill-Switch firewall protection. |
-| `whoisthat --killswitch-on` / `--off` | — | Explicitly enable or disable Kill-Switch protection. |
+| `whoisthat --killswitch-on` / `--killswitch-off` | — | Explicitly enable or disable Kill-Switch protection. |
 | `whoisthat status --short` | `status -s` | Single-line compact status string: `[Connected] [TUN] ↓ 2.4 MB/s ↑ 410.0 KB/s`. |
 | `whoisthat status --json` | `status -j` | Single snapshot of active daemon state formatted as JSON. |
-| `whoisthat status --watch --json` | `status -w -j` | Continuous live NDJSON stream (1 emission per second) for reactive desktop widgets. |
+| `whoisthat status --watch --json` | `status -w -j` | NDJSON stream: one line per `traffic-stats` tick (1/s while connected) plus status/state/TUN events; silent while idle. |
 | `whoisthat --profiles [--json]` | `-p` | List all subscription groups and contained profiles. |
 | `whoisthat --ip` | `ip` | Query and print public IPv4 and IPv6 addresses. |
 | `whoisthat doctor [--json]` | — | Run system diagnostic suite checking binaries, capabilities, and sockets. |
 | `whoisthat run [-d] <app> [args...]` | `-b`, `--detach` | Launch application inside split-tunnel cgroup slice (`-d` runs detached). |
-| `whoisthat add-sub <url> [name]` | — | Add subscription URL headlessly; immediately fetches, parses, and latency-tests profiles. |
-| `whoisthat handle-url <url> [--group <id>]` | `<url>` | Ingest `wit://` or `happ://` deep links from CLI or browser. |
+| `whoisthat add-sub <url> [name]` | — | Add subscription URL headlessly; immediately fetches and parses profiles (auto-test only when enabled and the group has ≤50 profiles). |
+| `whoisthat handle-url <url> [--group <id>]` | — | Ingest `wit://` or `happ://` deep links. A bare `happ://...` argument is **not** auto-detected by the TUI launcher; use `handle-url`. |
 | `whoisthat register-deeplink` | — | Register desktop `.desktop` file and `x-scheme-handler/wit` with `xdg-mime`. |
 | `whoisthat --version` | `-v` | Display version and exit. |
 | `whoisthat --help` | `-h` | Display help screen. |

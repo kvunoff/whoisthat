@@ -17,12 +17,17 @@ core_tcp_port = 4897
 # Host for legacy TCP connection (default: "127.0.0.1")
 core_host = "127.0.0.1"
 
-# Connect to last used profile automatically when TUI starts
+# Legacy one-shot migration flag: promotes the old TUI autoconnect into the
+# core's autoconnect-enabled setting. Runtime autoconnect lives in config.json.
 autoconnect = false
+autoconnect_migrated = false
 
-# Last focused group and profile ID for UI state restoration
+# Last connected group/profile (used for autoconnect and CLI toggles)
 last_group_id = 0
 last_profile_id = 0
+
+# Last seen core version from the IPC handshake (display fallback only)
+core_version = "0.3.5"
 
 # Display public IP address in the header
 show_ip = true
@@ -38,6 +43,13 @@ log_level = "warn"
 
 # Latency test method: tcp, http-get, http-head
 test_method = "http-get"
+
+# Test engine parameters (mirrored to the core over IPC)
+test_concurrency = 16
+test_timeout_seconds = 5
+test_samples = 3
+test_endpoint = "https://cp.cloudflare.com/generate_204"
+auto_test_on_subscribe = true
 
 # Interface name for TUN adapter (mirrors core configuration)
 tun_name = "whoisthattun"
@@ -87,14 +99,22 @@ Auto-generated and synchronized by the Go core daemon:
   "split-tunnel": {
     "mode": "off"
   },
-  "ipc-socket-path": "",
+  "test-config": {
+    "concurrency": 16,
+    "timeout_seconds": 5,
+    "samples_per_test": 3,
+    "test_endpoint": "https://cp.cloudflare.com/generate_204",
+    "auto_test_on_subscribe": true
+  },
   "tcp-enabled": false
 }
 ```
 
+`ipc-socket-path` is omitted while empty (`omitempty`) and only appears when a custom socket path is configured.
+
 ### Key Parameter Explanations:
 * **`dns-servers`**:
-  * Used for resolving remote proxy hostnames (queries all servers, merges answers).
+  * Used for resolving remote proxy hostnames (queries configured servers sequentially and merges A/AAAA answers).
   * Injected into Xray's `freedom` (direct) outbound domain resolver when a Happ profile does not provide its own DNS section.
   * In TUN mode without Happ DNS (manual routing or profiles without DNS fields), the **first IPv4/IPv6** entries are targeted by the legacy kernel-level DNS hijack.
   * When the active Happ profile supplies DNS, its `RemoteDNS*` / `DomesticDNS*` servers take precedence; `dns-servers` are only used as a fallback. Happ DNS uses the reserved sink addresses `198.18.0.53` / `fd00::53` rather than the configured resolvers.
@@ -111,8 +131,8 @@ Auto-generated and synchronized by the Go core daemon:
 | `~/.local/share/whoisthat/db/routing.json` | Global manual routing rules shared by groups that inherit them. | `0600` |
 | `~/.local/share/whoisthat/db/groups/<id>/routing/manual.json` | Custom manual routing rules for one group (`manual_routing_mode = "custom"`). | `0600` |
 | `~/.config/whoisthat/db.key` | 32-byte cryptographic master key. | `0600` |
-| `~/.local/share/whoisthat/runtimes/xray/` | Pinned official Xray-core binary (v26.9.9). | `0755` |
+| `~/.local/share/whoisthat/runtimes/xray/v26.9.9/` | Pinned official Xray-core binary (versioned runtime directory). | `0755` |
 | `~/.config/whoisthat/geo/` | Global routing databases (`geoip.dat`, `geosite.dat`). | `0755` |
-| `~/.local/share/whoisthat/geo/groups/` | Isolated Happ routing profile geo assets. | `0700` |
+| `~/.local/share/whoisthat/db/groups/<id>/routing/geo/<profile_id>/<version>/` | Isolated Happ routing profile geo assets. | `0700` |
 | `$XDG_RUNTIME_DIR/whoisthat/core.sock` | Active Unix Domain Socket IPC endpoint. | `0600` |
 | `$XDG_RUNTIME_DIR/whoisthat/ipc.token` | Shared secret required by the opt-in TCP IPC transport (64 hex chars). | `0600` |

@@ -16,7 +16,7 @@ When an application initiates a network connection, traffic traverses a multi-st
 flowchart TD
     App["Application Socket\n(Browser, CLI, SSH, Torrent)"] --> Ingress["1. Ingress & Interception\n(Virtual TUN Adapter or SOCKS5/HTTP Inbound)"]
 
-    Ingress --> Sniff{"2. L7 Traffic Sniffing\nIs TLS / HTTP / QUIC?"}
+    Ingress --> Sniff{"2. L7 Traffic Sniffing\nIs TLS / HTTP?"}
     Sniff -->|TLS SNI / HTTP Host Found| SniffSuccess["Extract Domain Name\nOverride destination IP in routing context"]
     Sniff -->|Raw IP / Non-HTTP| SniffBypass["Retain Target IP & Port"]
 
@@ -77,9 +77,9 @@ The routing engine resolves this using formal domain strategies:
 DNS is handled before user rules so a query for a blocked domain cannot be routed by a rule that itself needs DNS:
 
 * **Happ DNS profiles:** DNS arriving on the TUN inbound (port 53, TCP/UDP) is captured by the `tun-in → dns-out` rule and answered by Xray's DNS module. The tagged `domestic-dns` server is reached via `direct`, and `remote-dns` via `proxy`.
-* **Manual routing / Happ without DNS:** the legacy rule sends UDP port 53 to the `proxy` outbound.
+* **Manual routing / Happ without DNS:** the legacy DNAT rule rewrites port 53 to the configured `dns-servers`, which are queried through the physical gateway.
 
-Either way name resolution stays inside the encrypted path instead of leaking to the local resolver.
+The first path keeps resolution inside Xray's routing logic; the legacy path deliberately uses the configured resolvers directly (and is disabled only for Happ DNS in split `include` mode).
 
 ### 4. Rule Classification Engines
 
@@ -87,8 +87,8 @@ When evaluating candidate packets, the routing engine uses specialized data stru
 
 #### A. Domain Matching Matrix
 Domains are checked against a hierarchy of rule matchers:
-1. **Full Match (`domain:` or `full:`)**: Strict exact equality (`domain:example.com` matches only `example.com`).
-2. **Suffix Match (`domain:`)**: Subdomain tree match (`example.com` matches `api.example.com`, `auth.api.example.com`, and `example.com`).
+1. **Suffix Match (`domain:` or a bare value)**: Matches the domain itself and every subdomain (`example.com` matches `example.com`, `api.example.com`, `auth.api.example.com`).
+2. **Full Match (`full:`)**: Strict exact equality (`full:example.com` matches only `example.com`).
 3. **Keyword Match (`keyword:`)**: Substring search (`keyword:google` matches any domain containing the word "google").
 4. **Regular Expression (`regexp:`)**: Arbitrary regex evaluation for complex domain patterns.
 5. **GeoSite Trie (`geosite:<category>`)**: Compiled binary Protobuf trees (`geosite.dat`). Tens of thousands of categorized domains (e.g. `category-ads-all`, `youtube`, `netflix`) are pre-compiled into a memory-efficient radix tree, allowing instant classification.
@@ -149,7 +149,7 @@ While routing concepts are universal across proxy platforms, WhoisThat's impleme
                             │ XRAY_LOCATION_ASSET Environment
 ┌───────────────────────────▼────────────────────────────┐
 │                    Xray-core Process                   │
-│    • In-Place Sub-30ms Hot-Reload (Zero TUN Downtime)  │
+│    • In-Place Hot-Reload (TUN stays up)               │
 │    • High-Performance Protobuf GeoIP/GeoSite Matching  │
 └────────────────────────────────────────────────────────┘
 ```
@@ -157,7 +157,7 @@ While routing concepts are universal across proxy platforms, WhoisThat's impleme
 ### Key Linux Engineering Highlights:
 
 1. **Rootless System TUN**: Operates without root daemon execution. The core binary leverages Linux file capabilities (`cap_net_admin,cap_net_raw,cap_setpcap`) to manage virtual network interfaces, system routing tables, and firewall rules cleanly.
-2. **Sub-30ms Zero-Downtime Hot-Reloading**: Unlike clients that tear down the virtual network interface or disconnect the VPN whenever a rule changes, WhoisThat validates new routing configurations in-memory (`xray run -test`) and reloads the routing engine in-place. Active SSH sessions, streams, and downloads remain uninterrupted.
+2. **In-Place Hot-Reloading (≈30 ms startup gap)**: Unlike clients that tear down the virtual network interface or disconnect the VPN whenever a rule changes, WhoisThat validates new routing configurations in-memory (`xray run -test`) and reloads in place. The old Xray process is stopped, the daemon waits 30 ms, and a new process is started; the TUN device and established system routing stay in place.
 3. **cgroup v2 Split Tunneling Integration**: Complementing domain and IP routing, WhoisThat features application-level routing via `whoisthat run <app>`. Sockets launched inside `whoisthat_split.slice` are matched by kernel nftables rules using cgroup v2 path hierarchies, allowing per-application bypass or enforcement.
 4. **Decoupled Architecture**: Rule policies (whether created manually, toggled via presets, or imported from external profile links) are stored in an encrypted database (`~/.local/share/whoisthat/db`) using AES-256-GCM.
 
@@ -200,8 +200,8 @@ WhoisThat supports six distinct matching criteria in manual and imported rules:
 | **`ip`** | `rule.ip` | Individual IP addresses or CIDR network blocks: `1.2.3.4`, `192.168.1.0/24`. |
 | **`protocol`** | `rule.protocol` | Protocol signature matching: `bittorrent`, `tls`, `http`. |
 | **`port`** | `rule.port` | Destination port or range: `443`, `80,443`, `8000-8080`. |
-| **`geoip`** | `geoip:<country>` | Country or geographic IP database lookup: `geoip:private`, `geoip:ru`, `geoip:us`. |
-| **`geosite`** | `geosite:<category>`| Curated domain lists from v2fly: `geosite:category-ads-all`, `geosite:youtube`, `geosite:telegram`. |
+| **`geoip`** | `rule.ip` (`geoip:<country>`) | Country or geographic IP database lookup: `geoip:private`, `geoip:ru`, `geoip:us`. |
+| **`geosite`** | `rule.domain` (`geosite:<category>`) | Curated domain lists from v2fly: `geosite:category-ads-all`, `geosite:youtube`, `geosite:telegram`. |
 
 ---
 
@@ -219,22 +219,30 @@ Press <kbd>p</kbd> in the Routing tab to open the built-in **Routing Presets Cat
 │  [X] 💬 Proxy Telegram       Route official Telegram domains and CIDRs  │
 │  [X] 🤖 Proxy AI Services    Route OpenAI and Anthropic / Claude        │
 │  [X] 📸 Proxy Blocked Socials Route Twitter/X, Instagram, and Meta      │
+│  [X] 🛑 Block BitTorrent     Drop P2P traffic via Xray blackhole        │
+│  [X] ⚡ Direct BitTorrent     Send P2P traffic outside the VPN           │
+│  [X] 🇨🇳 Bypass China         Direct access to Chinese sites (cn)        │
+│  [X] 🎮 Proxy Gaming         Route Steam Community through proxy        │
 │                                                                        │
-│             [Press Space/Enter to Toggle • Esc to Close]               │
-│                                                                        │
-│  [a] Apply Rules  │  [d] Delete Preset Rules  │  [Esc] Close           │
+│          [j/k or ↑/↓ Navigate • Enter/Space Toggle • Esc Close]        │
 └────────────────────────────────────────────────────────────────────────┘
 ```
+
+Each preset is additive: toggling it on ensures its rules exist and are enabled, toggling it off disables them. There are no separate Apply/Delete keys.
 
 ### Preset Definitions:
 
 * **🇷🇺 Bypass Russia**: Directs `geosite:category-ru` and `geoip:ru` to `direct`.
 * **🛡️ Block Ads & Trackers**: Directs `geosite:category-ads-all` to `block`.
-* **🏠 Bypass LAN / Local**: Directs RFC1918 subnets (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `127.0.0.0/8`) to `direct`.
+* **🏠 Bypass LAN / Local**: Directs `geoip:private` to `direct`.
 * **📺 Proxy Media**: Directs `geosite:youtube`, `geosite:twitch`, `geosite:discord` to `proxy`.
 * **💬 Proxy Telegram**: Directs `geosite:telegram` and `geoip:telegram` to `proxy`.
-* **🤖 Proxy AI Services**: Directs `geosite:openai`, `domain:anthropic.com`, `domain:claude.ai` to `proxy`.
+* **🤖 Proxy AI Services**: Directs `geosite:openai` and `geosite:anthropic` to `proxy`.
 * **📸 Proxy Blocked Socials**: Directs `geosite:twitter`, `geosite:instagram`, `geosite:facebook` to `proxy`.
+* **🛑 Block BitTorrent / P2P**: Matches protocol `bittorrent` and sends it to `block`.
+* **⚡ Direct BitTorrent / P2P**: Matches protocol `bittorrent` and sends it to `direct`.
+* **🇨🇳 Bypass China**: Directs `geosite:cn` and `geoip:cn` to `direct`.
+* **🎮 Proxy Gaming (Steam Community)**: Directs `geosite:steam` to `proxy`.
 
 ---
 
@@ -243,5 +251,5 @@ Press <kbd>p</kbd> in the Routing tab to open the built-in **Routing Presets Cat
 WhoisThat automates database lifecycle management for `geoip.dat` and `geosite.dat`:
 1. Databases are stored globally in `~/.config/whoisthat/geo/` (or isolated per-profile in `~/.local/share/whoisthat/db/.../geo/` when using custom profile assets).
 2. On startup, files are verified for presence and binary integrity.
-3. If missing, global assets are automatically downloaded from official [v2fly releases](https://github.com/v2fly/domain-list-community/releases).
+3. If missing, global assets are downloaded from the official v2fly releases ([geoip](https://github.com/v2fly/geoip/releases) for `geoip.dat`, [domain-list-community](https://github.com/v2fly/domain-list-community/releases) for `geosite.dat`).
 4. The core performs an in-memory configuration test (`xray run -test`) with a baseline `geoip:private` verification rule before committing routes to the network stack.

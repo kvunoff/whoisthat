@@ -12,7 +12,7 @@ Run the `whoisthat` binary from your terminal:
 whoisthat
 ```
 
-When started, WhoisThat checks whether the background daemon (`whoisthat-core`) is already running. If it is offline, the TUI automatically spawns it in the background, establishes an authenticated Unix domain socket connection, and renders the interface.
+When started, WhoisThat checks whether the background daemon (`whoisthat-core`) is already running. If it is offline, the TUI automatically spawns it in the background, connects over the Unix domain socket (protected by `0600` filesystem permissions), and renders the interface.
 
 ---
 
@@ -34,8 +34,8 @@ The core daemon immediately fetches the subscription, parses all supported proxy
 ### Method B: Single Profile URI (Clipboard or Manual)
 
 1. Copy any supported proxy URI to your system clipboard (`vless://`, `vmess://`, `trojan://`, `ss://`, `socks://`, `hysteria2://`, `hy2://`).
-2. Press <kbd>a</kbd> in the TUI to open the **Import Profile** popup.
-3. Press <kbd>Ctrl+V</kbd> or paste the URI and hit <kbd>Enter</kbd>.
+2. Press <kbd>a</kbd>. If the clipboard already contains text, WhoisThat imports it immediately; otherwise the **Import Profile** popup opens.
+3. In the popup, press <kbd>Ctrl+V</kbd> or paste the URI and hit <kbd>Enter</kbd>.
 
 ### Method C: One-Click Browser Deep Link
 
@@ -50,8 +50,8 @@ WhoisThat features a multi-sample latency testing engine:
 | Key | Action | Details |
 | :---: | :--- | :--- |
 | <kbd>t</kbd> | **Test Focused** | Tests only the highlighted profile, or all profiles within the highlighted group. |
-| <kbd>T</kbd> | **Test All** | Sequentially tests all profiles across all groups. Deduplicates identical addresses. |
-| <kbd>C</kbd> | **Cancel Tests** | Immediately halts all in-flight and queued latency tests. |
+| <kbd>T</kbd> | **Test All** | Queues every profile across all groups, deduplicated by group/profile ID. |
+| <kbd>C</kbd> | **Cancel Tests** | Drops queued tests; a sample already in flight finishes or times out. |
 
 Pending tests display `…`. Finished profiles show median round-trip time in milliseconds (e.g. `42ms`), along with jitter and packet loss percentages in the details panel.
 
@@ -62,7 +62,7 @@ Pending tests display `…`. Finished profiles show median round-trip time in mi
 1. Use <kbd>j</kbd> / <kbd>k</kbd> or the arrow keys <kbd>↓</kbd> / <kbd>↑</kbd> to move the selection bar.
 2. Press <kbd>Tab</kbd> if you want to switch focus between the Profile Tree and the Details pane (e.g. to scroll server details or copy parameters).
 3. Press <kbd>c</kbd> or <kbd>Enter</kbd> to connect to the highlighted profile.
-4. The status indicator in the top header will transition to `[Connected]`.
+4. The status indicator in the top header will transition to `● Connected`.
 
 ---
 

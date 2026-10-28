@@ -8,10 +8,14 @@ Split Tunneling allows you to route specific applications differently from the r
 
 Configure the mode in the TUI (**Settings → Network → Split tunnel**) or via the CLI:
 
-### 1. `exclude` Mode *(Default & Recommended)*
+### 1. `exclude` Mode *(Recommended)*
 * **Entire Operating System**: Protected and routed through the VPN tunnel.
 * **Launched Applications** (`whoisthat run`): **Bypass the VPN**, connecting directly through your physical gateway.
 * **Ideal For**: Spotify, domestic banking portals, Russian web services (`.ru` / Госуслуги), online gaming (Steam, Discord voice), torrent clients, and local network tools.
+
+::: tip Default is `off`
+Split tunneling is disabled by default. Set it to `exclude` or `include` explicitly; with `off`, `whoisthat run` launches the app but installs no split rules.
+:::
 
 ### 2. `include` Mode
 * **Entire Operating System**: Connects unprotected via your physical gateway.
@@ -225,7 +229,7 @@ Rewrites socket source IP on physical egress to prevent LAN dropouts
        │
        ▼
 IPv6 Leak Prevention:
-Table 100 sets `unreachable default` for IPv6 to prevent Happy Eyeballs leaks
+When the physical interface has no IPv6 gateway, Table 100 sets `unreachable default` for IPv6 to prevent Happy Eyeballs leaks; otherwise marked IPv6 traffic is routed to the physical gateway
 ```
 
 ### Live Dynamic Reconciliation

@@ -7,13 +7,14 @@ The Logs tab (<kbd>4</kbd>, or cycle with <kbd>[</kbd> / <kbd>]</kbd>) provides 
 ## Log Viewer Features
 
 * **Live Auto-Scroll**: As new log events arrive from `whoisthat-core`, the viewer automatically tails the stream to the newest entry.
-* **Scroll Pausing & Navigation**: Press <kbd>k</kbd> / <kbd>↑</kbd> or <kbd>Ctrl+U</kbd> to scroll upwards and inspect previous logs. Auto-scroll pauses while reading history and resumes when returning to the bottom (<kbd>G</kbd> / <kbd>End</kbd>). Press <kbd>g</kbd> / <kbd>Home</kbd> to jump to the top, and <kbd>Ctrl+D</kbd> / <kbd>Ctrl+U</kbd> for half-page navigation.
+* **Scroll Pausing & Navigation**: Press <kbd>k</kbd> / <kbd>↑</kbd>, <kbd>Ctrl+U</kbd> or <kbd>PgUp</kbd> to scroll upwards and inspect previous logs. Auto-scroll pauses while reading history and resumes when returning to the bottom (<kbd>G</kbd>). Press <kbd>g</kbd> to jump to the top.
 * **Level Filtering (<kbd>f</kbd>)**: Press <kbd>f</kbd> to cycle through log levels:
-  $$\text{ALL} \longrightarrow \text{DEBUG} \longrightarrow \text{INFO} \longrightarrow \text{WARN} \longrightarrow \text{ERROR} \longrightarrow \text{ALL}$$
+  $$\text{ALL} \longrightarrow \text{ERROR+} \longrightarrow \text{WARN+} \longrightarrow \text{INFO+} \longrightarrow \text{DEBUG+} \longrightarrow \text{TRACE+} \longrightarrow \text{ALL}$$
 * **Visual Syntax Highlighting**:
   * <span style="color: #f43f5e; font-weight: bold;">[ERRO]</span>: Red highlight for critical failures, dial errors, or missing capabilities.
   * <span style="color: #fbbf24; font-weight: bold;">[WARN]</span>: Yellow highlight for throttling, test timeouts, or runtime asset downloads.
-  * <span style="color: #38bdf8; font-weight: bold;">[INFO]</span>: Cyan highlight for connection lifecycle events, routing compilations, and subscription updates.
+  * <span style="color: #22c55e; font-weight: bold;">[INFO]</span>: Green (success) highlight for connection lifecycle events, routing compilations, and subscription updates.
+  * <span style="color: #94a3b8; font-weight: bold;">[DEBU] / [TRAC]</span>: Dim highlight for verbose diagnostics.
 
 ---
 

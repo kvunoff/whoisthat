@@ -30,7 +30,6 @@ upload=1048576; download=52428800; total=107374182400; expire=1720000000
 The Details panel dynamically displays:
 * **Used Bandwidth**: Total data consumed (Upload + Download) formatted in human-readable units (e.g., `51.0 MB`).
 * **Data Limit**: Total quota allocated to the account (e.g., `100.0 GB`).
-* **Remaining Data & Percentage**: Color-coded progress bar showing remaining traffic.
 * **Expiration Date**: Calendar timestamp when the subscription expires.
 * **Last Updated**: Relative timestamp since the last successful sync.
 
@@ -56,8 +55,8 @@ WhoisThat includes a high-precision multi-sample latency testing subsystem:
 
 ### Test Controls
 * <kbd>t</kbd>: **Test Focused** — Tests only the selected profile, or all profiles within the selected group (using the optimized `test-group` command).
-* <kbd>T</kbd>: **Scan All** — Tests all profiles across all groups starting from the cursor, deduplicating identical IP/port endpoints.
-* <kbd>C</kbd>: **Cancel Tests** — Immediately halts all in-flight and queued latency tests using an internal epoch counter. Drops pending queue items before spawning Xray instances and terminates active test subprocesses without leaving orphans.
+* <kbd>T</kbd>: **Scan All** — Queues every profile across all groups (the focused profile/group first), deduplicated by group/profile ID.
+* <kbd>C</kbd>: **Cancel Tests** — Drops queued tests via the internal epoch counter. A test already in flight finishes its current sample or times out; it is not killed mid-connection.
 
 ### Testing Architecture & Metrics
 Latency tests are not simple ICMP pings (which many VPN firewalls block or prioritize). Instead, tests simulate real application traffic:
@@ -76,4 +75,4 @@ Latency tests are not simple ICMP pings (which many VPN firewalls block or prior
    * In-flight batches broadcast tested/total progress to the bottom status bar (`[Testing 12/48]`).
    * **Throttled Failure Notifications**: When test endpoints fail or time out, the core broadcasts a `warn` notification, throttled to 1 warning per error-reason per 5 seconds so users are not spammed with modal alerts.
 4. **Auto-Test on Refresh**:
-   When **Auto-test on refresh** is enabled in Settings, refreshing a subscription group (<kbd>u</kbd> / <kbd>r</kbd>) immediately schedules latency tests for all newly imported or updated servers.
+   When **Auto-test on refresh** is enabled in Settings, refreshing a subscription group (<kbd>u</kbd> / <kbd>r</kbd>) schedules latency tests for the imported servers. Groups larger than 50 profiles are skipped to avoid a test storm.

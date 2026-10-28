@@ -22,18 +22,18 @@ The diagnostic engine performs comprehensive, non-destructive system inspections
 ┌────────────────────────────────────────────────────────┐
 │                  whoisthat doctor                      │
 ├────────────────────────────────────────────────────────┤
-│  1. Binaries & Runtimes     (whoisthat, core, xray)    │
-│  2. Linux Capabilities      (cap_net_admin, /dev/net)  │
-│  3. Polkit & Permissions    (polkit, pkexec, linger)   │
-│  4. IPC & Daemon Runtime    (UDS socket, handshake)    │
-│  5. DNS & Routing           (sink, pools, hijack, KS)  │
-│  6. Storage & Cryptography  (DB 0700, .key, geoip)     │
+│  1. Binaries & Runtimes          (whoisthat, core, xray)│
+│  2. Linux Capabilities & Kernel  (caps, /dev/net, fw)  │
+│  3. Polkit & Permissions         (polkit, pkexec, linger)│
+│  4. IPC & Daemon                 (UDS socket, handshake)│
+│  5. DNS & Routing               (sink, pools, hijack, KS)│
+│  6. Configuration & Storage      (DB key, configs, geo) │
 └────────────────────────────────────────────────────────┘
 ```
 
 ### 1. Binaries & Runtimes
 * **`whoisthat` (Client)**: Resolves the active binary path (`std::env::current_exe()`) and confirms it matches the compiled crate version (`CARGO_PKG_VERSION`).
-* **`whoisthat-core` (Daemon)**: Searches `PATH`, current executable directory, `./core/core/`, `/usr/local/bin`, and `/usr/bin` for the daemon binary.
+* **`whoisthat-core` (Daemon)**: Searches `PATH`, `./whoisthat-core`, `./core/core/whoisthat-core`, `./bin/whoisthat-core`, `/usr/local/bin`, and `/usr/bin` (in that order) for the daemon binary.
 * **`xray-core` (Proxy Runtime)**: Probes for available Xray-core runtimes in `~/.local/share/whoisthat/runtimes/xray/` and system `PATH`. Checks if version matches the pinned **v26.9.9** release.
 * **System CLI Tools**: Validates the presence of essential Linux networking utilities: `ip` (`iproute2`), `getcap` & `setcap` (`libcap`), and `pkexec` (`polkit`).
 
@@ -54,8 +54,9 @@ The diagnostic engine performs comprehensive, non-destructive system inspections
 ### 4. IPC & Daemon Runtime Status
 * **`XDG_RUNTIME_DIR`**: Validates the user runtime directory environment variable and permissions.
 * **Unix Domain Socket**: Resolves `$XDG_RUNTIME_DIR/whoisthat/core.sock`, verifying that file mode is `0600` and owned by the current user.
-* **Daemon Handshake**: Transmits an IPC `get-application-state` probe to verify the daemon is responsive and reports wire protocol version `3`.
-* **Legacy TCP Port**: If TCP is enabled, checks if `127.0.0.1:4897` is accessible.
+* **Daemon Handshake**: Transmits an IPC `get-application-state` probe to verify the daemon is responsive. The reported `core_version`/`protocol_version` are shown in the report header but are not interpreted as a pass/fail gate.
+* **Systemd User Service**: Reports `systemctl --user is-active` / `is-enabled` for `whoisthat-core.service` as informational.
+* **Legacy TCP Port**: If TCP is enabled, reports the configured `host:port`.
 
 ### 5. DNS & Routing
 * **DNS sink address**: Verifies that `198.18.0.53` / `fd00::53` are **not** assigned to any interface. If they are, kernel local delivery bypasses the TUN inbound and DNS hijack stops working.
@@ -69,13 +70,11 @@ The diagnostic engine performs comprehensive, non-destructive system inspections
 Reading nftables/iptables state usually requires root. When `whoisthat doctor` runs unprivileged, firewall items are reported as `info` with the exact inspection command (`sudo nft list table ip whoisthat`) instead of failing.
 :::
 
-### 6. Storage, Database & Cryptography
-* **Database Directory**: Validates that `~/.local/share/whoisthat/db/` exists and has secure Unix permissions (`0700`).
-* **Master Encryption Key**: Inspects `~/.config/whoisthat/db.key`:
-  * Ensures permissions are strictly `0600`.
-  * Verifies key length is exactly 32 bytes (256 bits).
-* **Configuration Syntax**: Parses `~/.config/whoisthat/config.toml` (TUI) and `~/.config/whoisthat/config.json` (Core) for JSON/TOML syntax validity.
-* **Geo Assets Verification**: Confirms `geoip.dat` and `geosite.dat` exist in `~/.config/whoisthat/geo/` and meet the minimum 10 MB size threshold.
+### 6. Configuration & Storage
+* **TUI Config**: Confirms `~/.config/whoisthat/config.toml` exists and echoes the active theme/test method. It does not re-parse the file (the TUI already does that with a backup/fallback on error).
+* **Core Config**: Parses `~/.config/whoisthat/config.json` as JSON and reports the SOCKS/HTTP ports; invalid JSON is a warning because the core recreates defaults.
+* **Encrypted DB**: Checks that `~/.local/share/whoisthat/db/` exists and inspects the key (`~/.config/whoisthat/db.key`, legacy `db/.key`): exactly 32 bytes and mode `0600`. The DB directory mode itself is not asserted.
+* **Geo Assets**: Confirms `geoip.dat` and `geosite.dat` exist in `~/.config/whoisthat/geo/` and warns when `geoip.dat` is under 10 MiB. `geosite.dat` size is reported but not thresholded (the core's own floor is 1 MiB).
 
 ---
 
@@ -85,59 +84,53 @@ When running `whoisthat doctor --json`:
 
 ```json
 {
-  "client_version": "0.14.3",
+  "version": "0.14.3",
   "core_version": "0.3.5",
   "core_protocol_version": 3,
   "categories": [
     {
-      "name": "Binaries & Runtimes",
+      "title": "Binaries & Runtimes",
       "items": [
         {
           "name": "whoisthat",
           "status": "pass",
-          "message": "/usr/local/bin/whoisthat (v0.14.3)",
-          "fix": null
+          "message": "/usr/local/bin/whoisthat (v0.14.3)"
         },
         {
           "name": "whoisthat-core",
           "status": "pass",
-          "message": "/usr/local/bin/whoisthat-core",
-          "fix": null
+          "message": "/usr/local/bin/whoisthat-core"
         },
         {
           "name": "xray-core",
           "status": "pass",
-          "message": "~/.local/share/whoisthat/runtimes/xray/xray (v26.9.9)",
-          "fix": null
+          "message": "~/.local/share/whoisthat/runtimes/xray/v26.9.9/xray (v26.9.9)"
         }
       ]
     },
     {
-      "name": "Linux Capabilities & Kernel",
+      "title": "Linux Capabilities & Kernel",
       "items": [
         {
           "name": "whoisthat-core caps",
-          "status": "pass",
-          "message": "/usr/local/bin/whoisthat-core (=ep)",
-          "fix": null
-        },
-        {
-          "name": "/dev/net/tun",
-          "status": "pass",
-          "message": "available (char device, mode 0666)",
-          "fix": null
+          "status": "warn",
+          "message": "missing required network capabilities for rootless TUN mode",
+          "fix_hint": "sudo setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep /usr/local/bin/whoisthat-core"
         }
       ]
     }
   ],
   "summary": {
-    "total": 18,
     "passed": 18,
-    "warnings": 0,
-    "failures": 0
+    "warnings": 1,
+    "failed": 0,
+    "info": 2,
+    "is_healthy": true
   }
 }
 ```
+
+`fix_hint` is omitted entirely when there is no suggested fix. `summary.is_healthy` is `true` when `failed == 0`.
 
 ---
 
@@ -145,11 +138,11 @@ When running `whoisthat doctor --json`:
 
 | Failure / Warning | Technical Cause | Immediate Fix Command |
 | :--- | :--- | :--- |
-| **`whoisthat-core not found`** | Daemon binary missing from standard PATH directories. | `sudo install -Dm755 core/core/whoisthat-core /usr/local/bin/whoisthat-core` |
-| **`missing required network capabilities`** | Rebuilt daemon lost file capabilities on new inode. | `sudo setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep $(which whoisthat-core)` |
+| **`daemon binary not found in PATH or standard directories`** | Daemon binary missing from standard PATH directories. | `sudo install -Dm755 core/core/whoisthat-core /usr/local/bin/whoisthat-core` |
+| **`missing required network capabilities for rootless TUN mode`** | Rebuilt daemon lost file capabilities on new inode. | `sudo setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep $(which whoisthat-core)` |
 | **`virtual device /dev/net/tun not found`** | Linux kernel `tun` module is not loaded. | `sudo modprobe tun && echo "tun" \| sudo tee -a /etc/modules-load.d/tun.conf` |
 | **`neither nftables nor iptables found`** | Host lacks a compatible firewall backend. | Arch: `sudo pacman -S nftables`<br>Debian/Ubuntu: `sudo apt install nftables` |
-| **`systemd linger disabled`** | User services will terminate upon graphical logout. | `sudo loginctl enable-linger $USER` |
-| **`IPC connection refused`** | Daemon is offline or crashed. | `systemctl --user restart whoisthat-core` or `whoisthat-core &` |
-| **`Invalid .key permissions`** | Master key permissions are broader than user-only. | `chmod 0600 ~/.config/whoisthat/db.key` |
-| **`Geo assets missing or corrupt`** | `geoip.dat` or `geosite.dat` smaller than 10 MB. | Remove damaged files and restart client: `rm -rf ~/.config/whoisthat/geo/*` |
+| **`systemd linger: disabled`** (Info) | User services will stop on logout; boot autostart will not work. | `sudo loginctl enable-linger $USER` |
+| **`daemon connection: core is not running`** (Info) | Daemon is offline or crashed. | `systemctl --user start whoisthat-core` or launch `whoisthat` |
+| **`key file ... has mode ... (expected 0600)`** | Master key permissions are broader than user-only. | `chmod 0600 ~/.config/whoisthat/db.key` |
+| **`geoip.dat (... is under 10MB)`** | Global GeoIP database is truncated or stale. | Remove damaged files and restart the client: `rm -rf ~/.config/whoisthat/geo/*` |

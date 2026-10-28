@@ -14,20 +14,17 @@ The GNOME Shell Extension integrates WhoisThat directly into your top panel:
   * One-click TUN mode toggle.
   * Profile selector organized by subscription groups.
   * Direct launcher button to spawn the interactive `whoisthat` terminal TUI.
-* **Panel Customization**: Relocate the indicator across panel positions (**Right**, **Center**, or **Left**), configure visible labels, and select your preferred terminal emulator (Alacritty, Kitty, Foot, WezTerm, GNOME Terminal).
+* **Panel Customization**: Relocate the indicator across panel positions (**Right**, **Center**, or **Left**), configure visible labels, and select your preferred terminal emulator (Auto-detect, Alacritty, GNOME Terminal, Ptyxis, Kitty, Ghostty, XTerm).
 
 ---
 
 ## Installation
 
-### Method A: GNOME Extensions Website (Recommended)
+::: warning Not on extensions.gnome.org yet
+The extension is not currently listed in the GNOME Extensions catalog — the formerly documented `/extension/10998/` page returns 404. Install it from source using the steps below.
+:::
 
-1. Ensure you have the `gnome-browser-connector` package installed on your system.
-2. Open the official extension page:
-   👉 **[WhoisThat VPN Indicator on extensions.gnome.org](https://extensions.gnome.org/extension/10998/whoisthat-vpn-indicator/)**
-3. Flip the toggle switch to **ON** and accept the installation prompt.
-
-### Method B: Manual Source Installation
+### Method A: From Source (Recommended)
 
 ```bash
 git clone https://github.com/kvunoff/whoisthat-extension.git
@@ -35,10 +32,19 @@ cd whoisthat-extension
 make install
 ```
 
-After installing, enable the extension:
+### Method B: Manual `.zip` Build
 
 ```bash
-gnome-extensions enable whoisthat-vpn-indicator@kvunoff.github.io
+git clone https://github.com/kvunoff/whoisthat-extension.git
+cd whoisthat-extension
+make pack
+gnome-extensions install --force whoisthat-indicator@kvunoff.shell-extension.zip
+```
+
+After installing, log out and back in (X11) or restart GNOME Shell (Wayland), then enable the extension:
+
+```bash
+gnome-extensions enable whoisthat-indicator@kvunoff
 ```
 
 ---

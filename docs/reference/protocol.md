@@ -17,7 +17,7 @@ This document provides a complete technical specification for the length-prefixe
 * **Payload**: UTF-8 encoded JSON object.
 * **Maximum Frame**: 64 MiB on both sides. Larger frames are rejected before allocation/parsing.
 * **Request correlation (optional)**: a client may include an `"id"` string in a request; notifications produced while handling it carry the same `"id"`. The current TUI is event-driven and does not require it.
-* **Protocol Version**: `3` (shared by `core/core/lib/version/protocol.txt`; the TUI and core refuse to talk across a mismatch).
+* **Protocol Version**: `3` (shared by `core/core/lib/version/protocol.txt`). The TCP handshake rejects a mismatch; on UDS the TUI compares `application-state.protocol_version` and kills/respawns a mismatched core instead of reattaching.
 * **Socket Endpoints**:
   * **Unix Domain Socket (Default)**: `$XDG_RUNTIME_DIR/whoisthat/core.sock` (mode `0600`, owned by the invoking user).
   * **Loopback TCP (Opt-in)**: `127.0.0.1:4897` / `[::1]:4897` (when `tcp-enabled: true` in `config.json`).
@@ -44,6 +44,9 @@ The core replies with `{"msg":"hello-ok","data":{"protocol_version":3}}` or `{"m
 | `disconnect` | `{}` | `status-changed` |
 | `add-profiles` | `{"uris": "string", "group_id": int}` | `profiles-added` |
 | `delete-profiles` | `{"profiles": [{"id": int, "group_id": int}]}` | `profiles-deleted` |
+| `reorder-profiles` | `{"group_id": int, "profile_ids": [int, ...]}` | `profiles-reordered` |
+| `reorder-groups` | `{"group_ids": [int, ...]}` | `groups-reordered` |
+| `move-profile` | `{"profile_id": int, "from_group_id": int, "to_group_id": int}` | `profile-moved` |
 | `test-profile` | `{"profile": {"id": int, "group_id": int}, "method": "string"}` | `profile-updated` |
 | `enable-tun` | `{}` | `tun-status-changed` |
 | `disable-tun` | `{}` | `tun-status-changed` |
@@ -64,10 +67,10 @@ The core replies with `{"msg":"hello-ok","data":{"protocol_version":3}}` or `{"m
 | `set-autoconnect` | `{"enabled": bool, "group_id": int, "profile_id": int, "mode": "proxy" \| "tun"}` | `autoconnect-updated` |
 | `test-group` | `{"group_id": int, "method": "string"}` | `test-progress` & `profile-updated` |
 | `cancel-tests` | `{}` | Cancels all active and pending latency tests. |
-| `set-test-config` | `{"method": "str", "samples": int, "concurrency": int, "timeout": int, "endpoint": "str", "auto_test": bool}` | `test-config-updated` |
+| `set-test-config` | `{"config": {"concurrency": int, "timeout_seconds": int, "samples_per_test": int, "test_endpoint": "str", "auto_test_on_subscribe": bool}}` | `test-config-updated` |
 | `import-happ-routing` | `{"group_id": int, "link": "string"}` | `subscription-updated` or `warn` |
 | `set-group-routing-mode` | `{"group_id": int, "mode": "auto" \| "manual" \| "subscription"}` | `group-updated` |
-| `set-active-routing-profile` | `{"group_id": int, "profile_id": "string"}` | `group-updated` & live hot-reload |
+| `set-active-routing-profile` | `{"group_id": int, "profile_id": "string"}` (`"off"` deactivates) | `group-updated`, then `subscription-updated` after any geo refresh |
 | `delete-routing-profile` | `{"group_id": int, "profile_id": "string"}` | `subscription-updated` |
 
 ---
@@ -77,26 +80,30 @@ The core replies with `{"msg":"hello-ok","data":{"protocol_version":3}}` or `{"m
 | Notification (`msg`) | `data` Object Payload | Description |
 | :--- | :--- | :--- |
 | `application-state` | Complete system state | Response to `get-application-state` (the TUI requests it on connect). Includes groups, profiles, active connection, TUN status, `tun_name`, `test_config`, and configurations. `tun_name`/`test_config` are authoritative: the TUI mirrors them into `config.toml` instead of the other way around. |
-| `status-changed` | `{"connection": "connected" \| "disconnected", "profile": { ... }}` | Fired when VPN connects or disconnects. |
+| `status-changed` | `{"connection": "connected" \| "disconnected", "profile": { ... }, "connected_at": int, "reason": "string"?}` | Fired when VPN connects or disconnects. `reason` is present when the connection dropped unexpectedly. |
 | `profiles-added` | `{"profiles": [ ... ]}` | Fired when new server profiles are imported. |
 | `profiles-deleted` | `{"deleted-profiles": [ ... ]}` | Fired when profiles are deleted. |
+| `profiles-reordered` | `{"group_id": int, "profile_ids": [int, ...]}` | Fired after a profile order change. |
+| `groups-reordered` | `{"group_ids": [int, ...]}` | Fired after the group order changes. |
+| `profile-moved` | `{"old_profile": {"id": int, "group_id": int}, "new_profile": { ... }}` | Fired when a profile is moved between groups. |
 | `profile-updated` | `{"profile": { ... }}` | Fired when a profile is renamed or completes a latency test. |
 | `group-added` | `{"id": int, "name": "string", "subscription_url": "string"}` | Fired when a new group is created. |
 | `group-deleted` | `{"id": int}` | Fired when a group is deleted. |
-| `group-updated` | Full Group structure | Fired when a group's name or URL is modified. |
-| `subscription-updated` | `{"group_id": int, "group": { ... }, "profiles": [ ... ], "routing_profiles": [ ... ]}` | Fired when a subscription finishes downloading and parsing. |
+| `group-updated` | Full `Group` structure (no embedded profiles or routing profiles) | Fired when a group's name, URL, routing mode or active routing profile changes. |
+| `subscription-updated` | `{"group_id": int, "group": { ... }, "profiles": [ ... ], "routing_profiles": [ ... ]}` | Fired when a subscription finishes downloading and parsing, or when Happ routing profiles/geo assets change. |
 | `tun-status-changed` | `{"is_enabled": bool}` | Fired when TUN mode is toggled. |
 | `tun-name-updated` | `{"tun_name": "string"}` | Fired when the TUN interface name changes. |
-| `is-root-answer` | `{"IsRoot": bool}` | Response indicating whether the daemon holds root privileges. |
+| `is-root-answer` | `{"IsRoot": bool}` | Result of `CanTun()`: whether the daemon can create a TUN device (root **or** `CAP_NET_ADMIN`), not literally euid 0. |
 | `hwid-updated` | `{"enabled": bool, "hwid": "str", "user_agent": "str", ...}` | Fired when HWID parameters are changed or reset. |
-| `traffic-stats` | `{"proxy_up": int, "proxy_down": int, "direct_up": int, "direct_down": int}` | Broadcast every 1 second with real-time transfer counters. |
+| `traffic-stats` | `{"proxy_up": int, "proxy_down": int, "direct_up": int, "direct_down": int}` | Broadcast every 1 second while a proxy connection is active. |
 | `routing-updated` | `{"group_id": int, "config": { ... }, "source": "global" \| "custom", "custom": { ... }?}` | Fired when routing rules, the manual rule source, or active Happ profiles change. `custom` carries the stored per-group override when one exists. |
-| `warn` | `{"key": "string", "content": "string"}` | Warning or actionable hint (e.g. missing binary, device limits). |
+| `warn` | `{"key": "string", "content": "string"}` | Warning or actionable hint (e.g. missing binary, invalid routing link, capability failure). |
 | `kill-switch-updated` | `{"enabled": bool}` | Fired when Kill-Switch state changes. |
 | `split-tunnel-updated` | `{"mode": "off" \| "exclude" \| "include"}` | Fired when split-tunnel mode changes. |
 | `autoconnect-updated` | `{"enabled": bool, "mode": "proxy" \| "tun"}` | Fired when autoconnect parameters change. |
-| `test-progress` | `{"current": int, "total": int}` | Broadcast during batch latency scans. |
-| `test-config-updated` | Full TestConfig object | Fired when test timeout, samples, or concurrency are adjusted. |
+| `test-progress` | `{"group_id": int, "tested": int, "total": int}` | Broadcast during batch latency scans. |
+| `test-config-updated` | `{"config": { ...TestConfig }}` | Fired when test timeout, samples, concurrency, endpoint or auto-test flag change. |
+| `xray-progress` | `{"status": "downloading" \| ..., "version": "str", "progress": int, "bytes_downloaded": int?, "total_bytes": int?, "error": "str"?}` | Streamed while the pinned Xray runtime is downloading or failing. |
 
 ---
 
@@ -125,7 +132,7 @@ The core replies with `{"msg":"hello-ok","data":{"protocol_version":3}}` or `{"m
   * `> 0`: Median round-trip latency in milliseconds across the configured sample count.
   * `0`: Untested server profile.
   * `-1`: Latency test failed / host unreachable.
-  * `-2`: Test is currently in-flight.
+  * `-2`: UI-only marker used by the TUI while a test is in flight; the core never stores or sends `-2`.
 * **`tested_at`**: Unix epoch timestamp marking when the last successful test completed.
 * **`loss-pct`**: Percentage of failed requests during the multi-sample test batch ($0\%$ to $100\%$).
 * **`jitter-ms`**: Difference between the maximum and minimum recorded latency among successful samples ($\Delta t = t_{\max} - t_{\min}$).
@@ -149,7 +156,7 @@ Subscription metadata (`sub_*`) is automatically populated from the standard `su
 
 ### Routing Profile Info Structure
 
-`routing_profiles` entries (in `application-state`, `subscription-updated`, and `group-updated`) contain the compiled profile summary plus the DNS display metadata:
+`routing_profiles` entries (in `application-state` and `subscription-updated`) contain the compiled profile summary plus the DNS display metadata:
 
 ```json
 {

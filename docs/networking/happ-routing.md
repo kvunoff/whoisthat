@@ -68,14 +68,14 @@ graph LR
     end
     subgraph Direct["Direct User Channels"]
         D1["Web Generator\nrouting.happ.su"]
-        D2["Browser Links\nwit:// or happ://"]
+        D2["Browser Links\nwit:// (happ:// wrapped inside)"]
         D3["QR Codes"]
     end
     subgraph Client["WhoisThat Ingestion Engine"]
         W1["happ.ExtractLinksFromResponse\n(Unescapes %3A%2F%2F)"]
         W2["happ.ExtractLinks\n(Plaintext & Base64 scanner)"]
         W3["TUI Clipboard\n(Press 'i' in Tab 2)"]
-        W4["XDG Desktop Scheme Handler\n(/usr/share/applications)"]
+        W4["XDG Desktop Scheme Handler\n(~/.local/share/applications)"]
         W5["Headless CLI\nwhoisthat handle-url"]
     end
 
@@ -98,7 +98,7 @@ Content-Disposition: attachment; filename="subscription"
 routing: happ://routing/onadd/ewogICAgIk5hbWUiOiAidGVzdCIsCiAgICAiR2xvYmFsUHJveHkiOiAidHJ1ZSIsCiAgICAiRGlyZWN0U2l0ZXMiOiBbXSwKICAgICJEaXJlY3RJcCI6IFtdLAogICAgIlByb3h5U2l0ZXMiOiBbXSwKICAgICJQcm94eUlwIjogW10sCiAgICAiQmxvY2tTaXRlcyI6IFtdLAogICAgIkJsb2NrSXAiOiBbXSwKICAgICJEb21haW5TdHJhdGVneSI6ICJBc0lzIgp9
 ```
 
-When WhoisThat updates a subscription (`whoisthat -u` or <kbd>u</kbd> in the TUI), the internal function `happ.ExtractLinksFromResponse` reads the `Routing` header, decodes percent-encoded schemes (`happ%3A%2F%2F` ➔ `happ://`), and immediately imports the profile into the corresponding subscription group.
+When WhoisThat updates a subscription (<kbd>u</kbd> / <kbd>r</kbd> in the TUI), the internal function `happ.ExtractLinksFromResponse` reads the `Routing` header, decodes percent-encoded schemes (`happ%3A%2F%2F` ➔ `happ://`), and immediately imports the profile into the corresponding subscription group. There is no `whoisthat -u` CLI flag.
 
 #### Channel B: Embedded in Subscription Body
 The `happ://routing/...` link can be placed directly inside the subscription body, on its own line alongside proxy node URIs:
@@ -115,13 +115,13 @@ vless://70cc43c5-b2f4-34ac-a092-d806984a6b8c@1.13.7.91:443?encryption=none&secur
 #### Channel C: System Clipboard (<kbd>i</kbd> in Routing Tab)
 Users can copy a `happ://routing/...` link from a website, Telegram channel, or email and press <kbd>i</kbd> on Tab 2 (*Routing*). The client reads the system clipboard (via Wayland data-control or X11 selection), parses the link, and dispatches an `import-happ-routing` IPC call targeting the currently focused group.
 
-#### Channel D: Desktop Deep Links (`wit://` & `happ://`)
-Clicking links in browsers or applications launches WhoisThat via its registered XDG desktop handler (`x-scheme-handler/wit`):
+#### Channel D: Desktop Deep Links (`wit://`)
+Only the `wit://` scheme is registered with `xdg-mime` (the TUI writes `~/.local/share/applications/whoisthat.desktop` and registers `x-scheme-handler/wit` on launch). Clicking a bare `happ://` link in a browser will not launch WhoisThat. Use the `wit://` wrapper or the CLI:
 
 ```
 wit://happ://routing/add/<BASE64>
 wit://routing?link=happ%3A%2F%2Frouting%2Fadd%2F...&group=Premium
-happ://routing/add/<BASE64>
+whoisthat handle-url "happ://routing/add/<BASE64>" --group Premium
 ```
 
 #### Channel E: Headless CLI & QR Codes
@@ -155,7 +155,7 @@ When an update to an existing profile is received:
 1. The profile transitions to the `updating` state.
 2. New Geo assets begin downloading in the background.
 3. **The running proxy core continues serving connections with the old rules and old geofiles.**
-4. Once all new assets are verified and compiled, an **atomic swap** occurs, switching Xray to the new version without any dropped packets or connection resets.
+4. Once all new assets are verified, the profile becomes `ready`. The running core keeps the previous rules until the profile is activated (or the connection is reloaded); there is no automatic hot-swap at download completion.
 
 ### 5. 7-Day Update Cooldown Gate
 Geo asset files (`geoip.dat`, `geosite.dat`) are gated by a 7-day cooldown (`WeeklyUpdateGate = 604800` seconds). Even if a subscription is updated every hour, custom Geo files are not re-downloaded unless 7 days have passed since the last successful download, protecting provider CDNs from bandwidth exhaustion.
@@ -163,7 +163,7 @@ Geo asset files (`geoip.dat`, `geosite.dat`) are gated by a 7-day cooldown (`Wee
 ### 6. Independence of WhoisThat's Technical Architecture
 While WhoisThat provides complete support for Happ routing profiles as an open data interchange format, **WhoisThat's technical architecture is completely independent from upstream Happ mobile/desktop clients**:
 
-* **Zero-Downtime Hot-Reload vs Reconnection**: Upstream clients often require tearing down the active connection and reconnecting to apply routing changes. In contrast, WhoisThat executes **in-place atomic hot-reloading** (`ReloadRouting`) in under 30ms without resetting the TUN device or interrupting active network sessions.
+* **In-Place Hot-Reload vs Reconnection**: Upstream clients often require tearing down the active connection and reconnecting to apply routing changes. In contrast, WhoisThat executes an in-place reload (`ReloadRouting`): the old Xray process is stopped, the daemon waits 30 ms, and a new process starts. The TUN device and system routing stay up, but the Xray process itself is briefly restarted.
 * **Native Linux Network Stack**: Rather than generic cross-platform mobile frameworks, WhoisThat's engine is built directly for Linux: rootless TUN via file capabilities (`cap_net_admin`), kernel policy routing (`ip rule`), `nftables` packet marking (`SO_MARK 1`), and `cgroup v2` transient slices.
 * **Decoupled User Control**: While upstream clients enforce a "Restricted Mode" that locks controls on provider-managed JSON subscriptions, WhoisThat provides complete user autonomy through its TUI and CLI, allowing inspection, per-group mode switching (`auto`/`manual`/`subscription`), and live rule toggling.
 
@@ -175,8 +175,8 @@ Happ routing links use the `happ://routing/` scheme. WhoisThat recognizes three 
 
 | Action URI | Internal Identifier | Behavior & Core Lifecycle |
 | :--- | :--- | :--- |
-| `happ://routing/add/{base64}` | `ActionAdd` | Ingests, validates, and stores the routing profile in the target group. If custom Geo assets are specified, initiates background download. Leaves active profile unchanged. |
-| `happ://routing/onadd/{base64}` | `ActionOnAdd` | Ingests, validates, and stores the profile. If no custom Geo assets are needed, **immediately activates** the profile. If assets are downloading, marks as pending and activates automatically once compilation finishes. |
+| `happ://routing/add/{base64}` | `ActionAdd` | Ingests, validates, and stores the routing profile in the target group. If custom Geo assets are specified, initiates background download. Activates the profile only if the group has no active profile yet; it never replaces an existing active one. |
+| `happ://routing/onadd/{base64}` | `ActionOnAdd` | Ingests, validates, and stores the profile. If no custom Geo assets are needed, **immediately activates** it. If assets must be downloaded, the profile is stored in the `updating` state; there is no automatic activation after the download — select it with <kbd>Enter</kbd> once it is `ready`. |
 | `happ://routing/off` | `ActionOff` | Deactivates the currently active Happ routing profile for the group, clearing `ActiveRoutingProfileId`. |
 
 ### Tolerant Base64 Decoder Engine
@@ -311,7 +311,7 @@ Rules 2–4 are emitted only when the active Happ profile carries DNS settings. 
 2. **DNS Capture & Tagged Resolvers**: When TUN is active and the Happ profile has a DNS section, DNS arriving through `tun-in` on port 53 is sent to the `dns-out` outbound. Queries originated by the tagged `domestic-dns` and `remote-dns` servers are then routed to `direct` and `proxy` respectively. This replaces the legacy blanket `port 53 -> proxy` rule and prevents DNS queries from matching user domain rules.
 3. **Private LAN Bypass (Unconditional Priority)**: The private IP subnet rule is hardcoded ahead of all provider rules (after API and DNS capture):
    ```
-   127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, ::1/128, fc00::/7, fe80::/10 -> direct
+   10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, ::1/128, fc00::/7, fe80::/10 -> direct
    ```
    Guarantees that local network printers, LAN shares, routers, and internal hypervisor interfaces remain reachable regardless of provider wildcard configurations.
 4. **Block Rules**: `BlockSites` and `BlockIp` are directed to the `blackhole` protocol outbound.
@@ -403,12 +403,12 @@ The resolution algorithm (`resolveRouting`) determines what routing table is app
 
 | Group Mode | Manual Source | Active Happ Profile Condition | Resulting Routing Source | Effective Behavior |
 | :--- | :--- | :--- | :--- | :--- |
-| **`auto`** *(Default)* | any | Profile active and assets ready (`state == "ready"`) | **`happ`** | Compiles and enforces the active Happ profile rules. |
+| **`auto`** *(Default)* | any | Active profile with rules and all referenced geo files present (the `state` string is not checked) | **`happ`** | Compiles and enforces the active Happ profile rules. |
 | **`auto`** | Global | No active Happ profile, or assets failed/downloading | **`manual` (global)** | **Transparent Fallback**: uses the Global manual rules and presets catalog. |
 | **`auto`** | Custom | No active Happ profile, or assets failed/downloading | **`manual` (custom)** | **Transparent Fallback**: uses this group's custom rules. |
 | **`manual`** | Global | Any condition | **`manual` (global)** | Strictly enforces the Global manual rules and presets. All Happ profiles are ignored. |
 | **`manual`** | Custom | Any condition | **`manual` (custom)** | Strictly enforces this group's custom rules. All Happ profiles are ignored. |
-| **`subscription`** | any | Profile active and assets ready (`state == "ready"`) | **`happ`** | Strictly compiles and enforces the provider Happ profile. |
+| **`subscription`** | any | Active profile with rules and all referenced geo files present (the `state` string is not checked) | **`happ`** | Strictly compiles and enforces the provider Happ profile. |
 | **`subscription`** | any | Profile missing, inactive, or assets uncompiled | **`happ` (Safe LAN-only)** | **Fail-Safe Isolation**: Instead of exposing manual rules, installs a strict LAN-only bypass rule (`LAN -> direct`). Non-LAN traffic is contained to prevent leaks. |
 
 Editing a rule on a group page that still inherits Global automatically switches that group to a custom rule set (seeded from the stored override, if one exists, otherwise from Global). Switching back to Global with <kbd>g</kbd> keeps the custom rules on disk, so they can be restored later.
@@ -593,7 +593,7 @@ Permanently deletes a profile and its on-disk Geo sandbox.
 | **Profile displays `geo asset exceeds maximum size of 100 MB`** | Provider CDN is serving an oversized archive or corrupted file. | WhoisThat bounds asset downloads to 100 MiB to prevent disk DoS. Check asset contents. |
 | **Profile displays `downloaded file is HTML/JSON, not a binary .dat asset`** | Provider CDN returned a Cloudflare challenge, 502 HTML error, or JSON error payload with HTTP 200. | The engine rejected the non-binary payload. Wait for provider CDN recovery or press <kbd>Enter</kbd> to retry. |
 | **Rules do not take effect when connected** | Group mode is set to `manual`. | Press <kbd>m</kbd> in the Happ modal or Routing tab to switch the group mode to `auto` or `subscription`. |
-| **Cannot activate profile: `geoip.dat missing in ...`** | Asset directory was corrupted or deleted while daemon was stopped. | Selecting the profile with <kbd>Enter</kbd> triggers an automatic re-download and re-compilation. |
+| **Cannot activate profile: `geoip.dat missing in ...`** | Asset directory was corrupted or deleted while the daemon was stopped. | Activation validates the files first and fails. Refresh the subscription (<kbd>u</kbd>/<kbd>r</kbd>) or re-import the profile to download the assets again, then activate it. |
  
 ---
 

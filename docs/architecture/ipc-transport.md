@@ -90,9 +90,9 @@ The core continuously emits state updates to **all connected clients** without r
 ```
 Core Daemon                                All Clients
   │                                             │
-  ├────── traffic-stats {"proxy_down": ...} ───►│ (Periodic 1s ticks)
-  ├────── profile-updated {"test-result": 45} ─►│ (As latency tests finish)
-  ├────── tun-status-changed {"enabled": true} ─►│ (On mode toggle)
+  ├────── traffic-stats {"proxy_down": ...} ───►│ (Periodic 1s ticks while connected)
+  ├────── profile-updated {"profile": {...}} ──►│ (As latency tests finish)
+  ├────── tun-status-changed {"is_enabled": true} ─►│ (On mode toggle)
   │                                             │
 ```
 

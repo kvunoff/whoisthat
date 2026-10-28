@@ -11,7 +11,7 @@ When you enable TUN mode (by pressing <kbd>v</kbd> or running `whoisthat -mt`):
 1. **Virtual Network Interface**: The core daemon creates a TUN network device named `whoisthattun` (configurable in Settings).
 2. **Native Inbound**: Xray-core opens the TUN interface using its native high-performance TUN inbound driver.
 3. **Default Route Redirection**: The kernel installs a high-priority default route redirecting all IP packets into `whoisthattun`.
-4. **DNS Hijacking**: An `iptables` or `nftables` DNAT rule intercepts all outbound UDP/TCP queries destined for port 53, redirecting them through Xray's remote resolver.
+4. **DNS Hijacking**: An `iptables` or `nftables` DNAT rule intercepts all outbound UDP/TCP queries destined for port 53. In Happ DNS mode they go to the sink and Xray's resolver; in legacy mode they are redirected to the configured `dns-servers` through the physical gateway.
 
 ---
 
@@ -33,8 +33,8 @@ When running under file capabilities (`cap_net_admin,cap_net_raw,cap_setpcap=+ep
 
 ### 2. Root Mode (Fallback)
 If running under a dedicated root daemon:
-* The core launches Xray under a dedicated high UID range (e.g. `61001`).
-* Kernel policy rule `ip rule add uidrange 61001-61001 table 100` directs traffic to the physical gateway.
+* The core picks the first unused UID in the `61000–61999` range.
+* Kernel policy rule `ip rule add uidrange <uid>-<uid> table 100` directs that user's traffic to the physical gateway.
 
 ---
 
@@ -42,7 +42,7 @@ If running under a dedicated root daemon:
 
 The `dns-servers` array configured in `~/.config/whoisthat/config.json` (e.g., `["1.1.1.1", "8.8.8.8", "2606:4700:4700::1111"]`) serves several roles:
 
-1. **Profile Resolution**: When connecting to a proxy server whose address is a hostname (e.g. `de.vpn.com`), all DNS servers in the list are queried simultaneously via parallel UDP dials, and the fastest resolved IP is used for dialing.
+1. **Profile Resolution**: When connecting to a proxy server whose address is a hostname (e.g. `de.vpn.com`), the configured DNS servers are queried sequentially, A/AAAA answers are merged, and the resulting addresses are used for dialing (no parallel race or “fastest IP” selection).
 2. **Xray Direct Outbound**: Used as the internal resolver for `freedom` (direct bypass) traffic when the active Happ profile does not provide its own DNS section.
 3. **Legacy TUN DNS Hijacking**: For manual routing and Happ profiles without DNS, the first IPv4/IPv6 servers in the array are used as the DNAT destination for system-wide port 53 redirection. DNS routes are pinned to the physical gateway and masqueraded there, preserving the previous behaviour.
 4. **Happ DNS Override**: When the active Happ profile supplies DNS settings, they take precedence over `dns-servers` for TUN DNS. The configured servers remain only as a fallback when the profile provides no usable resolvers.
@@ -62,7 +62,7 @@ Happ profiles use reserved **sink addresses** instead of the configured resolver
 
 When the profile also enables FakeDNS, the `fakedns` server is placed before the real resolvers and `tun-in` sniffs fake addresses back into domains. This only happens with `GlobalProxy=true` and split mode `off`/`exclude`; proxy mode, `GlobalProxy=false`, and `include` leave FakeDNS off. The fake pools (`198.19.0.0/16`, `fc00::/18`) never overlap the TUN address or the DNS sink.
 
-In `include` split mode the hijack and `resolvectl` changes are disabled entirely: only explicitly launched apps use the tunnel, while the rest of the system keeps its physical resolver. This is a deliberate limitation — `systemd-resolved` lives outside the split slice and cannot be tunnelled per-app.
+In `include` split mode the **Happ** hijack and `resolvectl` changes are disabled: only explicitly launched apps use the tunnel, while the rest of the system keeps its physical resolver. This is a deliberate limitation — `systemd-resolved` lives outside the split slice and cannot be tunnelled per-app. The legacy resolver hijack (manual routing) is independent of the split mode and remains installed.
 
 ::: tip Manual mode is unchanged
 If no Happ profile with DNS is active, WhoisThat uses the legacy hijack to the configured resolver, including DNS routes through the physical gateway and masquerading. The sink addresses are only used by Happ DNS.
@@ -102,9 +102,9 @@ This guarantees that:
 
 ## Functional Capability Verification
 
-Rather than merely checking if the user is `root` or inspecting file flags, WhoisThat performs a **functional capability probe** before enabling TUN:
+Rather than merely checking if the user is `root` or inspecting file flags, the daemon performs a **functional capability probe** before enabling TUN:
 1. Creates a transient test adapter named `wt-capcheck`.
 2. Verifies `ioctl(TUNSETIFF)` succeeds.
 3. Immediately tears down the test adapter.
 
-If capabilities are missing (e.g. after a fresh compile), the TUI displays a one-time `pkexec` dialog to apply `setcap` without dropping you to a shell.
+If capabilities are missing (e.g. after a fresh compile), the TUI reports it and points to the `setcap` command; a `pkexec` prompt is offered when the daemon is spawned at startup, not on the TUN toggle itself.

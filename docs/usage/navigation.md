@@ -1,6 +1,6 @@
 # Navigation & Keybindings Cheat Sheet
 
-WhoisThat features a high-speed, keyboard-driven interface with full mouse support, vim-inspired motions, and instant modal switchers.
+WhoisThat features a high-speed, keyboard-driven interface with vim-inspired motions, instant modal switchers, and mouse support for lists, the top-bar actions and the Tab Switcher.
 
 ---
 
@@ -14,9 +14,9 @@ WhoisThat features a high-speed, keyboard-driven interface with full mouse suppo
 | <kbd>w</kbd> | — | Open compact **Tab Switcher** modal |
 | <kbd>j</kbd> | <kbd>↓</kbd> | Move cursor down |
 | <kbd>k</kbd> | <kbd>↑</kbd> | Move cursor up |
-| <kbd>Ctrl+D</kbd> / <kbd>Ctrl+U</kbd> | <kbd>PgDn</kbd> / <kbd>PgUp</kbd> | Page down / page up (fast scrolling) |
-| <kbd>g</kbd> | <kbd>Home</kbd> | Jump to first item in the active view |
-| <kbd>G</kbd> | <kbd>End</kbd> | Jump to last item in the active view |
+| <kbd>Ctrl+D</kbd> / <kbd>Ctrl+U</kbd> | <kbd>PgDn</kbd> / <kbd>PgUp</kbd> | Page down / page up (`Ctrl+D`/`Ctrl+U` in the Details and Logs panes, `PgDn`/`PgUp` in the profile tree) |
+| <kbd>g</kbd> | — | Jump to the first item in the active view |
+| <kbd>G</kbd> | — | Jump to the last item in the active view |
 | <kbd>/</kbd> | — | Open live search / filter bar (filter by name, protocol, host, address) |
 | <kbd>Esc</kbd> | — | Clear search, close modal popup, or return focus from Details to Tree |
 | <kbd>v</kbd> | — | Toggle between TUN mode (system-wide) and Proxy mode |
@@ -35,8 +35,8 @@ WhoisThat features a high-speed, keyboard-driven interface with full mouse suppo
 | <kbd>d</kbd> | Any View | Disconnect active VPN session |
 | <kbd>v</kbd> | Any View | Toggle between TUN mode (system-wide) and Proxy mode |
 | <kbd>t</kbd> | Profiles Tab | **Test Focused**: Test highlighted profile or subscription group |
-| <kbd>T</kbd> | Profiles Tab | **Test All**: Scan all profiles top-to-bottom with deduplication |
-| <kbd>C</kbd> | Any View | **Cancel Tests**: Abort in-flight latency scans and drop queued tests |
+| <kbd>T</kbd> | Profiles Tab | **Test All**: queue every profile in the tree (deduplicated by group/profile ID) |
+| <kbd>C</kbd> | Any View | **Cancel Tests**: drop queued tests; a sample already in flight finishes or times out |
 
 ---
 
@@ -67,10 +67,10 @@ WhoisThat features a high-speed, keyboard-driven interface with full mouse suppo
 | :---: | :--- | :--- |
 | <kbd>h</kbd> / <kbd>l</kbd> / <kbd>←</kbd> / <kbd>→</kbd> | Routing Tab | Switch pages: Global rules and per-group routing |
 | <kbd>g</kbd> / <kbd>G</kbd> | Group Page | Toggle between Global and the group's custom rules |
-| <kbd>H</kbd> | Routing Tab | Open **Happ Routing Profiles** modal (view, activate, deactivate <kbd>o</kbd>, delete <kbd>d</kbd>/<kbd>x</kbd>) |
+| <kbd>H</kbd> | Routing Tab | Open **Happ Routing Profiles** modal (<kbd>Enter</kbd> activate, <kbd>o</kbd> deactivate, <kbd>d</kbd>/<kbd>x</kbd> delete, <kbd>m</kbd> cycle group routing mode) |
 | <kbd>m</kbd> | Routing Tab | Cycle group routing mode (`auto` → `manual` → `subscription` → `auto`) |
 | <kbd>i</kbd> | Routing Tab | Import Happ routing profile link (`happ://routing/...`) from clipboard |
-| <kbd>p</kbd> / <kbd>P</kbd> | Routing Tab | Open **Presets Catalog** (Bypass RU/LAN, Block Ads, Media, Telegram, AI, Socials) |
+| <kbd>p</kbd> / <kbd>P</kbd> | Routing Tab | Open the **Presets Catalog** (11 presets: Bypass Russia/LAN/China, Block Ads, Media, Telegram, AI, Socials, torrent block/direct, Steam) |
 | <kbd>a</kbd> | Routing Tab | Add new manual routing rule |
 | <kbd>Space</kbd> | Rule Item | **Toggle Rule**: Enable/disable rule with instant live hot-reload |
 | <kbd>e</kbd> / <kbd>Enter</kbd> | Rule Item | Edit selected rule parameters |
@@ -86,16 +86,16 @@ WhoisThat features a high-speed, keyboard-driven interface with full mouse suppo
 | <kbd>1</kbd> | **Profiles** | Tree navigation, details panel, latency indicators |
 | <kbd>2</kbd> | **Routing** | Rule editor, presets catalog, Happ profiles modal |
 | <kbd>3</kbd> | **Traffic** | Real-time Braille bandwidth monitor (RX green, TX red) |
-| <kbd>4</kbd> | **Logs** | Live core & TUI log tail with level filter (<kbd>f</kbd>) |
-| <kbd>5</kbd> | **Settings** | Configuration editor for themes, TUN, HWID, ports |
+| <kbd>4</kbd> | **Logs** | Live core log tail with level filter (<kbd>f</kbd>) |
+| <kbd>5</kbd> | **Settings** | Configuration editor for themes, autostart, TUN name, kill-switch, split tunnel, logging, latency tests, HWID and User-Agent |
 
 ---
 
 ## Full Mouse Navigation
 
-* **Click Profile / Group**: Selects and highlights item.
+* **Click Profile / Group**: Selects and highlights the item.
 * **Double Click Profile**: Connects immediately.
-* **Double Click Group Header**: Folds or unfolds the group tree.
-* **Bottom Status Bar Click**: Clicking `TUN` toggles TUN mode on/off.
-* **Header Tabs Click**: Click tab headers to switch between views.
-* **Popups & Dialogs**: Click buttons (<kbd>Cancel</kbd>, <kbd>Confirm</kbd>) or form fields to focus.
+* **Double Click / Click Group Header**: Folds or unfolds the group tree.
+* **Bottom Status Bar**: Clicking the `TUN`/mode area toggles TUN mode on or off.
+* **Top Bar Right Side**: Opens the Tab Switcher; the far-right help and quit areas open Help or exit.
+* **Tab Switcher / Presets Modals**: Clickable list items. Other form popups are keyboard-only (Tab to move between fields).
