@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	lumberjack "gopkg.in/natefinch/lumberjack.v2"
 	"log"
@@ -50,9 +51,29 @@ func main() {
 	logger.SetLevel(os.Getenv("WHOISTHAT_LOG_LEVEL"))
 	logger.Info("whoisthat-core starting")
 
+	// A second daemon must not race the first one for the IPC socket, the TUN
+	// device and the firewall. The lock is held until the process exits.
+	held, err := acquireInstanceLock()
+	if err != nil {
+		// The runtime dir may be unavailable; the socket probe below still
+		// keeps us from stealing a live core's socket.
+		logger.Warnf("instance lock unavailable: %v", err)
+	} else if !held {
+		logger.Info("another whoisthat-core is already running; exiting")
+		return // exit 0: a non-zero code would loop under systemd Restart=on-failure
+	}
+
 	stop_sig := make(chan bool, 1)
 	utils.RaiseAmbientCaps()
 	appconfig.LoadConfig()
+
+	// Cores from older builds hold no flock. Refuse to start while their
+	// socket is live: this check runs before the reconcile so we never tear
+	// down rules that a running daemon owns.
+	if utils.SocketIsLive(appconfig.SocketPath()) {
+		logger.Infof("another whoisthat-core is already serving %s; exiting", appconfig.SocketPath())
+		return
+	}
 
 	// Self-heal: if no other core is already listening, tear down any leftover
 	// firewall/routing rules from a previous core that exited without cleaning
@@ -148,15 +169,39 @@ func main() {
 	select {}
 }
 
+// instanceLock stays open for the lifetime of the process. Closing it (or
+// exiting) releases the flock so the next core can start.
+var instanceLock *os.File
+
+// acquireInstanceLock returns (false, nil) when another core already holds the
+// lock, and a non-nil error only for real I/O failures.
+func acquireInstanceLock() (bool, error) {
+	dir := utils.RuntimeDir()
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return false, err
+	}
+	f, err := os.OpenFile(filepath.Join(dir, "core.lock"), os.O_CREATE|os.O_RDWR, 0600)
+	if err != nil {
+		return false, err
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		f.Close()
+		if errors.Is(err, syscall.EWOULDBLOCK) {
+			return false, nil
+		}
+		return false, err
+	}
+	instanceLock = f
+	return true, nil
+}
+
 // coreAlreadyRunning reports whether another whoisthat-core is already
-// listening on the IPC endpoint. Used to guard startup reconcile: we must not
-// tear down firewall/routing rules owned by a live core. Probes the UDS (the
-// default transport) and, if TCP is enabled, the TCP port too — a hit on
-// either means a live core owns the rules.
+// listening on the IPC endpoint. Probes the UDS (the default transport) and,
+// if TCP is enabled, the TCP port too — a hit on either means a live core owns
+// the firewall/routing rules.
 func coreAlreadyRunning() bool {
 	cfg := appconfig.GetConfig()
-	if conn, err := net.DialTimeout("unix", appconfig.SocketPath(), 300*time.Millisecond); err == nil {
-		conn.Close()
+	if utils.SocketIsLive(appconfig.SocketPath()) {
 		return true
 	}
 	if cfg.TCPEnabled {

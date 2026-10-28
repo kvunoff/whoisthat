@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use log::error;
 use serde::Serialize;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -86,6 +88,43 @@ impl CoreReadHalf {
 
         Ok(msg)
     }
+
+    /// Wait for the first frame the predicate accepts, skipping unrelated
+    /// broadcasts (preflight warns, traffic stats, …).
+    ///
+    /// NOT cancel-safe: a timeout can abort mid-frame and desync the stream, so
+    /// the caller must drop the connection after an error. Intended for one-shot
+    /// CLI/deeplink connections; the live TUI read loop reads frames itself.
+    pub async fn recv_until<F>(
+        &mut self,
+        timeout: Duration,
+        mut matches: F,
+    ) -> std::io::Result<TcpMessage>
+    where
+        F: FnMut(&TcpMessage) -> bool,
+    {
+        let deadline = tokio::time::Instant::now() + timeout;
+        loop {
+            let left = deadline.saturating_duration_since(tokio::time::Instant::now());
+            if left.is_zero() {
+                return Err(wait_timed_out());
+            }
+            let msg = tokio::time::timeout(left, self.recv())
+                .await
+                .map_err(|_| wait_timed_out())??;
+            if matches(&msg) {
+                return Ok(msg);
+            }
+            log::debug!("ignoring IPC frame '{}' while waiting", msg.msg);
+        }
+    }
+}
+
+fn wait_timed_out() -> std::io::Error {
+    std::io::Error::new(
+        std::io::ErrorKind::TimedOut,
+        "timed out waiting for IPC message",
+    )
 }
 
 pub struct CoreWriteHalf {
@@ -274,5 +313,63 @@ impl CoreConnection {
         self.stream.write_all(&json).await?;
         self.stream.flush().await?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn recv_until_skips_unrelated_frames() {
+        let (client, server) = UnixStream::pair().unwrap();
+        let (mut read, _) = CoreConnection {
+            stream: Stream::Unix(client),
+        }
+        .into_split();
+        let (_, mut write) = CoreConnection {
+            stream: Stream::Unix(server),
+        }
+        .into_split();
+
+        write
+            .send("warn", &serde_json::json!({"key": "x", "content": "y"}))
+            .await
+            .unwrap();
+        write
+            .send("traffic-stats", &serde_json::json!({}))
+            .await
+            .unwrap();
+        write
+            .send(
+                "application-state",
+                &serde_json::json!({
+                    "groups": [],
+                    "connection-status": {"connection": "disconnected"}
+                }),
+            )
+            .await
+            .unwrap();
+
+        let msg = read
+            .recv_until(Duration::from_secs(1), |m| m.msg == "application-state")
+            .await
+            .unwrap();
+        assert_eq!(msg.msg, "application-state");
+    }
+
+    #[tokio::test]
+    async fn recv_until_times_out_without_match() {
+        let (client, _server) = UnixStream::pair().unwrap();
+        let (mut read, _) = CoreConnection {
+            stream: Stream::Unix(client),
+        }
+        .into_split();
+
+        let err = read
+            .recv_until(Duration::from_millis(20), |m| m.msg == "application-state")
+            .await
+            .unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::TimedOut);
     }
 }

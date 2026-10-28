@@ -1067,13 +1067,11 @@ pub async fn fetch_core_version_ipc() -> Option<(String, u32)> {
         .send("get-application-state", &GetApplicationStateData {})
         .await
         .ok()?;
-    let msg = tokio::time::timeout(Duration::from_secs(2), read_half.recv())
+    // Preflight warns arrive before the state reply; wait for the right frame.
+    let msg = read_half
+        .recv_until(Duration::from_secs(2), |m| m.msg == "application-state")
         .await
-        .ok()?
         .ok()?;
-    if msg.msg != "application-state" {
-        return None;
-    }
     let state: ApplicationState = serde_json::from_value(msg.data).ok()?;
     if state.core_version.is_empty() {
         return None;

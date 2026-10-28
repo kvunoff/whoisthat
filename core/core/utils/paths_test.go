@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"net"
 	"path/filepath"
 	"testing"
 )
@@ -38,5 +39,33 @@ func TestXDGAbsolutePathsOnly(t *testing.T) {
 		if got == "relative/path" || filepath.IsAbs(got) == false {
 			t.Errorf("%s() = %q, want an absolute fallback", name, got)
 		}
+	}
+}
+
+func TestSocketIsLive(t *testing.T) {
+	dir := t.TempDir()
+	sock := filepath.Join(dir, "core.sock")
+
+	if SocketIsLive(sock) {
+		t.Fatal("missing socket reported as live")
+	}
+
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer ln.Close()
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			conn.Close()
+		}
+	}()
+
+	if !SocketIsLive(sock) {
+		t.Fatal("live socket reported as dead")
 	}
 }

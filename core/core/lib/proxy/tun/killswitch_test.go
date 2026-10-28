@@ -188,3 +188,23 @@ func TestKillSwitchDeduplicatesIPs(t *testing.T) {
 		t.Errorf("expected the proxy IP once, got %d:\n%s", got, script)
 	}
 }
+
+// Fail closed with no server IPs: only LAN/DNS/TUN/direct-mark stay allowed.
+func TestKillSwitchNftWithoutProxyIPsStillFailsClosed(t *testing.T) {
+	script := buildKillSwitchNftScript(nil, "whoisthattun", []string{"1.1.1.1"})
+
+	for _, want := range []string{
+		"oif lo accept",
+		"ip daddr 10.0.0.0/8 accept",
+		"ip daddr 1.1.1.1 accept",
+		`oifname "whoisthattun" accept`,
+		"meta mark 1 accept",
+	} {
+		if !strings.Contains(script, want) {
+			t.Errorf("nft script missing %q\n---\n%s", want, script)
+		}
+	}
+	if !strings.HasSuffix(strings.TrimSpace(script), "nft add rule inet whoisthat_ks output drop") {
+		t.Errorf("nft script must still end with the drop rule:\n%s", script)
+	}
+}

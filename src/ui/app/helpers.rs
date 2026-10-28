@@ -75,6 +75,50 @@ pub fn format_expiry(unix_ts: i64) -> String {
     }
 }
 
+/// Hide credentials in a provider URL before it reaches the screen: userinfo
+/// and the whole query string are the usual token carriers.
+///
+/// shortcut: only query and userinfo are masked; a token embedded in the path
+/// stays visible. Extend if a provider starts doing that.
+pub fn redact_url(url: &str) -> String {
+    let (base, has_query) = match url.split_once('?') {
+        Some((b, _)) => (b, true),
+        None => (url, false),
+    };
+    let base = match base.split_once("://") {
+        Some((scheme, rest)) => {
+            let authority_end = rest.find('/').unwrap_or(rest.len());
+            let authority = &rest[..authority_end];
+            let path = &rest[authority_end..];
+            let host = authority
+                .rsplit_once('@')
+                .map(|(_, h)| h)
+                .unwrap_or(authority);
+            format!("{scheme}://{host}{path}")
+        }
+        None => base.to_string(),
+    };
+    if has_query {
+        format!("{base}?…")
+    } else {
+        base
+    }
+}
+
+/// Provider-controlled labels end up in the terminal verbatim. Strip control
+/// characters (ANSI escapes, CR/LF, tabs) and cap the length so a hostile
+/// subscription cannot clear the screen or wrap the layout.
+///
+/// shortcut: strips all control chars, including tabs/newlines that a provider
+/// might use for formatting; names are single-line labels.
+pub fn clean_label(s: &str) -> String {
+    const MAX_LABEL: usize = 200;
+    s.chars()
+        .filter(|c| !c.is_control())
+        .take(MAX_LABEL)
+        .collect()
+}
+
 #[allow(dead_code)]
 pub fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
     let popup_layout = Layout::vertical([
@@ -132,6 +176,22 @@ mod tests {
         assert_eq!(r.height, 16);
         assert_eq!(r.x, 40);
         assert_eq!(r.y, 17);
+    }
+
+    #[test]
+    fn test_redact_url_hides_tokens() {
+        assert_eq!(
+            redact_url("https://example.com/sub?token=abc&id=1"),
+            "https://example.com/sub?…"
+        );
+        assert_eq!(
+            redact_url("https://user:pass@example.com/sub"),
+            "https://example.com/sub"
+        );
+        assert_eq!(
+            redact_url("https://example.com/sub"),
+            "https://example.com/sub"
+        );
     }
 
     #[test]
