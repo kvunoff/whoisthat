@@ -6,6 +6,8 @@ use super::connection::{CoreConnection, CoreReadHalf, Endpoint};
 use super::protocol::*;
 use super::CoreClient;
 
+use crate::core_spawn::spawn_core;
+
 #[derive(Debug, Clone)]
 pub enum CoreEvent {
     ApplicationState(Box<ApplicationState>),
@@ -170,41 +172,6 @@ pub fn spawn_read_loop(
     });
 
     rx
-}
-
-fn spawn_core(log_level: &str) -> std::io::Result<()> {
-    let bin = find_core_binary();
-    let mut cmd = std::process::Command::new(&bin);
-    cmd.env("WHOISTHAT_LOG_LEVEL", log_level)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null());
-    // Run in a separate process group so we don't get killed if the TUI dies.
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        cmd.process_group(0);
-    }
-    cmd.spawn()?;
-    log::info!("Spawned whoisthat-core from {}", bin);
-    Ok(())
-}
-
-fn find_core_binary() -> String {
-    let candidates = [
-        "whoisthat-core",
-        "./whoisthat-core",
-        "./core/core/whoisthat-core",
-        "./bin/whoisthat-core",
-        "/usr/bin/whoisthat-core",
-        "/usr/local/bin/whoisthat-core",
-    ];
-    for c in candidates {
-        if std::path::Path::new(c).exists() {
-            return c.to_string();
-        }
-    }
-    "whoisthat-core".to_string()
 }
 
 pub(crate) fn dispatch(msg: TcpMessage) -> CoreEvent {
