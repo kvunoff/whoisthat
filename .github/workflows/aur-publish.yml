@@ -25,6 +25,12 @@ jobs:
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "Tag: ${RAW}  ->  Version: ${VERSION}"
 
+      # --- 2a. Verify the tag against the version files ---------------------
+      # A tag must never publish a package whose Cargo.toml / PKGBUILD / docs
+      # disagree with it. The script also checks core/protocol/Xray pins.
+      - name: Verify version files match the tag
+        run: ./scripts/check-versions.sh --tag "${GITHUB_REF_NAME}"
+
       # --- 2b. Compute source checksum --------------------------------------
       # AUR packages must not use sha256sums=('SKIP'): pin the actual archive
       # digest so users can detect a tampered/retagged release tarball.
@@ -146,6 +152,9 @@ jobs:
             done
             for dep in "${optdepends[@]}"; do
               echo -e "\toptdepends = ${dep}"
+            done
+            for opt in "${options[@]}"; do
+              echo -e "\toptions = ${opt}"
             done
 
             echo -e "\tsource = ${pkgname}-${pkgver}.tar.gz::https://github.com/kvunoff/${pkgname}/archive/refs/tags/v${pkgver}.tar.gz"

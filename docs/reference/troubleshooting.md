@@ -25,7 +25,7 @@ Encountering an issue? Consult this troubleshooting matrix and frequently asked 
 ::: tip First Step When Debugging Any Issue
 Before digging into source code, always tail the two real-time log files side-by-side in a separate terminal:
 ```bash
-tail -f ~/.config/whoisthat/core.log whoisthat.log
+tail -f ~/.config/whoisthat/core.log ~/.local/share/whoisthat/tui.log
 ```
 The core forwards exact dial errors, DNS lookup failures, and firewall command exit codes directly to `core.log`.
 :::

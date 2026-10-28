@@ -101,7 +101,7 @@ whoisthat/
 
 | Log File | Produced by | Lifecycle & Rotation | Default Severity |
 | :--- | :--- | :--- | :---: |
-| `whoisthat.log` (in CWD) | Rust TUI | File only, never prints to terminal | `warn` |
+| `/tmp/whoisthat-tui.log` | Rust TUI | Emergency fallback if the data directory is read-only | `warn` |
 | `~/.config/whoisthat/core.log` | Go Core | Lumberjack rotation (20 MB max, 1 backup) | `warn` |
 | `/tmp/whoisthat-core.log` | Go Core | Emergency fallback if config directory is read-only | `warn` |
 | `~/.local/share/whoisthat/tui.log` | Rust TUI | Active when **TUI Log** setting is enabled | Configured level |

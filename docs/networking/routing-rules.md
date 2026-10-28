@@ -46,8 +46,8 @@ flowchart TD
 
 ### 1. Ingress & Interception (Layer 3 vs Layer 4)
 Traffic enters the routing engine through one of two mechanisms:
-* **Layer 3 (TUN Virtual Network Interface)**: Operating at the IP packet level, a virtual TUN device (such as `whoisthat0`) captures all operating system IP datagrams. This captures every protocol (TCP, UDP, ICMP) system-wide without requiring application-level proxy configuration.
-* **Layer 4 (Loopback Proxy Inbounds)**: Local SOCKS5 (`127.0.0.1:10808`) and HTTP (`127.0.0.1:10809`) listeners accept proxy connections explicitly forwarded by browsers or command-line utilities.
+* **Layer 3 (TUN Virtual Network Interface)**: Operating at the IP packet level, a virtual TUN device (such as `whoisthattun`, configurable in Settings) captures all operating system IP datagrams. This captures every protocol (TCP, UDP, ICMP) system-wide without requiring application-level proxy configuration.
+* **Layer 4 (Loopback Proxy Inbounds)**: Local SOCKS5 (`127.0.0.1:3090`) and HTTP (`127.0.0.1:3091`) listeners accept proxy connections explicitly forwarded by browsers or command-line utilities.
 
 ### 2. Deep Packet Inspection & Domain Sniffing
 In modern Content Delivery Networks (CDNs) and Anycast architectures (Cloudflare, Fastly, Akamai), tens of thousands of completely unrelated websites share the exact same IP address. If a routing engine only matched destination IP addresses, it would be impossible to split traffic (e.g. routing `blocked-site.org` through the proxy while sending `banking-site.ru` directly, when both resolve to the same Cloudflare IP).
@@ -55,7 +55,7 @@ In modern Content Delivery Networks (CDNs) and Anycast architectures (Cloudflare
 **Domain Sniffing** solves this dilemma by inspecting the initial handshake payload of a connection:
 * **TLS Connections**: The engine peeks into the client's `ClientHello` packet and extracts the **Server Name Indication (SNI)** extension.
 * **HTTP Connections**: The engine reads the initial HTTP request line and extracts the `Host:` header.
-* **QUIC / HTTP/3**: The engine inspects the initial QUIC crypto frames to identify the server name.
+* **QUIC / HTTP/3**: Not inspected — `quic` is intentionally absent from the TUN sniffing `destOverride` list (see [Troubleshooting](/reference/troubleshooting#why-does-http-3-quic-sometimes-bypass-domain-routing)). HTTP/3 traffic is therefore routed by destination IP, not by domain.
 
 By configuring `sniffing.routeOnly = false`, the routing engine replaces the destination IP address with the extracted domain name in the connection context, allowing domain-level rules to evaluate accurately even when the operating system resolved the address locally.
 

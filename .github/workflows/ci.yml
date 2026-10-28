@@ -66,7 +66,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: shellcheck
-        run: shellcheck -S error install.sh
+        run: shellcheck -S error install.sh scripts/check-versions.sh
+
+  versions:
+    name: Version consistency
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check version mirrors
+        run: ./scripts/check-versions.sh
 
   docs:
     name: Docs build
