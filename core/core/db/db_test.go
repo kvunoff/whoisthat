@@ -559,3 +559,61 @@ func TestLoadOrCreateKeyKeepsPreferredWhenItDecryptsDatabase(t *testing.T) {
 		t.Error("legacy key should be removed when the preferred key is valid")
 	}
 }
+
+// Duplicate URIs inside one subscription must keep per-occurrence ids across
+// refreshes, and their latency results must survive. The old "\x00dup" marker
+// was not stored, so the second duplicate got a new id (and lost its test
+// result) on every refresh.
+func TestUpdateGroupAndProfilesKeepsDuplicateURIsStable(t *testing.T) {
+	db := newTestDB(t)
+	if err := db.SaveGroup(structs.Group{Id: 1, Name: "dups"}); err != nil {
+		t.Fatalf("SaveGroup: %v", err)
+	}
+
+	feed := []structs.DBAddProfileData{
+		{Uri: "vless://dup@example.com:443", GroupId: 1, Name: "dup-1"},
+		{Uri: "vless://dup@example.com:443", GroupId: 1, Name: "dup-2"},
+		{Uri: "vless://other@example.com:443", GroupId: 1, Name: "other"},
+	}
+
+	first, err := db.UpdateGroupAndProfiles(1, feed, 0)
+	if err != nil {
+		t.Fatalf("first refresh: %v", err)
+	}
+	if len(first) != 3 {
+		t.Fatalf("first refresh returned %d profiles, want 3", len(first))
+	}
+	firstIDs := []int{first[0].Id, first[1].Id, first[2].Id}
+	if firstIDs[0] == firstIDs[1] {
+		t.Fatalf("duplicate URIs share id %d", firstIDs[0])
+	}
+
+	// Seed a latency result on the second duplicate.
+	dup2, err := db.GetProfile(1, firstIDs[1])
+	if err != nil {
+		t.Fatalf("GetProfile: %v", err)
+	}
+	dup2.TestResult = 87
+	dup2.TestedAt = 123456
+	dup2.LossPct = 4
+	dup2.JitterMs = 9
+	if err := db.writeEncryptedJSON(db.GetProfileFilePath(1, firstIDs[1]), dup2); err != nil {
+		t.Fatalf("write latency: %v", err)
+	}
+
+	second, err := db.UpdateGroupAndProfiles(1, feed, 0)
+	if err != nil {
+		t.Fatalf("second refresh: %v", err)
+	}
+	if len(second) != 3 {
+		t.Fatalf("second refresh returned %d profiles, want 3", len(second))
+	}
+	for i, want := range firstIDs {
+		if second[i].Id != want {
+			t.Errorf("occurrence %d id = %d, want stable id %d", i, second[i].Id, want)
+		}
+	}
+	if got := second[1]; got.TestResult != 87 || got.TestedAt != 123456 || got.LossPct != 4 || got.JitterMs != 9 {
+		t.Errorf("duplicate latency lost: %+v", got)
+	}
+}

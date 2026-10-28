@@ -29,14 +29,15 @@ func (db *DB) UpdateGroupAndProfiles(group_id int, profiles []structs.DBAddProfi
 
 	profiles_added := []structs.Profile{}
 	byID := make(map[int]structs.Profile, len(group.Profiles))
-	byURI := make(map[string]int, len(group.Profiles))
+	// byURI keeps every known id per URI in ProfileOrder, so duplicate URIs
+	// inside one subscription get a stable id per occurrence instead of a new
+	// id on every refresh.
+	byURI := make(map[string][]int, len(group.Profiles))
 	lastID := group_config.LastId
 	for _, p := range group.Profiles {
 		byID[p.Id] = p
 		uri := normalizeProfileURI(p.Uri)
-		if _, exists := byURI[uri]; !exists {
-			byURI[uri] = p.Id
-		}
+		byURI[uri] = append(byURI[uri], p.Id)
 		if p.Id > lastID {
 			lastID = p.Id
 		}
@@ -59,23 +60,29 @@ func (db *DB) UpdateGroupAndProfiles(group_id int, profiles []structs.DBAddProfi
 		newOrder = append(newOrder, keep_profile_id)
 	}
 
-	seenURIs := make(map[string]bool, len(profiles))
+	// nextID indexes into byURI[uri]: occurrences of the same URI in the new
+	// subscription consume old ids in order, so the n-th duplicate keeps the
+	// n-th old id across refreshes.
+	nextID := make(map[string]int, len(profiles))
 	for _, data := range profiles {
 		uriKey := normalizeProfileURI(data.Uri)
 		if keep_profile_id != 0 && uriKey == keepURI {
 			continue
 		}
-		if seenURIs[uriKey] {
-			// Duplicate URI inside one subscription: keep both entries but
-			// give the duplicate a fresh ID so neither overwrites the other.
-			uriKey = uriKey + "\x00dup"
-		}
-		seenURIs[uriKey] = true
 
 		id := 0
-		if existingID, ok := byURI[uriKey]; ok && !usedIDs[existingID] {
-			id = existingID
-		} else {
+		for id == 0 {
+			candidates := byURI[uriKey]
+			idx := nextID[uriKey]
+			if idx >= len(candidates) {
+				break
+			}
+			nextID[uriKey] = idx + 1
+			if !usedIDs[candidates[idx]] {
+				id = candidates[idx]
+			}
+		}
+		if id == 0 {
 			lastID++
 			id = lastID
 		}
