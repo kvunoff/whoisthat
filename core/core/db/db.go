@@ -1,6 +1,7 @@
 package db
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"sync"
+	"time"
 	"whoisthat-core/lib/crypto"
 	"whoisthat-core/lib/logger"
 	"whoisthat-core/structs"
@@ -39,56 +41,138 @@ func (db *DB) loadDBConfig() (structs.DBConfig, error) {
 const encryptionKeySize = 32
 
 func (db *DB) loadOrCreateKey() {
-	keyPath := db.GetKeyFilePath()
-	legacyPath := filepath.Join(db.Path, ".key")
+	preferred := db.GetKeyFilePath()
+	legacy := filepath.Join(db.Path, ".key")
 
-	data, err := os.ReadFile(keyPath)
-	if err == nil {
-		db.key = validateKey(keyPath, data)
-		_ = os.Chmod(keyPath, 0600)
-		return
-	}
-	if !os.IsNotExist(err) {
-		logger.Fatal("failed to read key file " + keyPath + ": " + err.Error())
-	}
+	prefKey, prefValid, prefExists := readKeyFile(preferred)
+	legacyKey, legacyValid, legacyExists := readKeyFile(legacy)
 
-	// Migrate the legacy co-located key on first start after the upgrade.
-	// We intentionally keep the old file in place so a downgrade still works;
-	// it can be removed in a later release.
-	if keyPath != legacyPath {
-		legacy, legacyErr := os.ReadFile(legacyPath)
-		if legacyErr == nil {
-			db.key = validateKey(legacyPath, legacy)
-			if writeErr := utils.AtomicWriteFile(keyPath, legacy, 0600); writeErr != nil {
-				logger.Fatal("failed to migrate key file to " + keyPath + ": " + writeErr.Error())
-			}
-			logger.Infof("db: migrated encryption key from %s to %s", legacyPath, keyPath)
+	// Legacy per-database layout (tests, custom DB paths): the two paths are
+	// the same file, so there is no migration to perform.
+	if preferred == legacy {
+		if prefValid {
+			db.key = prefKey
+			_ = os.Chmod(preferred, 0600)
 			return
 		}
-		if !os.IsNotExist(legacyErr) {
-			logger.Fatal("failed to read legacy key file " + legacyPath + ": " + legacyErr.Error())
+		if prefExists {
+			logger.Fatal("encryption key " + preferred + " is invalid; refusing to overwrite it")
 		}
+		db.generateKey(preferred)
+		return
 	}
 
+	switch {
+	case prefValid && legacyValid:
+		if bytes.Equal(prefKey, legacyKey) {
+			db.key = prefKey
+			return
+		}
+		// Both files exist but disagree. This happens after a failed migration
+		// or a stale key created by an older build. Pick the key that can
+		// actually decrypt the existing database instead of silently showing
+		// an empty profile list.
+		prefMatches, checked := db.keyMatchesDatabase(prefKey)
+		if prefMatches {
+			db.key = prefKey
+			_ = os.Chmod(preferred, 0600)
+			return
+		}
+		legacyMatches, _ := db.keyMatchesDatabase(legacyKey)
+		if legacyMatches {
+			db.adoptLegacyKey(preferred, prefKey, legacyKey)
+			db.key = legacyKey
+			return
+		}
+		if checked {
+			logger.Warnf("db: neither %s nor %s decrypts the existing database; keeping %s", preferred, legacy, preferred)
+		} else {
+			logger.Warnf("db: %s and %s differ but no encrypted database was found; keeping %s", preferred, legacy, preferred)
+		}
+		db.key = prefKey
+
+	case prefValid:
+		db.key = prefKey
+		_ = os.Chmod(preferred, 0600)
+
+	case legacyValid:
+		// First start after the key moved out of the DB directory.
+		if err := utils.AtomicWriteFile(preferred, legacyKey, 0600); err != nil {
+			logger.Fatal("failed to migrate key file to " + preferred + ": " + err.Error())
+		}
+		logger.Infof("db: migrated encryption key from %s to %s", legacy, preferred)
+		db.key = legacyKey
+
+	case prefExists || legacyExists:
+		logger.Fatal("encryption key is invalid; refusing to overwrite it. " +
+			"Restore the key from a backup or remove the database and key together.")
+
+	default:
+		db.generateKey(preferred)
+	}
+}
+
+// readKeyFile returns the key bytes, whether the length is valid, and whether
+// the file exists at all. Unreadable files are fatal: silently generating a
+// replacement would make the existing database permanently unreadable.
+func readKeyFile(path string) ([]byte, bool, bool) {
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return nil, false, false
+	}
+	if err != nil {
+		logger.Fatal("failed to read key file " + path + ": " + err.Error())
+	}
+	if len(data) != encryptionKeySize {
+		logger.Warnf("db: key file %s has invalid length %d (expected %d)", path, len(data), encryptionKeySize)
+		return data, false, true
+	}
+	return data, true, true
+}
+
+// keyMatchesDatabase reports whether key decrypts an existing encrypted DB
+// file, and whether any encrypted file was available to test.
+func (db *DB) keyMatchesDatabase(key []byte) (bool, bool) {
+	checked := false
+	for _, path := range []string{db.GetDBConfigFile(), db.GetRoutingFilePath()} {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		var wrapper struct {
+			Ciphertext string `json:"ciphertext"`
+		}
+		if json.Unmarshal(data, &wrapper) != nil || wrapper.Ciphertext == "" {
+			continue
+		}
+		checked = true
+		if _, err := crypto.DecryptBase64(wrapper.Ciphertext, key); err == nil {
+			return true, true
+		}
+	}
+	return false, checked
+}
+
+func (db *DB) adoptLegacyKey(preferred string, staleKey, legacyKey []byte) {
+	backup := preferred + ".stale-" + time.Now().Format("20060102-150405")
+	if len(staleKey) > 0 {
+		_ = os.WriteFile(backup, staleKey, 0600)
+	}
+	if err := utils.AtomicWriteFile(preferred, legacyKey, 0600); err != nil {
+		logger.Fatal("failed to restore legacy key to " + preferred + ": " + err.Error())
+	}
+	logger.Warnf("db: %s did not decrypt the database; restored the legacy key (stale key saved to %s)", preferred, backup)
+}
+
+func (db *DB) generateKey(path string) {
 	key, err := crypto.GenerateKey()
 	if err != nil {
 		logger.Fatal("failed to generate encryption key: " + err.Error())
 	}
-	if err := utils.AtomicWriteFile(keyPath, key, 0600); err != nil {
-		logger.Fatal("failed to write key file " + keyPath + ": " + err.Error())
+	if err := utils.AtomicWriteFile(path, key, 0600); err != nil {
+		logger.Fatal("failed to write key file " + path + ": " + err.Error())
 	}
 	db.key = key
-}
-
-// validateKey refuses to silently replace a damaged key: doing so would make
-// the existing encrypted database permanently unreadable.
-func validateKey(path string, data []byte) []byte {
-	if len(data) != encryptionKeySize {
-		logger.Fatal("encryption key " + path + " has invalid length " +
-			strconv.Itoa(len(data)) + " (expected 32 bytes); refusing to overwrite it. " +
-			"Restore the key from a backup or remove the database and key together.")
-	}
-	return data
 }
 
 func (db *DB) GetKeyFilePath() string {
