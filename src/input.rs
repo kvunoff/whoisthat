@@ -1,8 +1,11 @@
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 
+use tokio::sync::mpsc;
+
 use crate::config;
 use crate::core_client::protocol::SetHwidData;
 use crate::core_client::CoreClient;
+use crate::core_events::refresh_public_ip;
 use crate::core_spawn::find_core_binary;
 use crate::event_loop::AppEvent;
 use crate::keymap::{resolve_action, AppAction, KeyContext};
@@ -22,6 +25,7 @@ pub(crate) async fn handle_input(
     ev: AppEvent,
     cfg: &mut config::AppConfig,
     logger: &'static FileLogger,
+    ip_tx: &mpsc::UnboundedSender<AppEvent>,
 ) -> bool {
     match ev {
         AppEvent::Tick => {
@@ -50,7 +54,7 @@ pub(crate) async fn handle_input(
                     return handle_popup_input(app, client, key).await;
                 }
 
-                return handle_normal_input(app, client, key, cfg, logger).await;
+                return handle_normal_input(app, client, key, cfg, logger, ip_tx).await;
             }
             Event::Mouse(mouse) => {
                 return handle_mouse_input(app, client, mouse, cfg, logger).await;
@@ -67,6 +71,7 @@ async fn handle_normal_input(
     key: event::KeyEvent,
     cfg: &mut config::AppConfig,
     logger: &'static FileLogger,
+    ip_tx: &mpsc::UnboundedSender<AppEvent>,
 ) -> bool {
     app.clear_msg();
 
@@ -778,6 +783,10 @@ async fn handle_normal_input(
                     if !app.show_ip {
                         app.public_ip = String::new();
                         app.public_ipv6 = String::new();
+                    } else {
+                        // The periodic loop only exists when Show IP was on at
+                        // startup; fetch once immediately after enabling it.
+                        refresh_public_ip(ip_tx.clone(), std::time::Duration::ZERO);
                     }
                     config::save_config(cfg);
                 }

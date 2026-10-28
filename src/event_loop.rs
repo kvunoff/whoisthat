@@ -39,7 +39,7 @@ pub(crate) async fn run_loop<B: Backend>(
                 }
             }
             Some(ev) = input_rx.recv() => {
-                if handle_input(app, client, ev, cfg, logger).await {
+                if handle_input(app, client, ev, cfg, logger, &ip_tx).await {
                     break;
                 }
             }

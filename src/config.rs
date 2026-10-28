@@ -215,11 +215,135 @@ pub fn load_config() -> AppConfig {
 }
 
 pub fn save_config(cfg: &AppConfig) {
-    let path = config_path();
-    if let Some(parent) = path.parent() {
-        let _ = std::fs::create_dir_all(parent);
+    let Ok(content) = toml::to_string_pretty(cfg) else {
+        return;
+    };
+    // shortcut: save failures are logged, not propagated; UI callers are sync.
+    if let Err(e) = write_atomic(&config_path(), content.as_bytes()) {
+        log::warn!("failed to save config: {e}");
     }
-    if let Ok(content) = toml::to_string_pretty(cfg) {
-        let _ = std::fs::write(&path, content);
+}
+
+/// Write via a temp file in the same directory and rename it into place, so a
+/// crash or a full disk cannot leave a truncated config.toml behind.
+fn write_atomic(path: &std::path::Path, content: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+
+    let dir = path.parent().unwrap_or_else(|| std::path::Path::new("."));
+    std::fs::create_dir_all(dir)?;
+
+    let tmp = dir.join(format!(
+        ".{}.tmp.{}",
+        path.file_name().unwrap_or_default().to_string_lossy(),
+        std::process::id()
+    ));
+
+    let result = (|| {
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(&tmp)?;
+        file.write_all(content)?;
+        file.sync_all()?;
+        std::fs::rename(&tmp, path)?;
+        if let Ok(dir) = std::fs::File::open(dir) {
+            let _ = dir.sync_all();
+        }
+        Ok(())
+    })();
+
+    if result.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    result
+}
+
+/// Whether the daemon will autostart a TUN session. Only then does the TUI
+/// need capabilities before the user explicitly asks for TUN.
+pub fn core_autoconnect_tun() -> bool {
+    let path = config_dir().join("config.json");
+    std::fs::read_to_string(path)
+        .map(|text| parse_autoconnect_tun(&text))
+        .unwrap_or(false)
+}
+
+fn parse_autoconnect_tun(text: &str) -> bool {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(text) else {
+        return false;
+    };
+    value
+        .get("autoconnect-enabled")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+        && value.get("autoconnect-mode").and_then(|v| v.as_str()) == Some("tun")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::MetadataExt;
+
+    fn tmp_dir(name: &str) -> std::path::PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("whoisthat-config-{}-{}", std::process::id(), name));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn parse_autoconnect_tun_requires_enabled_tun_mode() {
+        assert!(parse_autoconnect_tun(
+            r#"{"autoconnect-enabled": true, "autoconnect-mode": "tun"}"#
+        ));
+        assert!(!parse_autoconnect_tun(
+            r#"{"autoconnect-enabled": true, "autoconnect-mode": "proxy"}"#
+        ));
+        assert!(!parse_autoconnect_tun(
+            r#"{"autoconnect-enabled": false, "autoconnect-mode": "tun"}"#
+        ));
+        assert!(!parse_autoconnect_tun("not json"));
+    }
+
+    #[test]
+    fn write_atomic_replaces_content_with_owner_only_permissions() {
+        let dir = tmp_dir("atomic");
+        let path = dir.join("config.toml");
+
+        write_atomic(&path, b"version = 1\n").unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "version = 1\n");
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().mode() & 0o777,
+            0o600,
+            "config must not stay world-readable"
+        );
+
+        write_atomic(&path, b"version = 2\n").unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "version = 2\n");
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn write_atomic_reports_errors_and_leaves_no_temp_file() {
+        let dir = tmp_dir("atomic-error");
+        let blocker = dir.join("blocker");
+        std::fs::write(&blocker, b"not a directory").unwrap();
+
+        assert!(write_atomic(&blocker.join("config.toml"), b"x").is_err());
+        let leftovers: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|name| name.contains(".tmp."))
+            .collect();
+        assert!(
+            leftovers.is_empty(),
+            "temp files left behind: {leftovers:?}"
+        );
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

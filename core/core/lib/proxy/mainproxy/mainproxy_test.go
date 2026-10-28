@@ -42,9 +42,8 @@ func drainStatus(t *testing.T, ch chan structs.ProxyStatus, n int, timeout time.
 // TestWatchExit_HappyPath: an Exited signal flips status to disconnected and
 // delivers exactly one StatusChanged update.
 func TestWatchExit_HappyPath(t *testing.T) {
-	exitWatcherDone = nil
 	p := newTestProxyManager()
-	done := p.startExitWatcher()
+	p.startExitWatcher()
 
 	p.core.ExitedCh() <- nil
 
@@ -58,16 +57,14 @@ func TestWatchExit_HappyPath(t *testing.T) {
 	}
 
 	// Retire to stop the watcher goroutine cleanly.
-	close(done)
-	exitWatcherDone = nil
+	p.retireExitWatcher()
 }
 
 // TestWatchExit_ChannelClosed: closing Exited (as xray.go does on clean stop)
 // makes the watcher return without emitting a status.
 func TestWatchExit_ChannelClosed(t *testing.T) {
-	exitWatcherDone = nil
 	p := newTestProxyManager()
-	done := p.startExitWatcher()
+	p.startExitWatcher()
 
 	close(p.core.ExitedCh())
 
@@ -75,20 +72,18 @@ func TestWatchExit_ChannelClosed(t *testing.T) {
 		t.Fatalf("expected no status on closed Exited, got %d", len(got))
 	}
 
-	close(done)
-	exitWatcherDone = nil
+	p.retireExitWatcher()
 }
 
 // TestWatchExit_NonBlockingDrop: when the StatusChanged buffer (8) is full,
 // the watcher must not block on the send — it drops and logs instead.
 func TestWatchExit_NonBlockingDrop(t *testing.T) {
-	exitWatcherDone = nil
 	p := newTestProxyManager()
 	// Pre-fill the buffered StatusChanged channel so the watcher's send can't land.
 	for i := 0; i < cap(p.StatusChanged); i++ {
 		p.StatusChanged <- structs.ProxyStatus{Connection: "connected"}
 	}
-	done := p.startExitWatcher()
+	p.startExitWatcher()
 
 	doneSend := make(chan struct{})
 	go func() {
@@ -103,32 +98,30 @@ func TestWatchExit_NonBlockingDrop(t *testing.T) {
 		t.Fatal("watcher blocked on Exited send when StatusChanged was full")
 	}
 
-	close(done)
-	exitWatcherDone = nil
+	p.retireExitWatcher()
 }
 
 // TestRetireExitWatcher_IdempotentAndNilSafe: retiring twice and retiring when
 // nothing is active must not panic on a double close or a nil channel.
 func TestRetireExitWatcher_IdempotentAndNilSafe(t *testing.T) {
-	exitWatcherDone = nil
 	p := newTestProxyManager()
 
 	p.retireExitWatcher() // nil → no-op, must not panic
-	if exitWatcherDone != nil {
-		t.Fatalf("exitWatcherDone = %v, want nil after nil-retire", exitWatcherDone)
+	if p.watchDone != nil {
+		t.Fatalf("watchDone = %v, want nil after nil-retire", p.watchDone)
 	}
 
 	p.startExitWatcher()
-	if exitWatcherDone == nil {
-		t.Fatal("exitWatcherDone = nil after startExitWatcher")
+	if p.watchDone == nil {
+		t.Fatal("watchDone = nil after startExitWatcher")
 	}
 	p.retireExitWatcher()
-	if exitWatcherDone != nil {
-		t.Fatalf("exitWatcherDone = %v, want nil after retire", exitWatcherDone)
+	if p.watchDone != nil {
+		t.Fatalf("watchDone = %v, want nil after retire", p.watchDone)
 	}
-	p.retireExitWatcher() // second retire on the cleared global — must not panic
-	if exitWatcherDone != nil {
-		t.Fatalf("exitWatcherDone = %v, want nil after double retire", exitWatcherDone)
+	p.retireExitWatcher() // second retire on the cleared channel — must not panic
+	if p.watchDone != nil {
+		t.Fatalf("watchDone = %v, want nil after double retire", p.watchDone)
 	}
 }
 
@@ -141,7 +134,6 @@ func TestRetireExitWatcher_IdempotentAndNilSafe(t *testing.T) {
 // status is emitted. Closing Exited (rather than sending) is what xray.go does
 // on a clean Stop.
 func TestRetireExitWatcher_StopsWatching(t *testing.T) {
-	exitWatcherDone = nil
 	p := newTestProxyManager()
 	p.startExitWatcher()
 	p.retireExitWatcher()
@@ -158,10 +150,9 @@ func TestRetireExitWatcher_StopsWatching(t *testing.T) {
 }
 
 // TestExitWatcher_ConcurrentStartRetire exercises the package-global
-// exitWatcherDone under the race detector: many concurrent start/retire cycles
+// p.watchDone under the race detector: many concurrent start/retire cycles
 // plus concurrent Exited sends. Run with -race.
 func TestExitWatcher_ConcurrentStartRetire(t *testing.T) {
-	exitWatcherDone = nil
 
 	const cycles = 200
 	done := make(chan struct{})
@@ -186,6 +177,27 @@ func TestExitWatcher_ConcurrentStartRetire(t *testing.T) {
 		case <-time.After(30 * time.Second):
 			t.Fatal("concurrency test timed out")
 		}
+	}
+}
+
+// TestWatcherGenerationInvalidatesStale: a new connect cycle must make the
+// previous watcher generation stale, and the current one current.
+func TestWatcherGenerationInvalidatesStale(t *testing.T) {
+	p := newTestProxyManager()
+	p.startExitWatcher()
+	gen := p.watchGen
+	p.startExitWatcher() // supersedes the first watcher
+
+	if !p.watcherIsStale(gen) {
+		t.Fatal("previous watcher generation is still current")
+	}
+	if p.watcherIsStale(p.watchGen) {
+		t.Fatal("current watcher generation reported stale")
+	}
+
+	p.retireExitWatcher()
+	if !p.watcherIsStale(p.watchGen) {
+		t.Fatal("retired watcher generation reported current")
 	}
 }
 

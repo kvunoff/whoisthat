@@ -107,4 +107,4 @@ Rather than merely checking if the user is `root` or inspecting file flags, the 
 2. Verifies `ioctl(TUNSETIFF)` succeeds.
 3. Immediately tears down the test adapter.
 
-If capabilities are missing (e.g. after a fresh compile), the TUI reports it and points to the `setcap` command; a `pkexec` prompt is offered when the daemon is spawned at startup, not on the TUN toggle itself.
+If capabilities are missing (e.g. after a fresh compile), the TUI reports it and points to the `setcap` command; a `pkexec` prompt is offered only when the daemon is spawned from an interactive terminal while TUN autostart is configured, never on the TUN toggle itself.

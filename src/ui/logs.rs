@@ -1,5 +1,6 @@
 use std::fs::File;
-use std::io::{BufRead, BufReader, Seek, SeekFrom};
+use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
+use std::os::unix::fs::MetadataExt;
 
 use ratatui::{
     layout::{Alignment, Constraint, Layout, Rect},
@@ -10,6 +11,10 @@ use ratatui::{
 };
 
 use super::theme::*;
+
+/// Rendered log tail length and how much of the file is read at startup.
+const MAX_LINES: usize = 500;
+const TAIL_BYTES: u64 = 64 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum LogFilter {
@@ -101,12 +106,17 @@ pub struct LogsState {
     pub filter: LogFilter,
     reader: Option<BufReader<File>>,
     log_path: String,
+    /// (device, inode) of the file the reader is attached to. A change means
+    /// the file was rotated (lumberjack) and the tail must be reopened.
+    file_id: Option<(u64, u64)>,
+    file_len: u64,
 }
 
 impl LogsState {
     pub fn new(log_path: &str) -> Self {
         let (lines, reader) = read_log_file(log_path);
         let scroll = lines.len().saturating_sub(1);
+        let (file_id, file_len) = file_state(log_path);
 
         Self {
             lines,
@@ -115,6 +125,8 @@ impl LogsState {
             filter: LogFilter::All,
             reader,
             log_path: log_path.to_string(),
+            file_id,
+            file_len,
         }
     }
 
@@ -132,39 +144,52 @@ impl LogsState {
     }
 
     pub fn poll(&mut self) {
-        if self.reader.is_none() {
+        let (file_id, file_len) = file_state(&self.log_path);
+
+        let rotated = match (file_id, self.file_id) {
+            (Some(current), Some(previous)) => current != previous,
+            (Some(_), None) => true,
+            (None, _) => false,
+        };
+        let truncated = file_len < self.file_len;
+
+        if rotated || truncated || self.reader.is_none() {
+            // A missing file stays missing: do not rebuild "(log file not
+            // found)" on every tick.
+            if file_id.is_none() && self.reader.is_none() {
+                return;
+            }
             (self.lines, self.reader) = read_log_file(&self.log_path);
-            if self.reader.is_some() {
+            self.file_id = file_id;
+            self.file_len = file_len;
+            if self.auto_scroll {
                 self.scroll = self.lines.len().saturating_sub(1);
             }
             return;
         }
-        if let Some(ref mut reader) = self.reader {
+
+        if let Some(reader) = self.reader.as_mut() {
             let mut line = String::new();
             while reader.read_line(&mut line).unwrap_or(0) > 0 {
-                if line.ends_with('\n') {
-                    line.pop();
-                    if line.ends_with('\r') {
-                        line.pop();
-                    }
-                }
+                let trimmed = line.trim_end_matches(['\n', '\r']).to_string();
                 if self.lines.len() == 1
                     && (self.lines[0] == "(log file not found)"
                         || self.lines[0] == "(log file empty)")
                 {
                     self.lines.clear();
                 }
-                self.lines.push(line.clone());
+                self.lines.push(trimmed);
                 line.clear();
             }
-            if self.lines.len() > 500 {
-                let drain = self.lines.len() - 500;
+            if self.lines.len() > MAX_LINES {
+                let drain = self.lines.len() - MAX_LINES;
                 self.lines.drain(..drain);
             }
             if self.auto_scroll {
                 self.scroll = self.lines.len().saturating_sub(1);
             }
         }
+        self.file_len = file_len;
     }
 
     pub fn scroll_down(&mut self) {
@@ -208,41 +233,48 @@ impl LogsState {
     }
 }
 
+fn file_state(path: &str) -> (Option<(u64, u64)>, u64) {
+    match std::fs::metadata(path) {
+        Ok(meta) => (Some((meta.dev(), meta.ino())), meta.len()),
+        Err(_) => (None, 0),
+    }
+}
+
 fn read_log_file(path: &str) -> (Vec<String>, Option<BufReader<File>>) {
     let mut file = match File::open(path) {
         Ok(f) => f,
         Err(_) => return (vec!["(log file not found)".into()], None),
     };
 
-    let mut lines = Vec::new();
-    let mut line = String::new();
-    let mut reader = BufReader::new(&file);
-    while reader.read_line(&mut line).unwrap_or(0) > 0 {
-        if line.ends_with('\n') {
-            line.pop();
-            if line.ends_with('\r') {
-                line.pop();
-            }
+    let truncated = file
+        .metadata()
+        .map(|m| m.len() > TAIL_BYTES)
+        .unwrap_or(false);
+    if truncated {
+        let _ = file.seek(SeekFrom::End(-(TAIL_BYTES as i64)));
+    }
+
+    let mut buf = Vec::new();
+    if file.read_to_end(&mut buf).is_err() {
+        return (vec!["(log file not readable)".into()], None);
+    }
+    let text = String::from_utf8_lossy(&buf);
+    let mut lines: Vec<String> = text.lines().map(str::to_string).collect();
+    if truncated {
+        // The first entry may be a partial line: we started mid-file.
+        if !lines.is_empty() {
+            lines.remove(0);
         }
-        lines.push(line.clone());
-        line.clear();
     }
-    drop(reader);
-
-    // Seek to end for tailing
-    let _ = file.seek(SeekFrom::End(0));
-    let reader = BufReader::new(file);
-
-    // Keep last 500
-    if lines.len() > 500 {
-        lines.drain(..lines.len() - 500);
-    }
-
     if lines.is_empty() {
         lines.push("(log file empty)".into());
     }
+    if lines.len() > MAX_LINES {
+        lines.drain(..lines.len() - MAX_LINES);
+    }
 
-    (lines, Some(reader))
+    // read_to_end leaves the cursor at EOF, which is where tailing starts.
+    (lines, Some(BufReader::new(file)))
 }
 
 pub fn render_logs(f: &mut Frame, area: Rect, state: &LogsState, focused: bool) {
@@ -291,4 +323,81 @@ pub fn render_logs(f: &mut Frame, area: Rect, state: &LogsState, focused: bool) 
         .collect();
 
     f.render_widget(List::new(items).style(s_bg()), inner);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    fn tmp_path(name: &str) -> std::path::PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("whoisthat-logs-{}-{}", std::process::id(), name));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir.join("core.log")
+    }
+
+    fn numbered_lines(count: usize) -> String {
+        let mut out = String::new();
+        for i in 0..count {
+            out.push_str(&format!("line {i}\n"));
+        }
+        out
+    }
+
+    #[test]
+    fn read_log_file_keeps_the_last_500_lines() {
+        let path = tmp_path("tail");
+        std::fs::write(&path, numbered_lines(1000)).unwrap();
+
+        let (lines, _) = read_log_file(path.to_str().unwrap());
+
+        assert_eq!(lines.len(), MAX_LINES);
+        assert_eq!(lines.last().unwrap(), "line 999");
+        std::fs::remove_dir_all(path.parent().unwrap()).ok();
+    }
+
+    #[test]
+    fn read_log_file_reads_only_the_tail() {
+        let path = tmp_path("tail-bytes");
+        std::fs::write(&path, numbered_lines(10_000)).unwrap();
+        assert!(std::fs::metadata(&path).unwrap().len() > TAIL_BYTES);
+
+        let (lines, _) = read_log_file(path.to_str().unwrap());
+
+        assert_eq!(lines.len(), MAX_LINES);
+        assert_eq!(lines.last().unwrap(), "line 9999");
+        // The first retained entry is a whole line, not a mid-file fragment.
+        assert!(lines[0].starts_with("line "));
+        std::fs::remove_dir_all(path.parent().unwrap()).ok();
+    }
+
+    #[test]
+    fn poll_reads_appended_lines_and_reopens_after_rotation() {
+        let path = tmp_path("poll");
+        std::fs::write(&path, "first\n").unwrap();
+        let mut state = LogsState::new(path.to_str().unwrap());
+        assert_eq!(state.lines, vec!["first"]);
+
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap();
+        file.write_all(b"second\n").unwrap();
+        drop(file);
+
+        state.poll();
+        assert_eq!(state.lines.last().unwrap(), "second");
+
+        // lumberjack-style rotation: the old file is renamed away.
+        let rotated = path.with_extension("log.1");
+        std::fs::rename(&path, &rotated).unwrap();
+        std::fs::write(&path, "rotated\n").unwrap();
+
+        state.poll();
+        assert_eq!(state.lines.last().unwrap(), "rotated");
+        assert!(!state.lines.iter().any(|l| l == "second"));
+
+        std::fs::remove_dir_all(path.parent().unwrap()).ok();
+    }
 }

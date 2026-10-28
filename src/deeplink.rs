@@ -6,6 +6,30 @@ use crate::core_client::connection::CoreConnection;
 use crate::core_client::protocol::*;
 use crate::core_spawn;
 
+/// The core sends preflight warnings (missing xray) right after connecting, so
+/// a `warn` frame is only a reply to *this* command when its key matches.
+fn is_warn_key(msg: &TcpMessage, key: &str) -> bool {
+    msg.msg == "warn"
+        && serde_json::from_value::<Warning>(msg.data.clone())
+            .map(|w| w.key == key)
+            .unwrap_or(false)
+}
+
+fn warn_content(msg: &TcpMessage) -> String {
+    serde_json::from_value::<Warning>(msg.data.clone())
+        .map(|w| w.content)
+        .unwrap_or_else(|_| "core reported a warning".to_string())
+}
+
+async fn recv_state(
+    read_half: &mut crate::core_client::connection::CoreReadHalf,
+) -> Result<ApplicationState, Box<dyn std::error::Error>> {
+    let msg = read_half
+        .recv_until(Duration::from_secs(3), |m| m.msg == "application-state")
+        .await?;
+    Ok(serde_json::from_value(msg.data)?)
+}
+
 /// Represents an action requested via a `wit://` deep link.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DeepLinkAction {
@@ -306,8 +330,7 @@ async fn ensure_core_connected(
     }
 
     // Offline: spawn core daemon
-    let bin = core_spawn::find_core_binary();
-    core_spawn::ensure_core_caps(&bin);
+    // No pkexec here: deeplinks are launched by the browser, without a TTY.
     core_spawn::spawn_core(&cfg.log_level)?;
 
     let mut retries = 0;
@@ -416,17 +439,7 @@ pub async fn run_deeplink_action(action: DeepLinkAction) -> Result<(), Box<dyn s
                 .await?;
 
             let mut target_gid = 1;
-            let mut groups = Vec::new();
-
-            if let Ok(Ok(msg)) =
-                tokio::time::timeout(Duration::from_secs(3), read_half.recv()).await
-            {
-                if msg.msg == "application-state" {
-                    if let Ok(state) = serde_json::from_value::<ApplicationState>(msg.data) {
-                        groups = state.groups;
-                    }
-                }
-            }
+            let groups = recv_state(&mut read_half).await?.groups;
 
             if let Some(ref desired_name) = group_name {
                 if let Some(found) = groups
@@ -445,14 +458,15 @@ pub async fn run_deeplink_action(action: DeepLinkAction) -> Result<(), Box<dyn s
                             },
                         )
                         .await?;
-                    if let Ok(Ok(msg)) =
-                        tokio::time::timeout(Duration::from_secs(3), read_half.recv()).await
-                    {
-                        if msg.msg == "group-added" {
-                            if let Ok(g) = serde_json::from_value::<GroupAdded>(msg.data) {
-                                target_gid = g.id;
-                            }
-                        }
+                    let msg = read_half
+                        .recv_until(Duration::from_secs(3), |m| {
+                            m.msg == "group-added" || is_warn_key(m, "add-group-failed")
+                        })
+                        .await?;
+                    if msg.msg == "group-added" {
+                        target_gid = serde_json::from_value::<GroupAdded>(msg.data)?.id;
+                    } else {
+                        return Err(warn_content(&msg).into());
                     }
                 }
             } else if let Some(first) = groups.first() {
@@ -469,16 +483,12 @@ pub async fn run_deeplink_action(action: DeepLinkAction) -> Result<(), Box<dyn s
                 )
                 .await?;
 
-            let mut added_count = 1;
-            if let Ok(Ok(msg)) =
-                tokio::time::timeout(Duration::from_secs(3), read_half.recv()).await
-            {
-                if msg.msg == "profiles-added" {
-                    if let Ok(res) = serde_json::from_value::<ProfilesAdded>(msg.data) {
-                        added_count = res.profiles.len();
-                    }
-                }
-            }
+            let msg = read_half
+                .recv_until(Duration::from_secs(3), |m| m.msg == "profiles-added")
+                .await?;
+            let added_count = serde_json::from_value::<ProfilesAdded>(msg.data)?
+                .profiles
+                .len();
 
             let msg = format!("Imported {added_count} profile(s) into group #{target_gid}");
             println!("✓ {msg}");
@@ -512,16 +522,7 @@ pub async fn run_deeplink_action(action: DeepLinkAction) -> Result<(), Box<dyn s
                 .send("get-application-state", &GetApplicationStateData {})
                 .await?;
 
-            let mut groups = Vec::new();
-            if let Ok(Ok(msg)) =
-                tokio::time::timeout(Duration::from_secs(3), read_half.recv()).await
-            {
-                if msg.msg == "application-state" {
-                    if let Ok(state) = serde_json::from_value::<ApplicationState>(msg.data) {
-                        groups = state.groups;
-                    }
-                }
-            }
+            let groups = recv_state(&mut read_half).await?.groups;
 
             if groups.is_empty() {
                 return Err("No groups found in core. Please add a group first.".into());
