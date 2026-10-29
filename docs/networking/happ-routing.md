@@ -98,7 +98,10 @@ Content-Disposition: attachment; filename="subscription"
 routing: happ://routing/onadd/ewogICAgIk5hbWUiOiAidGVzdCIsCiAgICAiR2xvYmFsUHJveHkiOiAidHJ1ZSIsCiAgICAiRGlyZWN0U2l0ZXMiOiBbXSwKICAgICJEaXJlY3RJcCI6IFtdLAogICAgIlByb3h5U2l0ZXMiOiBbXSwKICAgICJQcm94eUlwIjogW10sCiAgICAiQmxvY2tTaXRlcyI6IFtdLAogICAgIkJsb2NrSXAiOiBbXSwKICAgICJEb21haW5TdHJhdGVneSI6ICJBc0lzIgp9
 ```
 
-When WhoisThat updates a subscription (<kbd>u</kbd> / <kbd>r</kbd> in the TUI), the internal function `happ.ExtractLinksFromResponse` reads the `Routing` header, decodes percent-encoded schemes (`happ%3A%2F%2F` ➔ `happ://`), and immediately imports the profile into the corresponding subscription group. There is no `whoisthat -u` CLI flag.
+When WhoisThat updates a subscription (<kbd>u</kbd> / <kbd>r</kbd> in the TUI, or `whoisthat sub refresh`
+on the command line), the internal function `happ.ExtractLinksFromResponse` reads the `Routing`
+header, decodes percent-encoded schemes (`happ%3A%2F%2F` ➔ `happ://`), and immediately imports the
+profile into the corresponding subscription group.
 
 #### Channel B: Embedded in Subscription Body
 The `happ://routing/...` link can be placed directly inside the subscription body, on its own line alongside proxy node URIs:
@@ -121,15 +124,18 @@ Only the `wit://` scheme is registered with `xdg-mime` (the TUI writes `~/.local
 ```
 wit://happ://routing/add/<BASE64>
 wit://routing?link=happ%3A%2F%2Frouting%2Fadd%2F...&group=Premium
-whoisthat handle-url "happ://routing/add/<BASE64>" --group Premium
+whoisthat link handle "happ://routing/add/<BASE64>" --group Premium
 ```
 
 #### Channel E: Headless CLI & QR Codes
 Any link extracted from a QR code scanner or automated script can be ingested via the command line:
 
 ```bash
+whoisthat link handle "happ://routing/add/<BASE64>" --group "Premium"
+whoisthat link handle "happ://routing/onadd/<BASE64>" --group 2
+
+# Legacy alias
 whoisthat handle-url "happ://routing/add/<BASE64>" --group "Premium"
-whoisthat handle-url "happ://routing/onadd/<BASE64>" --group 2
 ```
 
 ---

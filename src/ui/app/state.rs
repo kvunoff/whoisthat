@@ -90,6 +90,7 @@ impl App {
                 connection: "disconnected".into(),
                 profile: None,
                 connected_at: 0,
+                reason: String::new(),
             },
             tun_enabled: false,
             last_msg: None,
@@ -1335,6 +1336,7 @@ mod tests {
                 enabled: true,
                 ..Default::default()
             }],
+            dns: None,
         }
     }
 

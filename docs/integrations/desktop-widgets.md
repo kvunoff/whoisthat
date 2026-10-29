@@ -6,7 +6,9 @@ WhoisThat is engineered for integration with Linux desktop status bars, tiling w
 
 ## The JSON Status Schema
 
-Running `whoisthat status --json` (or streaming with `whoisthat status --watch --json`) emits a structured JSON object. In watch mode a line is printed per `traffic-stats` tick (1/s while connected) plus on status/TUN/state changes; an idle disconnected client can stay silent. Optional fields (`group_id`, `profile_name`, `xray_version`, …) are omitted when empty.
+Running `whoisthat status --json` (or streaming with `whoisthat status --watch --json`) emits a structured JSON object.
+`whoisthat mode status --json` and `whoisthat core status --json` provide smaller objects for widgets
+that only need the mode or daemon health; the `status` contract below is unchanged. In watch mode a line is printed per `traffic-stats` tick (1/s while connected) plus on status/TUN/state changes; an idle disconnected client can stay silent. Optional fields (`group_id`, `profile_name`, `xray_version`, …) are omitted when empty.
 
 ```json
 {

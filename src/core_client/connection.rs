@@ -138,10 +138,34 @@ pub enum CoreWriteStream {
 
 impl CoreWriteHalf {
     pub async fn send(&mut self, msg: &str, data: &impl Serialize) -> std::io::Result<()> {
-        let payload = serde_json::json!({
+        self.send_frame(msg, data, None).await
+    }
+
+    /// Send a request with an optional correlation id. The core echoes it on
+    /// notifications produced by this request, which lets CLI commands ignore
+    /// unrelated broadcasts (traffic stats, other clients' actions).
+    pub async fn send_with_id(
+        &mut self,
+        id: &str,
+        msg: &str,
+        data: &impl Serialize,
+    ) -> std::io::Result<()> {
+        self.send_frame(msg, data, Some(id)).await
+    }
+
+    async fn send_frame(
+        &mut self,
+        msg: &str,
+        data: &impl Serialize,
+        id: Option<&str>,
+    ) -> std::io::Result<()> {
+        let mut payload = serde_json::json!({
             "msg": msg,
             "data": data,
         });
+        if let Some(id) = id {
+            payload["id"] = serde_json::Value::String(id.to_string());
+        }
         let json = serde_json::to_vec(&payload)?;
 
         let len = json.len() as u32;
@@ -282,6 +306,15 @@ impl CoreConnection {
                     },
                 )
             }
+        }
+    }
+
+    /// Build a connection from an already-connected Unix stream. Test-only:
+    /// lets CLI tests exercise `Session` without a real daemon.
+    #[cfg(test)]
+    pub fn from_unix(stream: UnixStream) -> Self {
+        Self {
+            stream: Stream::Unix(stream),
         }
     }
 

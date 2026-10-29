@@ -497,19 +497,19 @@ pub async fn run_deeplink_action(action: DeepLinkAction) -> Result<(), Box<dyn s
 
         DeepLinkAction::Connect => {
             println!("Connecting via deep link...");
-            crate::cli::handle_connect(&[]).await?;
+            crate::cli::connect_default().await?;
             notify_desktop("WhoisThat", "Connecting to VPN...");
         }
 
         DeepLinkAction::Disconnect => {
             println!("Disconnecting via deep link...");
-            crate::cli::handle_disconnect().await?;
+            crate::cli::disconnect_default().await?;
             notify_desktop("WhoisThat", "Disconnected from VPN.");
         }
 
         DeepLinkAction::Toggle => {
             println!("Toggling connection via deep link...");
-            crate::cli::handle_toggle().await?;
+            crate::cli::toggle_default().await?;
         }
 
         DeepLinkAction::ImportHappRouting { link, group } => {

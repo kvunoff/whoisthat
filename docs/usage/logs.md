@@ -2,6 +2,14 @@
 
 The Logs tab (<kbd>4</kbd>, or cycle with <kbd>[</kbd> / <kbd>]</kbd>) provides a live stream of daemon and proxy events, routing decisions, and diagnostic warnings directly inside the TUI.
 
+From a terminal:
+
+```bash
+whoisthat logs --follow
+whoisthat logs --level error
+whoisthat logs --json
+```
+
 ---
 
 ## Log Viewer Features

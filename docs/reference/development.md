@@ -39,7 +39,12 @@ whoisthat/
 │   └── aur/              ← AUR packaging (PKGBUILD + .SRCINFO + whoisthat.install)
 ├── src/                ← Rust TUI & CLI source code
 │   ├── main.rs         ← Entry point: CLI routing, core daemon spawn/re-attach, terminal lifecycle
-│   ├── cli.rs          ← CLI subcommands & shorthand flags, status monitoring, JSON/NDJSON streams
+│   ├── cli/            ← CLI: clap grammar, IPC session, selectors, output, command modules
+│   │   ├── args.rs     ← clap definitions and hidden legacy aliases
+│   │   ├── client.rs   ← Session (request-id correlation, spawn policy, timeouts)
+│   │   ├── resolve.rs  ← group/profile/routing-profile selectors
+│   │   ├── output.rs   ← JSON/human output, masking, tables
+│   │   └── commands/   ← status, connection, core, profiles, subs, routing, tests, settings, logs, hwid, systemd, links, doctor
 │   ├── doctor/         ← System & capability diagnostics (`whoisthat doctor`)
 │   │   ├── mod.rs      ← Module entry point
 │   │   ├── types.rs    ← Diagnostic models, pass/warn/fail statuses, reports
@@ -112,7 +117,7 @@ whoisthat/
 
 Both the Rust client and Go daemon feature extensive unit test suites that run entirely in memory in milliseconds without requiring network access.
 
-### 1. Rust Test Suite (149 Tests)
+### 1. Rust Test Suite
 
 ```bash
 cargo test
@@ -126,6 +131,7 @@ cargo test
 * **Text Editing & Cyrillic** (`src/text_edit.rs`): UTF-8 character insertion, boundary backspace, cursor positioning, Home/End boundaries.
 * **Traffic History Ring Buffer** (`src/ui/traffic.rs`): 60-sample rolling buffer push, dynamic max-Y scale calculations.
 * **Deep Links** (`src/deeplink.rs`): Scheme parser validation for `wit://sub`, `wit://import`, `wit://toggle`, and raw proxy URIs.
+* **CLI** (`src/cli/`): clap definition consistency, legacy alias normalization, selector resolution, settings validation, log parsing, secret masking, and fake-core request-id correlation.
 
 ### 2. Go Core Test Suite
 

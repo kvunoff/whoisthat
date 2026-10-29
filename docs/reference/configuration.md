@@ -101,10 +101,10 @@ Auto-generated and synchronized by the Go core daemon:
   },
   "test-config": {
     "concurrency": 16,
-    "timeout_seconds": 5,
-    "samples_per_test": 3,
-    "test_endpoint": "https://cp.cloudflare.com/generate_204",
-    "auto_test_on_subscribe": true
+    "timeout-seconds": 5,
+    "samples-per-test": 3,
+    "test-endpoint": "https://cp.cloudflare.com/generate_204",
+    "auto-test-on-subscribe": true
   },
   "tcp-enabled": false
 }
@@ -120,6 +120,28 @@ Auto-generated and synchronized by the Go core daemon:
   * When the active Happ profile supplies DNS, its `RemoteDNS*` / `DomesticDNS*` servers take precedence; `dns-servers` are only used as a fallback. Happ DNS uses the reserved sink addresses `198.18.0.53` / `fd00::53` rather than the configured resolvers.
 * **`test-port-range`**: Ephemeral port boundary leased dynamically for concurrent latency test instances.
 * **`split-tunnel.mode`**: Can be `"off"`, `"exclude"`, or `"include"`.
+
+### Setting keys via CLI
+
+`whoisthat settings` is the single entry point for both files. Core-authoritative keys are read from
+`application-state` (except `autoconnect-profile`, which lives in `config.json`) and written through
+IPC; local keys are written to `config.toml`.
+
+| CLI key | File / backend | Notes |
+| :--- | :--- | :--- |
+| `kill-switch`, `split-tunnel`, `autoconnect`, `autoconnect-mode` | core (`config.json`) | applied live; the daemon is authoritative |
+| `autoconnect-profile` | core + `config.json` | target is stored as `autoconnect-group-id` / `autoconnect-profile-id` |
+| `tun-name` | core (`config.json`) | applies on the next reconnect |
+| `hwid-enabled`, `user-agent` | core (`config.json`) | subscription headers |
+| `test.concurrency`, `test.timeout`, `test.samples`, `test.endpoint`, `test.auto-on-subscribe` | core (`config.json` → `test-config`) | sanitized by the daemon; the CLI re-reads state afterwards |
+| `theme`, `show-ip`, `log-enabled`, `log-level`, `test-method` | TUI (`config.toml`) | |
+| `core.host`, `core.port`, `core.use-tcp`, `core.socket` | TUI (`config.toml`) | affects the next CLI/TUI connection |
+
+```bash
+whoisthat settings list --json
+whoisthat settings set split-tunnel=exclude kill-switch=true
+whoisthat settings set theme=tokyo-night log-level=debug
+```
 
 ---
 

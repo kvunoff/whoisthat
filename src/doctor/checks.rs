@@ -30,7 +30,7 @@ pub async fn run_doctor() -> DoctorReport {
         cat_dns,
         cat_config,
     ]);
-    if let Some((cv, proto)) = crate::cli::fetch_core_version_ipc().await {
+    if let Some((cv, proto)) = crate::core_client::query::fetch_core_version_ipc().await {
         report.core_version = Some(cv);
         report.core_protocol_version = Some(proto);
     } else {

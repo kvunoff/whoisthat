@@ -2,6 +2,7 @@ pub mod commands;
 pub mod connection;
 pub mod dispatch;
 pub mod protocol;
+pub mod query;
 
 pub use commands::CoreClient;
 pub use connection::CoreConnection;

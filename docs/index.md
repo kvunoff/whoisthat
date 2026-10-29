@@ -19,6 +19,16 @@ description: Official documentation for WhoisThat - Modern Linux terminal-based 
 
 **WhoisThat** is a modern, high-performance VPN client built specifically for Linux desktop and server environments. It bridges the gap between bulky Electron applications and complex bare command-line proxies by providing an ergonomic terminal user interface (TUI) backed by a long-running system daemon.
 
+Everything the TUI can do is also available from the terminal:
+
+```bash
+whoisthat profile list
+whoisthat sub refresh --all
+whoisthat settings set split-tunnel=exclude kill-switch=true
+whoisthat logs --follow
+whoisthat core status
+```
+
 ```
 ┌────────────────────────────────────────────────────────┐
 │                      User Space                        │

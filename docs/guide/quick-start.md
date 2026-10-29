@@ -107,4 +107,14 @@ whoisthat -mt
 # View one-line status
 whoisthat status -s
 # Example output: [Connected] [TUN] ↓ 2.4 MB/s ↑ 410.0 KB/s
+
+# Same commands in the noun/verb form
+whoisthat toggle
+whoisthat mode toggle
+whoisthat mode status
+
+# Manage subscriptions and profiles without the TUI
+whoisthat sub list
+whoisthat sub refresh --all
+whoisthat profile list
 ```

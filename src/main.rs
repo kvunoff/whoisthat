@@ -58,16 +58,11 @@ async fn main() -> io::Result<()> {
                 }
             }
         }
+    }
 
-        if cli::is_cli_command(cmd) {
-            match cli::handle_cli(&argv[1..]).await {
-                Ok(_) => std::process::exit(0),
-                Err(e) => {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
-            }
-        }
+    match cli::run(&argv[1..]).await {
+        cli::Outcome::Tui => {}
+        cli::Outcome::Exit(code) => std::process::exit(code),
     }
 
     let logger = init_logger();

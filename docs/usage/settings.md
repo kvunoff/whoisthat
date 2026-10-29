@@ -2,6 +2,14 @@
 
 The Settings tab (<kbd>5</kbd> or cycle with <kbd>[</kbd> / <kbd>]</kbd>) provides an interactive control panel for configuring all runtime behaviors of WhoisThat.
 
+The same values are available from the terminal:
+
+```bash
+whoisthat settings list
+whoisthat settings set split-tunnel=exclude kill-switch=true
+whoisthat settings set theme=tokyo-night log-level=debug
+```
+
 ---
 
 ## Interactive Settings Table

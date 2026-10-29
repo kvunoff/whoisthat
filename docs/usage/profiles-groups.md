@@ -2,6 +2,16 @@
 
 WhoisThat organizes VPN servers into a flexible hierarchical tree consisting of **Subscription Groups** and individual **Profiles**.
 
+CLI equivalents:
+
+```bash
+whoisthat sub list
+whoisthat sub refresh --all
+whoisthat profile list
+whoisthat profile rename 12:6 "Frankfurt"
+whoisthat profile move 12:6 --to Personal
+```
+
 ---
 
 ## 1. Group Operations

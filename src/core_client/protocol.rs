@@ -118,6 +118,9 @@ pub struct ProxyStatus {
     pub profile: Option<Profile>,
     #[serde(default)]
     pub connected_at: i64,
+    /// Set when the connection dropped without an explicit disconnect.
+    #[serde(default)]
+    pub reason: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -236,6 +239,13 @@ pub struct DeleteGroupData {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpdateSubscriptionData {
     pub group_id: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MoveProfileData {
+    pub profile_id: i32,
+    pub from_group_id: i32,
+    pub to_group_id: i32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -463,6 +473,9 @@ pub struct RoutingConfig {
     pub domain_strategy: String,
     #[serde(default)]
     pub rules: Vec<RoutingRule>,
+    /// Happ DNS section, kept opaque so CLI read-modify-write does not drop it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dns: Option<serde_json::Value>,
 }
 
 fn default_ipifnonmatch() -> String {

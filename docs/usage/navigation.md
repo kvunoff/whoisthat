@@ -2,6 +2,14 @@
 
 WhoisThat features a high-speed, keyboard-driven interface with vim-inspired motions, instant modal switchers, and mouse support for lists, the top-bar actions and the Tab Switcher.
 
+Routing and testing are also scriptable:
+
+```bash
+whoisthat route list --group Work
+whoisthat route add --type geosite --value geosite:openai --outbound proxy
+whoisthat test group Work --wait
+```
+
 ---
 
 ## Global Navigation Keys
