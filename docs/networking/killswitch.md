@@ -69,14 +69,20 @@ no need to reconnect.
 ### Via CLI
 ```bash
 # Toggle Kill-Switch state
-whoisthat -kt
+whoisthat settings toggle kill-switch
+whoisthat -kt                       # legacy alias
 
-# Explicitly enable Kill-Switch
+# Explicitly enable / disable
+whoisthat settings set kill-switch=true
+whoisthat settings set kill-switch=false
+
+# Legacy aliases
 whoisthat --killswitch-on
-
-# Explicitly disable Kill-Switch
 whoisthat --killswitch-off
 ```
+
+`settings set` validates the value before contacting the daemon and reports the value the daemon
+actually ended up with.
 
 ---
 

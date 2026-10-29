@@ -2,7 +2,7 @@ use std::process::Command;
 
 const SYSTEMD_SERVICE_NAME: &str = "whoisthat-core.service";
 
-fn systemd_service_path() -> std::path::PathBuf {
+pub(crate) fn systemd_service_path() -> std::path::PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
     std::path::PathBuf::from(home)
         .join(".config")
@@ -21,7 +21,7 @@ pub(crate) fn systemd_is_enabled() -> bool {
         .unwrap_or(false)
 }
 
-fn linger_is_enabled() -> bool {
+pub(crate) fn linger_is_enabled() -> bool {
     let user = std::env::var("USER").unwrap_or_default();
     if user.is_empty() {
         return false;

@@ -6,7 +6,8 @@
 
 ## How TUN Mode Works
 
-When you enable TUN mode (by pressing <kbd>v</kbd> or running `whoisthat -mt`):
+When you enable TUN mode (by pressing <kbd>v</kbd>, running `whoisthat mode tun`, or the legacy
+`whoisthat -mt`):
 
 1. **Virtual Network Interface**: The core daemon creates a TUN network device named `whoisthattun` (configurable in Settings).
 2. **Native Inbound**: Xray-core opens the TUN interface using its native high-performance TUN inbound driver.

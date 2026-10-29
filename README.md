@@ -116,6 +116,22 @@ whoisthat run %command%  # Steam Launch Options: bypass VPN for lowest native pi
 whoisthat doctor         # Run system capability and runtime diagnostic suite
 ```
 
+Everything else is available without the TUI:
+
+```bash
+whoisthat profile list           # profiles with latency, loss and active marker
+whoisthat sub list               # subscription groups and traffic counters
+whoisthat sub refresh --all      # refresh every subscription
+whoisthat mode status            # current TUN/proxy mode
+whoisthat settings set split-tunnel=exclude kill-switch=true
+whoisthat logs --follow          # tail the core log
+whoisthat core status            # daemon version, socket, capabilities
+whoisthat route list --group Work
+whoisthat test group Work --wait
+```
+
+See the [CLI reference](https://docs.tuqise.com/integrations/cli) for the full command tree.
+
 ---
 
 ## Complete Documentation

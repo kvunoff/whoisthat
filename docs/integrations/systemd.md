@@ -6,7 +6,8 @@ WhoisThat Core can run as a persistent **systemd user service**, allowing the VP
 
 ## Unit File Configuration
 
-When you toggle **Systemd autostart** in Settings (or run `whoisthat --systemd-on`), WhoisThat generates and enables the following unit file. The `ExecStart` path and log level are filled in from the resolved core binary and the current Settings value (`warn` is only the default):
+When you toggle **Systemd autostart** in Settings (or run `whoisthat systemd enable`; the legacy
+`whoisthat --systemd-on` alias still works), WhoisThat generates and enables the following unit file. The `ExecStart` path and log level are filled in from the resolved core binary and the current Settings value (`warn` is only the default):
 
 **Location**: `~/.config/systemd/user/whoisthat-core.service`
 

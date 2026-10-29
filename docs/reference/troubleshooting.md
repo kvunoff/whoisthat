@@ -35,7 +35,7 @@ The core forwards exact dial errors, DNS lookup failures, and firewall command e
 ## Frequently Asked Questions (FAQ)
 
 ### Can I run WhoisThat on a headless server without a GUI?
-**Yes.** You can install `whoisthat-core`, manage it via `systemctl --user`, and control connections entirely through non-interactive CLI commands (`whoisthat -c`, `whoisthat -t`, `whoisthat status -s`).
+**Yes.** You can install `whoisthat-core`, manage it via `systemctl --user`, and control connections entirely through non-interactive CLI commands (`whoisthat connect`, `whoisthat toggle`, `whoisthat status -s`, `whoisthat profile list`, `whoisthat settings set ...`). The legacy `-c`/`-t` aliases still work.
 
 ### Does WhoisThat prevent DNS leaks?
 **Yes.** In TUN mode, kernel-level DNAT rules intercept all outbound DNS requests destined for port 53. With a Happ DNS profile, queries go to the reserved sink (`198.18.0.53` / `fd00::53`) and then through Xray's tagged domestic/remote resolvers. Split-excluded apps deliberately keep resolving directly.

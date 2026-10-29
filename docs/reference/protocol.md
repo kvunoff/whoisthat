@@ -18,6 +18,31 @@ This document provides a complete technical specification for the length-prefixe
 * **Maximum Frame**: 64 MiB on both sides. Larger frames are rejected before allocation/parsing.
 * **Request correlation (optional)**: a client may include an `"id"` string in a request; notifications produced while handling it carry the same `"id"`. The current TUI is event-driven and does not require it.
 * **Protocol Version**: `3` (shared by `core/core/lib/version/protocol.txt`). The TCP handshake rejects a mismatch; on UDS the TUI compares `application-state.protocol_version` and kills/respawns a mismatched core instead of reattaching.
+
+### Request correlation
+
+A client may add an `"id"` string to a request. Every notification produced *by that request*
+(`cmd.send` in the Go handlers) echoes the same `"id"`. This lets a CLI process ignore unrelated
+broadcasts and other clients' events. Notifications produced by background workers are broadcast
+without an id.
+
+| Kind | Examples | Has `id` |
+| :--- | :--- | :---: |
+| Direct command replies | `application-state`, `group-added`, `group-updated`, `profiles-added`, `subscription-updated`, `routing-updated`, `kill-switch-updated`, `split-tunnel-updated`, `tun-name-updated`, `hwid-updated`, `test-config-updated`, `is-root-answer` | yes |
+| Request-scoped warnings | `warn` with keys such as `connect-failed`, `update-subscription-failed`, `test-group-failed` | yes |
+| Background/broadcast events | `status-changed`, `tun-status-changed`, `traffic-stats`, `test-progress` (after the first frame), `profile-updated` (test results), `xray-progress`, `warn died` | no |
+| Commands without a reply | `die`, `cancel-tests` | — |
+
+Some commands emit **two** id-carrying frames. Wait for the terminal one, not the first:
+
+* `update-routing` and `set-manual-routing-source` → `group-updated`, then `routing-updated`;
+* `add-group` / `update-group` → `group-added` / `group-updated`, then a background `subscription-updated`;
+* `set-active-routing-profile` → `group-updated`, then an async `subscription-updated`;
+* `test-group` → the first `test-progress` carries the id, later progress frames are broadcasts.
+
+`set-kill-switch` and `set-split-tunnel` are special: the reply is authoritative and may be followed
+(or preceded) by a `*-failed` warning. Compare the requested value with the reply; do not treat
+warnings alone as failure.
 * **Socket Endpoints**:
   * **Unix Domain Socket (Default)**: `$XDG_RUNTIME_DIR/whoisthat/core.sock` (mode `0600`, owned by the invoking user).
   * **Loopback TCP (Opt-in)**: `127.0.0.1:4897` / `[::1]:4897` (when `tcp-enabled: true` in `config.json`).

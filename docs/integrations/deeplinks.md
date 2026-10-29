@@ -11,6 +11,8 @@ When you launch the WhoisThat TUI, it verifies and re-registers the desktop sche
 To register or refresh the handler manually from the CLI:
 
 ```bash
+whoisthat link register
+# legacy alias
 whoisthat register-deeplink
 ```
 
