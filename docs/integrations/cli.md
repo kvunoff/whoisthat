@@ -317,6 +317,30 @@ whoisthat run -d spotify        # split-tunnel launcher (unchanged)
 
 ---
 
+## Split-tunnel launcher
+
+`whoisthat run` launches an application inside the `whoisthat_split.slice` cgroup so the core's
+split-tunnel rules can route it separately:
+
+```bash
+whoisthat run spotify
+whoisthat run spotify --minimized
+whoisthat run firefox -P work https://example.com
+whoisthat run -d spotify                 # detached transient service
+whoisthat run -- /opt/app/-weird-name    # app name that starts with a dash
+```
+
+- Everything **before** the application name belongs to WhoisThat (`-d`, `--detach`, `-b`,
+  `--background`, plus global options).
+- Everything **after** the application name is passed through unchanged, even if it looks like a
+  WhoisThat flag. In `whoisthat run spotify --minimized`, `--minimized` is Spotify's flag.
+- `-d` after the application name is an application argument, not detach:
+  `whoisthat run spotify -d` launches `spotify -d`.
+- The application's exit code is propagated.
+- `whoisthat run --help` and `whoisthat help run` document the command.
+
+---
+
 ## Legacy flags
 
 Old flags are hidden aliases and keep working:

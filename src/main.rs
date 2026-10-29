@@ -43,10 +43,6 @@ use ui::App;
 #[tokio::main]
 async fn main() -> io::Result<()> {
     let argv: Vec<String> = std::env::args().collect();
-    if argv.get(1).map(String::as_str) == Some("run") {
-        let code = launcher::run_in_split_slice(&argv[2..]);
-        std::process::exit(code);
-    }
 
     if let Some(cmd) = argv.get(1).map(String::as_str) {
         if cmd.starts_with("wit://") || cmd.starts_with("wit:") {

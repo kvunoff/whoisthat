@@ -84,6 +84,8 @@ pub enum Command {
     Ip,
     /// Print version
     Version,
+    /// Launch an application inside the split-tunnel slice
+    Run(RunArgs),
 }
 
 #[derive(Debug, Args)]
@@ -106,6 +108,17 @@ pub struct ConnectArgs {
     /// Wait for the connection result
     #[arg(long)]
     pub wait: bool,
+}
+
+#[derive(Debug, Args)]
+#[command(trailing_var_arg = true)]
+pub struct RunArgs {
+    /// Run detached as a transient systemd user service
+    #[arg(short = 'd', long = "detach", short_alias = 'b', alias = "background")]
+    pub detach: bool,
+    /// Application and its arguments (passed through unchanged)
+    #[arg(required = true, allow_hyphen_values = true)]
+    pub argv: Vec<String>,
 }
 
 #[derive(Debug, Args)]
