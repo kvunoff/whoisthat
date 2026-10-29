@@ -55,6 +55,15 @@ pub async fn run(raw_args: &[String]) -> Outcome {
         return Outcome::Exit(2);
     };
 
+    if let Command::Run(args) = cmd {
+        let mut argv = Vec::new();
+        if args.detach {
+            argv.push("-d".to_string());
+        }
+        argv.extend(args.argv);
+        return Outcome::Exit(crate::launcher::run_in_split_slice(&argv));
+    }
+
     finish(dispatch(cmd, &cli.global).await)
 }
 
@@ -109,6 +118,7 @@ async fn dispatch(cmd: Command, g: &GlobalArgs) -> Result<(), CliError> {
         Command::Doctor => commands::doctor::run(g).await,
         Command::Ip => commands::connection::ip(g).await,
         Command::Version => commands::connection::version(g).await,
+        Command::Run(_) => unreachable!("run is handled in cli::run"),
     }
 }
 
@@ -253,5 +263,32 @@ mod tests {
             })) => assert_eq!(args.test_timeout, Some(5)),
             _ => panic!("unexpected command"),
         }
+    }
+
+    fn run_args(args: &[&str]) -> RunArgs {
+        match Cli::try_parse_from(args).expect("run args").cmd {
+            Some(Command::Run(a)) => a,
+            _ => panic!("expected run"),
+        }
+    }
+
+    #[test]
+    fn run_parses_detach_and_app_arguments() {
+        let a = run_args(&["whoisthat", "run", "-d", "spotify", "--foo", "-x"]);
+        assert!(a.detach);
+        assert_eq!(a.argv, vec!["spotify", "--foo", "-x"]);
+
+        let a = run_args(&["whoisthat", "run", "spotify", "-d"]);
+        assert!(!a.detach);
+        assert_eq!(a.argv, vec!["spotify", "-d"]);
+    }
+
+    #[test]
+    fn run_help_and_missing_target() {
+        let err = Cli::try_parse_from(["whoisthat", "run", "--help"]).unwrap_err();
+        assert_eq!(err.kind(), clap::error::ErrorKind::DisplayHelp);
+
+        let err = Cli::try_parse_from(["whoisthat", "run"]).unwrap_err();
+        assert_ne!(err.kind(), clap::error::ErrorKind::DisplayHelp);
     }
 }
