@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: all build core rust test test-go test-rust lint version-check fmt integration docs install clean
+.PHONY: all build core rust test test-go test-rust test-bump lint version-check fmt integration docs install clean
 
 all: build
 
@@ -13,13 +13,17 @@ core:
 rust:
 	cargo build --release --locked
 
-test: test-go test-rust
+test: test-go test-rust test-bump
 
 test-go:
 	cd core/core && go test ./...
 
 test-rust:
 	cargo test
+
+# Release-driver tests: throwaway clones, local bare origin, fake gh.
+test-bump:
+	./scripts/bump.test.sh
 
 # Privileged TUN/firewall scenarios in a throwaway network namespace.
 # Requires root (or CAP_NET_ADMIN) and is intentionally not part of `make test`.
