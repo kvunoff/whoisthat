@@ -35,7 +35,8 @@ GO_INSTALL_VERSION="1.26.8"
 XRAY_VERSION="v26.9.9"
 
 # --- configuration & defaults ------------------------------------------------
-BUILD_DIR="/tmp/whoisthat-build-$$"
+WORK_DIR=""
+BUILD_DIR=""
 BUILD_SRC_DIR=""
 GIT_REPO="https://github.com/kvunoff/whoisthat.git"
 ASSUME_YES=false
@@ -96,8 +97,8 @@ step()  { echo -e "\n${CYAN}==>${NC} ${BOLD}$*${NC}"; }
 
 cleanup() {
     local exit_code=$?
-    if [ -d "$BUILD_DIR" ] && [ "${SKIP_CLEANUP:-false}" != "true" ]; then
-        rm -rf "$BUILD_DIR"
+    if [ -n "${WORK_DIR:-}" ] && [ -d "$WORK_DIR" ]; then
+        rm -rf "$WORK_DIR"
     fi
     if [ $exit_code -ne 0 ]; then
         err "Installation failed (exit code $exit_code)."
@@ -438,19 +439,60 @@ install_go() {
         info "Go not found in PATH. Installing Go ${GO_INSTALL_VERSION}..."
     fi
 
-    local go_tarball="go${GO_INSTALL_VERSION}.linux-${GO_ARCH}.tar.gz"
-    local go_url="https://go.dev/dl/${go_tarball}"
-    local tmp_tar="/tmp/${go_tarball}"
+    if ! command -v sha256sum &>/dev/null; then
+        err "sha256sum is required to verify the Go archive but was not found."
+        exit 1
+    fi
 
-    info "Downloading ${go_url}..."
-    curl -fsSL "$go_url" -o "$tmp_tar"
+    local go_tarball="go${GO_INSTALL_VERSION}.linux-${GO_ARCH}.tar.gz"
+    local dl_dir="$WORK_DIR/go"
+    local want actual
+    mkdir -p "$dl_dir"
+
+    info "Downloading ${go_tarball}..."
+    curl -fsSL --proto '=https' --tlsv1.2 --retry 3 \
+        "https://dl.google.com/go/${go_tarball}" -o "$dl_dir/$go_tarball"
+    want=$(curl -fsSL --proto '=https' --tlsv1.2 --retry 3 \
+        "https://dl.google.com/go/${go_tarball}.sha256" | tr -d '[:space:]')
+    actual=$(sha256sum "$dl_dir/$go_tarball" | awk '{print $1}')
+    if ! printf '%s' "$want" | grep -Eq '^[0-9a-f]{64}$' || [ "$want" != "$actual" ]; then
+        err "Go checksum mismatch (expected '${want}', got '${actual}')."
+        err "Refusing to replace /usr/local/go with an unverified toolchain."
+        exit 1
+    fi
 
     info "Extracting to /usr/local/go..."
-    $SUDO rm -rf /usr/local/go
-    $SUDO tar -C /usr/local -xzf "$tmp_tar"
-    rm -f "$tmp_tar"
+    # Recover from an interrupted previous run before touching the toolchain.
+    if [ ! -e /usr/local/go ] && [ -d /usr/local/go.prev ]; then
+        $SUDO mv /usr/local/go.prev /usr/local/go
+    fi
+    $SUDO rm -rf /usr/local/.go-tmp
+    $SUDO mkdir -p /usr/local/.go-tmp
+    if ! $SUDO tar -C /usr/local/.go-tmp --strip-components=1 -xzf "$dl_dir/$go_tarball"; then
+        $SUDO rm -rf /usr/local/.go-tmp
+        err "Failed to extract the Go archive; existing toolchain left untouched."
+        exit 1
+    fi
+    $SUDO rm -rf /usr/local/go.prev
+    if [ -e /usr/local/go ]; then
+        $SUDO mv /usr/local/go /usr/local/go.prev
+    fi
+    if ! $SUDO mv /usr/local/.go-tmp /usr/local/go; then
+        if [ -d /usr/local/go.prev ]; then
+            $SUDO mv /usr/local/go.prev /usr/local/go
+        fi
+        err "Failed to activate the new Go toolchain."
+        exit 1
+    fi
+    $SUDO rm -rf /usr/local/go.prev
 
     export PATH="/usr/local/go/bin:$PATH"
+
+    local installed_go
+    installed_go=$(go version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)
+    if [ "${installed_go:-}" != "$GO_INSTALL_VERSION" ]; then
+        warn "Installed Go reports ${installed_go:-unknown}, expected ${GO_INSTALL_VERSION}."
+    fi
 
     local profile_file="$HOME/.profile"
     if [ -f "$profile_file" ] && ! grep -q '/usr/local/go/bin' "$profile_file" 2>/dev/null; then
@@ -508,11 +550,7 @@ build_whoisthat() {
     if [ "$BUILD_LOCAL" = "true" ] || ([ -f "./Cargo.toml" ] && [ -d "./core/core" ] && [ -z "$TARGET_BRANCH" ]); then
         info "Building directly from current directory: $(pwd)"
         src_dir="$(pwd)"
-        SKIP_CLEANUP=true
     else
-        rm -rf "$BUILD_DIR"
-        mkdir -p "$BUILD_DIR"
-
         local tag="$TARGET_BRANCH"
         if [ -z "$tag" ]; then
             info "Looking up latest release tag from GitHub..."
@@ -686,7 +724,7 @@ install_xray() {
     local xray_zip="Xray-linux-${XRAY_ARCH}.zip"
     local xray_url1="https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}/${xray_zip}"
     local xray_url2="https://ghfast.top/https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}/${xray_zip}"
-    local tmp_dir="/tmp/whoisthat-xray-$$"
+    local tmp_dir="$WORK_DIR/xray"
 
     info "Downloading precompiled Xray-core ${XRAY_VERSION} (${XRAY_ARCH})..."
     mkdir -p "$tmp_dir"
@@ -774,6 +812,9 @@ print_final_message() {
 # --- main --------------------------------------------------------------------
 main() {
     parse_args "$@"
+
+    WORK_DIR="$(mktemp -d)"
+    BUILD_DIR="$WORK_DIR/src"
 
     if [ "$UNINSTALL_MODE" = "true" ]; then
         uninstall_whoisthat
