@@ -23,7 +23,7 @@ curl -fsSL https://raw.githubusercontent.com/kvunoff/whoisthat/main/install.sh |
 ```
 
 **What the install script does:**
-1. Installs distribution build prerequisites (C compiler/make, `git`, `curl`, `unzip`, `libcap`/`setcap`). `pkexec` is optional and only checked by `whoisthat doctor`.
+1. Installs distribution build and runtime prerequisites (C compiler/make, `git`, `curl`, `unzip`, `libcap`/`setcap`, `iproute2`, `nftables`). `pkexec`/`iptables` are optional and reported by `whoisthat doctor`.
 2. Installs or adopts precompiled **Xray-core (pinned v26.9.9)** with SHA256 checksum verification. The installer **fails closed**: a missing or mismatched official checksum aborts the installation (override only with the explicit `--insecure-skip-verify` flag).
 3. Builds `whoisthat-core` (Go) and `whoisthat` (Rust).
 4. Installs binaries into `/usr/local/bin/`.
