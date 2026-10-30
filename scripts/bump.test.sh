@@ -80,7 +80,8 @@ EOF
 }
 
 run_bump() {
-    local out="$TMP/out-$(basename "$CASE_DIR").log"
+    local out
+    out="$TMP/out-$(basename "$CASE_DIR").log"
     ( cd "$CASE_DIR" && GH_LOG="$CASE_LOG" PATH="$TMP/bin:$PATH" ./scripts/bump.sh "$@" --fast --push ) > "$out" 2>&1
     local rc=$?
     if [ "$rc" -ne 0 ]; then
@@ -116,7 +117,7 @@ assert_grep "$CASE_LOG" "compare/v0.15.0...v0.16.0" "minor changelog base"
 assert_grep "$CASE_LOG" "### What's Changed" "release body wrapper"
 assert_grep "$CASE_DIR/.local/bump/commit.md.backup" "Test summary" "commit backup"
 assert_grep "$CASE_DIR/.local/bump/commit.md" "bump: fill in" "template restored"
-check_ok && pass "check-versions passes" || bad "check-versions fails"
+if check_ok; then pass "check-versions passes"; else bad "check-versions fails"; fi
 
 printf '\ntui patch\n'
 setup_case tui-patch
@@ -168,7 +169,7 @@ assert_eq "$(proto_ver)" "4" "protocol.txt"
 assert_eq "$(core_ver)"  "0.3.9" "core version"
 assert_eq "$(tui_ver)"   "0.15.2" "tui version"
 assert_grep "$CASE_DIR/src/core_client/protocol.rs" "EXPECTED_CORE_PROTOCOL_VERSION: u32 = 4;" "rust mirror"
-check_ok && pass "check-versions passes" || bad "check-versions fails"
+if check_ok; then pass "check-versions passes"; else bad "check-versions fails"; fi
 
 printf '\ndry run\n'
 setup_case dryrun
