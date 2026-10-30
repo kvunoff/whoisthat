@@ -392,29 +392,30 @@ install_system_deps() {
 
     case "$DISTRO_ID" in
         debian|ubuntu|linuxmint|pop)
-            info "Debian/Ubuntu family — installing build-essential, git, curl, unzip, libcap2-bin"
+            info "Debian/Ubuntu family — installing build-essential, git, curl, unzip, libcap2-bin, iproute2, nftables"
             $SUDO apt-get update -qq
-            $SUDO apt-get install -y -qq build-essential git curl unzip libcap2-bin
+            $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+                build-essential git curl unzip libcap2-bin iproute2 nftables
             return
             ;;
         fedora|rhel|centos|rocky|almalinux)
-            info "Fedora/RHEL family — installing gcc, git, curl, make, unzip, libcap"
-            $SUDO dnf install -y -q gcc git curl make unzip libcap
+            info "Fedora/RHEL family — installing gcc, git, curl, make, unzip, libcap, iproute, nftables"
+            $SUDO dnf install -y -q gcc git curl make unzip libcap iproute nftables
             return
             ;;
         arch|manjaro|endeavouros)
-            info "Arch family — installing base-devel, git, curl, unzip, libcap"
-            $SUDO pacman -S --noconfirm --needed base-devel git curl unzip libcap
+            info "Arch family — installing base-devel, git, curl, unzip, libcap, iproute2, nftables"
+            $SUDO pacman -S --noconfirm --needed base-devel git curl unzip libcap iproute2 nftables
             return
             ;;
         alpine)
-            info "Alpine — installing build-base, git, curl, unzip, libcap"
-            $SUDO apk add --no-cache build-base git curl unzip libcap
+            info "Alpine — installing build-base, git, curl, unzip, libcap, iproute2, nftables"
+            $SUDO apk add --no-cache build-base git curl unzip libcap iproute2 nftables
             return
             ;;
         opensuse*|suse)
-            info "openSUSE — installing gcc, git, curl, make, unzip, libcap-progs"
-            $SUDO zypper install -y -l gcc git curl make unzip libcap-progs
+            info "openSUSE — installing gcc, git, curl, make, unzip, libcap-progs, iproute2, nftables"
+            $SUDO zypper install -y -l gcc git curl make unzip libcap-progs iproute2 nftables
             return
             ;;
     esac
@@ -422,21 +423,23 @@ install_system_deps() {
     # Fallback for derivative distributions via ID_LIKE
     case "${DISTRO_LIKE}" in
         *debian*|*ubuntu*)
-            info "Debian/Ubuntu derivative (${DISTRO_ID}) — installing build-essential, git, curl, unzip, libcap2-bin"
+            info "Debian/Ubuntu derivative (${DISTRO_ID}) — installing build-essential, git, curl, unzip, libcap2-bin, iproute2, nftables"
             $SUDO apt-get update -qq
-            $SUDO apt-get install -y -qq build-essential git curl unzip libcap2-bin
+            $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+                build-essential git curl unzip libcap2-bin iproute2 nftables
             ;;
         *fedora*|*rhel*)
-            info "Fedora/RHEL derivative (${DISTRO_ID}) — installing gcc, git, curl, make, unzip, libcap"
-            $SUDO dnf install -y -q gcc git curl make unzip libcap
+            info "Fedora/RHEL derivative (${DISTRO_ID}) — installing gcc, git, curl, make, unzip, libcap, iproute, nftables"
+            $SUDO dnf install -y -q gcc git curl make unzip libcap iproute nftables
             ;;
         *arch*)
-            info "Arch derivative (${DISTRO_ID}) — installing base-devel, git, curl, unzip, libcap"
-            $SUDO pacman -S --noconfirm --needed base-devel git curl unzip libcap
+            info "Arch derivative (${DISTRO_ID}) — installing base-devel, git, curl, unzip, libcap, iproute2, nftables"
+            $SUDO pacman -S --noconfirm --needed base-devel git curl unzip libcap iproute2 nftables
             ;;
         *)
             warn "Unrecognized distribution (${DISTRO_ID})."
-            warn "Ensure you have: C compiler, make, git, curl, unzip, and libcap (setcap)."
+            warn "Ensure you have: C compiler, make, git, curl, unzip, libcap (setcap),"
+            warn "iproute2 (ip, ss) and nftables or iptables."
             ;;
     esac
 }
