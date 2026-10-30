@@ -40,8 +40,6 @@ BUILD_DIR=""
 BUILD_SRC_DIR=""
 GIT_REPO="https://github.com/kvunoff/whoisthat.git"
 ASSUME_YES=false
-NONINTERACTIVE=false
-INSTALL_TUN=true
 TARGET_BRANCH=""
 BUILD_LOCAL=false
 UNINSTALL_MODE=false
@@ -51,7 +49,6 @@ MODE="Install"
 ARCH_FAMILY=""
 GO_ARCH=""
 XRAY_ARCH=""
-T2S_ARCH=""
 DISTRO_ID=""
 DISTRO_NAME=""
 DISTRO_LIKE=""
@@ -74,7 +71,6 @@ if [ -t 1 ]; then
     RED='\033[0;31m'
     GREEN='\033[0;32m'
     YELLOW='\033[1;33m'
-    BLUE='\033[0;34m'
     CYAN='\033[0;36m'
     BOLD='\033[1m'
     NC='\033[0m'
@@ -82,7 +78,6 @@ else
     RED=''
     GREEN=''
     YELLOW=''
-    BLUE=''
     CYAN=''
     BOLD=''
     NC=''
@@ -94,8 +89,6 @@ err()   { echo -e "${RED}[-]${NC} $*"; }
 step()  { echo -e "\n${CYAN}==>${NC} ${BOLD}$*${NC}"; }
 
 # --- platform & privilege setup ----------------------------------------------
-[[ "$(uname)" == "Linux" ]] || { err "Only Linux is supported."; exit 1; }
-
 cleanup() {
     local exit_code=$?
     if [ -n "${WORK_DIR:-}" ] && [ -d "$WORK_DIR" ]; then
@@ -107,16 +100,19 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Determine sudo requirement (support running directly as root)
-if [ "$(id -u)" -eq 0 ]; then
-    SUDO=""
-elif command -v sudo &>/dev/null; then
-    SUDO="sudo"
-else
-    err "This installer requires superuser privileges to install binaries to /usr/local/bin."
-    err "Please install 'sudo' or run as root."
-    exit 1
-fi
+SUDO=""
+require_platform_and_privileges() {
+    [[ "$(uname)" == "Linux" ]] || { err "Only Linux is supported."; exit 1; }
+    if [ "$(id -u)" -eq 0 ]; then
+        SUDO=""
+    elif command -v sudo &>/dev/null; then
+        SUDO="sudo"
+    else
+        err "This installer requires superuser privileges to install binaries to /usr/local/bin."
+        err "Please install 'sudo' or run as root."
+        exit 1
+    fi
+}
 
 ensure_sudo() {
     if [ -n "$SUDO" ]; then
@@ -140,6 +136,9 @@ as_target() {
                 PATH="$TARGET_HOME/.cargo/bin:/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin")
     if [ -d "/run/user/$uid" ]; then
         e+=(XDG_RUNTIME_DIR="/run/user/$uid")
+        if [ -S "/run/user/$uid/bus" ]; then
+            e+=(DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus")
+        fi
     fi
     if command -v runuser >/dev/null 2>&1; then
         runuser -u "$TARGET_USER" -- env "${e[@]}" "$@"
@@ -160,7 +159,7 @@ Usage:
   curl -fsSL https://raw.githubusercontent.com/kvunoff/whoisthat/main/install.sh | bash -s -- [options]
 
 Options:
-  -y, --yes          Automatic yes to prompts (install all components)
+  -y, --yes          Accepted for compatibility (the installer asks no questions)
   --branch <name>    Build from a specific git branch or tag (default: latest release tag)
   --local            Build directly from current repository directory instead of cloning
   --insecure-skip-verify  Skip Xray archive checksum verification (DANGEROUS, not recommended)
@@ -168,35 +167,10 @@ Options:
   -h, --help         Show this help message and exit
 
 Environment Variables:
-  NONINTERACTIVE=1   Assume non-interactive execution (defaults to skipping optional prompts unless -y)
   ASSUME_YES=1       Equivalent to --yes
   WHOISTHAT_BRANCH   Equivalent to --branch
 
 EOF
-}
-
-prompt_yes_no() {
-    local prompt="$1"
-    local default="${2:-N}"
-    local answer=""
-
-    if [ "$ASSUME_YES" = "true" ]; then
-        return 0
-    fi
-    if [ "$NONINTERACTIVE" = "true" ]; then
-        [[ "$default" =~ ^[Yy]$ ]] && return 0 || return 1
-    fi
-
-    # Read from /dev/tty if available (crucial for curl | bash)
-    if [ -c /dev/tty ]; then
-        read -rp "$prompt " answer < /dev/tty || answer="$default"
-    elif [ -t 0 ]; then
-        read -rp "$prompt " answer || answer="$default"
-    else
-        answer="$default"
-    fi
-
-    [[ "$answer" =~ ^[Yy]$ ]]
 }
 
 version_ge() {
@@ -205,6 +179,17 @@ version_ge() {
     [[ "$v1" =~ ^[0-9]+\.[0-9]+$ ]] && v1="${v1}.0"
     [[ "$v2" =~ ^[0-9]+\.[0-9]+$ ]] && v2="${v2}.0"
     [ "$(printf '%s\n%s\n' "$v2" "$v1" | sort -V | head -n1)" = "$v2" ]
+}
+
+# Pick the highest stable vX.Y.Z tag from `git ls-remote --tags` output.
+# Pre-releases (v1.2.3-rc1) and core-v* markers are ignored.
+latest_release_tag() {
+    awk '{print $2}' \
+        | sed 's|refs/tags/||' \
+        | grep -v '\^{}' \
+        | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+        | sort -V \
+        | tail -n1
 }
 
 extract_zip() {
@@ -225,7 +210,7 @@ ensure_user_dir() {
     local dir="$1"
     mkdir -p "$dir"
     if [ "$(id -u)" -eq 0 ] && [ "$TARGET_USER" != "root" ]; then
-        chown -R "${TARGET_USER}:" "$dir" 2>/dev/null || true
+        chown "${TARGET_USER}:" "$dir" 2>/dev/null || true
     fi
 }
 
@@ -242,10 +227,22 @@ download_file_with_fallback() {
     return 1
 }
 
+# True when a distro package owns the path, so the installer does not clobber
+# (or later delete) a file that pacman/dpkg will expect to exist.
+package_owns() {
+    local path="$1"
+    if command -v pacman >/dev/null 2>&1 && pacman -Qo "$path" >/dev/null 2>&1; then
+        return 0
+    fi
+    if command -v dpkg >/dev/null 2>&1 && dpkg -S "$path" >/dev/null 2>&1; then
+        return 0
+    fi
+    return 1
+}
+
 # --- argument parsing --------------------------------------------------------
 parse_args() {
     [ "${ASSUME_YES:-0}" = "1" ] && ASSUME_YES=true
-    [ "${NONINTERACTIVE:-0}" = "1" ] && NONINTERACTIVE=true
     [ -n "${WHOISTHAT_BRANCH:-}" ] && TARGET_BRANCH="$WHOISTHAT_BRANCH"
 
     while [ $# -gt 0 ]; do
@@ -289,8 +286,8 @@ parse_args() {
                 exit 0
                 ;;
             *)
-                warn "Unknown option: $1"
-                shift
+                err "Unknown option: $1"
+                exit 2
                 ;;
         esac
     done
@@ -300,6 +297,46 @@ parse_args() {
 uninstall_whoisthat() {
     step "Uninstalling WhoisThat"
     ensure_sudo
+
+    # Stop the daemon and the user unit before deleting the binaries they run.
+    # systemctl --user must go through as_target: under sudo it would talk to
+    # root's session bus instead of the user's.
+    if command -v systemctl >/dev/null 2>&1; then
+        as_target systemctl --user disable --now whoisthat-core.service >/dev/null 2>&1 || true
+    fi
+    if [ -x /usr/local/bin/whoisthat ]; then
+        as_target /usr/local/bin/whoisthat core stop >/dev/null 2>&1 || true
+    fi
+    if command -v pkill >/dev/null 2>&1; then
+        pkill -TERM -u "$TARGET_USER" -x whoisthat-core >/dev/null 2>&1 || true
+    fi
+
+    local unit="$TARGET_HOME/.config/systemd/user/whoisthat-core.service"
+    if [ -f "$unit" ]; then
+        rm -f "$unit"
+        as_target systemctl --user daemon-reload >/dev/null 2>&1 || true
+        info "Removed $unit"
+    fi
+    local wants="$TARGET_HOME/.config/systemd/user/default.target.wants/whoisthat-core.service"
+    if [ -L "$wants" ]; then
+        rm -f "$wants"
+        info "Removed $wants"
+    fi
+
+    local user_desktop="$TARGET_HOME/.local/share/applications/whoisthat.desktop"
+    if [ -f "$user_desktop" ]; then
+        rm -f "$user_desktop"
+        info "Removed $user_desktop"
+    fi
+    local system_desktop="/usr/share/applications/whoisthat.desktop"
+    if [ -f "$system_desktop" ] && ! package_owns "$system_desktop"; then
+        $SUDO rm -f "$system_desktop"
+        info "Removed $system_desktop"
+    elif [ -f "$system_desktop" ]; then
+        info "Leaving package-owned $system_desktop in place"
+    fi
+    update-desktop-database "$TARGET_HOME/.local/share/applications" >/dev/null 2>&1 || true
+    update-desktop-database /usr/share/applications >/dev/null 2>&1 || true
 
     local removed=0
     for bin in whoisthat whoisthat-core whoisthat-parser; do
@@ -315,28 +352,6 @@ uninstall_whoisthat() {
     else
         info "WhoisThat binaries removed successfully."
     fi
-
-    # Systemd user unit (created by the TUI's autostart toggle) and the desktop
-    # entries (installed by the package or registered by the wit:// handler).
-    systemctl --user disable --now whoisthat-core.service >/dev/null 2>&1 || true
-    local unit="$TARGET_HOME/.config/systemd/user/whoisthat-core.service"
-    if [ -f "$unit" ]; then
-        rm -f "$unit"
-        systemctl --user daemon-reload >/dev/null 2>&1 || true
-        info "Removed $unit"
-    fi
-
-    local user_desktop="$TARGET_HOME/.local/share/applications/whoisthat.desktop"
-    if [ -f "$user_desktop" ]; then
-        rm -f "$user_desktop"
-        info "Removed $user_desktop"
-    fi
-    if [ -f "/usr/share/applications/whoisthat.desktop" ]; then
-        $SUDO rm -f "/usr/share/applications/whoisthat.desktop"
-        info "Removed /usr/share/applications/whoisthat.desktop"
-    fi
-    update-desktop-database "$TARGET_HOME/.local/share/applications" >/dev/null 2>&1 || true
-    update-desktop-database /usr/share/applications >/dev/null 2>&1 || true
 
     echo
     warn "User configuration (~/.config/whoisthat) and database/runtimes (~/.local/share/whoisthat) were preserved."
@@ -355,13 +370,11 @@ detect_arch() {
             ARCH_FAMILY="amd64"
             GO_ARCH="amd64"
             XRAY_ARCH="64"
-            T2S_ARCH="amd64"
             ;;
         aarch64|arm64)
             ARCH_FAMILY="arm64"
             GO_ARCH="arm64"
             XRAY_ARCH="arm64-v8a"
-            T2S_ARCH="arm64"
             ;;
         *)
             err "Unsupported architecture: $m"
@@ -394,7 +407,7 @@ install_system_deps() {
     case "$DISTRO_ID" in
         debian|ubuntu|linuxmint|pop)
             info "Debian/Ubuntu family — installing build-essential, git, curl, unzip, libcap2-bin, iproute2, nftables"
-            $SUDO apt-get update -qq
+            $SUDO apt-get update -qq || warn "apt-get update failed; continuing with the existing package lists"
             $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
                 build-essential git curl unzip libcap2-bin iproute2 nftables
             return
@@ -425,7 +438,7 @@ install_system_deps() {
     case "${DISTRO_LIKE}" in
         *debian*|*ubuntu*)
             info "Debian/Ubuntu derivative (${DISTRO_ID}) — installing build-essential, git, curl, unzip, libcap2-bin, iproute2, nftables"
-            $SUDO apt-get update -qq
+            $SUDO apt-get update -qq || warn "apt-get update failed; continuing with the existing package lists"
             $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
                 build-essential git curl unzip libcap2-bin iproute2 nftables
             ;;
@@ -456,7 +469,7 @@ install_go() {
 
     if command -v go &>/dev/null; then
         local current_go
-        current_go=$(go version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1)
+        current_go=$(go version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1 || true)
         if [ -n "$current_go" ] && version_ge "$current_go" "$GO_MIN_VERSION"; then
             info "Go ${current_go} detected (>= ${GO_MIN_VERSION}), skipping installation"
             return
@@ -538,9 +551,16 @@ install_rust() {
     if as_target sh -c 'command -v cargo >/dev/null 2>&1 && command -v rustc >/dev/null 2>&1'; then
         rust_ver=$(as_target rustc --version 2>/dev/null | awk '{print $2}' || true)
         if ! version_ge "${rust_ver:-0}" "1.79"; then
-            err "Rust ${rust_ver:-unknown} is too old: whoisthat needs 1.79 or newer."
-            err "Update it with: rustup update stable"
-            exit 1
+            if as_target sh -c 'command -v rustup >/dev/null 2>&1'; then
+                info "Rust ${rust_ver:-unknown} is older than 1.79, running 'rustup update stable'..."
+                as_target rustup update stable
+                rust_ver=$(as_target rustc --version 2>/dev/null | awk '{print $2}' || true)
+            fi
+            if ! version_ge "${rust_ver:-0}" "1.79"; then
+                err "Rust ${rust_ver:-unknown} is too old: whoisthat needs 1.79 or newer."
+                err "Update it with: rustup update stable"
+                exit 1
+            fi
         fi
         info "Rust ${rust_ver} detected, skipping installation"
         return
@@ -563,27 +583,15 @@ build_whoisthat() {
 
     local src_dir="$BUILD_DIR"
 
-    # Option to build in-place if running directly from local repo clone
-    if [ "$BUILD_LOCAL" = "true" ] || ([ -f "./Cargo.toml" ] && [ -d "./core/core" ] && [ -z "$TARGET_BRANCH" ]); then
+    # Option to build in-place if running directly from a local repo clone
+    if [ "$BUILD_LOCAL" = "true" ]; then
         info "Building directly from current directory: $(pwd)"
         src_dir="$(pwd)"
     else
         local tag="$TARGET_BRANCH"
         if [ -z "$tag" ]; then
             info "Looking up latest release tag from GitHub..."
-            tag=$(git ls-remote --tags --sort=-version:refname "$GIT_REPO" 'refs/tags/v*' 2>/dev/null \
-                | grep -v '\^{}' \
-                | head -1 \
-                | awk '{print $2}' \
-                | sed 's|refs/tags/||' || true)
-            if [ -z "$tag" ]; then
-                tag=$(git ls-remote --tags "$GIT_REPO" 'refs/tags/v*' 2>/dev/null \
-                    | grep -v '\^{}' \
-                    | awk '{print $2}' \
-                    | sed 's|refs/tags/||' \
-                    | sort -V \
-                    | tail -n1 || true)
-            fi
+            tag=$(git ls-remote --tags "$GIT_REPO" 'refs/tags/v*' 2>/dev/null | latest_release_tag || true)
             if [ -z "$tag" ]; then
                 warn "Could not determine latest release tag. Falling back to 'main' branch."
                 tag="main"
@@ -595,6 +603,20 @@ build_whoisthat() {
     fi
 
     cd "$src_dir"
+
+    # The checkout is authoritative for the required Rust version: --branch may
+    # point at a tag whose Cargo.toml differs from the one this script shipped with.
+    local rust_min
+    rust_min=$(sed -n 's/^rust-version = "\([^"]*\)"$/\1/p' "$src_dir/Cargo.toml" 2>/dev/null | head -1 || true)
+    if [ -n "${rust_min:-}" ]; then
+        local rust_now
+        rust_now=$(as_target rustc --version 2>/dev/null | awk '{print $2}' || true)
+        if ! version_ge "${rust_now:-0}" "$rust_min"; then
+            err "Rust ${rust_now:-unknown} is older than ${rust_min} required by this checkout."
+            err "Update it with: rustup update stable"
+            exit 1
+        fi
+    fi
 
     # 1. whoisthat-core (Go)
     info "1/2 Building whoisthat-core..."
@@ -616,13 +638,33 @@ install_binaries() {
 
     cd "$BUILD_SRC_DIR"
 
+    # Stage both binaries as hidden files first: the pair is swapped only after
+    # the new core has capabilities, so an interrupted or failed install never
+    # leaves a new TUI next to an old, incompatible core.
     info "Installing whoisthat and whoisthat-core..."
-    $SUDO install -Dm755 target/release/whoisthat              /usr/local/bin/whoisthat
-    $SUDO install -Dm755 core/core/whoisthat-core               /usr/local/bin/whoisthat-core
+    $SUDO install -Dm755 target/release/whoisthat /usr/local/bin/.whoisthat.new
+    $SUDO install -Dm755 core/core/whoisthat-core /usr/local/bin/.whoisthat-core.new
+
+    info "Granting network capabilities to whoisthat-core..."
+    if $SUDO setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep /usr/local/bin/.whoisthat-core.new 2>/dev/null; then
+        info "Capabilities configured: cap_net_admin, cap_net_raw, cap_setpcap"
+    else
+        warn "setcap failed or filesystem does not support capabilities."
+        warn "Run 'whoisthat doctor' for the manual setup command."
+    fi
+
+    $SUDO mv -f /usr/local/bin/.whoisthat.new /usr/local/bin/whoisthat
+    $SUDO mv -f /usr/local/bin/.whoisthat-core.new /usr/local/bin/whoisthat-core
+
     if [ -f "pkg/whoisthat.desktop" ]; then
-        $SUDO install -Dm644 pkg/whoisthat.desktop              /usr/share/applications/whoisthat.desktop
-        if command -v update-desktop-database >/dev/null 2>&1; then
-            $SUDO update-desktop-database /usr/share/applications 2>/dev/null || true
+        local desktop="/usr/share/applications/whoisthat.desktop"
+        if package_owns "$desktop"; then
+            info "Leaving package-owned ${desktop} in place"
+        else
+            $SUDO install -Dm644 pkg/whoisthat.desktop "$desktop"
+            if command -v update-desktop-database >/dev/null 2>&1; then
+                $SUDO update-desktop-database /usr/share/applications 2>/dev/null || true
+            fi
         fi
     fi
 
@@ -630,14 +672,6 @@ install_binaries() {
     if [ -f "/usr/local/bin/whoisthat-parser" ]; then
         info "Removing obsolete /usr/local/bin/whoisthat-parser (parser is now embedded in whoisthat-core)..."
         $SUDO rm -f "/usr/local/bin/whoisthat-parser"
-    fi
-
-    info "Granting network capabilities to whoisthat-core..."
-    if $SUDO setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep /usr/local/bin/whoisthat-core 2>/dev/null; then
-        info "Capabilities configured: cap_net_admin, cap_net_raw, cap_setpcap"
-    else
-        warn "setcap failed or filesystem does not support capabilities."
-        warn "WhoisThat will offer pkexec capability setup on startup if required for TUN mode."
     fi
 }
 
@@ -783,6 +817,34 @@ install_xray() {
     fi
 }
 
+# --- pre-flight checks -------------------------------------------------------
+check_disk_space() {
+    local avail
+    avail=$(df -Pk /tmp /usr/local 2>/dev/null | awk 'NR > 1 {print $4}' | sort -n | head -1 || true)
+    if [ -n "${avail:-}" ] && [ "$avail" -lt 2097152 ]; then
+        warn "Less than 2 GB free on /tmp or /usr/local; the build may fail."
+    fi
+}
+
+# --- post-install verification -----------------------------------------------
+verify_installation() {
+    local tui core
+    tui=$(as_target /usr/local/bin/whoisthat --version 2>/dev/null | head -1 || true)
+    core=$(as_target /usr/local/bin/whoisthat-core --version 2>/dev/null | head -1 || true)
+    if [ -z "$tui" ] || [ -z "$core" ]; then
+        err "Installed binaries did not run:"
+        err "  whoisthat: ${tui:-<no output>}"
+        err "  whoisthat-core: ${core:-<no output>}"
+        exit 1
+    fi
+    info "Verified: ${tui}; ${core}"
+    # doctor exits non-zero on missing capabilities, which is exactly the state
+    # after a failed setcap, so it is a hint here, never a failure.
+    if ! as_target /usr/local/bin/whoisthat doctor >/dev/null 2>&1; then
+        warn "whoisthat doctor reported issues; run 'whoisthat doctor' for details."
+    fi
+}
+
 # --- final banner & instructions ---------------------------------------------
 print_final_message() {
     local action="installed"
@@ -801,6 +863,13 @@ print_final_message() {
     echo -e "  Launch:"
     echo -e "    ${BOLD}whoisthat${NC}"
     echo
+    case ":$PATH:" in
+        *":/usr/local/bin:"*) ;;
+        *)
+            echo -e "  ${YELLOW}[!]${NC} /usr/local/bin is not in PATH; add it or use the full path."
+            echo
+            ;;
+    esac
     if [ "$MODE" = "Upgrade" ]; then
         echo -e "  ${YELLOW}[!]${NC} A core that was already running keeps the previous version."
         echo -e "      Restart it when convenient: ${BOLD}whoisthat core restart${NC}"
@@ -812,20 +881,7 @@ print_final_message() {
     echo -e "                      (runs as regular user via Linux ambient capabilities)"
     echo
     echo -e "  Key bindings:"
-    echo -e "    ${BOLD}j / k / ↑ / ↓${NC}  — navigate profiles"
-    echo -e "    ${BOLD}Enter / c${NC}      — connect / reconnect"
-    echo -e "    ${BOLD}d${NC}              — disconnect"
-    echo -e "    ${BOLD}v${NC}              — toggle TUN mode"
-    echo -e "    ${BOLD}t / T${NC}          — test latency (t = focused profile, T = all)"
-    echo -e "    ${BOLD}C${NC}              — cancel running tests"
-    echo -e "    ${BOLD}U${NC}              — add new subscription (group)"
-    echo -e "    ${BOLD}u${NC}              — update subscription"
-    echo -e "    ${BOLD}e${NC}              — edit subscription"
-    echo -e "    ${BOLD}X${NC}              — delete subscription"
-    echo -e "    ${BOLD}y${NC}              — copy profile URI"
-    echo -e "    ${BOLD}h${NC}              — view full help & all hotkeys"
-    echo -e "    ${BOLD}q${NC}              — detach (VPN keeps running in background)"
-    echo -e "    ${BOLD}Q / Ctrl+C${NC}     — full quit (stops VPN and exits)"
+    echo -e "    Press ${BOLD}h${NC} inside the TUI for the full help and all hotkeys."
     echo
     echo -e "  Configuration & Data:"
     echo -e "    Config:    ~/.config/whoisthat/"
@@ -846,6 +902,7 @@ print_final_message() {
 # --- main --------------------------------------------------------------------
 main() {
     parse_args "$@"
+    require_platform_and_privileges
 
     WORK_DIR="$(mktemp -d)"
     BUILD_DIR="$WORK_DIR/src"
@@ -872,12 +929,15 @@ main() {
     detect_arch
     detect_distro
     ensure_sudo
+    check_disk_space
     install_system_deps
     install_go
     install_rust
     build_whoisthat
     install_xray
+    ensure_sudo
     install_binaries
+    verify_installation
     print_final_message
 }
 

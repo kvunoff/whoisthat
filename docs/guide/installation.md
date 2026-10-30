@@ -16,11 +16,16 @@ curl -fsSL https://raw.githubusercontent.com/kvunoff/whoisthat/main/install.sh |
 
 ### Unattended / Non-Interactive Installation
 
-For server deployments, CI runners, or scripted setups, pass the `--yes` flag:
+The installer never prompts, so it can run from CI or a provisioning script as is.
+`--yes` is still accepted for compatibility:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/kvunoff/whoisthat/main/install.sh | bash -s -- --yes
 ```
+
+The script is always fetched from `main`, while the build uses the latest release
+tag. To install a specific release, pass `--branch vX.Y.Z`, or download
+`install.sh` from that tag.
 
 **What the install script does:**
 1. Installs distribution build and runtime prerequisites (C compiler/make, `git`, `curl`, `unzip`, `libcap`/`setcap`, `iproute2`, `nftables`). `pkexec`/`iptables` are optional and reported by `whoisthat doctor`.
