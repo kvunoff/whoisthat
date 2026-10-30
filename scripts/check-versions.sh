@@ -275,6 +275,7 @@ apply_set() {
         -e "s/^  \"version\": \"[^\"]*\",$/  \"version\": \"${new_tui}\",/"
 
     # package-lock.json: the first two "version" entries are the root package.
+    # shellcheck disable=SC2016  # awk vars, not shell expressions
     transform package-lock.json awk -v old="$tui" -v new="$new_tui" '
         n < 2 && index($0, "\"version\": \"" old "\"") {
             sub("\"version\": \"" old "\"", "\"version\": \"" new "\"")
@@ -387,14 +388,15 @@ run_checks() {
     check_json_field core_version   "$core"
 
     local toml_core
-    for toml_core in $(grep -rhoE 'core_version = "[0-9]+\.[0-9]+\.[0-9]+"' docs --include='*.md' 2>/dev/null |
-        sed -E 's/.*"([^"]+)"/\1/' | sort -u); do
+    while IFS= read -r toml_core; do
         check_eq "docs core_version (toml)" "$core" "$toml_core"
-    done
+    done < <(grep -rhoE 'core_version = "[0-9]+\.[0-9]+\.[0-9]+"' docs --include='*.md' 2>/dev/null |
+        sed -E 's/.*"([^"]+)"/\1/' | sort -u)
 
     check_docs_protocol "docs protocol_version"      '"protocol_version"[[:space:]]*:[[:space:]]*[0-9]+'
     check_docs_protocol "docs core_protocol_version" '"core_protocol_version"[[:space:]]*:[[:space:]]*[0-9]+'
     check_docs_protocol "docs (protocol N)"          '\(protocol [0-9]+\)'
+    # shellcheck disable=SC2016  # literal backticks in the markdown pattern
     check_docs_protocol "docs Protocol Version"      '\*\*Protocol Version\*\*: `[0-9]+`'
 
     if [ -n "$TAG" ]; then
@@ -425,18 +427,18 @@ check_eq() {
 
 check_json_field() {
     local field=$1 expected=$2 value
-    for value in $(grep -rhoE "\"${field}\": \"[0-9]+\.[0-9]+\.[0-9]+\"" docs --include='*.md' 2>/dev/null |
-        sed -E 's/.*: "([^"]+)"/\1/' | sort -u); do
+    while IFS= read -r value; do
         check_eq "docs $field" "$expected" "$value"
-    done
+    done < <(grep -rhoE "\"${field}\": \"[0-9]+\.[0-9]+\.[0-9]+\"" docs --include='*.md' 2>/dev/null |
+        sed -E 's/.*: "([^"]+)"/\1/' | sort -u)
 }
 
 check_docs_protocol() {
     local label=$1 pattern=$2 value
-    for value in $(grep -rhoE "$pattern" docs --include='*.md' 2>/dev/null |
-        grep -oE '[0-9]+' | sort -u); do
+    while IFS= read -r value; do
         check_eq "$label" "$protocol" "$value"
-    done
+    done < <(grep -rhoE "$pattern" docs --include='*.md' 2>/dev/null |
+        grep -oE '[0-9]+' | sort -u)
 }
 
 # --- main --------------------------------------------------------------------
