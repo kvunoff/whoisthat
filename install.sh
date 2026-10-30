@@ -46,6 +46,7 @@ TARGET_BRANCH=""
 BUILD_LOCAL=false
 UNINSTALL_MODE=false
 INSECURE_SKIP_VERIFY=false
+XRAY_DEGRADED=false
 MODE="Install"
 ARCH_FAMILY=""
 GO_ARCH=""
@@ -609,9 +610,9 @@ build_whoisthat() {
     info "All WhoisThat components built successfully."
 }
 
-# --- step 5: install binaries & set capabilities -----------------------------
+# --- step 6: install binaries & set capabilities -----------------------------
 install_binaries() {
-    step "Step 5/6: Install binaries to /usr/local/bin"
+    step "Step 6/6: Install binaries to /usr/local/bin"
 
     cd "$BUILD_SRC_DIR"
 
@@ -685,9 +686,19 @@ verify_xray_archive() {
     return 0
 }
 
-# --- step 6: install Xray-core -----------------------------------------------
+# Extract the version from `xray version` output exactly like the core does
+# (core/core/lib/xraymgr/version.go): "Xray v1.2.3 ...". A bare substring
+# match would accept "26.9.9" inside "26.9.90" or "126.9.9".
+xray_version() {
+    printf '%s\n' "$1" \
+        | grep -ioE 'Xray[[:space:]]+v?[0-9]+(\.[0-9]+)+' \
+        | head -1 \
+        | grep -oE '[0-9]+(\.[0-9]+)+' || true
+}
+
+# --- step 5: install Xray-core -----------------------------------------------
 install_xray() {
-    step "Step 6/6: Isolated Xray-core runtime (${XRAY_VERSION})"
+    step "Step 5/6: Isolated Xray-core runtime (${XRAY_VERSION})"
 
     local xray_dir="${RUNTIMES_DIR}/xray/${XRAY_VERSION}"
     local xray_bin="${xray_dir}/xray"
@@ -697,9 +708,10 @@ install_xray() {
 
     # 1. Check if already installed in isolated runtime directory
     if [ -x "$xray_bin" ]; then
-        local current_ver
-        current_ver="$(as_target "$xray_bin" version 2>&1 | head -1 || true)"
-        if echo "$current_ver" | grep -q "${XRAY_VERSION#v}"; then
+        local current_out current_ver
+        current_out="$(as_target "$xray_bin" version 2>&1 || true)"
+        current_ver=$(xray_version "$current_out")
+        if [ "$current_ver" = "${XRAY_VERSION#v}" ]; then
             info "Xray-core matches pinned version ${XRAY_VERSION} in isolated runtime (${xray_bin})"
             return
         else
@@ -711,9 +723,9 @@ install_xray() {
     local sys_xray=""
     for candidate in /usr/local/bin/xray /usr/bin/xray; do
         if [ -x "$candidate" ]; then
-            local cand_ver
-            cand_ver="$(as_target "$candidate" version 2>&1 | head -1 || true)"
-            if echo "$cand_ver" | grep -q "${XRAY_VERSION#v}"; then
+            local cand_out
+            cand_out="$(as_target "$candidate" version 2>&1 || true)"
+            if [ "$(xray_version "$cand_out")" = "${XRAY_VERSION#v}" ]; then
                 sys_xray="$candidate"
                 break
             fi
@@ -765,6 +777,7 @@ install_xray() {
         info "Isolated Xray-core installed: $(as_target "$xray_bin" version 2>&1 | head -1 || true)"
     else
         rm -rf "$tmp_dir"
+        XRAY_DEGRADED=true
         warn "Failed to download Xray-core archive."
         warn "WhoisThat core will attempt automatic background download upon startup."
     fi
@@ -780,6 +793,11 @@ print_final_message() {
     echo -e "${GREEN}  WhoisThat ${action} successfully!${NC}"
     echo -e "${GREEN}======================================================${NC}"
     echo
+    if [ "$XRAY_DEGRADED" = "true" ]; then
+        echo -e "  ${YELLOW}[!] Xray-core ${XRAY_VERSION} is not installed (download failed).${NC}"
+        echo -e "      TUN mode is unavailable until the core fetches it on first start."
+        echo
+    fi
     echo -e "  Launch:"
     echo -e "    ${BOLD}whoisthat${NC}"
     echo
@@ -858,8 +876,8 @@ main() {
     install_go
     install_rust
     build_whoisthat
-    install_binaries
     install_xray
+    install_binaries
     print_final_message
 }
 
