@@ -222,6 +222,52 @@ nft list table inet whoisthat_ks
 
 ---
 
+## Version Bumps & Releases
+
+`scripts/bump.sh` turns the release procedure into one validated command. It
+never edits version files directly: every write goes through
+`scripts/check-versions.sh --set`, which updates all mirrors (Cargo, npm,
+PKGBUILD/.SRCINFO, docs) and re-checks them before returning.
+
+Fill the two working texts first (they are gitignored under `.local/bump/`):
+
+```text
+.local/bump/commit.md    first non-empty line = commit summary, rest = body
+.local/bump/release.md   release notes (bullets or prose)
+```
+
+Then run:
+
+| Situation | Command |
+| :--- | :--- |
+| Major: `0.15.1 → 1.0.0` | `./scripts/bump.sh --kind tui --bump-type 1` |
+| Minor: `0.15.1 → 0.16.0` | `./scripts/bump.sh --kind tui --bump-type 2` |
+| Patch: `0.15.1 → 0.15.2` | `./scripts/bump.sh --kind tui --bump-type 3` |
+| pkgrel only: `0.15.1-1 → 0.15.1-2` | `./scripts/bump.sh --kind packaging --bump-type 4` |
+| Core fix, TUI unchanged | `./scripts/bump.sh --kind core --bump-type 3` |
+| Core + TUI | `./scripts/bump.sh --kind core-bundle --bump-type 3` |
+| Breaking IPC | `./scripts/bump.sh --kind protocol --bump-type 3 --protocol 4` |
+
+Add `--dry-run` to print the version diff and the planned commits/tags/releases
+without writing anything, and `--push` to push `main`/tags and create or update
+the GitHub releases. After a successful `--push`, the texts move to
+`*.md.backup` and the working files are reset to an empty template.
+
+Safety rules enforced by the script:
+
+- the texts must be filled (the template marker is rejected);
+- the tree must already pass `scripts/check-versions.sh`;
+- new tags and releases must not exist;
+- `kind packaging` refuses `src/**` or `core/core/**` changes unless
+  `--allow-source` is passed;
+- untracked files are refused unless `--allow-untracked` is passed;
+- version files are restored if a bump step fails before committing;
+- a `pkgrel` bump never creates a new tag or release: it force-moves the
+  existing `v*` tag, commits as `vX.Y.Z-N: ...`, and appends a package-revision
+  section to that release's notes.
+
+---
+
 ## CI/CD Workflows
 
 Continuous integration is handled via GitHub Actions in `.github/workflows/`:

@@ -6,6 +6,7 @@ opencode.json
 *.log
 whoisthat-core
 .local/
+.ignore
 node_modules/
 docs/.vitepress/dist/
 docs/.vitepress/cache/
