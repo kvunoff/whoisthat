@@ -729,6 +729,11 @@ print_final_message() {
     echo -e "  Launch:"
     echo -e "    ${BOLD}whoisthat${NC}"
     echo
+    if [ "$MODE" = "Upgrade" ]; then
+        echo -e "  ${YELLOW}[!]${NC} A core that was already running keeps the previous version."
+        echo -e "      Restart it when convenient: ${BOLD}whoisthat core restart${NC}"
+        echo
+    fi
     echo -e "  Modes:"
     echo -e "    • Proxy mode:     SOCKS5 (127.0.0.1:3090) & HTTP (127.0.0.1:3091)"
     echo -e "    • TUN mode:        Press '${BOLD}v${NC}' inside the TUI for full-system routing"
@@ -776,11 +781,9 @@ main() {
 
     if command -v whoisthat &>/dev/null || [ -f /usr/local/bin/whoisthat ]; then
         MODE="Upgrade"
-        local cur
-        cur=$(whoisthat --version 2>/dev/null || echo "detected")
-        info "Existing whoisthat installation found (${cur}) -> Upgrading"
-        # Gracefully stop running instance before replacing binaries
-        whoisthat --stop &>/dev/null || true
+        info "Existing whoisthat installation found -> Upgrading"
+        # Do not stop the running core: the daemon keeps the old inode and the TUI
+        # replaces it on its next launch, so an active VPN is not interrupted here.
     fi
 
     echo
