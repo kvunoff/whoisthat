@@ -126,6 +126,29 @@ ensure_sudo() {
     fi
 }
 
+as_target() {
+    # Run a command as TARGET_USER with that user's HOME/PATH. Used for anything
+    # that touches user-writable files, so root never executes them.
+    if [ "$(id -u)" -ne 0 ] || [ "$TARGET_USER" = "$(id -un)" ] || [ -z "${TARGET_HOME:-}" ]; then
+        "$@"
+        return
+    fi
+    local uid
+    uid=$(id -u "$TARGET_USER")
+    local -a e=(HOME="$TARGET_HOME"
+                PATH="$TARGET_HOME/.cargo/bin:/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin")
+    if [ -d "/run/user/$uid" ]; then
+        e+=(XDG_RUNTIME_DIR="/run/user/$uid")
+    fi
+    if command -v runuser >/dev/null 2>&1; then
+        runuser -u "$TARGET_USER" -- env "${e[@]}" "$@"
+    elif [ -n "$SUDO" ]; then
+        $SUDO -u "$TARGET_USER" env "${e[@]}" "$@"
+    else
+        su -s /bin/sh "$TARGET_USER" -c 'exec "$@"' sh env "${e[@]}" "$@"
+    fi
+}
+
 # --- helper functions --------------------------------------------------------
 show_help() {
     cat <<EOF
@@ -295,14 +318,14 @@ uninstall_whoisthat() {
     # Systemd user unit (created by the TUI's autostart toggle) and the desktop
     # entries (installed by the package or registered by the wit:// handler).
     systemctl --user disable --now whoisthat-core.service >/dev/null 2>&1 || true
-    local unit="$HOME/.config/systemd/user/whoisthat-core.service"
+    local unit="$TARGET_HOME/.config/systemd/user/whoisthat-core.service"
     if [ -f "$unit" ]; then
         rm -f "$unit"
         systemctl --user daemon-reload >/dev/null 2>&1 || true
         info "Removed $unit"
     fi
 
-    local user_desktop="$HOME/.local/share/applications/whoisthat.desktop"
+    local user_desktop="$TARGET_HOME/.local/share/applications/whoisthat.desktop"
     if [ -f "$user_desktop" ]; then
         rm -f "$user_desktop"
         info "Removed $user_desktop"
@@ -311,7 +334,7 @@ uninstall_whoisthat() {
         $SUDO rm -f "/usr/share/applications/whoisthat.desktop"
         info "Removed /usr/share/applications/whoisthat.desktop"
     fi
-    update-desktop-database "$HOME/.local/share/applications" >/dev/null 2>&1 || true
+    update-desktop-database "$TARGET_HOME/.local/share/applications" >/dev/null 2>&1 || true
     update-desktop-database /usr/share/applications >/dev/null 2>&1 || true
 
     echo
@@ -494,7 +517,7 @@ install_go() {
         warn "Installed Go reports ${installed_go:-unknown}, expected ${GO_INSTALL_VERSION}."
     fi
 
-    local profile_file="$HOME/.profile"
+    local profile_file="$TARGET_HOME/.profile"
     if [ -f "$profile_file" ] && ! grep -q '/usr/local/go/bin' "$profile_file" 2>/dev/null; then
         echo 'export PATH="/usr/local/go/bin:$PATH"' >> "$profile_file"
         info "Added /usr/local/go/bin to ~/.profile"
@@ -507,18 +530,11 @@ install_go() {
 install_rust() {
     step "Step 3/6: Verify Rust toolchain"
 
-    if [ -f "$HOME/.cargo/env" ]; then
-        # shellcheck source=/dev/null
-        source "$HOME/.cargo/env"
-    elif [ -d "$HOME/.cargo/bin" ] && [[ ":$PATH:" != *":$HOME/.cargo/bin:"* ]]; then
-        export PATH="$HOME/.cargo/bin:$PATH"
-    fi
-
-    if command -v cargo &>/dev/null && command -v rustc &>/dev/null; then
-        local rust_ver
-        rust_ver=$(rustc --version | awk '{print $2}')
-        if ! version_ge "$rust_ver" "1.79"; then
-            err "Rust ${rust_ver} is too old: whoisthat needs 1.79 or newer."
+    local rust_ver
+    if as_target sh -c 'command -v cargo >/dev/null 2>&1 && command -v rustc >/dev/null 2>&1'; then
+        rust_ver=$(as_target rustc --version 2>/dev/null | awk '{print $2}' || true)
+        if ! version_ge "${rust_ver:-0}" "1.79"; then
+            err "Rust ${rust_ver:-unknown} is too old: whoisthat needs 1.79 or newer."
             err "Update it with: rustup update stable"
             exit 1
         fi
@@ -527,17 +543,14 @@ install_rust() {
     fi
 
     info "Installing Rust stable via official rustup installer (https://rustup.rs)..."
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
-        | sh -s -- -y --default-toolchain stable
+    as_target sh -c 'curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable'
 
-    if [ -f "$HOME/.cargo/env" ]; then
-        # shellcheck source=/dev/null
-        source "$HOME/.cargo/env"
-    else
-        export PATH="$HOME/.cargo/bin:$PATH"
+    rust_ver=$(as_target rustc --version 2>/dev/null | awk '{print $2}' || true)
+    if [ -z "${rust_ver:-}" ]; then
+        err "Rust installation finished, but rustc is not available to ${TARGET_USER}."
+        exit 1
     fi
-
-    info "Rust ready: $(rustc --version)"
+    info "Rust ready: ${rust_ver}"
 }
 
 # --- step 4: build WhoisThat binaries ----------------------------------------
@@ -574,20 +587,20 @@ build_whoisthat() {
         fi
 
         info "Cloning whoisthat (${tag}) into ${BUILD_DIR}..."
-        git clone --depth 1 --branch "${tag}" "$GIT_REPO" "$BUILD_DIR"
+        as_target git clone --depth 1 --branch "${tag}" "$GIT_REPO" "$BUILD_DIR"
     fi
 
     cd "$src_dir"
 
     # 1. whoisthat-core (Go)
     info "1/2 Building whoisthat-core..."
-    (cd core/core && go build -o whoisthat-core)
-    [ -f core/core/whoisthat-core ] || { err "whoisthat-core build failed"; exit 1; }
+    ( cd "$src_dir/core/core" && as_target go build -o whoisthat-core )
+    [ -f "$src_dir/core/core/whoisthat-core" ] || { err "whoisthat-core build failed"; exit 1; }
 
     # 2. whoisthat TUI (Rust)
     info "2/2 Building whoisthat TUI..."
-    cargo build --release --locked
-    [ -f target/release/whoisthat ] || { err "whoisthat TUI build failed"; exit 1; }
+    ( cd "$src_dir" && as_target cargo build --release --locked )
+    [ -f "$src_dir/target/release/whoisthat" ] || { err "whoisthat TUI build failed"; exit 1; }
 
     BUILD_SRC_DIR="$src_dir"
     info "All WhoisThat components built successfully."
@@ -682,7 +695,7 @@ install_xray() {
     # 1. Check if already installed in isolated runtime directory
     if [ -x "$xray_bin" ]; then
         local current_ver
-        current_ver="$("$xray_bin" version 2>&1 | head -1)"
+        current_ver="$(as_target "$xray_bin" version 2>&1 | head -1 || true)"
         if echo "$current_ver" | grep -q "${XRAY_VERSION#v}"; then
             info "Xray-core matches pinned version ${XRAY_VERSION} in isolated runtime (${xray_bin})"
             return
@@ -696,7 +709,7 @@ install_xray() {
     for candidate in /usr/local/bin/xray /usr/bin/xray; do
         if [ -x "$candidate" ]; then
             local cand_ver
-            cand_ver="$("$candidate" version 2>&1 | head -1)"
+            cand_ver="$(as_target "$candidate" version 2>&1 | head -1 || true)"
             if echo "$cand_ver" | grep -q "${XRAY_VERSION#v}"; then
                 sys_xray="$candidate"
                 break
@@ -716,7 +729,7 @@ install_xray() {
         if [ "$(id -u)" -eq 0 ] && [ "$TARGET_USER" != "root" ]; then
             chown -R "${TARGET_USER}:" "$xray_dir" "$CONFIG_GEO_DIR" 2>/dev/null || true
         fi
-        info "Xray-core ready: $("$xray_bin" version 2>&1 | head -1)"
+        info "Xray-core ready: $(as_target "$xray_bin" version 2>&1 | head -1 || true)"
         return
     fi
 
@@ -746,7 +759,7 @@ install_xray() {
         fi
 
         rm -rf "$tmp_dir"
-        info "Isolated Xray-core installed: $("$xray_bin" version 2>&1 | head -1)"
+        info "Isolated Xray-core installed: $(as_target "$xray_bin" version 2>&1 | head -1 || true)"
     else
         rm -rf "$tmp_dir"
         warn "Failed to download Xray-core archive."
@@ -802,7 +815,7 @@ print_final_message() {
     echo -e "    Run '${BOLD}whoisthat doctor${NC}' to inspect system health and runtime status"
     echo
 
-    if [ -d "/usr/local/go/bin" ] && ! grep -q '/usr/local/go/bin' "$HOME/.profile" 2>/dev/null; then
+    if [ -d "/usr/local/go/bin" ] && ! grep -q '/usr/local/go/bin' "$TARGET_HOME/.profile" 2>/dev/null; then
         echo -e "  ${YELLOW}[!] To make Go available in future shells, run:${NC}"
         echo -e "      source ~/.profile"
         echo
@@ -815,6 +828,9 @@ main() {
 
     WORK_DIR="$(mktemp -d)"
     BUILD_DIR="$WORK_DIR/src"
+    if [ "$(id -u)" -eq 0 ] && [ "$TARGET_USER" != "root" ] && [ -n "$TARGET_HOME" ]; then
+        chown "$TARGET_USER:" "$WORK_DIR"
+    fi
 
     if [ "$UNINSTALL_MODE" = "true" ]; then
         uninstall_whoisthat
