@@ -66,7 +66,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: shellcheck
-        run: shellcheck -S error install.sh scripts/check-versions.sh scripts/bump.sh scripts/bump.test.sh
+        run: shellcheck -S warning install.sh scripts/install.test.sh scripts/check-versions.sh scripts/bump.sh scripts/bump.test.sh
+      - name: install.sh tests
+        run: ./scripts/install.test.sh
 
   bump:
     name: Bump script tests
