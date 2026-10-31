@@ -15,7 +15,7 @@
 #   4. WhoisThat suite:
 #        - whoisthat-core   (Go VPN daemon with ambient Linux capabilities & native URI parser)
 #        - whoisthat        (Ratatui Rust TUI client)
-#   5. Isolated Xray-core runtime (v26.9.9: ~/.local/share/whoisthat/runtimes/xray/)
+#   5. Isolated Xray-core runtime (v26.10.29: ~/.local/share/whoisthat/runtimes/xray/)
 # =============================================================================
 # Ensure running under bash
 if [ -z "${BASH_VERSION:-}" ]; then
@@ -32,7 +32,7 @@ set -euo pipefail
 # --- version constants -------------------------------------------------------
 GO_MIN_VERSION="1.26.0"
 GO_INSTALL_VERSION="1.26.8"
-XRAY_VERSION="v26.9.9"
+XRAY_VERSION="v26.10.29"
 
 # --- configuration & defaults ------------------------------------------------
 WORK_DIR=""

@@ -357,6 +357,11 @@ run_checks() {
     install_xray=$(sed -n 's/^XRAY_VERSION="\([^"]*\)"$/\1/p' install.sh | head -n1)
     check_eq "install.sh XRAY_VERSION" "$xray" "$install_xray"
 
+    # The doctor duplicates the pin; keep it from silently drifting.
+    local rust_xray
+    rust_xray=$(sed -n 's/^const PINNED_XRAY_VERSION: &str = "\([^"]*\)";$/\1/p' src/doctor/checks.rs | head -n1)
+    check_eq "doctor PINNED_XRAY_VERSION" "${xray#v}" "$rust_xray"
+
     rust_proto=$(sed -n 's/^pub const EXPECTED_CORE_PROTOCOL_VERSION: u32 = \([0-9]*\);$/\1/p' src/core_client/protocol.rs)
     check_eq "Rust EXPECTED_CORE_PROTOCOL_VERSION" "$protocol" "$rust_proto"
 

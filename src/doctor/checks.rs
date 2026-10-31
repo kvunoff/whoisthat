@@ -12,6 +12,9 @@ use crate::core_client::protocol::*;
 use crate::core_spawn::find_core_binary;
 use crate::doctor::types::{CheckCategory, CheckItem, DoctorReport};
 
+/// Must match `xraymgr.PinnedVersion` in core/core/lib/xraymgr/version.go.
+const PINNED_XRAY_VERSION: &str = "26.10.29";
+
 pub async fn run_doctor() -> DoctorReport {
     let cfg = config::load_config();
 
@@ -77,13 +80,13 @@ fn check_binaries() -> CheckCategory {
     match xray_info {
         Some((path, ver)) => {
             let msg = format!("{} ({})", path, ver);
-            if ver.contains("26.9.9") {
+            if ver.contains(PINNED_XRAY_VERSION) {
                 items.push(CheckItem::pass("xray-core", msg));
             } else {
                 items.push(CheckItem::warn(
                     "xray-core",
-                    format!("{} (recommended pinned version: v26.9.9)", msg),
-                    Some("WhoisThat will auto-download pinned v26.9.9 into ~/.local/share/whoisthat/runtimes/xray/".into()),
+                    format!("{} (recommended pinned version: v{PINNED_XRAY_VERSION})", msg),
+                    Some(format!("WhoisThat will auto-download pinned v{PINNED_XRAY_VERSION} into ~/.local/share/whoisthat/runtimes/xray/")),
                 ));
             }
         }
@@ -91,10 +94,9 @@ fn check_binaries() -> CheckCategory {
             items.push(CheckItem::warn(
                 "xray-core",
                 "xray binary not found in PATH or managed runtimes",
-                Some(
-                    "Install 'xray' or run WhoisThat to trigger automatic download of v26.9.9"
-                        .into(),
-                ),
+                Some(format!(
+                    "Install 'xray' or run WhoisThat to trigger automatic download of v{PINNED_XRAY_VERSION}"
+                )),
             ));
         }
     }
@@ -1144,7 +1146,7 @@ fn probe_xray() -> Option<(String, String)> {
     if runtime_dir.exists() {
         if let Ok(entries) = fs::read_dir(&runtime_dir) {
             let mut dirs: Vec<_> = entries.flatten().map(|e| e.path()).collect();
-            dirs.sort_by(|a, b| b.cmp(a)); // descending order so v26.9.9 precedes v26.3.27
+            dirs.sort_by(|a, b| b.cmp(a)); // newest-looking first; version match is checked per candidate
             for dir in dirs {
                 let bin = dir.join("xray");
                 if bin.exists() {
@@ -1176,7 +1178,7 @@ fn probe_xray() -> Option<(String, String)> {
                     }
                 }
 
-                if found_ver.contains("26.9.9") {
+                if found_ver.contains(PINNED_XRAY_VERSION) {
                     return Some((bin, found_ver));
                 }
 

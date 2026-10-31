@@ -55,7 +55,7 @@ flowchart TD
 | :--- | :--- | :--- |
 | **Frontend TUI & CLI** | **Rust** (`ratatui`, `tokio`, `crossterm`) | Zero garbage collection pauses, instant sub-millisecond startup for CLI tools, type-safe responsive UI layout calculation, robust async event loops. |
 | **Core VPN Daemon** | **Go** (`whoisthat-core`) | Concurrent network socket handling, clean cross-platform network API bindings, simple subprocess management, and direct compatibility with Go-based proxy ecosystems. |
-| **Proxy Engine** | **Xray-core** (pinned v26.9.9) | Battle-tested, high-throughput implementation of VLESS Reality, Vision flow, gRPC/xHTTP transports, and unified Hysteria2 QUIC support. |
+| **Proxy Engine** | **Xray-core** (pinned v26.10.29) | Battle-tested, high-throughput implementation of VLESS Reality, Vision flow, gRPC/xHTTP transports, and unified Hysteria2 QUIC support. |
 
 ---
 

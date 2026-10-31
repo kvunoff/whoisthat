@@ -1,6 +1,6 @@
 # Supported Protocols & Transports
 
-WhoisThat uses a unified proxy architecture powered by **Xray-core v26.9.9**. All protocols—including advanced QUIC and Reality handshakes—are parsed directly into Xray configurations, benefiting equally from native TUN routing, live gRPC traffic metrics, and DNS protection.
+WhoisThat uses a unified proxy architecture powered by **Xray-core v26.10.29**. All protocols—including advanced QUIC and Reality handshakes—are parsed directly into Xray configurations, benefiting equally from native TUN routing, live gRPC traffic metrics, and DNS protection.
 
 ---
 

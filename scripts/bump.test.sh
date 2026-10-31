@@ -33,8 +33,11 @@ build_base() {
     git -C "$dst" config user.name Test
     git -C "$dst" add -A
     git -C "$dst" commit -q -m base
+    git -C "$dst" tag v0.0.0
+    git -C "$dst" tag v0.14.0
     git -C "$dst" tag v0.15.0
     git -C "$dst" tag v0.15.1
+    git -C "$dst" tag core-v0.2.0
     git -C "$dst" tag core-v0.3.8
 }
 
@@ -122,6 +125,12 @@ assert_grep "$CASE_LOG" "### What's Changed" "release body wrapper"
 assert_grep "$CASE_DIR/.local/bump/commit.md.backup" "Test summary" "commit backup"
 assert_grep "$CASE_DIR/.local/bump/commit.md" "bump: fill in" "template restored"
 if check_ok; then pass "check-versions passes"; else bad "check-versions fails"; fi
+
+printf '\ntui major\n'
+setup_case tui-major
+run_bump --kind tui --bump-type 1
+assert_eq "$(tui_ver)" "1.0.0" "tui version"
+assert_grep "$CASE_LOG" "compare/v0.0.0...v1.0.0" "major changelog base"
 
 printf '\ntui patch\n'
 setup_case tui-patch

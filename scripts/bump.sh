@@ -352,16 +352,12 @@ resolve_base() {
             candidate="${prefix}${old}"
             ;;
         minor)
-            if [ "$minor" -gt 0 ]; then
-                candidate="${prefix}${major}.$((minor - 1)).0"
-                pattern="${prefix}${major}.$((minor - 1)).*"
-            fi
+            candidate="${prefix}${major}.${minor}.0"
+            pattern="${prefix}${major}.${minor}.*"
             ;;
         major)
-            if [ "$major" -gt 0 ]; then
-                candidate="${prefix}$((major - 1)).0.0"
-                pattern="${prefix}$((major - 1)).*"
-            fi
+            candidate="${prefix}${major}.0.0"
+            pattern="${prefix}${major}.*"
             ;;
     esac
 

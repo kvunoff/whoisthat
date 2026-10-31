@@ -50,7 +50,7 @@ whoisthat core status
 │  │  ⋅ Encrypted DB (AES-256-GCM)                    │  │
 │  │  ⋅ Subscription & HWID Engine                 │  │
 │  │  ⋅ TUN & Route Orchestrator                      │  │
-│  │  ⋅ Pinned Xray-core Manager (v26.9.9)            │  │
+│  │  ⋅ Pinned Xray-core Manager (v26.10.29)          │  │
 │  └─────────────────────────┬────────────────────────┘  │
 └────────────────────────────┼───────────────────────────┘
                              │ Ambient File Capabilities
@@ -72,7 +72,7 @@ whoisthat core status
 WhoisThat creates and manages virtual TUN network adapters and policy routing tables without running as `root` or relying on dangerous setuid binaries. Using Linux file capabilities (`cap_net_admin,cap_net_raw,cap_setpcap=+ep`), ambient capabilities are promoted at runtime, keeping user credentials and proxy logic secure.
 
 ### 2. Unified Protocol Engine
-All modern circumvention and proxy protocols are supported natively through a pinned build of **Xray-core (v26.9.9)**:
+All modern circumvention and proxy protocols are supported natively through a pinned build of **Xray-core (v26.10.29)**:
 * **VLESS**: Reality (TLS certificate camouflage), Vision flow, xHTTP (SplitHTTP), gRPC, and WebSocket transports.
 * **Hysteria2**: Native QUIC UDP protocol with Salamander obfuscation and UDP port hopping.
 * **VMess**, **Trojan**, **Shadowsocks** (2022 specs), and **SOCKS5**.
