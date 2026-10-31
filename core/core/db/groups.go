@@ -1,6 +1,7 @@
 package db
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -32,22 +33,33 @@ func (db *DB) UpdateGroupAndProfiles(group_id int, profiles []structs.DBAddProfi
 	byID := make(map[int]structs.Profile, len(group.Profiles))
 	// byURI keeps every known id per URI in ProfileOrder, so duplicate URIs
 	// inside one subscription get a stable id per occurrence instead of a new
-	// id on every refresh.
+	// id on every refresh. JSON-subscription profiles have no URI and are
+	// matched by ProviderKey instead.
 	byURI := make(map[string][]int, len(group.Profiles))
+	byKey := make(map[string][]int, len(group.Profiles))
 	lastID := group_config.LastId
 	for _, p := range group.Profiles {
 		byID[p.Id] = p
-		uri := normalizeProfileURI(p.Uri)
-		byURI[uri] = append(byURI[uri], p.Id)
+		if p.Managed {
+			byKey[p.ProviderKey] = append(byKey[p.ProviderKey], p.Id)
+		} else {
+			uri := normalizeProfileURI(p.Uri)
+			byURI[uri] = append(byURI[uri], p.Id)
+		}
 		if p.Id > lastID {
 			lastID = p.Id
 		}
 	}
 
 	keepURI := ""
+	keepKey := ""
 	if keep_profile_id != 0 {
 		if kept, ok := byID[keep_profile_id]; ok {
-			keepURI = normalizeProfileURI(kept.Uri)
+			if kept.Managed {
+				keepKey = kept.ProviderKey
+			} else {
+				keepURI = normalizeProfileURI(kept.Uri)
+			}
 			profiles_added = append(profiles_added, kept)
 		} else {
 			keep_profile_id = 0
@@ -61,26 +73,46 @@ func (db *DB) UpdateGroupAndProfiles(group_id int, profiles []structs.DBAddProfi
 		newOrder = append(newOrder, keep_profile_id)
 	}
 
-	// nextID indexes into byURI[uri]: occurrences of the same URI in the new
-	// subscription consume old ids in order, so the n-th duplicate keeps the
-	// n-th old id across refreshes.
+	// nextID indexes into byURI/byKey: occurrences of the same identity in the
+	// new subscription consume old ids in order, so the n-th duplicate keeps
+	// the n-th old id across refreshes.
 	nextID := make(map[string]int, len(profiles))
+	nextKey := make(map[string]int, len(profiles))
 	for _, data := range profiles {
-		uriKey := normalizeProfileURI(data.Uri)
-		if keep_profile_id != 0 && uriKey == keepURI {
-			continue
+		if keep_profile_id != 0 {
+			if data.Managed && keepKey != "" && data.ProviderKey == keepKey {
+				continue
+			}
+			if !data.Managed && keepKey == "" && normalizeProfileURI(data.Uri) == keepURI {
+				continue
+			}
 		}
 
 		id := 0
-		for id == 0 {
-			candidates := byURI[uriKey]
-			idx := nextID[uriKey]
-			if idx >= len(candidates) {
-				break
+		if data.Managed {
+			for id == 0 {
+				candidates := byKey[data.ProviderKey]
+				idx := nextKey[data.ProviderKey]
+				if idx >= len(candidates) {
+					break
+				}
+				nextKey[data.ProviderKey] = idx + 1
+				if !usedIDs[candidates[idx]] {
+					id = candidates[idx]
+				}
 			}
-			nextID[uriKey] = idx + 1
-			if !usedIDs[candidates[idx]] {
-				id = candidates[idx]
+		} else {
+			uriKey := normalizeProfileURI(data.Uri)
+			for id == 0 {
+				candidates := byURI[uriKey]
+				idx := nextID[uriKey]
+				if idx >= len(candidates) {
+					break
+				}
+				nextID[uriKey] = idx + 1
+				if !usedIDs[candidates[idx]] {
+					id = candidates[idx]
+				}
 			}
 		}
 		if id == 0 {
@@ -90,17 +122,20 @@ func (db *DB) UpdateGroupAndProfiles(group_id int, profiles []structs.DBAddProfi
 		usedIDs[id] = true
 
 		profile := structs.Profile{
-			Id:       id,
-			GroupId:  data.GroupId,
-			NanoID:   data.NanoID,
-			Name:     data.Name,
-			Protocol: data.Protocol,
-			Uri:      data.Uri,
-			Host:     data.Host,
-			Address:  data.Address,
+			Id:          id,
+			GroupId:     data.GroupId,
+			NanoID:      data.NanoID,
+			Name:        data.Name,
+			Protocol:    data.Protocol,
+			Uri:         data.Uri,
+			Host:        data.Host,
+			Address:     data.Address,
+			Port:        data.Port,
+			Managed:     data.Managed && len(data.Config) > 0,
+			ProviderKey: data.ProviderKey,
 		}
-		// Keep latency results when the same URI is still present.
-		if old, ok := byID[id]; ok && normalizeProfileURI(old.Uri) == normalizeProfileURI(data.Uri) {
+		// Keep latency results when the same identity is still present.
+		if old, ok := byID[id]; ok && sameProfileIdentity(old, data) {
 			profile.TestResult = old.TestResult
 			profile.TestedAt = old.TestedAt
 			profile.LossPct = old.LossPct
@@ -109,6 +144,13 @@ func (db *DB) UpdateGroupAndProfiles(group_id int, profiles []structs.DBAddProfi
 
 		if err := db.writeEncryptedJSON(db.GetProfileFilePath(group_id, id), profile); err != nil {
 			return profiles_added, fmt.Errorf("failed to write profile %d: %w", id, err)
+		}
+		if profile.Managed {
+			if err := db.saveProfileXrayConfig(group_id, id, data.Config); err != nil {
+				return profiles_added, fmt.Errorf("failed to write xray config %d: %w", id, err)
+			}
+		} else {
+			db.deleteProfileXrayConfig(group_id, id)
 		}
 		newOrder = append(newOrder, id)
 		profiles_added = append(profiles_added, profile)
@@ -125,6 +167,7 @@ func (db *DB) UpdateGroupAndProfiles(group_id int, profiles []structs.DBAddProfi
 	for _, p := range group.Profiles {
 		if !usedIDs[p.Id] {
 			_ = os.Remove(db.GetProfileFilePath(group_id, p.Id))
+			db.deleteProfileXrayConfig(group_id, p.Id)
 		}
 	}
 	return profiles_added, nil
@@ -132,6 +175,16 @@ func (db *DB) UpdateGroupAndProfiles(group_id int, profiles []structs.DBAddProfi
 
 func normalizeProfileURI(uri string) string {
 	return strings.TrimSpace(uri)
+}
+
+func sameProfileIdentity(old structs.Profile, data structs.DBAddProfileData) bool {
+	if old.Managed != data.Managed {
+		return false
+	}
+	if data.Managed {
+		return old.ProviderKey == data.ProviderKey
+	}
+	return normalizeProfileURI(old.Uri) == normalizeProfileURI(data.Uri)
 }
 
 func (db *DB) updateGroup(group structs.Group) error {
@@ -411,6 +464,14 @@ func (db *DB) MoveProfile(from_group_id int, to_group_id int, profile_id int) (s
 	if err := db.writeEncryptedJSON(new_path, moved); err != nil {
 		return moved, fmt.Errorf("failed to write moved profile %s: %w", new_path, err)
 	}
+	if old_profile.Managed {
+		var raw json.RawMessage
+		if err := db.readEncryptedJSON(db.GetProfileXrayConfigPath(from_group_id, profile_id), &raw); err == nil {
+			if err := db.saveProfileXrayConfig(to_group_id, new_id, raw); err != nil {
+				return moved, fmt.Errorf("failed to move xray config: %w", err)
+			}
+		}
+	}
 
 	to_group.ProfileOrder = append(to_group.ProfileOrder, new_id)
 	if err := db.saveGroupConfig(to_group); err != nil {
@@ -420,6 +481,7 @@ func (db *DB) MoveProfile(from_group_id int, to_group_id int, profile_id int) (s
 
 	old_path := db.GetProfileFilePath(from_group_id, profile_id)
 	_ = os.Remove(old_path)
+	db.deleteProfileXrayConfig(from_group_id, profile_id)
 	if from_group, err := db.loadGroupConfig(from_group_id); err == nil {
 		var newOrder []int
 		for _, pid := range from_group.ProfileOrder {

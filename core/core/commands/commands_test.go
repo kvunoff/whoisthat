@@ -434,3 +434,140 @@ func TestSubscriptionTitleFallsBackToHostAndRenameSurvives(t *testing.T) {
 		t.Errorf("reset name = %q, want 127.0.0.1", grp.Data.Name)
 	}
 }
+
+func jsonSubscriptionFixture() string {
+	return `[
+  {"remarks":"Berlin","outbounds":[{"tag":"proxy","protocol":"vless","settings":{"vnext":[{"address":"berlin.example","port":443}]}}]},
+  {"remarks":"Paris","outbounds":[{"tag":"proxy","protocol":"trojan","settings":{"servers":[{"address":"paris.example","port":8443}]}}]}
+]`
+}
+
+func TestUpdateSubscriptionPrefersJSONFormat(t *testing.T) {
+	cmd, pm, msgChan := newTestCmd(t)
+
+	linkList := base64.StdEncoding.EncodeToString([]byte(
+		"vless://22222222-3333-4444-5555-666666666666@5.6.7.8:443?type=tcp&security=none#UriOnly\n",
+	))
+
+	var requested []string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requested = append(requested, r.URL.Path)
+		if r.URL.Path == "/json" {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(jsonSubscriptionFixture()))
+			return
+		}
+		w.Write([]byte(linkList))
+	}))
+	defer ts.Close()
+
+	cmd.AddGroup(structs.AddGroupData{Name: "JSON", SubscriptionUrl: ts.URL}, pm)
+	waitForMessage(t, msgChan, "group-added", 2*time.Second)
+	raw := waitForMessage(t, msgChan, "subscription-updated", 3*time.Second)
+
+	var updated struct {
+		Data structs.SubscriptionUpdated `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &updated); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(updated.Data.Profiles) != 2 {
+		t.Fatalf("profiles = %d, want 2 JSON configs", len(updated.Data.Profiles))
+	}
+	if updated.Data.Group.SubscriptionFormat != "json" {
+		t.Errorf("subscription format = %q, want json", updated.Data.Group.SubscriptionFormat)
+	}
+	for _, p := range updated.Data.Profiles {
+		if !p.Managed {
+			t.Errorf("profile %s is not managed", p.Name)
+		}
+		if _, err := cmd.DB.LoadProfileXrayConfig(p.GroupId, p.Id); err != nil {
+			t.Errorf("missing stored config for %s: %v", p.Name, err)
+		}
+	}
+	if len(requested) == 0 || requested[0] != "/json" {
+		t.Errorf("JSON endpoint was not probed first: %v", requested)
+	}
+}
+
+func TestUpdateSubscriptionFallsBackWhenJSONMissing(t *testing.T) {
+	cmd, pm, msgChan := newTestCmd(t)
+
+	linkList := base64.StdEncoding.EncodeToString([]byte(
+		"vless://22222222-3333-4444-5555-666666666666@5.6.7.8:443?type=tcp&security=none#UriOnly\n",
+	))
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/json" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Write([]byte(linkList))
+	}))
+	defer ts.Close()
+
+	cmd.AddGroup(structs.AddGroupData{Name: "URI", SubscriptionUrl: ts.URL}, pm)
+	waitForMessage(t, msgChan, "group-added", 2*time.Second)
+	raw := waitForMessage(t, msgChan, "subscription-updated", 3*time.Second)
+
+	var updated struct {
+		Data structs.SubscriptionUpdated `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &updated); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(updated.Data.Profiles) != 1 || updated.Data.Profiles[0].Managed {
+		t.Fatalf("expected one share-link profile, got %+v", updated.Data.Profiles)
+	}
+	if updated.Data.Group.SubscriptionFormat != "uri" {
+		t.Errorf("subscription format = %q, want uri", updated.Data.Group.SubscriptionFormat)
+	}
+}
+
+func TestJSONGroupRejectsProviderRoutingChanges(t *testing.T) {
+	cmd, pm, msgChan := newTestCmd(t)
+	added, err := cmd.DB.AddGroup("JSON", "")
+	if err != nil {
+		t.Fatalf("AddGroup: %v", err)
+	}
+	group, err := cmd.DB.LoadGroupConfig(added.Id)
+	if err != nil {
+		t.Fatalf("LoadGroupConfig: %v", err)
+	}
+	group.SubscriptionFormat = "json"
+	if err := cmd.DB.SaveGroup(group); err != nil {
+		t.Fatalf("SaveGroup: %v", err)
+	}
+
+	cmd.SetGroupRoutingMode(structs.SetGroupRoutingModeData{GroupId: group.Id, Mode: "manual"}, pm)
+	raw := waitForMessage(t, msgChan, "warn", 2*time.Second)
+	var warning struct {
+		Data structs.Warning `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &warning); err != nil {
+		t.Fatalf("unmarshal warning: %v", err)
+	}
+	if warning.Data.Key != "set-group-routing-mode-failed" {
+		t.Errorf("warning key = %q, want set-group-routing-mode-failed", warning.Data.Key)
+	}
+
+	link := "happ://routing/add/" + base64.StdEncoding.EncodeToString([]byte(`{"Name":"X"}`))
+	cmd.ImportHappRouting(structs.ImportHappRoutingData{GroupId: group.Id, Link: link}, pm)
+	raw = waitForMessage(t, msgChan, "warn", 2*time.Second)
+	if err := json.Unmarshal(raw, &warning); err != nil {
+		t.Fatalf("unmarshal warning: %v", err)
+	}
+	if warning.Data.Key != "import-happ-routing-failed" {
+		t.Errorf("warning key = %q, want import-happ-routing-failed", warning.Data.Key)
+	}
+}
+
+func TestSubscriptionJSONURLPreservesQuery(t *testing.T) {
+	got, ok := subscriptionJSONURL("https://example.com/sub/token?x=1")
+	if !ok || got != "https://example.com/sub/token/json?x=1" {
+		t.Fatalf("subscriptionJSONURL = %q, %v", got, ok)
+	}
+	if _, ok := subscriptionJSONURL("https://example.com/sub/token/json"); ok {
+		t.Fatal("already-JSON URL must not be probed again")
+	}
+}

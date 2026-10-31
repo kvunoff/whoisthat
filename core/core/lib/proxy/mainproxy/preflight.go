@@ -3,6 +3,7 @@ package mainproxy
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -12,8 +13,10 @@ import (
 	"time"
 
 	"whoisthat-core/lib"
+	appconfig "whoisthat-core/lib/AppConfig"
 	"whoisthat-core/lib/geo"
 	"whoisthat-core/lib/logger"
+	"whoisthat-core/lib/xrayjson"
 	"whoisthat-core/lib/xraymgr"
 	"whoisthat-core/structs"
 	"whoisthat-core/utils"
@@ -40,8 +43,32 @@ func buildPreflightConfig(
 	selection structs.RoutingSelection,
 	withRouting bool,
 	tunActive bool,
+	rawConfig json.RawMessage,
 ) ([]byte, error) {
-	cfg, err := lib.ParseUriWithTun(profile.Uri, socksPort, httpPort, "")
+	var cfg []byte
+	var err error
+
+	if len(rawConfig) > 0 {
+		prepared, prepErr := xrayjson.Prepare(rawConfig, xrayjson.Options{
+			SocksPort:          socksPort,
+			HttpPort:           httpPort,
+			APIPort:            apiPort,
+			DNSServers:         appconfig.GetConfig().DnsServers,
+			BootstrapHosts:     selection.BootstrapHosts,
+			UserRules:          selection.Config.Rules,
+			UserDomainStrategy: selection.Config.DomainStrategy,
+		})
+		if prepErr != nil {
+			return nil, fmt.Errorf("failed to prepare provider config: %w", prepErr)
+		}
+		cfg, err = injectStatsConfig(prepared.Config, apiPort)
+		if err != nil {
+			return nil, fmt.Errorf("failed to inject stats config: %w", err)
+		}
+		return cfg, nil
+	}
+
+	cfg, err = lib.ParseUriWithTun(profile.Uri, socksPort, httpPort, "")
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse profile uri: %w", err)
 	}

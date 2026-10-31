@@ -16,6 +16,14 @@ import (
 
 var happRoutingMutex sync.Mutex
 
+// jsonSubscriptionGroup reports whether the group's routing baseline comes
+// from provider-owned Xray configs. Such groups keep manual rules editable, but
+// the bundled Happ profile (geo assets) and the routing mode are read-only.
+func (cmd *Cmd) jsonSubscriptionGroup(groupID int) bool {
+	group, err := cmd.DB.LoadGroupConfig(groupID)
+	return err == nil && group.SubscriptionFormat == "json"
+}
+
 func (cmd *Cmd) ImportHappRouting(data structs.ImportHappRoutingData, proxy_manager *proxy.ProxyManager) {
 	if len(data.Link) > 2*1024*1024 {
 		cmd.warn("import-happ-routing-failed", "Routing link payload too large")
@@ -24,6 +32,11 @@ func (cmd *Cmd) ImportHappRouting(data structs.ImportHappRoutingData, proxy_mana
 
 	happRoutingMutex.Lock()
 	defer happRoutingMutex.Unlock()
+
+	if cmd.jsonSubscriptionGroup(data.GroupId) {
+		cmd.warn("import-happ-routing-failed", "Provider routing is immutable for JSON subscriptions")
+		return
+	}
 
 	grp, err := cmd.DB.LoadGroupConfig(data.GroupId)
 	if err != nil {
@@ -125,6 +138,10 @@ func (cmd *Cmd) SetGroupRoutingMode(data structs.SetGroupRoutingModeData, proxy_
 		cmd.warn("set-group-routing-mode-failed", "Group not found")
 		return
 	}
+	if cmd.jsonSubscriptionGroup(data.GroupId) {
+		cmd.warn("set-group-routing-mode-failed", "Routing mode is provider-managed for JSON subscriptions")
+		return
+	}
 
 	err = cmd.DB.SetGroupRoutingMode(data.GroupId, mode)
 	if err != nil {
@@ -154,6 +171,10 @@ func (cmd *Cmd) SetActiveRoutingProfile(data structs.SetActiveRoutingProfileData
 	_, err := cmd.DB.LoadGroupConfig(data.GroupId)
 	if err != nil {
 		cmd.warn("set-active-routing-profile-failed", "Group not found")
+		return
+	}
+	if cmd.jsonSubscriptionGroup(data.GroupId) {
+		cmd.warn("set-active-routing-profile-failed", "Provider routing is immutable for JSON subscriptions")
 		return
 	}
 
@@ -241,6 +262,10 @@ func (cmd *Cmd) DeleteRoutingProfile(data structs.DeleteRoutingProfileData, prox
 	grp, err := cmd.DB.LoadGroupConfig(data.GroupId)
 	if err != nil {
 		cmd.warn("delete-routing-profile-failed", "Group not found")
+		return
+	}
+	if cmd.jsonSubscriptionGroup(data.GroupId) {
+		cmd.warn("delete-routing-profile-failed", "Provider routing is immutable for JSON subscriptions")
 		return
 	}
 
