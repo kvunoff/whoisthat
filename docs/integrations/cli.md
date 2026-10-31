@@ -158,7 +158,13 @@ Notes:
 
 * `route add --type` is the *user-facing* match type. Stored rules always use `type = "field"`;
   `geoip`/`geosite` values go into the `ip`/`domain` fields, matching the TUI.
-* Rule indexes are 1-based and refer to the effective config; indexes shift after `rm`/`move`.
+* Rule indexes are 1-based and refer to the manual rule set printed by `route list`
+  (global rules, or the group's custom rules). They are not Happ profile rules.
+* Happ routing can shadow manual rules: in `auto` mode with an active Happ profile,
+  and always in `subscription` mode. `route list` prints the effective source and a
+  shadowing warning; edits are saved but do not affect traffic until the group is
+  switched to `manual` (or the Happ profile is turned off). `--json` adds
+  `effective` and `manual_shadowed` fields.
 * Editing rules of an inheriting group implicitly switches it to `custom`; the CLI prints a note.
 * `inherit`/`custom` cannot be applied to global rules (group `0`).
 * Read-modify-write preserves the Happ DNS section.
@@ -246,7 +252,7 @@ whoisthat hwid status
 whoisthat hwid enable
 whoisthat hwid disable
 whoisthat hwid reset
-whoisthat hwid user-agent 'WhoisThat/1.0'
+whoisthat hwid user-agent 'whoisthat/1.0'
 ```
 
 ---
