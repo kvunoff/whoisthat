@@ -1,6 +1,7 @@
 package appconfig
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -13,6 +14,7 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"time"
 	"whoisthat-core/lib/logger"
 	"whoisthat-core/lib/version"
 	"whoisthat-core/utils"
@@ -176,10 +178,71 @@ func DefaultSocketPath() string {
 	return filepath.Join(dir, "core.sock")
 }
 
-func LoadConfig() {
-	config, err := readConfig()
+// LoadStatus tells the TUI whether config.json could be read. States:
+// "ok" (loaded), "missing" (first start), "corrupt" (unreadable; the running
+// config holds whatever could be recovered and the file was not written),
+// "repaired" (restored from config.json.bak).
+type LoadStatus struct {
+	State string `json:"state"`
+	Error string `json:"error,omitempty"`
+}
+
+var loadStatus = LoadStatus{State: "ok"}
+
+// Status returns how the current in-memory config was obtained.
+func Status() LoadStatus {
+	return loadStatus
+}
+
+func configPath() string {
+	return filepath.Join(utils.ConfigDir(), "config.json")
+}
+
+// BackupPath is the last known good config.json, refreshed on every successful
+// load. The TUI's "restore settings" action copies it back.
+func BackupPath() string {
+	return configPath() + ".bak"
+}
+
+// RestoreFromBackup writes the last known good config.json back and reloads
+// it. It is a no-op error when no backup exists yet.
+func RestoreFromBackup() error {
+	data, err := os.ReadFile(BackupPath())
 	if err != nil {
-		logger.Warn("failed to read config file:", err, "using default config")
+		return fmt.Errorf("no settings backup available: %w", err)
+	}
+	var probe = defaultConfig()
+	if err := json.Unmarshal(data, &probe); err != nil {
+		return fmt.Errorf("settings backup is unreadable: %w", err)
+	}
+	if err := utils.AtomicWriteFile(configPath(), data, 0600); err != nil {
+		return fmt.Errorf("cannot write config.json: %w", err)
+	}
+	LoadConfig()
+	if loadStatus.State == "corrupt" {
+		return fmt.Errorf("settings backup is unreadable")
+	}
+	return nil
+}
+
+func refreshBackup() {
+	data, err := os.ReadFile(configPath())
+	if err != nil {
+		return
+	}
+	if old, err := os.ReadFile(BackupPath()); err == nil && bytes.Equal(old, data) {
+		return
+	}
+	if err := utils.AtomicWriteFile(BackupPath(), data, 0600); err != nil {
+		logger.Warnf("config: cannot refresh settings backup: %v", err)
+	}
+}
+
+func LoadConfig() {
+	config, status := readConfig()
+	loadStatus = status
+	if status.State == "corrupt" {
+		logger.Warnf("config: %s (using recovered values; config.json left untouched)", status.Error)
 	}
 	if config.HwidEnabled && config.Hwid == "" {
 		config.Hwid = generateHwid()
@@ -199,8 +262,13 @@ func LoadConfig() {
 		config.KillSwitchEnabled = false
 	}
 	application_configuration = config
-	if migratedUserAgent {
+	if migratedUserAgent || status.State == "missing" {
 		SaveConfig()
+	}
+	// Keep the last known good copy so a corrupted config.json can be restored
+	// with one click instead of re-entering every setting.
+	if status.State == "ok" || status.State == "repaired" {
+		refreshBackup()
 	}
 }
 
@@ -360,6 +428,15 @@ func SaveConfig() {
 	}
 	_ = os.Chmod(dir_path, 0700)
 
+	// A damaged file is the only copy of the values that could not be parsed.
+	// Keep it before the first write over it, then the file is valid again.
+	if loadStatus.State == "corrupt" {
+		if data, err := os.ReadFile(config_path); err == nil {
+			aside := config_path + ".corrupt-" + time.Now().Format("20060102-150405")
+			_ = utils.AtomicWriteFile(aside, data, 0600)
+		}
+	}
+
 	jsonData, err := json.MarshalIndent(application_configuration, "", " ")
 	if err != nil {
 		logger.Warn("save config: marshal failed:", err)
@@ -368,27 +445,113 @@ func SaveConfig() {
 
 	if err := utils.AtomicWriteFile(config_path, jsonData, 0600); err != nil {
 		logger.Warn("save config: write failed:", err)
+		return
 	}
+	loadStatus = LoadStatus{State: "ok"}
 }
 
-func readConfig() (AppConfig, error) {
-	var default_config AppConfig = defaultConfig()
-	config_path := filepath.Join(utils.ConfigDir(), "config.json")
+func readConfig() (AppConfig, LoadStatus) {
+	config_path := configPath()
 	file_bytes, err := os.ReadFile(config_path)
-	if err == nil {
-		// Tighten permissions left behind by older releases (0666/0644).
-		_ = os.Chmod(config_path, 0600)
+	if os.IsNotExist(err) {
+		return defaultConfig(), LoadStatus{State: "missing"}
 	}
-	if err == nil {
-		if err := json.Unmarshal(file_bytes, &default_config); err != nil {
-			return default_config, fmt.Errorf("failed to parse config file, invalid json")
+	if err != nil {
+		return defaultConfig(), LoadStatus{State: "corrupt", Error: "cannot read config.json: " + err.Error()}
+	}
+	// Tighten permissions left behind by older releases (0666/0644).
+	_ = os.Chmod(config_path, 0600)
+	return parseConfig(file_bytes)
+}
+
+// parseConfig never gives up on the whole file because of one bad value: a
+// single corrupt field used to reset every setting on the next save.
+func parseConfig(data []byte) (AppConfig, LoadStatus) {
+	var cfg AppConfig = defaultConfig()
+	if err := json.Unmarshal(data, &cfg); err == nil {
+		return cfg, LoadStatus{State: "ok"}
+	}
+
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		// Not even a JSON object: fall back to the last known good copy.
+		if restored, ok := restoreBackupFile(); ok {
+			return restored, LoadStatus{State: "repaired"}
 		}
-		return default_config, nil
+		return defaultConfig(), LoadStatus{State: "corrupt", Error: "config.json is not valid JSON"}
 	}
 
-	if !os.IsNotExist(err) {
-		return default_config, fmt.Errorf("failed to read config file")
+	cfg = defaultConfig()
+	for key, raw := range fields {
+		if string(raw) == "null" {
+			continue
+		}
+		if err := applyField(&cfg, key, raw); err != nil {
+			logger.Warnf("config: ignoring invalid value for %q: %v", key, err)
+		}
 	}
+	return cfg, LoadStatus{State: "corrupt", Error: "config.json contains invalid values"}
+}
 
-	return default_config, nil
+// restoreBackupFile copies config.json.bak over config.json when the backup is
+// readable, so one unreadable file does not force the user to reconfigure.
+func restoreBackupFile() (AppConfig, bool) {
+	data, err := os.ReadFile(BackupPath())
+	if err != nil {
+		return AppConfig{}, false
+	}
+	var cfg AppConfig = defaultConfig()
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return AppConfig{}, false
+	}
+	if err := utils.AtomicWriteFile(configPath(), data, 0600); err != nil {
+		logger.Warnf("config: cannot restore backup: %v", err)
+		return AppConfig{}, false
+	}
+	logger.Warnf("config: restored settings from %s", BackupPath())
+	return cfg, true
+}
+
+// applyField decodes one top-level key so a single broken field cannot poison
+// the rest of the file.
+func applyField(cfg *AppConfig, key string, raw json.RawMessage) error {
+	switch key {
+	case "socks-port":
+		return json.Unmarshal(raw, &cfg.SocksPort)
+	case "http-port":
+		return json.Unmarshal(raw, &cfg.HttpPort)
+	case "core-tcp-port":
+		return json.Unmarshal(raw, &cfg.CoreTCPPort)
+	case "test-port-range":
+		return json.Unmarshal(raw, &cfg.TestPortRange)
+	case "dns-servers":
+		return json.Unmarshal(raw, &cfg.DnsServers)
+	case "tun-name":
+		return json.Unmarshal(raw, &cfg.TunName)
+	case "hwid-enabled":
+		return json.Unmarshal(raw, &cfg.HwidEnabled)
+	case "hwid":
+		return json.Unmarshal(raw, &cfg.Hwid)
+	case "user-agent":
+		return json.Unmarshal(raw, &cfg.UserAgent)
+	case "kill-switch-enabled":
+		return json.Unmarshal(raw, &cfg.KillSwitchEnabled)
+	case "autoconnect-enabled":
+		return json.Unmarshal(raw, &cfg.AutoconnectEnabled)
+	case "autoconnect-group-id":
+		return json.Unmarshal(raw, &cfg.AutoconnectGroupId)
+	case "autoconnect-profile-id":
+		return json.Unmarshal(raw, &cfg.AutoconnectProfileId)
+	case "autoconnect-mode":
+		return json.Unmarshal(raw, &cfg.AutoconnectMode)
+	case "test-config":
+		return json.Unmarshal(raw, &cfg.TestConfig)
+	case "ipc-socket-path":
+		return json.Unmarshal(raw, &cfg.IPCSocketPath)
+	case "tcp-enabled":
+		return json.Unmarshal(raw, &cfg.TCPEnabled)
+	case "split-tunnel":
+		return json.Unmarshal(raw, &cfg.SplitTunnel)
+	}
+	return nil // unknown keys are ignored, not fatal
 }

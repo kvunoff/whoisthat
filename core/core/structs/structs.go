@@ -133,6 +133,22 @@ type ApplicationState struct {
 	// them from every application-state so the two cannot drift.
 	TunName    string     `json:"tun_name,omitzero"`
 	TestConfig TestConfig `json:"test_config,omitzero"`
+	// ConfigStatus and DBStatus drive the "restore settings" button: a corrupt
+	// config or an unreadable database is reported here instead of failing
+	// silently.
+	ConfigStatus ConfigStatus `json:"config_status,omitzero"`
+	DBStatus     DBStatus     `json:"db_status,omitzero"`
+}
+
+type ConfigStatus struct {
+	State string `json:"state"` // ok | missing | corrupt | repaired
+	Error string `json:"error,omitempty"`
+}
+
+type DBStatus struct {
+	State      string `json:"state"` // ok | read-only
+	Error      string `json:"error,omitempty"`
+	SnapshotAt string `json:"snapshot_at,omitempty"`
 }
 
 type UpdateSubscriptionData struct {
