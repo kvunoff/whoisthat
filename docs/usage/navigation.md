@@ -94,7 +94,7 @@ whoisthat test group Work --wait
 | <kbd>1</kbd> | **Profiles** | Tree navigation, details panel, latency indicators |
 | <kbd>2</kbd> | **Routing** | Rule editor, presets catalog, Happ profiles modal |
 | <kbd>3</kbd> | **Traffic** | Real-time Braille bandwidth monitor (RX green, TX red) |
-| <kbd>4</kbd> | **Logs** | Live core log tail with level filter (<kbd>f</kbd>) |
+| <kbd>4</kbd> | **Logs** | Live core/TUI log tail (<kbd>s</kbd> switches source) with level filter (<kbd>f</kbd>) |
 | <kbd>5</kbd> | **Settings** | Configuration editor for themes, autostart, TUN name, kill-switch, split tunnel, logging, latency tests, HWID and User-Agent |
 
 ---

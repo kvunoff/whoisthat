@@ -21,8 +21,8 @@ whoisthat settings set theme=tokyo-night log-level=debug
 | **Autoconnect** | `on` / `off` | `off` | Automatically connect to the last used profile when the core daemon initializes. |
 | **Autostart Mode** | `proxy` / `tun` | `proxy` | Connection mode applied when autoconnect triggers (`proxy` = local SOCKS5/HTTP, `tun` = full system VPN). |
 | **Systemd Autostart**| `on` / `off` | `off` | Enables `whoisthat-core.service` user unit and configures user lingering to run at boot before login. |
-| **TUI Log** | `on` / `off` | `off` | Enables verbose debug logging for the Rust TUI (`~/.local/share/whoisthat/tui.log`). |
-| **Log Level** | `error`, `warn`, `info`, `debug`, `trace` | `warn` | TUI file-log threshold. The same value is passed to the core as `WHOISTHAT_LOG_LEVEL` when it is spawned; the core logger only supports `error`/`warn`/`info` (`debug` and `trace` map to `info`), and changing it does not reconfigure an already running daemon. |
+| **Verbose TUI log** | `on` / `off` | `off` | `off` caps the TUI at `warn`: errors are always written, warnings unless Log Level is `error`; `on` writes the configured level (including `info`/`debug`). |
+| **Log Level** | `error`, `warn`, `info`, `debug`, `trace` | `warn` | Threshold for both components. Applied to the TUI immediately and to the running core over IPC (`set-log-level`); `trace` is treated as `debug` by the core. When **Verbose TUI log** is off, the TUI caps this at `warn`. |
 | **Test Method** | `tcp`, `http-get`, `http-head` | `http-get` | Latency testing strategy. `http-get` routes via SOCKS5 proxy to measure real round-trip times. |
 | **Test Samples** | `1`, `3`, `5`, `10` | `3` | Number of sequential requests per test; the median round-trip time is recorded. |
 | **Test Concurrency**| `4`, `8`, `16`, `32`, `64` | `16` | Maximum simultaneous test subprocesses executed in parallel. |
@@ -35,7 +35,7 @@ whoisthat settings set theme=tokyo-night log-level=debug
 | **HWID Enabled** | `on` / `off` | `on` | Send hardware identification headers (`x-hwid`) during subscription fetches. |
 | **HWID** | Read-only hex | Auto | 16-character hexadecimal device fingerprint. |
 | **Reset HWID** | Action button | — | Generates a new random hardware identifier. |
-| **User-Agent** | Editable text | `whoisthat/v0.3.13` | Custom HTTP User-Agent header sent with subscription requests. |
+| **User-Agent** | Editable text | `whoisthat/v0.3.14` | Custom HTTP User-Agent header sent with subscription requests. |
 
 ---
 

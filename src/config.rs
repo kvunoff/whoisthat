@@ -138,6 +138,48 @@ pub fn ipc_token_path() -> String {
     }
 }
 
+/// Effective user for log paths. Matches Go's `utils.RealUserUid()`: when the
+/// process was started through sudo/pkexec, the log file belongs to the real
+/// user, not root.
+pub(crate) fn uid() -> u32 {
+    for key in ["SUDO_UID", "PKEXEC_UID"] {
+        if let Ok(value) = std::env::var(key) {
+            if let Ok(uid) = value.trim().parse::<u32>() {
+                return uid;
+            }
+        }
+    }
+    unsafe { libc_getuid() }
+}
+
+/// Fallback location when the XDG directory is not writable. A per-uid
+/// directory keeps the file out of a shared predictable /tmp path.
+pub fn fallback_log_path(name: &str) -> PathBuf {
+    std::env::temp_dir()
+        .join(format!("whoisthat-{}", uid()))
+        .join(name)
+}
+
+/// Candidates for the core log: the normal config dir first, then the
+/// read-only fallback (must match core/core/main.go).
+pub fn core_log_paths() -> Vec<PathBuf> {
+    vec![config_dir().join("core.log"), fallback_log_path("core.log")]
+}
+
+pub fn tui_log_paths() -> Vec<PathBuf> {
+    vec![data_dir().join("tui.log"), fallback_log_path("tui.log")]
+}
+
+/// First existing candidate, otherwise the primary path (for a "not found"
+/// message).
+pub fn first_existing(paths: &[PathBuf]) -> PathBuf {
+    paths
+        .iter()
+        .find(|p| p.exists())
+        .cloned()
+        .unwrap_or_else(|| paths[0].clone())
+}
+
 // Minimal getuid without pulling in the libc crate — matches Go's os.Getuid().
 extern "C" {
     #[link_name = "getuid"]

@@ -753,11 +753,9 @@ async fn handle_normal_input(
                     } else {
                         app.msg("Enabling systemd autostart...");
                         let core_path = find_core_binary();
-                        let log_level = cfg.log_level.clone();
-                        let result = tokio::task::spawn_blocking(move || {
-                            setup_systemd_service(&core_path, &log_level)
-                        })
-                        .await;
+                        let result =
+                            tokio::task::spawn_blocking(move || setup_systemd_service(&core_path))
+                                .await;
                         match result {
                             Ok(Ok(())) => {
                                 app.systemd_enabled = true;
@@ -792,6 +790,11 @@ async fn handle_normal_input(
                     cfg.log_enabled = app.log_enabled;
                     config::save_config(cfg);
                     configure_logger(logger, cfg.log_enabled, &cfg.log_level);
+                    app.msg(if app.log_enabled {
+                        "Verbose TUI logging enabled"
+                    } else {
+                        "TUI logging: warnings and errors only"
+                    });
                 }
                 6 => {
                     let levels = ["error", "warn", "info", "debug", "trace"];
@@ -804,6 +807,12 @@ async fn handle_normal_input(
                     cfg.log_level = app.log_level.clone();
                     config::save_config(cfg);
                     configure_logger(logger, cfg.log_enabled, &cfg.log_level);
+                    if let Err(e) = client.set_log_level(&app.log_level).await {
+                        log::warn!("failed to set core log level: {e}");
+                        app.msg(format!("Core log level not applied: {e}"));
+                    } else {
+                        app.msg(format!("Log level: {}", app.log_level));
+                    }
                 }
                 7 => {
                     app.popup = Some(Popup::EditTunName {
@@ -926,6 +935,11 @@ async fn handle_normal_input(
         AppAction::LogsCycleFilter => {
             app.logs_state.cycle_filter();
             app.msg(format!("Log filter: {}", app.logs_state.filter.label()));
+            false
+        }
+        AppAction::LogsCycleSource => {
+            app.logs_state.cycle_source();
+            app.msg(format!("Log source: {}", app.logs_state.source.label()));
             false
         }
         AppAction::None => false,

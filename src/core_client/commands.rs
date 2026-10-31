@@ -57,6 +57,21 @@ impl CoreClient {
             .await
     }
 
+    /// Fire-and-forget: the core logs the change and does not reply, so no
+    /// client (including CLI listeners) sees an unexpected `ok` frame.
+    pub async fn set_log_level(&self, level: &str) -> std::io::Result<()> {
+        self.writer
+            .lock()
+            .await
+            .send(
+                "set-log-level",
+                &SetLogLevelData {
+                    level: level.to_string(),
+                },
+            )
+            .await
+    }
+
     pub async fn add_profiles(&self, uris: &str, group_id: i32) -> std::io::Result<()> {
         self.writer
             .lock()
@@ -450,5 +465,27 @@ impl CoreClient {
                 },
             )
             .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core_client::connection::CoreConnection;
+    use tokio::net::UnixStream;
+
+    #[tokio::test]
+    async fn set_log_level_sends_a_fire_and_forget_frame() {
+        let (client_stream, server_stream) = UnixStream::pair().unwrap();
+        let (_, write) = CoreConnection::from_unix(client_stream).into_split();
+        let client = CoreClient::new(write);
+        let (mut peer_read, _) = CoreConnection::from_unix(server_stream).into_split();
+
+        client.set_log_level("debug").await.unwrap();
+        let msg = peer_read.recv().await.unwrap();
+
+        assert_eq!(msg.msg, "set-log-level");
+        assert_eq!(msg.data["level"], "debug");
+        assert!(msg.id.is_none(), "must not await a reply");
     }
 }

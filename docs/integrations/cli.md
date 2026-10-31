@@ -271,8 +271,11 @@ whoisthat logs -f --json              # NDJSON stream
 whoisthat logs --tui                  # ~/.local/share/whoisthat/tui.log
 ```
 
-The parser understands both the core format (`2026/10/29 12:00:00 [INFO] ...`) and the TUI format
-(`12:00:00 INFO  ...`). Rotation is detected by inode.
+The parser understands the current format (`2026/10/29 12:00:00 [INFO] ...`), the old core format
+(`12:00:00 [INFO] ...`) and the old TUI format (`12:00:00 INFO  ...`). `--level` accepts
+`error|warn|info|debug|trace`; anything else is rejected by the argument parser. `--json` adds a
+full `timestamp` alongside the legacy `time`. Rotation is detected by inode, and the TUI/core
+fallback paths (`$TMPDIR/whoisthat-<uid>/...`) are used when the primary file is missing.
 
 ---
 

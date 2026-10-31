@@ -47,16 +47,8 @@ fn unit_escape(value: &str) -> String {
         .replace('"', "\\\"")
 }
 
-fn valid_log_level(level: &str) -> &str {
-    match level {
-        "error" | "warn" | "info" | "debug" | "trace" => level,
-        _ => "warn",
-    }
-}
-
-fn generate_unit_file(core_path: &str, log_level: &str) -> String {
+fn generate_unit_file(core_path: &str) -> String {
     let core = unit_escape(core_path);
-    let level = unit_escape(valid_log_level(log_level));
     format!(
         "[Unit]\n\
          Description=WhoisThat VPN Core\n\
@@ -66,7 +58,6 @@ fn generate_unit_file(core_path: &str, log_level: &str) -> String {
          [Service]\n\
          Type=simple\n\
          ExecStart=\"{core}\"\n\
-         Environment=\"WHOISTHAT_LOG_LEVEL={level}\"\n\
          Restart=on-failure\n\
          RestartSec=5\n\
          \n\
@@ -91,12 +82,12 @@ fn enable_linger_via_pkexec() -> bool {
         .unwrap_or(false)
 }
 
-pub(crate) fn setup_systemd_service(core_path: &str, log_level: &str) -> Result<(), String> {
+pub(crate) fn setup_systemd_service(core_path: &str) -> Result<(), String> {
     let core =
         std::path::absolute(core_path).map_err(|e| format!("cannot resolve core path: {e}"))?;
     let core_str = core.to_string_lossy().to_string();
 
-    let unit = generate_unit_file(&core_str, log_level);
+    let unit = generate_unit_file(&core_str);
     let service_path = systemd_service_path();
     if let Some(parent) = service_path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("cannot create systemd dir: {e}"))?;
@@ -166,18 +157,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn unit_file_escapes_paths_and_levels() {
-        let unit = generate_unit_file("/tmp/with space/100%/whoisthat-core", "debug");
+    fn unit_file_escapes_paths() {
+        let unit = generate_unit_file("/tmp/with space/100%/whoisthat-core");
 
         assert!(unit.contains("ExecStart=\"/tmp/with space/100%%/whoisthat-core\""));
-        assert!(unit.contains("Environment=\"WHOISTHAT_LOG_LEVEL=debug\""));
+        // The log level is applied over IPC, so the unit must not pin a stale
+        // env value.
+        assert!(!unit.contains("WHOISTHAT_LOG_LEVEL"));
         // A stray space after the executable breaks systemd's argument parsing.
         assert!(!unit.contains("\" \n"));
-    }
-
-    #[test]
-    fn unit_file_coerces_invalid_log_levels() {
-        let unit = generate_unit_file("/usr/bin/whoisthat-core", "verbose; rm -rf /");
-        assert!(unit.contains("WHOISTHAT_LOG_LEVEL=warn"));
     }
 }

@@ -60,6 +60,7 @@ pub enum AppAction {
 
     // Logs
     LogsCycleFilter,
+    LogsCycleSource,
 
     // Unmapped
     None,

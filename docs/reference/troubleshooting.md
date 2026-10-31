@@ -24,11 +24,13 @@ Encountering an issue? Consult this troubleshooting matrix and frequently asked 
 | **App closes when closing terminal** | Application was started in foreground interactive mode without the `-d` flag. | Use `whoisthat run -d <app>` (or `-b`, `--detach`) to spawn as an independent transient systemd user service. |
 
 ::: tip First Step When Debugging Any Issue
-Before digging into source code, always tail the two real-time log files side-by-side in a separate terminal:
+Tail both logs in a separate terminal (or use the Logs tab, <kbd>s</kbd> switches core/tui):
 ```bash
 tail -f ~/.config/whoisthat/core.log ~/.local/share/whoisthat/tui.log
+whoisthat logs --level error
+whoisthat logs --tui --follow
 ```
-The core forwards exact dial errors, DNS lookup failures, and firewall command exit codes directly to `core.log`.
+The core forwards exact dial errors, DNS lookup failures, and firewall command exit codes directly to `core.log`. Xray's own stderr is inlined as a single `[ERRO]` line when it exits unexpectedly. A daemon panic lands in `~/.local/share/whoisthat/core-crash.log` (or journald when run as a service).
 :::
 
 ---

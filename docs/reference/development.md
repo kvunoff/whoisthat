@@ -106,10 +106,13 @@ whoisthat/
 
 | Log File | Produced by | Lifecycle & Rotation | Default Severity |
 | :--- | :--- | :--- | :---: |
-| `/tmp/whoisthat-tui.log` | Rust TUI | Emergency fallback if the data directory is read-only | `warn` |
-| `~/.config/whoisthat/core.log` | Go Core | Lumberjack rotation (20 MB max, 1 backup) | `warn` |
-| `/tmp/whoisthat-core.log` | Go Core | Emergency fallback if config directory is read-only | `warn` |
-| `~/.local/share/whoisthat/tui.log` | Rust TUI | Active when **TUI Log** setting is enabled | Configured level |
+| `~/.config/whoisthat/core.log` | Go Core | Lumberjack, 20 MB max, 2 backups | `info` (standalone); `warn` when spawned by the TUI |
+| `$TMPDIR/whoisthat-<uid>/core.log` | Go Core | Same rotation; used when the config dir is not writable | same |
+| `~/.local/share/whoisthat/tui.log` | Rust TUI | Rotated on write at 10 MiB, one `.1` backup, `0600` | `warn`; `info`+ with **Verbose TUI log** |
+| `$TMPDIR/whoisthat-<uid>/tui.log` | Rust TUI | Same rotation; used when the data dir is not writable | same |
+| `~/.local/share/whoisthat/core-crash.log` | Go Core | Unhandled panics/fatal errors; rotated at 1 MB | always |
+
+Both components write `YYYY/MM/DD HH:MM:SS [LEVEL] message` (no fractional seconds, so older clients can still parse `core.log`).
 
 ---
 
@@ -188,7 +191,7 @@ authoritative dependency set; update it deliberately with `cargo update`.
 
 ### Verbose Logging
 
-The TUI reads its level from `config.toml` (`log_level`) and only writes to `tui.log` when `log_enabled = true` (Settings → **TUI log**). `WHOISTHAT_LOG_LEVEL` is not read by the Rust logger; the TUI overwrites it when spawning the core.
+The TUI reads its level from `config.toml` (`log_level`). When `log_enabled = false` the level is capped at `warn` (errors always, warnings unless `log_level = "error"`); enabling **Verbose TUI log** removes the cap and writes the configured level. `WHOISTHAT_LOG_LEVEL` is not read by the Rust logger; the TUI passes it when spawning the core and also applies the level to a running core over IPC (`set-log-level`).
 
 For a standalone daemon with debug logging:
 
@@ -196,7 +199,7 @@ For a standalone daemon with debug logging:
 WHOISTHAT_LOG_LEVEL=debug ./core/core/whoisthat-core
 ```
 
-`cargo run` with the environment variable alone will not enable TUI debug output.
+Without the variable a standalone daemon uses `info`. `cargo run` with the environment variable alone will not enable TUI debug output (use the Settings toggle or `settings set log-enabled=true log-level=debug`). Debug logs are shared with all clients of the daemon.
 
 ### Manual Socket and Daemon Inspection
 

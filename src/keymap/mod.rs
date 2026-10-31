@@ -182,6 +182,7 @@ fn resolve_logs(key: &KeyEvent) -> AppAction {
         KeyCode::Char('g') => AppAction::ScrollTop,
         KeyCode::Char('G') => AppAction::ScrollBottom,
         KeyCode::Char('f') | KeyCode::Char('F') => AppAction::LogsCycleFilter,
+        KeyCode::Char('s') | KeyCode::Char('S') => AppAction::LogsCycleSource,
         KeyCode::Esc => AppAction::Dismiss,
         _ => AppAction::None,
     }
@@ -406,6 +407,10 @@ pub const LOGS_HELP: &[HelpEntry] = &[
     HelpEntry {
         key: "f",
         desc: "Cycle log level filter",
+    },
+    HelpEntry {
+        key: "s",
+        desc: "Switch log source (core/tui)",
     },
 ];
 

@@ -9,6 +9,8 @@ mod event_loop;
 mod input;
 mod keymap;
 mod launcher;
+mod logfile;
+mod logfmt;
 mod logger;
 mod net_info;
 mod popups;
@@ -35,7 +37,7 @@ use core_client::protocol::{
 };
 use core_client::{CoreClient, CoreConnection};
 use event_loop::{run_loop, AppEvent};
-use logger::{configure_logger, init_logger};
+use logger::{configure_logger, init_logger, install_panic_hook};
 use net_info::check_sudo_env;
 use systemd::systemd_is_enabled;
 use ui::App;
@@ -62,6 +64,7 @@ async fn main() -> io::Result<()> {
     }
 
     let logger = init_logger();
+    install_panic_hook(logger);
 
     let mut cfg = config::load_config();
     if !ui::theme::set_theme(&cfg.theme) {
@@ -76,6 +79,12 @@ async fn main() -> io::Result<()> {
     }
     configure_logger(logger, cfg.log_enabled, &cfg.log_level);
     let tui_version = env!("CARGO_PKG_VERSION").to_string();
+    log::info!(
+        "tui v{} started (verbose log: {}, level: {})",
+        tui_version,
+        cfg.log_enabled,
+        cfg.log_level
+    );
 
     // Auto-register wit:// desktop scheme handler in background
     deeplink::ensure_desktop_registered();
@@ -154,6 +163,9 @@ async fn main() -> io::Result<()> {
         })?;
 
     let client = CoreClient::new(write_half);
+    // Best effort: an older core ignores the unknown message, and the level
+    // still comes from WHOISTHAT_LOG_LEVEL at spawn time.
+    let _ = client.set_log_level(&cfg.log_level).await;
 
     let mut core_rx = core_client::spawn_read_loop(
         read_half,

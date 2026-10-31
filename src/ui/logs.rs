@@ -1,5 +1,5 @@
 use std::fs::File;
-use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
+use std::io::{BufRead, BufReader, Seek, SeekFrom};
 use std::os::unix::fs::MetadataExt;
 
 use ratatui::{
@@ -11,6 +11,8 @@ use ratatui::{
 };
 
 use super::theme::*;
+use crate::config;
+use crate::logfmt::{self, Level};
 
 /// Rendered log tail length and how much of the file is read at startup.
 const MAX_LINES: usize = 500;
@@ -48,54 +50,66 @@ impl LogFilter {
             LogFilter::Trace => "trace+",
         }
     }
-}
 
-fn line_level(line: &str) -> u8 {
-    if line.contains("[ERRO]") {
-        0 // error
-    } else if line.contains("[WARN]") {
-        1
-    } else if line.contains("[INFO]") {
-        2
-    } else if line.contains("[DEBU]") {
-        3
-    } else if line.contains("[TRAC]") {
-        4
-    } else {
-        5 // unknown/no level
+    fn min_level(self) -> Option<Level> {
+        match self {
+            LogFilter::All => None,
+            LogFilter::Error => Some(Level::Error),
+            LogFilter::Warn => Some(Level::Warn),
+            LogFilter::Info => Some(Level::Info),
+            LogFilter::Debug => Some(Level::Debug),
+            LogFilter::Trace => Some(Level::Trace),
+        }
     }
 }
 
-fn filter_min_level(filter: LogFilter) -> u8 {
-    match filter {
-        LogFilter::All => 255,
-        LogFilter::Error => 0,
-        LogFilter::Warn => 1,
-        LogFilter::Info => 2,
-        LogFilter::Debug => 3,
-        LogFilter::Trace => 4,
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum LogSource {
+    Core,
+    Tui,
+}
+
+impl LogSource {
+    pub fn label(self) -> &'static str {
+        match self {
+            LogSource::Core => "core",
+            LogSource::Tui => "tui",
+        }
     }
+
+    fn next(self) -> Self {
+        match self {
+            LogSource::Core => LogSource::Tui,
+            LogSource::Tui => LogSource::Core,
+        }
+    }
+
+    fn paths(self) -> Vec<std::path::PathBuf> {
+        match self {
+            LogSource::Core => config::core_log_paths(),
+            LogSource::Tui => config::tui_log_paths(),
+        }
+    }
+}
+
+fn line_level(line: &str) -> Option<Level> {
+    logfmt::parse(line).level
 }
 
 fn line_passes_filter(line: &str, filter: LogFilter) -> bool {
-    if filter == LogFilter::All {
+    let Some(min) = filter.min_level() else {
         return true;
-    }
-    let level = line_level(line);
-    if level == 5 {
-        // Lines without a level tag: shown only in All
-        return false;
-    }
-    level <= filter_min_level(filter)
+    };
+    line_level(line).is_some_and(|level| level <= min)
 }
 
 fn line_style(line: &str) -> Style {
     match line_level(line) {
-        0 => s_error(),
-        1 => s_warn(),
-        2 => s_success(),
-        3 | 4 => s_dim(),
-        _ => s_faint(),
+        Some(Level::Error) => s_error(),
+        Some(Level::Warn) => s_warn(),
+        Some(Level::Info) => s_success(),
+        Some(Level::Debug) | Some(Level::Trace) => s_dim(),
+        None => s_faint(),
     }
 }
 
@@ -104,8 +118,11 @@ pub struct LogsState {
     pub scroll: usize,
     pub auto_scroll: bool,
     pub filter: LogFilter,
+    pub source: LogSource,
     reader: Option<BufReader<File>>,
     log_path: String,
+    /// Height of the rendered list; used to clamp `scroll` (top line index).
+    viewport: usize,
     /// (device, inode) of the file the reader is attached to. A change means
     /// the file was rotated (lumberjack) and the tail must be reopened.
     file_id: Option<(u64, u64)>,
@@ -113,27 +130,43 @@ pub struct LogsState {
 }
 
 impl LogsState {
-    pub fn new(log_path: &str) -> Self {
-        let (lines, reader) = read_log_file(log_path);
-        let scroll = lines.len().saturating_sub(1);
-        let (file_id, file_len) = file_state(log_path);
+    pub fn new() -> Self {
+        let path = config::first_existing(&config::core_log_paths());
+        let (lines, reader) = read_log_file(&path.to_string_lossy());
+        let (file_id, file_len) = file_state(&path.to_string_lossy());
 
-        Self {
+        let mut state = Self {
             lines,
-            scroll,
+            scroll: 0,
             auto_scroll: true,
             filter: LogFilter::All,
+            source: LogSource::Core,
             reader,
-            log_path: log_path.to_string(),
+            log_path: path.to_string_lossy().into_owned(),
+            viewport: 20,
             file_id,
             file_len,
-        }
+        };
+        state.scroll = state.max_scroll();
+        state
     }
 
     pub fn cycle_filter(&mut self) {
         self.filter = self.filter.next();
-        self.scroll = self.filtered_lines().len().saturating_sub(1);
         self.auto_scroll = true;
+        self.scroll = self.max_scroll();
+    }
+
+    pub fn cycle_source(&mut self) {
+        self.source = self.source.next();
+        let path = config::first_existing(&self.source.paths());
+        self.log_path = path.to_string_lossy().into_owned();
+        (self.lines, self.reader) = read_log_file(&self.log_path);
+        let (file_id, file_len) = file_state(&self.log_path);
+        self.file_id = file_id;
+        self.file_len = file_len;
+        self.auto_scroll = true;
+        self.scroll = self.max_scroll();
     }
 
     fn filtered_lines(&self) -> Vec<&String> {
@@ -141,6 +174,14 @@ impl LogsState {
             .iter()
             .filter(|l| line_passes_filter(l, self.filter))
             .collect()
+    }
+
+    /// Highest valid top-line index. `scroll` is the first visible line, not
+    /// the last, so the maximum is `total - viewport`.
+    fn max_scroll(&self) -> usize {
+        self.filtered_lines()
+            .len()
+            .saturating_sub(self.viewport.max(1))
     }
 
     pub fn poll(&mut self) {
@@ -163,7 +204,7 @@ impl LogsState {
             self.file_id = file_id;
             self.file_len = file_len;
             if self.auto_scroll {
-                self.scroll = self.lines.len().saturating_sub(1);
+                self.scroll = self.max_scroll();
             }
             return;
         }
@@ -186,34 +227,32 @@ impl LogsState {
                 self.lines.drain(..drain);
             }
             if self.auto_scroll {
-                self.scroll = self.lines.len().saturating_sub(1);
+                self.scroll = self.max_scroll();
             }
         }
         self.file_len = file_len;
     }
 
     pub fn scroll_down(&mut self) {
-        let vis = self.lines.len().saturating_sub(1);
-        if self.scroll < vis {
+        let max = self.max_scroll();
+        if self.scroll < max {
             self.scroll += 1;
         }
-        if self.scroll >= vis {
+        if self.scroll >= max {
             self.auto_scroll = true;
         }
     }
 
     pub fn scroll_page_down(&mut self, step: usize) {
-        let vis = self.lines.len().saturating_sub(1);
-        self.scroll = (self.scroll + step).min(vis);
-        if self.scroll >= vis {
+        let max = self.max_scroll();
+        self.scroll = (self.scroll + step).min(max);
+        if self.scroll >= max {
             self.auto_scroll = true;
         }
     }
 
     pub fn scroll_up(&mut self) {
-        if self.scroll > 0 {
-            self.scroll -= 1;
-        }
+        self.scroll = self.scroll.saturating_sub(1);
         self.auto_scroll = false;
     }
 
@@ -223,7 +262,7 @@ impl LogsState {
     }
 
     pub fn scroll_bottom(&mut self) {
-        self.scroll = self.lines.len().saturating_sub(1);
+        self.scroll = self.max_scroll();
         self.auto_scroll = true;
     }
 
@@ -241,31 +280,12 @@ fn file_state(path: &str) -> (Option<(u64, u64)>, u64) {
 }
 
 fn read_log_file(path: &str) -> (Vec<String>, Option<BufReader<File>>) {
-    let mut file = match File::open(path) {
-        Ok(f) => f,
+    let path_ref = std::path::Path::new(path);
+    let (mut lines, offset) = match crate::logfile::read_tail(path_ref, TAIL_BYTES) {
+        Ok(value) => value,
         Err(_) => return (vec!["(log file not found)".into()], None),
     };
 
-    let truncated = file
-        .metadata()
-        .map(|m| m.len() > TAIL_BYTES)
-        .unwrap_or(false);
-    if truncated {
-        let _ = file.seek(SeekFrom::End(-(TAIL_BYTES as i64)));
-    }
-
-    let mut buf = Vec::new();
-    if file.read_to_end(&mut buf).is_err() {
-        return (vec!["(log file not readable)".into()], None);
-    }
-    let text = String::from_utf8_lossy(&buf);
-    let mut lines: Vec<String> = text.lines().map(str::to_string).collect();
-    if truncated {
-        // The first entry may be a partial line: we started mid-file.
-        if !lines.is_empty() {
-            lines.remove(0);
-        }
-    }
     if lines.is_empty() {
         lines.push("(log file empty)".into());
     }
@@ -273,14 +293,24 @@ fn read_log_file(path: &str) -> (Vec<String>, Option<BufReader<File>>) {
         lines.drain(..lines.len() - MAX_LINES);
     }
 
-    // read_to_end leaves the cursor at EOF, which is where tailing starts.
+    let mut file = match File::open(path_ref) {
+        Ok(file) => file,
+        Err(_) => return (lines, None),
+    };
+    if file.seek(SeekFrom::Start(offset)).is_err() {
+        return (lines, None);
+    }
     (lines, Some(BufReader::new(file)))
 }
 
-pub fn render_logs(f: &mut Frame, area: Rect, state: &LogsState, focused: bool) {
+pub fn render_logs(f: &mut Frame, area: Rect, state: &mut LogsState, focused: bool) {
     let border_color = if focused { border_active() } else { border() };
 
-    let title = format!(" Logs [{}] ", state.filter.label());
+    let title = format!(
+        " Logs [{}] [{}] ",
+        state.source.label(),
+        state.filter.label()
+    );
 
     let block = Block::default()
         .title(title)
@@ -292,9 +322,12 @@ pub fn render_logs(f: &mut Frame, area: Rect, state: &LogsState, focused: bool) 
     let inner = block.inner(area);
     f.render_widget(block, area);
 
-    let filtered: Vec<&String> = state.filtered_lines();
+    state.viewport = inner.height as usize;
 
-    if filtered.is_empty() {
+    let vis = inner.height as usize;
+    let total = state.filtered_lines().len();
+
+    if total == 0 {
         let mid = Layout::vertical([
             Constraint::Percentage(45),
             Constraint::Min(1),
@@ -310,11 +343,11 @@ pub fn render_logs(f: &mut Frame, area: Rect, state: &LogsState, focused: bool) 
         return;
     }
 
-    let vis = inner.height as usize;
-    let total = filtered.len();
     let max_scroll = total.saturating_sub(vis);
     let scroll = state.scroll.min(max_scroll);
+    state.scroll = scroll;
 
+    let filtered: Vec<&String> = state.filtered_lines();
     let items: Vec<ListItem> = filtered
         .iter()
         .skip(scroll)
@@ -328,7 +361,6 @@ pub fn render_logs(f: &mut Frame, area: Rect, state: &LogsState, focused: bool) 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
 
     fn tmp_path(name: &str) -> std::path::PathBuf {
         let dir =
@@ -376,14 +408,26 @@ mod tests {
     fn poll_reads_appended_lines_and_reopens_after_rotation() {
         let path = tmp_path("poll");
         std::fs::write(&path, "first\n").unwrap();
-        let mut state = LogsState::new(path.to_str().unwrap());
+        let mut state = LogsState {
+            lines: Vec::new(),
+            scroll: 0,
+            auto_scroll: true,
+            filter: LogFilter::All,
+            source: LogSource::Core,
+            reader: None,
+            log_path: path.to_str().unwrap().to_string(),
+            viewport: 20,
+            file_id: None,
+            file_len: 0,
+        };
+        (state.lines, state.reader) = read_log_file(&state.log_path);
         assert_eq!(state.lines, vec!["first"]);
 
         let mut file = std::fs::OpenOptions::new()
             .append(true)
             .open(&path)
             .unwrap();
-        file.write_all(b"second\n").unwrap();
+        std::io::Write::write_all(&mut file, b"second\n").unwrap();
         drop(file);
 
         state.poll();
@@ -397,6 +441,50 @@ mod tests {
         state.poll();
         assert_eq!(state.lines.last().unwrap(), "rotated");
         assert!(!state.lines.iter().any(|l| l == "second"));
+
+        std::fs::remove_dir_all(path.parent().unwrap()).ok();
+    }
+
+    #[test]
+    fn fatal_is_an_error_for_filtering() {
+        assert!(line_passes_filter(
+            "2026/10/31 13:37:11 [FATA] encryption key is invalid",
+            LogFilter::Error
+        ));
+        assert!(!line_passes_filter(
+            "2026/10/31 13:37:11 [INFO] fine",
+            LogFilter::Error
+        ));
+    }
+
+    #[test]
+    fn old_tui_lines_are_filtered_too() {
+        assert!(line_passes_filter("12:00:00 WARN  boom", LogFilter::Warn));
+        assert!(!line_passes_filter("12:00:00 INFO  ok", LogFilter::Warn));
+    }
+
+    #[test]
+    fn scroll_bottom_uses_the_viewport() {
+        let path = tmp_path("scroll");
+        std::fs::write(&path, numbered_lines(100)).unwrap();
+        let mut state = LogsState {
+            lines: Vec::new(),
+            scroll: 0,
+            auto_scroll: true,
+            filter: LogFilter::All,
+            source: LogSource::Core,
+            reader: None,
+            log_path: path.to_str().unwrap().to_string(),
+            viewport: 10,
+            file_id: None,
+            file_len: 0,
+        };
+        (state.lines, state.reader) = read_log_file(&state.log_path);
+
+        state.scroll_bottom();
+        assert_eq!(state.scroll, 90);
+        state.scroll_up();
+        assert_eq!(state.scroll, 89);
 
         std::fs::remove_dir_all(path.parent().unwrap()).ok();
     }

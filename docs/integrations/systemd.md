@@ -7,7 +7,7 @@ WhoisThat Core can run as a persistent **systemd user service**, allowing the VP
 ## Unit File Configuration
 
 When you toggle **Systemd autostart** in Settings (or run `whoisthat systemd enable`; the legacy
-`whoisthat --systemd-on` alias still works), WhoisThat generates and enables the following unit file. The `ExecStart` path and log level are filled in from the resolved core binary and the current Settings value (`warn` is only the default):
+`whoisthat --systemd-on` alias still works), WhoisThat generates and enables the following unit file. The `ExecStart` path is filled in from the resolved core binary. The log level is not pinned in the unit: the daemon starts at `info` and the TUI applies the current Settings value over IPC as soon as it connects.
 
 **Location**: `~/.config/systemd/user/whoisthat-core.service`
 
@@ -20,7 +20,6 @@ Wants=network-online.target
 [Service]
 Type=simple
 ExecStart=/usr/local/bin/whoisthat-core
-Environment=WHOISTHAT_LOG_LEVEL=warn
 Restart=on-failure
 RestartSec=5
 
