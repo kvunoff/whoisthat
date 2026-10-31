@@ -16,9 +16,9 @@ func setupConfigDir(t *testing.T) string {
 	if err := os.MkdirAll(configDir, 0700); err != nil {
 		t.Fatal(err)
 	}
-	oldCfg, oldStatus := application_configuration, loadStatus
+	oldCfg, oldStatus, oldLoaded := application_configuration, loadStatus, loaded
 	t.Cleanup(func() {
-		application_configuration, loadStatus = oldCfg, oldStatus
+		application_configuration, loadStatus, loaded = oldCfg, oldStatus, oldLoaded
 	})
 	return configDir
 }
@@ -54,7 +54,7 @@ func TestLoadConfigKeepsGoodFieldsFromPartiallyCorruptFile(t *testing.T) {
 func TestLoadConfigRestoresLastKnownGoodCopy(t *testing.T) {
 	dir := setupConfigDir(t)
 	path := filepath.Join(dir, "config.json")
-	backup := []byte(`{"tun-name":"from-backup"}`)
+	backup := []byte(`{"hwid-enabled":true,"hwid":"0123456789abcdef","tun-name":"from-backup"}`)
 	if err := os.WriteFile(path+".bak", backup, 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +97,7 @@ func TestLoadConfigCreatesConfigOnFirstRun(t *testing.T) {
 func TestLoadConfigRefreshesBackupOnEveryGoodLoad(t *testing.T) {
 	dir := setupConfigDir(t)
 	path := filepath.Join(dir, "config.json")
-	raw := []byte(`{"tun-name":"good"}`)
+	raw := []byte(`{"hwid-enabled":true,"hwid":"0123456789abcdef","tun-name":"good"}`)
 	if err := os.WriteFile(path, raw, 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -118,5 +118,83 @@ func TestRestoreFromBackupReportsMissingBackup(t *testing.T) {
 
 	if err := RestoreFromBackup(); err == nil {
 		t.Error("RestoreFromBackup should fail when no backup exists")
+	}
+}
+
+func TestSaveConfigRefusesBeforeLoad(t *testing.T) {
+	dir := setupConfigDir(t)
+	loaded = false
+	application_configuration = defaultConfig()
+
+	SaveConfig()
+
+	if _, err := os.Stat(filepath.Join(dir, "config.json")); err == nil {
+		t.Error("SaveConfig must not write before LoadConfig ran")
+	}
+}
+
+func TestOrphanedConfigIsReportedWhenBackupExists(t *testing.T) {
+	dir := setupConfigDir(t)
+	path := filepath.Join(dir, "config.json")
+	// Exactly what a process that never called LoadConfig writes: defaults
+	// with an empty hwid.
+	raw := []byte(`{"hwid-enabled":true,"hwid":"","tun-name":"whoisthattun"}`)
+	if err := os.WriteFile(path, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	good := []byte(`{"hwid-enabled":true,"hwid":"0123456789abcdef","tun-name":"tun0"}`)
+	if err := os.WriteFile(path+".bak", good, 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	LoadConfig()
+
+	if got := Status().State; got != "orphaned" {
+		t.Fatalf("Status().State = %q, want orphaned", got)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(after, raw) {
+		t.Error("the orphaned config.json must be left untouched")
+	}
+	bak, err := os.ReadFile(path + ".bak")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(bak, good) {
+		t.Error("the good backup must not be overwritten by an orphaned config")
+	}
+}
+
+func TestRestoreFallsBackToPreviousBackup(t *testing.T) {
+	dir := setupConfigDir(t)
+	path := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(path, []byte(`{"hwid-enabled":true,"hwid":""}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	// Newest backup is itself orphaned; the previous generation is usable.
+	if err := os.WriteFile(path+".bak", []byte(`{"hwid-enabled":true,"hwid":""}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	good := []byte(`{"hwid-enabled":true,"hwid":"0123456789abcdef","tun-name":"tun0"}`)
+	if err := os.WriteFile(path+".bak.prev", good, 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := RestoreFromBackup(); err != nil {
+		t.Fatalf("RestoreFromBackup: %v", err)
+	}
+
+	if got := GetConfig().TunName; got != "tun0" {
+		t.Errorf("TunName = %q, want tun0", got)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(after, good) {
+		t.Error("config.json should be replaced by the previous backup")
 	}
 }

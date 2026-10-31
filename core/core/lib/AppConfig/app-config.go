@@ -181,13 +181,20 @@ func DefaultSocketPath() string {
 // LoadStatus tells the TUI whether config.json could be read. States:
 // "ok" (loaded), "missing" (first start), "corrupt" (unreadable; the running
 // config holds whatever could be recovered and the file was not written),
-// "repaired" (restored from config.json.bak).
+// "orphaned" (valid JSON without a device id, i.e. written by something that
+// never loaded the config — old tooling or a test), "repaired" (restored from
+// config.json.bak).
 type LoadStatus struct {
 	State string `json:"state"`
 	Error string `json:"error,omitempty"`
 }
 
 var loadStatus = LoadStatus{State: "ok"}
+
+// loaded is set once LoadConfig has read the file. SaveConfig refuses to write
+// before that: persisting a config nobody read is exactly how a test run used
+// to replace the developer's real settings with defaults.
+var loaded bool
 
 // Status returns how the current in-memory config was obtained.
 func Status() LoadStatus {
@@ -205,15 +212,13 @@ func BackupPath() string {
 }
 
 // RestoreFromBackup writes the last known good config.json back and reloads
-// it. It is a no-op error when no backup exists yet.
+// it. Falls back to the previous generation when the newest copy is itself a
+// default file written without a loaded config. It is a no-op error when no
+// usable backup exists yet.
 func RestoreFromBackup() error {
-	data, err := os.ReadFile(BackupPath())
-	if err != nil {
-		return fmt.Errorf("no settings backup available: %w", err)
-	}
-	var probe = defaultConfig()
-	if err := json.Unmarshal(data, &probe); err != nil {
-		return fmt.Errorf("settings backup is unreadable: %w", err)
+	data, _, ok := readUsableBackup()
+	if !ok {
+		return fmt.Errorf("no settings backup available: %w", os.ErrNotExist)
 	}
 	if err := utils.AtomicWriteFile(configPath(), data, 0600); err != nil {
 		return fmt.Errorf("cannot write config.json: %w", err)
@@ -225,13 +230,39 @@ func RestoreFromBackup() error {
 	return nil
 }
 
+// readUsableBackup returns the newest backup that parses and actually carries a
+// device id. A hwid-enabled copy without a hwid was produced by a process that
+// never ran LoadConfig, so restoring it would only install defaults again.
+func readUsableBackup() ([]byte, AppConfig, bool) {
+	for _, path := range []string{BackupPath(), BackupPath() + ".prev"} {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		cfg := defaultConfig()
+		if err := json.Unmarshal(data, &cfg); err != nil {
+			continue
+		}
+		if cfg.HwidEnabled && cfg.Hwid == "" {
+			continue
+		}
+		return data, cfg, true
+	}
+	return nil, AppConfig{}, false
+}
+
 func refreshBackup() {
 	data, err := os.ReadFile(configPath())
 	if err != nil {
 		return
 	}
-	if old, err := os.ReadFile(BackupPath()); err == nil && bytes.Equal(old, data) {
-		return
+	if old, err := os.ReadFile(BackupPath()); err == nil {
+		if bytes.Equal(old, data) {
+			return
+		}
+		// Keep one generation further back, so a single bad write cannot
+		// destroy the last meaningful copy.
+		_ = utils.AtomicWriteFile(BackupPath()+".prev", old, 0600)
 	}
 	if err := utils.AtomicWriteFile(BackupPath(), data, 0600); err != nil {
 		logger.Warnf("config: cannot refresh settings backup: %v", err)
@@ -240,6 +271,16 @@ func refreshBackup() {
 
 func LoadConfig() {
 	config, status := readConfig()
+	loaded = true
+	// A valid file without a device id cannot have been produced by a normal
+	// start (LoadConfig always generates one), so it was written by something
+	// that never read the config. Only worth reporting when a usable backup
+	// exists — otherwise there is nothing to offer but the current defaults.
+	if status.State == "ok" && config.HwidEnabled && config.Hwid == "" {
+		if _, _, ok := readUsableBackup(); ok {
+			status = LoadStatus{State: "orphaned", Error: "config.json was written without a device id"}
+		}
+	}
 	loadStatus = status
 	if status.State == "corrupt" {
 		logger.Warnf("config: %s (using recovered values; config.json left untouched)", status.Error)
@@ -419,6 +460,12 @@ func SetTunName(name string) error {
 }
 
 func SaveConfig() {
+	// Writing a config that was never read is how a test process used to
+	// replace the real settings with defaults.
+	if !loaded {
+		logger.Warn("save config: refusing to write before LoadConfig ran")
+		return
+	}
 	dir_path := utils.ConfigDir()
 	config_path := filepath.Join(dir_path, "config.json")
 
@@ -496,19 +543,15 @@ func parseConfig(data []byte) (AppConfig, LoadStatus) {
 // restoreBackupFile copies config.json.bak over config.json when the backup is
 // readable, so one unreadable file does not force the user to reconfigure.
 func restoreBackupFile() (AppConfig, bool) {
-	data, err := os.ReadFile(BackupPath())
-	if err != nil {
-		return AppConfig{}, false
-	}
-	var cfg AppConfig = defaultConfig()
-	if err := json.Unmarshal(data, &cfg); err != nil {
+	data, cfg, ok := readUsableBackup()
+	if !ok {
 		return AppConfig{}, false
 	}
 	if err := utils.AtomicWriteFile(configPath(), data, 0600); err != nil {
 		logger.Warnf("config: cannot restore backup: %v", err)
 		return AppConfig{}, false
 	}
-	logger.Warnf("config: restored settings from %s", BackupPath())
+	logger.Warnf("config: restored settings from backup")
 	return cfg, true
 }
 
