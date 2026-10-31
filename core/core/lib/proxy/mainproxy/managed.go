@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	appconfig "whoisthat-core/lib/AppConfig"
+	"whoisthat-core/lib/geo"
 	"whoisthat-core/lib/xrayjson"
 	"whoisthat-core/structs"
 )
@@ -17,6 +18,7 @@ func (p *ProxyManager) prepareManagedConfig(
 	socksPort, httpPort int,
 	tunName string,
 	apiPort int,
+	geoDir string,
 	manual structs.RoutingConfig,
 	bootstrap map[string][]string,
 ) ([]byte, []string, error) {
@@ -37,6 +39,7 @@ func (p *ProxyManager) prepareManagedConfig(
 		BootstrapHosts:     bootstrap,
 		UserRules:          manual.Rules,
 		UserDomainStrategy: manual.DomainStrategy,
+		GlobalGeoExt:       geo.EnsureGlobalCopies(geoDir),
 	})
 	if err != nil {
 		return nil, nil, err

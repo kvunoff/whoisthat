@@ -53,7 +53,7 @@ func TestPrepareManagedConfigKeepsProviderRoutingAndAddsStats(t *testing.T) {
 	database, profile := newManagedTestDB(t)
 	p := &ProxyManager{DB: database}
 
-	cfg, tags, err := p.prepareManagedConfig(profile, 3090, 3091, "tun0", 3095, structs.RoutingConfig{
+	cfg, tags, err := p.prepareManagedConfig(profile, 3090, 3091, "tun0", 3095, "", structs.RoutingConfig{
 		Rules: []structs.RoutingRule{
 			{Type: "field", Domain: "override.example", OutboundTag: "proxy", Enabled: true},
 		},

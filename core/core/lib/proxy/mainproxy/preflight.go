@@ -57,6 +57,7 @@ func buildPreflightConfig(
 			BootstrapHosts:     selection.BootstrapHosts,
 			UserRules:          selection.Config.Rules,
 			UserDomainStrategy: selection.Config.DomainStrategy,
+			GlobalGeoExt:       geo.EnsureGlobalCopies(selection.GeoDir),
 		})
 		if prepErr != nil {
 			return nil, fmt.Errorf("failed to prepare provider config: %w", prepErr)

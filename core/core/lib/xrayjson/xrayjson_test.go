@@ -74,6 +74,73 @@ func TestParseSingleObjectAndInvalid(t *testing.T) {
 	}
 }
 
+func TestPrepareRewritesManualGeoRulesForProviderAssets(t *testing.T) {
+	profiles, _ := Parse([]byte(fixture))
+	prepared, err := Prepare(profiles[0].Raw, Options{
+		SocksPort:    3090,
+		HttpPort:     3091,
+		DNSServers:   []string{"1.1.1.1"},
+		GlobalGeoExt: true,
+		UserRules: []structs.RoutingRule{
+			{
+				Type:        "field",
+				Domain:      "geosite:category-ru,geosite:ext:custom.dat:foo,example.com",
+				OutboundTag: "direct",
+				Enabled:     true,
+			},
+			{
+				Type:        "field",
+				IP:          "geoip:ru,geoip:!private,203.0.113.0/24",
+				OutboundTag: "direct",
+				Enabled:     true,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Prepare: %v", err)
+	}
+
+	var cfg map[string]interface{}
+	if err := json.Unmarshal(prepared.Config, &cfg); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	rules := cfg["routing"].(map[string]interface{})["rules"].([]interface{})
+
+	domains := rules[0].(map[string]interface{})["domain"].([]interface{})
+	wantDomains := []string{
+		"ext-domain:geosite-global.dat:category-ru",
+		"geosite:ext:custom.dat:foo",
+		"example.com",
+	}
+	for i, want := range wantDomains {
+		if domains[i] != want {
+			t.Errorf("domain[%d] = %v, want %s", i, domains[i], want)
+		}
+	}
+
+	ips := rules[1].(map[string]interface{})["ip"].([]interface{})
+	wantIPs := []string{
+		"ext-ip:geoip-global.dat:ru",
+		"ext-ip:geoip-global.dat:!private",
+		"203.0.113.0/24",
+	}
+	for i, want := range wantIPs {
+		if ips[i] != want {
+			t.Errorf("ip[%d] = %v, want %s", i, ips[i], want)
+		}
+	}
+
+	// Provider rules keep using the provider's own geosite.dat.
+	provider := rules[2].(map[string]interface{})
+	if provider["balancerTag"] != "Provider_Balancer" {
+		t.Errorf("provider rule changed: %+v", provider)
+	}
+	providerDomains := provider["domain"].([]interface{})
+	if providerDomains[0] != "geosite:youtube" {
+		t.Errorf("provider geo rule was rewritten: %+v", providerDomains)
+	}
+}
+
 func TestServerAddresses(t *testing.T) {
 	profiles, _ := Parse([]byte(fixture))
 	refs := ServerAddresses(profiles[0].Raw)

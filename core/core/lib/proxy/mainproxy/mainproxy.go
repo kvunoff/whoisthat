@@ -288,7 +288,7 @@ func (p *ProxyManager) Connect(profile structs.Profile, tunName string, tunEnabl
 		}
 		p.bootstrapHosts = hosts
 
-		cfg, tags, err := p.prepareManagedConfig(profile, app_config.SocksPort, app_config.HttpPort, tunArg, apiPort, manual, hosts)
+		cfg, tags, err := p.prepareManagedConfig(profile, app_config.SocksPort, app_config.HttpPort, tunArg, apiPort, geoDir, manual, hosts)
 		if err != nil {
 			if p.portPool != nil && apiPort != 0 {
 				p.portPool.ReleasePort(apiPort)

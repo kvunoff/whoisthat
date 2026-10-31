@@ -522,7 +522,7 @@ func (p *ProxyManager) reloadCoreLocked(tunName string) error {
 			GeoDir:         geoDir,
 			BootstrapHosts: p.bootstrapHosts,
 		}
-		cfg, tags, err := p.prepareManagedConfig(profile, app_config.SocksPort, app_config.HttpPort, tunArg, apiPort, manual, p.bootstrapHosts)
+		cfg, tags, err := p.prepareManagedConfig(profile, app_config.SocksPort, app_config.HttpPort, tunArg, apiPort, geoDir, manual, p.bootstrapHosts)
 		if err != nil {
 			return fmt.Errorf("failed to build provider JSON config: %w", err)
 		}
