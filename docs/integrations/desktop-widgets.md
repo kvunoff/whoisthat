@@ -22,7 +22,7 @@ that only need the mode or daemon health; the `status` contract below is unchang
   "profile_id": 4,
   "profile_name": "Frankfurt-10G",
   "protocol": "vless",
-  "xray_version": "v26.9.9",
+  "xray_version": "v26.10.29",
   "rx_speed_bytes": 4823449,
   "tx_speed_bytes": 524288,
   "rx_speed_human": "4.6 MB/s",

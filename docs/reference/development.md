@@ -86,7 +86,7 @@ whoisthat/
 │       ├── utils/      ← caps.go (RaiseAmbientCaps, CanTun), user.go (UIDs), resolve.go
 │       └── lib/        ← Core libraries
 │           ├── parser/      ← Native in-memory URI parser & Xray JSON config generator
-│           ├── xraymgr/     ← Pinned Xray-core runtime manager (v26.9.9 download & checksum verification)
+│           ├── xraymgr/     ← Pinned Xray-core runtime manager (v26.10.29 download & checksum verification)
 │           ├── logger/      ← Level-filtered log wrapper (rotation configured in main.go)
 │           ├── TCPServer/   ← IPC server + dispatcher (Unix socket / TCP, length-prefixed JSON)
 │           ├── AppConfig/   ← Core configuration, defaults, HWID gen

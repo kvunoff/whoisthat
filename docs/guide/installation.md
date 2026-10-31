@@ -29,7 +29,7 @@ tag. To install a specific release, pass `--branch vX.Y.Z`, or download
 
 **What the install script does:**
 1. Installs distribution build and runtime prerequisites (C compiler/make, `git`, `curl`, `unzip`, `libcap`/`setcap`, `iproute2`, `nftables`). `pkexec`/`iptables` are optional and reported by `whoisthat doctor`.
-2. Installs or adopts precompiled **Xray-core (pinned v26.9.9)** with SHA256 checksum verification. The installer **fails closed**: a missing or mismatched official checksum aborts the installation (override only with the explicit `--insecure-skip-verify` flag).
+2. Installs or adopts precompiled **Xray-core (pinned v26.10.29)** with SHA256 checksum verification. The installer **fails closed**: a missing or mismatched official checksum aborts the installation (override only with the explicit `--insecure-skip-verify` flag).
 3. Builds `whoisthat-core` (Go) and `whoisthat` (Rust).
 4. Installs binaries into `/usr/local/bin/`.
 5. Grants `cap_net_admin,cap_net_raw,cap_setpcap=+ep` to `/usr/local/bin/whoisthat-core`.
@@ -97,9 +97,9 @@ xdg-mime default whoisthat.desktop x-scheme-handler/wit
 
 ## 4. Xray-Core Runtime Management
 
-WhoisThat relies on a unified proxy engine: **Xray-core v26.9.9**.
+WhoisThat relies on a unified proxy engine: **Xray-core v26.10.29**.
 
-* **Automatic Download & Verification**: On startup, `whoisthat-core` inspects `~/.local/share/whoisthat/runtimes/xray/v26.9.9/`. If the pinned binary is not present, it downloads the official precompiled release archive (GitHub first, then the `ghfast.top` mirror), fetches the official `.dgst` file **only from GitHub**, verifies SHA-256, and only then unpacks the binary. A missing or mismatched checksum aborts the install.
+* **Automatic Download & Verification**: On startup, `whoisthat-core` inspects `~/.local/share/whoisthat/runtimes/xray/v26.10.29/`. If the pinned binary is not present, it downloads the official precompiled release archive (GitHub first, then the `ghfast.top` mirror), fetches the official `.dgst` file **only from GitHub**, verifies SHA-256, and only then unpacks the binary. A missing or mismatched checksum aborts the install.
 * **System Binary Adoption**: If `/usr/local/bin/xray` or `/usr/bin/xray` already exists and exactly matches the pinned version, the core automatically adopts the system binary.
 * **Native Protocols**: Because Hysteria2 protocol support is compiled directly into modern Xray-core, **no separate hysteria binary is required**.
 * **Missing-Binary UX & Hints**: On startup, the core daemon proactively tests for Xray availability. If missing and automatic download cannot proceed (e.g. offline setup), the core unicasts a high-priority `warn` event to the TUI with an actionable installation hint, and connect-time errors forward the exact underlying `err.Error()` to the interface.
@@ -131,12 +131,12 @@ whoisthat doctor
 Example successful output:
 
 ```
-WhoisThat Doctor v0.15.2 / core v0.3.9 (protocol 3) — System Diagnostics
+WhoisThat Doctor v0.16.0 / core v0.3.10 (protocol 3) — System Diagnostics
 
 [+] Binaries & Runtimes
-  ✓ whoisthat: /usr/local/bin/whoisthat (v0.15.2)
+  ✓ whoisthat: /usr/local/bin/whoisthat (v0.16.0)
   ✓ whoisthat-core: /usr/local/bin/whoisthat-core
-  ✓ xray-core: ~/.local/share/whoisthat/runtimes/xray/v26.9.9/xray (v26.9.9)
+  ✓ xray-core: ~/.local/share/whoisthat/runtimes/xray/v26.10.29/xray (v26.10.29)
   ✓ system tools: ip, getcap, setcap, pkexec available
 
 [+] Linux Capabilities & Kernel

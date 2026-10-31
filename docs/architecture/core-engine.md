@@ -25,7 +25,7 @@ When `whoisthat-core` starts, it executes a rigorous preparation sequence:
    │
    ├─► 7. Seed Latency Test Parameters
    │
-   ├─► 8. Initialize Xray Runtime Manager (Verify Pinned v26.9.9)
+   ├─► 8. Initialize Xray Runtime Manager (Verify Pinned v26.10.29)
    │
    ├─► 9. Open IPC Listeners (Unix Domain Socket & Optional TCP)
    │

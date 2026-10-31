@@ -35,7 +35,7 @@ whoisthat settings set theme=tokyo-night log-level=debug
 | **HWID Enabled** | `on` / `off` | `on` | Send hardware identification headers (`x-hwid`) during subscription fetches. |
 | **HWID** | Read-only hex | Auto | 16-character hexadecimal device fingerprint. |
 | **Reset HWID** | Action button | — | Generates a new random hardware identifier. |
-| **User-Agent** | Editable text | `whoisthat/v0.3.9` | Custom HTTP User-Agent header sent with subscription requests. |
+| **User-Agent** | Editable text | `whoisthat/v0.3.10` | Custom HTTP User-Agent header sent with subscription requests. |
 
 ---
 

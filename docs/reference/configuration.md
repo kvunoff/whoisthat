@@ -27,7 +27,7 @@ last_group_id = 0
 last_profile_id = 0
 
 # Last seen core version from the IPC handshake (display fallback only)
-core_version = "0.3.9"
+core_version = "0.3.10"
 
 # Display public IP address in the header
 show_ip = true
@@ -90,7 +90,7 @@ Auto-generated and synchronized by the Go core daemon:
   "tun-name": "whoisthattun",
   "hwid-enabled": true,
   "hwid": "1fb1e0141ab3e35a",
-  "user-agent": "whoisthat/v0.3.9",
+  "user-agent": "whoisthat/v0.3.10",
   "kill-switch-enabled": false,
   "autoconnect-enabled": false,
   "autoconnect-group-id": 0,
@@ -153,7 +153,7 @@ whoisthat settings set theme=tokyo-night log-level=debug
 | `~/.local/share/whoisthat/db/routing.json` | Global manual routing rules shared by groups that inherit them. | `0600` |
 | `~/.local/share/whoisthat/db/groups/<id>/routing/manual.json` | Custom manual routing rules for one group (`manual_routing_mode = "custom"`). | `0600` |
 | `~/.config/whoisthat/db.key` | 32-byte cryptographic master key. | `0600` |
-| `~/.local/share/whoisthat/runtimes/xray/v26.9.9/` | Pinned official Xray-core binary (versioned runtime directory). | `0755` |
+| `~/.local/share/whoisthat/runtimes/xray/v26.10.29/` | Pinned official Xray-core binary (versioned runtime directory). | `0755` |
 | `~/.config/whoisthat/geo/` | Global routing databases (`geoip.dat`, `geosite.dat`). | `0755` |
 | `~/.local/share/whoisthat/db/groups/<id>/routing/geo/<profile_id>/<version>/` | Isolated Happ routing profile geo assets. | `0700` |
 | `$XDG_RUNTIME_DIR/whoisthat/core.sock` | Active Unix Domain Socket IPC endpoint. | `0600` |
