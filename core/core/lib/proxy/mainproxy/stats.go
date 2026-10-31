@@ -31,12 +31,20 @@ func injectStatsConfig(configJSON []byte, apiPort int) ([]byte, error) {
 
 	config["stats"] = map[string]interface{}{}
 
-	config["policy"] = map[string]interface{}{
-		"system": map[string]interface{}{
-			"statsOutboundUplink":   true,
-			"statsOutboundDownlink": true,
-		},
+	// Provider configs may carry their own policy (levels timeouts); only the
+	// stats switches are ours, so merge instead of replacing the section.
+	policy, _ := config["policy"].(map[string]interface{})
+	if policy == nil {
+		policy = map[string]interface{}{}
 	}
+	system, _ := policy["system"].(map[string]interface{})
+	if system == nil {
+		system = map[string]interface{}{}
+	}
+	system["statsOutboundUplink"] = true
+	system["statsOutboundDownlink"] = true
+	policy["system"] = system
+	config["policy"] = policy
 
 	if apiPort > 0 {
 		config["api"] = map[string]interface{}{
@@ -69,7 +77,7 @@ func injectStatsConfig(configJSON []byte, apiPort int) ([]byte, error) {
 	return result, nil
 }
 
-func (p *ProxyManager) collectStats(socksPort int, apiPort int, tunName string, cancel chan struct{}, out chan<- structs.TrafficStats) {
+func (p *ProxyManager) collectStats(socksPort int, apiPort int, tags []string, tunName string, cancel chan struct{}, out chan<- structs.TrafficStats) {
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
@@ -86,7 +94,7 @@ func (p *ProxyManager) collectStats(socksPort int, apiPort int, tunName string, 
 			var err error
 			if apiPort > 0 {
 				ctx, ctxCancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-				proxyUp, proxyDown, err = queryXrayStats(ctx, apiPort)
+				proxyUp, proxyDown, err = queryXrayStats(ctx, apiPort, tags)
 				ctxCancel()
 			} else {
 				proxyUp, proxyDown, err = querySsStats(socksPort)
@@ -159,9 +167,10 @@ func querySsStats(port int) (up, down int64, err error) {
 	return up, down, nil
 }
 
-// queryXrayStats queries the running xray-core's gRPC StatsService for the
-// cumulative counter of the tagged "proxy" outbound's uplink/downlink.
-func queryXrayStats(ctx context.Context, apiPort int) (up, down int64, err error) {
+// queryXrayStats sums the cumulative uplink/downlink counters of the given
+// outbound tags. Normal profiles use a single "proxy" tag; JSON subscriptions
+// can carry several proxy outbounds and balancers.
+func queryXrayStats(ctx context.Context, apiPort int, tags []string) (up, down int64, err error) {
 	conn, err := grpc.NewClient(
 		fmt.Sprintf("127.0.0.1:%d", apiPort),
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -172,18 +181,27 @@ func queryXrayStats(ctx context.Context, apiPort int) (up, down int64, err error
 	defer conn.Close()
 
 	resp, err := statscmd.NewStatsServiceClient(conn).QueryStats(ctx, &statscmd.QueryStatsRequest{
-		Pattern: "outbound>>>proxy>>>traffic",
+		Pattern: "outbound>>>",
 		Reset_:  false,
 	})
 	if err != nil {
 		return 0, 0, err
 	}
+
+	wanted := make(map[string]bool, len(tags))
+	for _, tag := range tags {
+		wanted[tag] = true
+	}
 	for _, s := range resp.Stat {
+		parts := strings.Split(s.Name, ">>>")
+		if len(parts) < 2 || !wanted[parts[1]] {
+			continue
+		}
 		switch {
 		case strings.HasSuffix(s.Name, "uplink"):
-			up = s.Value
+			up += s.Value
 		case strings.HasSuffix(s.Name, "downlink"):
-			down = s.Value
+			down += s.Value
 		}
 	}
 	return up, down, nil

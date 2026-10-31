@@ -23,7 +23,7 @@ func TestBuildPreflightConfigOmitsTunInbound(t *testing.T) {
 		},
 	}
 
-	raw, err := buildPreflightConfig(profile, 3090, 3091, 0, selection, true, false)
+	raw, err := buildPreflightConfig(profile, 3090, 3091, 0, selection, true, false, nil)
 	if err != nil {
 		t.Fatalf("buildPreflightConfig failed: %v", err)
 	}
@@ -49,7 +49,7 @@ func TestBuildPreflightConfigOmitsTunInbound(t *testing.T) {
 
 func TestBuildPreflightConfigWithoutRouting(t *testing.T) {
 	profile := structs.Profile{Id: 1, GroupId: 1, Name: "p", Uri: preflightTestURI}
-	raw, err := buildPreflightConfig(profile, 3090, 3091, 0, structs.RoutingSelection{}, false, false)
+	raw, err := buildPreflightConfig(profile, 3090, 3091, 0, structs.RoutingSelection{}, false, false, nil)
 	if err != nil {
 		t.Fatalf("buildPreflightConfig failed: %v", err)
 	}
@@ -78,7 +78,7 @@ func TestValidateXrayConfigIntegration(t *testing.T) {
 		Source: "manual",
 		Config: structs.RoutingConfig{DomainStrategy: "IPIfNonMatch"},
 	}
-	good, err := buildPreflightConfig(profile, 0, 0, 0, selection, true, false)
+	good, err := buildPreflightConfig(profile, 0, 0, 0, selection, true, false, nil)
 	if err != nil {
 		t.Fatalf("buildPreflightConfig failed: %v", err)
 	}
@@ -146,7 +146,7 @@ func TestBuildPreflightConfigIncludesHappDNS(t *testing.T) {
 		},
 	}
 
-	raw, err := buildPreflightConfig(profile, 3090, 3091, 0, selection, true, true)
+	raw, err := buildPreflightConfig(profile, 3090, 3091, 0, selection, true, true, nil)
 	if err != nil {
 		t.Fatalf("buildPreflightConfig failed: %v", err)
 	}
@@ -218,7 +218,7 @@ func TestValidateXrayConfigIntegrationHappDNS(t *testing.T) {
 		},
 	}
 
-	raw, err := buildPreflightConfig(profile, 0, 0, 0, selection, true, true)
+	raw, err := buildPreflightConfig(profile, 0, 0, 0, selection, true, true, nil)
 	if err != nil {
 		t.Fatalf("buildPreflightConfig failed: %v", err)
 	}
@@ -259,7 +259,7 @@ func TestValidateXrayConfigIntegrationFakeDNS(t *testing.T) {
 		},
 	}
 
-	raw, err := buildPreflightConfig(profile, 0, 0, 0, selection, true, true)
+	raw, err := buildPreflightConfig(profile, 0, 0, 0, selection, true, true, nil)
 	if err != nil {
 		t.Fatalf("buildPreflightConfig failed: %v", err)
 	}

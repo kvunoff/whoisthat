@@ -10,7 +10,15 @@ type DBAddProfileData struct {
 	Protocol string `json:"protocol"`
 	Address  string `json:"address,omitzero"`
 	Host     string `json:"host,omitzero"`
+	Port     int    `json:"port,omitzero"`
 	NanoID   string `json:"nano-id,omitzero"`
+
+	// Managed profiles come from a JSON subscription and carry their own full
+	// Xray configuration. ProviderKey is the stable identity used to preserve
+	// profile ids across subscription refreshes.
+	Config      json.RawMessage `json:"config,omitzero"`
+	ProviderKey string          `json:"provider_key,omitzero"`
+	Managed     bool            `json:"managed,omitzero"`
 }
 
 // commands and responses
@@ -284,6 +292,9 @@ type Group struct {
 	// host. Name follows it while it still equals SubName; a manual rename
 	// breaks that link so refreshes never overwrite the user's choice.
 	SubName string `json:"sub_name,omitzero"`
+	// SubscriptionFormat is "json" when the provider serves per-server Xray
+	// configurations, "uri" for a normal share-link list.
+	SubscriptionFormat string `json:"subscription_format,omitzero"`
 }
 
 type Profile struct {
@@ -299,6 +310,11 @@ type Profile struct {
 	TestedAt   int64  `json:"tested_at,omitzero"`
 	LossPct    int    `json:"loss-pct,omitzero"`
 	JitterMs   int    `json:"jitter-ms,omitzero"`
+	Port       int    `json:"port,omitzero"`
+	// Managed marks a profile from a JSON subscription: its own Xray config is
+	// stored separately and its routing is provider-owned (read-only).
+	Managed     bool   `json:"managed,omitzero"`
+	ProviderKey string `json:"provider_key,omitzero"`
 }
 
 type ProfileID struct {

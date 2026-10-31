@@ -43,6 +43,8 @@ type ProxyManager struct {
 	DB                *db.DB
 	proxyIPs          []string
 	profileIPs        []string
+	bootstrapHosts    map[string][]string
+	statsTags         []string
 	tunEnabled        bool
 	tunName           string
 
@@ -247,10 +249,6 @@ func (p *ProxyManager) Connect(profile structs.Profile, tunName string, tunEnabl
 	if tunEnabled {
 		tunArg = tunName
 	}
-	xray_config, err := lib.ParseUriWithTun(profile.Uri, app_config.SocksPort, app_config.HttpPort, tunArg)
-	if err != nil {
-		return err
-	}
 
 	// Allocate a port for xray's gRPC StatsService listener. On failure
 	// (pool exhausted) we fall back to ss-based stats — apiPort stays 0,
@@ -263,44 +261,100 @@ func (p *ProxyManager) Connect(profile structs.Profile, tunName string, tunEnabl
 		apiPort = allocated
 	}
 
-	// Inject stats tracking config (policy + stats counters, optional
-	// dokodemo-door API inbound when apiPort > 0).
-	xray_config, err = injectStatsConfig(xray_config, apiPort)
-	if err != nil {
-		logger.Warnf("failed to inject stats config: %v", err)
-	}
-
-	// Resolve the VPN server address before Xray starts: once TUN is up the
-	// system resolver points at the tunnel and the server domain must already be
-	// available as a DNS bootstrap entry.
-	profileIPs := resolveProfileIPs(profile.Address)
-	p.profileIPs = profileIPs
-
+	var xray_config []byte
+	var profileIPs []string
 	var selection structs.RoutingSelection
-	if p.DB != nil {
-		sel, selErr := p.DB.ResolveRouting(profile.GroupId)
-		if selErr != nil {
-			logger.Warnf("failed to resolve routing for group %d: %v", profile.GroupId, selErr)
-			selection = structs.RoutingSelection{Source: "manual"}
-		} else {
-			selection = sel
-		}
-		selection.BootstrapHosts = bootstrapHosts(profile.Address, profileIPs)
+	statsTags := []string{"proxy"}
 
-		prevOutboundsCount := countOutbounds(xray_config)
-		xray_config, err = injectRoutingConfig(xray_config, selection, tunEnabled)
+	if profile.Managed && p.DB != nil {
+		// JSON subscription: the provider config is the routing baseline and
+		// manual rules are prepended by xrayjson.Prepare.
+		ips, hosts, err := p.managedSource(profile)
 		if err != nil {
-			logger.Warnf("failed to inject routing config: %v", err)
+			if p.portPool != nil && apiPort != 0 {
+				p.portPool.ReleasePort(apiPort)
+			}
+			return err
 		}
-		afterOutboundsCount := countOutbounds(xray_config)
-		logger.Infof("routing: outbounds %d → %d (source=%s)", prevOutboundsCount, afterOutboundsCount, selection.Source)
+		profileIPs = ips
+		manual, _, _ := p.DB.LoadEffectiveManualRouting(profile.GroupId)
+		geoDir, _ := p.DB.ResolveGroupGeoDir(profile.GroupId)
+
+		selection = structs.RoutingSelection{
+			Config:         manual,
+			Source:         "manual",
+			GeoDir:         geoDir,
+			BootstrapHosts: hosts,
+		}
+		p.bootstrapHosts = hosts
+
+		cfg, tags, err := p.prepareManagedConfig(profile, app_config.SocksPort, app_config.HttpPort, tunArg, apiPort, manual, hosts)
+		if err != nil {
+			if p.portPool != nil && apiPort != 0 {
+				p.portPool.ReleasePort(apiPort)
+			}
+			return err
+		}
+		xray_config = cfg
+		if len(tags) > 0 {
+			statsTags = tags
+		}
+		logger.Infof("routing: provider JSON (%d outbounds, %d manual rules, source=manual)",
+			countOutbounds(xray_config), len(manual.Rules))
+	} else {
+		var err error
+		xray_config, err = lib.ParseUriWithTun(profile.Uri, app_config.SocksPort, app_config.HttpPort, tunArg)
+		if err != nil {
+			if p.portPool != nil && apiPort != 0 {
+				p.portPool.ReleasePort(apiPort)
+			}
+			return err
+		}
+
+		// Inject stats tracking config (policy + stats counters, optional
+		// dokodemo-door API inbound when apiPort > 0).
+		xray_config, err = injectStatsConfig(xray_config, apiPort)
+		if err != nil {
+			logger.Warnf("failed to inject stats config: %v", err)
+		}
+
+		// Resolve the VPN server address before Xray starts: once TUN is up the
+		// system resolver points at the tunnel and the server domain must already
+		// be available as a DNS bootstrap entry.
+		profileIPs = resolveProfileIPs(profile.Address)
+
+		if p.DB != nil {
+			sel, selErr := p.DB.ResolveRouting(profile.GroupId)
+			if selErr != nil {
+				logger.Warnf("failed to resolve routing for group %d: %v", profile.GroupId, selErr)
+				selection = structs.RoutingSelection{Source: "manual"}
+			} else {
+				selection = sel
+			}
+			selection.BootstrapHosts = bootstrapHosts(profile.Address, profileIPs)
+
+			prevOutboundsCount := countOutbounds(xray_config)
+			xray_config, err = injectRoutingConfig(xray_config, selection, tunEnabled)
+			if err != nil {
+				logger.Warnf("failed to inject routing config: %v", err)
+			}
+			afterOutboundsCount := countOutbounds(xray_config)
+			logger.Infof("routing: outbounds %d → %d (source=%s)", prevOutboundsCount, afterOutboundsCount, selection.Source)
+		}
 	}
+
+	p.profileIPs = profileIPs
+	p.statsTags = statsTags
 
 	// Pre-flight: validate the generated config before spawning xray so a bad
 	// profile/routing/DNS config surfaces as an actionable connect error instead
 	// of a silent immediate disconnect. The TUN inbound is omitted from the test
 	// config (see buildPreflightConfig).
-	if preflightCfg, buildErr := buildPreflightConfig(profile, app_config.SocksPort, app_config.HttpPort, apiPort, selection, p.DB != nil, tunEnabled); buildErr != nil {
+	var rawConfig json.RawMessage
+	if profile.Managed && p.DB != nil {
+		rawConfig, _ = p.DB.LoadProfileXrayConfig(profile.GroupId, profile.Id)
+	}
+	if preflightCfg, buildErr := buildPreflightConfig(profile, app_config.SocksPort, app_config.HttpPort, apiPort, selection, p.DB != nil, tunEnabled, rawConfig); buildErr != nil {
 		logger.Warnf("preflight: could not build test config, skipping validation: %v", buildErr)
 	} else if testErr := validateXrayConfig(preflightCfg, selection.GeoDir); testErr != nil {
 		// The stats port was reserved above but never handed to a running core.
@@ -337,7 +391,7 @@ func (p *ProxyManager) Connect(profile structs.Profile, tunName string, tunEnabl
 	// Direct traffic is read from sysfs for the TUN device when one is configured.
 	p.statsCancel = make(chan struct{})
 	p.statsApiPort = apiPort
-	go p.collectStats(app_config.SocksPort, p.statsApiPort, tunName, p.statsCancel, p.StatsChanged)
+	go p.collectStats(app_config.SocksPort, p.statsApiPort, statsTags, tunName, p.statsCancel, p.StatsChanged)
 
 	p.status = structs.ProxyStatus{
 		Connection:  "connected",

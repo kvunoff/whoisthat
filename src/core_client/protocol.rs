@@ -32,6 +32,14 @@ pub struct Profile {
     pub loss_pct: i32,
     #[serde(rename = "jitter-ms", default)]
     pub jitter_ms: i32,
+    #[serde(default)]
+    pub port: i32,
+    /// True for profiles from a JSON subscription: the provider Xray config is
+    /// stored separately and its routing is read-only.
+    #[serde(default)]
+    pub managed: bool,
+    #[serde(default)]
+    pub provider_key: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -100,6 +108,9 @@ pub struct Group {
     pub active_routing_profile_id: String,
     #[serde(default)]
     pub pending_active_routing_profile_id: String,
+    /// "json" for per-server Xray-config subscriptions, "uri" for share links.
+    #[serde(default)]
+    pub subscription_format: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

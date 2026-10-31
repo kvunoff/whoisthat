@@ -11,8 +11,10 @@ import (
 	"sync/atomic"
 	"time"
 	"whoisthat-core/lib"
+	appconfig "whoisthat-core/lib/AppConfig"
 	"whoisthat-core/lib/logger"
 	"whoisthat-core/lib/proxy/xray"
+	"whoisthat-core/lib/xrayjson"
 	"whoisthat-core/structs"
 
 	goproxy "golang.org/x/net/proxy"
@@ -309,7 +311,7 @@ func (p *ProxyManager) test(req TestRequest) pingResult {
 // listening on the target port. Returned as a final result when the user
 // has explicitly chosen the "tcp" test method.
 func (p *ProxyManager) testTcpOnly(profile structs.Profile) int {
-	port := extractPort(profile.Uri, profile.Protocol)
+	port := profilePort(profile)
 	addr := profile.Address
 	if addr == "" {
 		addr = profile.Host
@@ -338,7 +340,7 @@ func (p *ProxyManager) testTcpOnly(profile structs.Profile) int {
 // result as informational, not authoritative (CDN/proxy edge cases can
 // defeat raw TCP probes).
 func (p *ProxyManager) serverReachable(profile structs.Profile) bool {
-	port := extractPort(profile.Uri, profile.Protocol)
+	port := profilePort(profile)
 	addr := profile.Address
 	if addr == "" {
 		addr = profile.Host
@@ -367,7 +369,29 @@ func (p *ProxyManager) testViaXray(profile structs.Profile, method string, sampl
 	}
 	defer p.portPool.ReleasePort(port)
 
-	parsed, err := lib.ParseUri(profile.Uri, port, -1)
+	var parsed []byte
+	var geoDir string
+	if profile.Managed {
+		if p.DB == nil {
+			return pingResult{latencyMs: -1, sampleCount: samples, lossPct: 100, failReason: "managed profile requires a database"}
+		}
+		raw, loadErr := p.DB.LoadProfileXrayConfig(profile.GroupId, profile.Id)
+		if loadErr != nil {
+			return pingResult{latencyMs: -1, sampleCount: samples, lossPct: 100, failReason: fmt.Sprintf("load provider config: %v", loadErr)}
+		}
+		prepared, prepErr := xrayjson.Prepare(raw, xrayjson.Options{
+			SocksPort:  port,
+			HttpPort:   -1,
+			DNSServers: appconfig.GetConfig().DnsServers,
+		})
+		if prepErr != nil {
+			return pingResult{latencyMs: -1, sampleCount: samples, lossPct: 100, failReason: fmt.Sprintf("prepare provider config: %v", prepErr)}
+		}
+		parsed = prepared.Config
+		geoDir, _ = p.DB.ResolveGroupGeoDir(profile.GroupId)
+	} else {
+		parsed, err = lib.ParseUri(profile.Uri, port, -1)
+	}
 	if err != nil {
 		logger.Warnf("test %s (gid=%d id=%d): ParseUri failed for %s://%s: %v",
 			profile.Name, profile.GroupId, profile.Id,
@@ -376,7 +400,7 @@ func (p *ProxyManager) testViaXray(profile structs.Profile, method string, sampl
 	}
 
 	xray_core := xray.XrayCore{Exited: make(chan error, 1)}
-	if err := xray_core.Start(parsed, ""); err != nil {
+	if err := xray_core.Start(parsed, geoDir); err != nil {
 		logger.Warnf("test %s (gid=%d id=%d): xray.Start failed: %v",
 			profile.Name, profile.GroupId, profile.Id, err)
 		return pingResult{latencyMs: -1, sampleCount: samples, lossPct: 100, failReason: fmt.Sprintf("xray.Start failed: %v", err)}
@@ -537,6 +561,15 @@ func (p *ProxyManager) sendTestResult(profile structs.Profile, ping pingResult) 
 		logger.Warnf("test %s (gid=%d id=%d): TestResultChannel full — dropping result latency=%dms",
 			profile.Name, profile.GroupId, profile.Id, ping.latencyMs)
 	}
+}
+
+// profilePort returns the stored endpoint port for JSON-subscription profiles,
+// falling back to the URI parser for share-link profiles.
+func profilePort(profile structs.Profile) string {
+	if profile.Port > 0 {
+		return strconv.Itoa(profile.Port)
+	}
+	return extractPort(profile.Uri, profile.Protocol)
 }
 
 func extractPort(uri string, protocol string) string {

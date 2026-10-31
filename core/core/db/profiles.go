@@ -1,11 +1,42 @@
 package db
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"whoisthat-core/lib/logger"
 	"whoisthat-core/structs"
 )
+
+// saveProfileXrayConfig persists the full provider configuration of a managed
+// profile. It is encrypted like every other database file because it contains
+// proxy credentials.
+func (db *DB) saveProfileXrayConfig(groupID, profileID int, raw json.RawMessage) error {
+	path := db.GetProfileXrayConfigPath(groupID, profileID)
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return fmt.Errorf("create xray config dir: %w", err)
+	}
+	return db.writeEncryptedJSON(path, raw)
+}
+
+// LoadProfileXrayConfig reads the provider configuration of a managed profile.
+func (db *DB) LoadProfileXrayConfig(groupID, profileID int) (json.RawMessage, error) {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	var raw json.RawMessage
+	if err := db.readEncryptedJSON(db.GetProfileXrayConfigPath(groupID, profileID), &raw); err != nil {
+		return nil, err
+	}
+	return raw, nil
+}
+
+func (db *DB) deleteProfileXrayConfig(groupID, profileID int) {
+	if err := os.Remove(db.GetProfileXrayConfigPath(groupID, profileID)); err != nil && !os.IsNotExist(err) {
+		logger.Warnf("failed to remove xray config for profile %d in group %d: %v", profileID, groupID, err)
+	}
+}
 
 func (db *DB) RenameProfile(profile structs.ProfileID, name string) (structs.Profile, error) {
 	db.mu.Lock()
@@ -67,6 +98,7 @@ func (db *DB) deleteProfile(group_id int, id int) error {
 			return fmt.Errorf("Failed to delete config file %w", err)
 		}
 	}
+	db.deleteProfileXrayConfig(group_id, id)
 	if group_config, err := db.loadGroupConfig(group_id); err == nil {
 		var newOrder []int
 		for _, pid := range group_config.ProfileOrder {
@@ -115,30 +147,41 @@ func (db *DB) addProfile(data structs.DBAddProfileData) (structs.Profile, error)
 		return profile_added, err
 	}
 	profile := structs.Profile{
-		Id:       profile_id,
-		GroupId:  data.GroupId,
-		NanoID:   data.NanoID,
-		Name:     data.Name,
-		Protocol: data.Protocol,
-		Uri:      data.Uri,
-		Host:     data.Host,
-		Address:  data.Address,
+		Id:          profile_id,
+		GroupId:     data.GroupId,
+		NanoID:      data.NanoID,
+		Name:        data.Name,
+		Protocol:    data.Protocol,
+		Uri:         data.Uri,
+		Host:        data.Host,
+		Address:     data.Address,
+		Port:        data.Port,
+		Managed:     data.Managed && len(data.Config) > 0,
+		ProviderKey: data.ProviderKey,
 	}
 
 	if err := db.writeEncryptedJSON(profile_path, profile); err != nil {
 		return profile_added, fmt.Errorf("failed to write %s: %w", profile_path, err)
 	}
+	if profile.Managed {
+		if err := db.saveProfileXrayConfig(data.GroupId, profile_id, data.Config); err != nil {
+			return profile_added, fmt.Errorf("failed to write xray config %d: %w", profile_id, err)
+		}
+	}
 
 	profile_added = structs.Profile{
-		Uri:        data.Uri,
-		GroupId:    data.GroupId,
-		NanoID:     data.NanoID,
-		Id:         profile_id,
-		Protocol:   profile.Protocol,
-		Name:       profile.Name,
-		Host:       profile.Host,
-		Address:    profile.Address,
-		TestResult: 0,
+		Uri:         data.Uri,
+		GroupId:     data.GroupId,
+		NanoID:      data.NanoID,
+		Id:          profile_id,
+		Protocol:    profile.Protocol,
+		Name:        profile.Name,
+		Host:        profile.Host,
+		Address:     profile.Address,
+		Port:        profile.Port,
+		Managed:     profile.Managed,
+		ProviderKey: profile.ProviderKey,
+		TestResult:  0,
 	}
 
 	return profile_added, nil

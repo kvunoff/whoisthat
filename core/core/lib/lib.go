@@ -8,6 +8,7 @@ import (
 	"github.com/matoous/go-nanoid/v2"
 	"whoisthat-core/db"
 	"whoisthat-core/lib/parser"
+	"whoisthat-core/lib/xrayjson"
 	"whoisthat-core/structs"
 )
 
@@ -28,6 +29,12 @@ func AddProfiles(DB *db.DB, data structs.AddProfilesData) structs.ProfilesAdded 
 func GetDBAddProfileDatasFromStr(str string, group_id int) []structs.DBAddProfileData {
 	str = decode64(str)
 
+	// JSON subscriptions carry one full Xray config per server instead of
+	// share links. They must be detected before the URI parsers see the body.
+	if configs, err := xrayjson.Parse([]byte(str)); err == nil && len(configs) > 0 {
+		return configProfilesToDBData(configs, group_id)
+	}
+
 	if profiles, err := getDBAddProfileDatasFromStrBatch(str, group_id); err == nil && len(profiles) > 0 {
 		return profiles
 	}
@@ -40,6 +47,25 @@ func GetDBAddProfileDatasFromStr(str string, group_id int) []structs.DBAddProfil
 			continue
 		}
 		profiles = append(profiles, profile)
+	}
+	return profiles
+}
+
+func configProfilesToDBData(configs []xrayjson.Profile, group_id int) []structs.DBAddProfileData {
+	profiles := make([]structs.DBAddProfileData, 0, len(configs))
+	for _, config := range configs {
+		profiles = append(profiles, structs.DBAddProfileData{
+			Name:        config.Name,
+			Protocol:    config.Protocol,
+			Address:     config.Address,
+			Host:        config.Host,
+			Port:        config.Port,
+			GroupId:     group_id,
+			NanoID:      generateNanoID(),
+			Config:      config.Raw,
+			ProviderKey: config.ProviderKey,
+			Managed:     true,
+		})
 	}
 	return profiles
 }

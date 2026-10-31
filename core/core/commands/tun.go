@@ -92,6 +92,18 @@ func (cmd *Cmd) dnsHijackFor(profile structs.Profile) tunmode.DnsHijack {
 		Sink6:   dns6,
 	}
 
+	// JSON-subscription profiles always carry (or receive) an Xray DNS
+	// section, so port 53 must reach the tunnel's dns-out like a Happ profile.
+	if profile.Managed {
+		return tunmode.DnsHijack{
+			Enabled:   appconfig.GetConfig().SplitTunnel.Mode != "include",
+			Happ:      true,
+			Sink4:     tunmode.DNSSink4,
+			Sink6:     tunmode.DNSSink6,
+			ScopeMark: 1,
+		}
+	}
+
 	if cmd.DB == nil {
 		return legacy
 	}
@@ -125,10 +137,34 @@ func (cmd *Cmd) refreshDnsHijackFor(profile structs.Profile) {
 }
 
 func (cmd *Cmd) enableTun(profile structs.Profile, proxy_manager *proxy.ProxyManager, tun_manager *tunmode.TunModeManager) {
-	resolved, err := resolveHostAndAddress(profile, appconfig.GetConfig().DnsServers)
+	var resolved *utils.ResolvedIPs
+	var err error
+	if profile.Managed && proxy_manager != nil {
+		// A JSON profile may contain several servers/balancers; every one of
+		// them needs a route outside the tunnel and a kill-switch allowance.
+		resolved = &utils.ResolvedIPs{}
+		for _, raw := range proxy_manager.GetProxyIPs() {
+			ip := net.ParseIP(raw)
+			if ip == nil {
+				continue
+			}
+			if ip.To4() != nil {
+				resolved.IPv4 = append(resolved.IPv4, ip.String())
+			} else {
+				resolved.IPv6 = append(resolved.IPv6, ip.String())
+			}
+		}
+	} else {
+		resolved, err = resolveHostAndAddress(profile, appconfig.GetConfig().DnsServers)
+	}
 	if err != nil {
 		logger.Warn("tun: failed to resolve:", err)
 		cmd.warn("enable-tun-failed", fmt.Sprintf("failed to resolve profile host: %v", err))
+		return
+	}
+	if len(resolved.IPv4) == 0 && len(resolved.IPv6) == 0 {
+		logger.Warn("tun: failed to resolve: no proxy server IPs")
+		cmd.warn("enable-tun-failed", "failed to resolve proxy server IPs")
 		return
 	}
 

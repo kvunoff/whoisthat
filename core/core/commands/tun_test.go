@@ -20,6 +20,18 @@ func TestDnsHijackForFallsBackToLegacy(t *testing.T) {
 	}
 }
 
+func TestDnsHijackForManagedJSONProfileUsesSink(t *testing.T) {
+	cmd, _, _ := newTestCmd(t)
+
+	plan := cmd.dnsHijackFor(structs.Profile{GroupId: 99, Managed: true})
+	if !plan.Enabled || !plan.Happ || plan.Legacy {
+		t.Fatalf("expected Happ-style hijack for managed profile, got %+v", plan)
+	}
+	if plan.Sink4 != tunmode.DNSSink4 || plan.Sink6 != tunmode.DNSSink6 {
+		t.Errorf("unexpected sinks: %+v", plan)
+	}
+}
+
 func TestDnsHijackForUsesSinkForHappDNS(t *testing.T) {
 	cmd, _, _ := newTestCmd(t)
 	group, err := cmd.DB.AddGroup("DNSGroup", "")

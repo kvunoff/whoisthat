@@ -305,6 +305,12 @@ func (db *DB) GetProfileFilePath(group_id int, profile_id int) string {
 	return filepath.Join(db.Path, "groups", strconv.Itoa(group_id), fmt.Sprintf("%d.json", profile_id))
 }
 
+// GetProfileXrayConfigPath stores the full provider Xray config of a JSON
+// subscription profile outside the profile file, so profile lists stay small.
+func (db *DB) GetProfileXrayConfigPath(group_id int, profile_id int) string {
+	return filepath.Join(db.GetGroupDirPath(group_id), "xray", fmt.Sprintf("%d.json", profile_id))
+}
+
 func (db *DB) isFileEncrypted(path string) bool {
 	f, err := os.Open(path)
 	if err != nil {

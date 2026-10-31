@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	"whoisthat-core/lib/happ"
 	"whoisthat-core/lib/logger"
 	proxy "whoisthat-core/lib/proxy/mainproxy"
+	"whoisthat-core/lib/xrayjson"
 	"whoisthat-core/structs"
 	"whoisthat-core/utils"
 )
@@ -48,14 +50,15 @@ func (cmd *Cmd) UpdateSubscription(data structs.UpdateSubscriptionData, proxy_ma
 		return
 	}
 
-	subscription_content, resp, err := fetchSubscription(group)
+	subscription_content, resp, isJSON, err := fetchSubscription(group)
 	if err != nil {
 		logger.Warnf("update-subscription: failed to GET %s: %s", redactSecret(group.SubscriptionUrl), redactSecret(err.Error()))
 		cmd.warn("update-subscription-failed", "Failed to get subscription")
 		return
 	}
 
-	// Extract Happ routing links from response headers and body
+	// Extract Happ routing links from response headers and body. A JSON
+	// subscription still uses its routing header for custom geo assets.
 	happLinks := happ.ExtractLinksFromResponse(resp)
 	happLinks = append(happLinks, happ.ExtractLinks([]byte(subscription_content))...)
 
@@ -69,14 +72,25 @@ func (cmd *Cmd) UpdateSubscription(data structs.UpdateSubscriptionData, proxy_ma
 		group.SubName = title
 	}
 	group.SubLastUpdated = time.Now().Unix()
-	cmd.DB.SaveGroup(group)
 
 	db_profiles := lib.GetDBAddProfileDatasFromStr(subscription_content, data.GroupId)
+	group.SubscriptionFormat = "uri"
+	if isJSON {
+		group.SubscriptionFormat = "json"
+	}
+	for _, profile := range db_profiles {
+		if profile.Managed {
+			group.SubscriptionFormat = "json"
+			break
+		}
+	}
 	if len(db_profiles) == 0 {
+		cmd.DB.SaveGroup(group)
 		logger.Warnf("update-subscription: parsed 0 profiles from content (len=%d)", len(subscription_content))
 		cmd.warn("update-subscription-failed", "No profiles found in subscription")
 		return
 	}
+	cmd.DB.SaveGroup(group)
 	status := proxy_manager.GetStatus()
 	keep_profile_id := 0
 	if status.Connection == "connected" && status.Profile.GroupId == data.GroupId {
@@ -186,15 +200,47 @@ const maxSubBytes = 16 * 1024 * 1024
 // slow subscription server can't leak a goroutine forever.
 var subClient = &http.Client{Timeout: 30 * time.Second}
 
-func fetchSubscription(group structs.Group) (string, *http.Response, error) {
+// fetchSubscription prefers the provider's JSON form (<url>/json) so each
+// server keeps its own provider-owned routing. When that endpoint is missing or
+// does not return Xray configurations, the regular share-link list is used.
+func fetchSubscription(group structs.Group) (string, *http.Response, bool, error) {
+	if jsonURL, ok := subscriptionJSONURL(group.SubscriptionUrl); ok {
+		if body, resp, err := fetchSubscriptionURL(jsonURL); err == nil && xrayjson.IsConfigBody([]byte(body)) {
+			logger.Debugf("update-subscription: using JSON format %s", redactSecret(jsonURL))
+			return body, resp, true, nil
+		}
+	}
+
+	body, resp, err := fetchSubscriptionURL(group.SubscriptionUrl)
+	if err != nil {
+		return "", nil, false, err
+	}
+	return body, resp, xrayjson.IsConfigBody([]byte(body)), nil
+}
+
+// subscriptionJSONURL appends /json to a subscription URL unless it already
+// points at the JSON endpoint.
+func subscriptionJSONURL(raw string) (string, bool) {
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+		return "", false
+	}
+	if strings.HasSuffix(strings.TrimRight(u.Path, "/"), "/json") {
+		return "", false
+	}
+	u.Path = strings.TrimRight(u.Path, "/") + "/json"
+	return u.String(), true
+}
+
+func fetchSubscriptionURL(subscriptionURL string) (string, *http.Response, error) {
 	// Reject non-http(s) schemes to avoid protocol-smuggling surprises
 	// (e.g. file:// reads from local disk).
-	if !strings.HasPrefix(group.SubscriptionUrl, "http://") &&
-		!strings.HasPrefix(group.SubscriptionUrl, "https://") {
+	if !strings.HasPrefix(subscriptionURL, "http://") &&
+		!strings.HasPrefix(subscriptionURL, "https://") {
 		return "", nil, fmt.Errorf("invalid subscription URL scheme")
 	}
 
-	req, err := http.NewRequest("GET", group.SubscriptionUrl, nil)
+	req, err := http.NewRequest("GET", subscriptionURL, nil)
 	if err != nil {
 		return "", nil, err
 	}

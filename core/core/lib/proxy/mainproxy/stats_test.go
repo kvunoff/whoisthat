@@ -111,7 +111,7 @@ func TestCollectStats_CancelStopsLoop(t *testing.T) {
 	out := make(chan structs.TrafficStats, 1)
 	done := make(chan struct{})
 	go func() {
-		p.collectStats(0, 0, "", cancel, out)
+		p.collectStats(0, 0, []string{"proxy"}, "", cancel, out)
 		close(done)
 	}()
 	close(cancel)

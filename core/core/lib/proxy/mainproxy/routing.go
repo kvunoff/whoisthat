@@ -498,11 +498,6 @@ func (p *ProxyManager) reloadCoreLocked(tunName string) error {
 	if p.tunEnabled {
 		tunArg = tunName
 	}
-	xray_config, err := lib.ParseUriWithTun(profile.Uri, app_config.SocksPort, app_config.HttpPort, tunArg)
-	if err != nil {
-		return fmt.Errorf("failed to parse profile uri: %w", err)
-	}
-
 	apiPort := p.statsApiPort
 	if apiPort == 0 && p.portPool != nil {
 		allocated, apiErr := p.portPool.GetPort()
@@ -511,31 +506,64 @@ func (p *ProxyManager) reloadCoreLocked(tunName string) error {
 		}
 	}
 
-	xray_config, err = injectStatsConfig(xray_config, apiPort)
-	if err != nil {
-		logger.Warnf("failed to inject stats config: %v", err)
-	}
-
+	var xray_config []byte
 	var selection structs.RoutingSelection
-	if p.DB != nil {
-		var selErr error
-		selection, selErr = p.DB.ResolveRouting(profile.GroupId)
-		if selErr != nil {
-			logger.Warnf("reloadCoreLocked: failed to resolve routing for group %d: %v", profile.GroupId, selErr)
-		}
-		selection.BootstrapHosts = bootstrapHosts(profile.Address, p.profileIPs)
-	} else {
-		selection = structs.RoutingSelection{Source: "manual"}
+	statsTags := p.statsTags
+	if len(statsTags) == 0 {
+		statsTags = []string{"proxy"}
 	}
 
-	if p.DB != nil {
-		prevOutboundsCount := countOutbounds(xray_config)
-		xray_config, err = injectRoutingConfig(xray_config, selection, p.tunEnabled)
-		if err != nil {
-			return fmt.Errorf("failed to inject routing config: %w", err)
+	if profile.Managed && p.DB != nil {
+		manual, _, _ := p.DB.LoadEffectiveManualRouting(profile.GroupId)
+		geoDir, _ := p.DB.ResolveGroupGeoDir(profile.GroupId)
+		selection = structs.RoutingSelection{
+			Config:         manual,
+			Source:         "manual",
+			GeoDir:         geoDir,
+			BootstrapHosts: p.bootstrapHosts,
 		}
-		afterOutboundsCount := countOutbounds(xray_config)
-		logger.Infof("routing: reload outbounds %d → %d (source=%s)", prevOutboundsCount, afterOutboundsCount, selection.Source)
+		cfg, tags, err := p.prepareManagedConfig(profile, app_config.SocksPort, app_config.HttpPort, tunArg, apiPort, manual, p.bootstrapHosts)
+		if err != nil {
+			return fmt.Errorf("failed to build provider JSON config: %w", err)
+		}
+		xray_config = cfg
+		if len(tags) > 0 {
+			statsTags = tags
+		}
+		logger.Infof("routing: reload provider JSON (%d outbounds, %d manual rules, source=manual)",
+			countOutbounds(xray_config), len(manual.Rules))
+	} else {
+		var err error
+		xray_config, err = lib.ParseUriWithTun(profile.Uri, app_config.SocksPort, app_config.HttpPort, tunArg)
+		if err != nil {
+			return fmt.Errorf("failed to parse profile uri: %w", err)
+		}
+
+		xray_config, err = injectStatsConfig(xray_config, apiPort)
+		if err != nil {
+			logger.Warnf("failed to inject stats config: %v", err)
+		}
+
+		if p.DB != nil {
+			var selErr error
+			selection, selErr = p.DB.ResolveRouting(profile.GroupId)
+			if selErr != nil {
+				logger.Warnf("reloadCoreLocked: failed to resolve routing for group %d: %v", profile.GroupId, selErr)
+			}
+			selection.BootstrapHosts = bootstrapHosts(profile.Address, p.profileIPs)
+		} else {
+			selection = structs.RoutingSelection{Source: "manual"}
+		}
+
+		if p.DB != nil {
+			prevOutboundsCount := countOutbounds(xray_config)
+			xray_config, err = injectRoutingConfig(xray_config, selection, p.tunEnabled)
+			if err != nil {
+				return fmt.Errorf("failed to inject routing config: %w", err)
+			}
+			afterOutboundsCount := countOutbounds(xray_config)
+			logger.Infof("routing: reload outbounds %d → %d (source=%s)", prevOutboundsCount, afterOutboundsCount, selection.Source)
+		}
 	}
 
 	// Pre-flight test the new configuration before terminating the active core.
@@ -544,7 +572,11 @@ func (p *ProxyManager) reloadCoreLocked(tunName string) error {
 	validate := true
 	testConfigBytes := xray_config
 	if p.tunEnabled {
-		if testBase, buildErr := buildPreflightConfig(profile, app_config.SocksPort, app_config.HttpPort, apiPort, selection, p.DB != nil, true); buildErr != nil {
+		var rawConfig json.RawMessage
+		if profile.Managed && p.DB != nil {
+			rawConfig, _ = p.DB.LoadProfileXrayConfig(profile.GroupId, profile.Id)
+		}
+		if testBase, buildErr := buildPreflightConfig(profile, app_config.SocksPort, app_config.HttpPort, apiPort, selection, p.DB != nil, true, rawConfig); buildErr != nil {
 			logger.Warnf("preflight: could not build tun-less test config, skipping validation: %v", buildErr)
 			validate = false
 		} else {
@@ -585,7 +617,8 @@ func (p *ProxyManager) reloadCoreLocked(tunName string) error {
 	}
 	p.statsCancel = make(chan struct{})
 	p.statsApiPort = apiPort
-	go p.collectStats(app_config.SocksPort, p.statsApiPort, tunName, p.statsCancel, p.StatsChanged)
+	p.statsTags = statsTags
+	go p.collectStats(app_config.SocksPort, p.statsApiPort, statsTags, tunName, p.statsCancel, p.StatsChanged)
 
 	p.startExitWatcher()
 

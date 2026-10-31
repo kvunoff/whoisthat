@@ -148,6 +148,53 @@ func (db *DB) ListRoutingProfileInfos(groupID int, activeID string) ([]structs.R
 	return db.listRoutingProfileInfos(groupID, activeID)
 }
 
+// ResolveGroupGeoDir returns an absolute geo asset directory for a group, or
+// "" when the group uses the global assets. JSON subscriptions get their custom
+// geosite from the accompanying Happ routing profile even when that profile is
+// not selected as the active routing source.
+func (db *DB) ResolveGroupGeoDir(groupID int) (string, error) {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	group, err := db.loadGroupConfig(groupID)
+	if err != nil {
+		return "", err
+	}
+
+	check := func(p structs.RoutingProfile) string {
+		if p.GeoDir == "" {
+			return ""
+		}
+		abs := filepath.Join(db.Path, p.GeoDir)
+		if _, err := os.Stat(filepath.Join(abs, "geoip.dat")); err != nil {
+			return ""
+		}
+		if _, err := os.Stat(filepath.Join(abs, "geosite.dat")); err != nil {
+			return ""
+		}
+		return abs
+	}
+
+	if group.ActiveRoutingProfileId != "" {
+		if p, err := db.loadRoutingProfile(groupID, group.ActiveRoutingProfileId); err == nil {
+			if dir := check(p); dir != "" {
+				return dir, nil
+			}
+		}
+	}
+
+	profiles, err := db.listRoutingProfiles(groupID)
+	if err != nil {
+		return "", err
+	}
+	for _, p := range profiles {
+		if dir := check(p); dir != "" {
+			return dir, nil
+		}
+	}
+	return "", nil
+}
+
 func (db *DB) findRoutingProfileByName(groupID int, name string) (structs.RoutingProfile, error) {
 	profiles, err := db.listRoutingProfiles(groupID)
 	if err != nil {
