@@ -391,6 +391,9 @@ pub fn render_routing_tab(
     let border_color = if focused { border_active() } else { border() };
 
     let is_global = group.is_none() || group_index == 0;
+    let is_json = group
+        .map(|g| g.group.subscription_format == "json")
+        .unwrap_or(false);
     let total_groups = total_pages.saturating_sub(1);
     let manual_label = if source == "custom" {
         "group rules"
@@ -423,6 +426,7 @@ pub fn render_routing_tab(
     let active_profile = group.and_then(|g| g.routing_profiles.iter().find(|p| p.id == active_id));
 
     let is_shadowed = !is_global
+        && !is_json
         && match mode {
             "manual" => false,
             "subscription" => true,
@@ -433,6 +437,11 @@ pub fn render_routing_tab(
 
     let (source_desc, source_style) = if is_global {
         ("Manual (Global rules)".to_string(), s_text())
+    } else if is_json {
+        (
+            "Provider JSON baseline + manual rules (manual first)".to_string(),
+            s_accent(),
+        )
     } else {
         match mode {
             "manual" => (
@@ -479,7 +488,8 @@ pub fn render_routing_tab(
         }
     };
 
-    let header_height = 3 + usize::from(is_inherited) + usize::from(is_shadowed);
+    let header_height =
+        3 + usize::from(is_inherited) + usize::from(is_shadowed) + usize::from(is_json);
     let v = Layout::vertical([
         Constraint::Length(header_height as u16),
         Constraint::Min(0),
@@ -512,6 +522,14 @@ pub fn render_routing_tab(
             Span::styled(group_str, s_accent_bold().add_modifier(Modifier::BOLD)),
             Span::styled(" > (←/→) │ Scope: ", s_faint()),
             Span::styled(scope, s_text()),
+        ])
+    } else if is_json {
+        Line::from(vec![
+            Span::styled(" Group: < ", s_faint()),
+            Span::styled(group_str, s_accent_bold().add_modifier(Modifier::BOLD)),
+            Span::styled(" > (←/→) │ Provider JSON: ", s_faint()),
+            Span::styled("read-only", s_accent()),
+            Span::styled(" (manual rules below still apply)", s_dim()),
         ])
     } else {
         Line::from(vec![
@@ -557,6 +575,14 @@ pub fn render_routing_tab(
         Span::styled(source_desc, source_style),
     ]);
     header_lines.push(line3);
+
+    // Line 3b: JSON subscription notice
+    if is_json {
+        header_lines.push(Line::from(vec![Span::styled(
+            " Provider JSON routing is immutable; manual rules above it are checked first.",
+            s_dim(),
+        )]));
+    }
 
     // Line 4: Inheritance notice
     if is_inherited {
@@ -671,7 +697,13 @@ pub fn render_routing_tab(
         f.render_stateful_widget(table, list_area, &mut ts);
     }
 
-    let hint = if area.width < 85 {
+    let hint = if is_json {
+        if area.width < 85 {
+            " a:add │ p:presets │ g:source │ e:edit │ x:del │ Spc │ ←/→:page "
+        } else {
+            " a add │ p presets │ g source │ e edit │ x delete │ Space │ ←/→ page "
+        }
+    } else if area.width < 85 {
         " a:add │ p:presets │ H:happ │ m:mode │ g:source │ i:clip │ e:edit │ x:del │ Spc │ ←/→:page "
     } else {
         " a add │ p presets │ H happ │ m mode │ g source │ i import │ e edit │ x delete │ Space │ ←/→ page "

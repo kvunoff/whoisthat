@@ -171,7 +171,7 @@ While WhoisThat provides complete support for Happ routing profiles as an open d
 
 * **In-Place Hot-Reload vs Reconnection**: Upstream clients often require tearing down the active connection and reconnecting to apply routing changes. In contrast, WhoisThat executes an in-place reload (`ReloadRouting`): the old Xray process is stopped, the daemon waits 30 ms, and a new process starts. The TUN device and system routing stay up, but the Xray process itself is briefly restarted.
 * **Native Linux Network Stack**: Rather than generic cross-platform mobile frameworks, WhoisThat's engine is built directly for Linux: rootless TUN via file capabilities (`cap_net_admin`), kernel policy routing (`ip rule`), `nftables` packet marking (`SO_MARK 1`), and `cgroup v2` transient slices.
-* **Decoupled User Control**: While upstream clients enforce a "Restricted Mode" that locks controls on provider-managed JSON subscriptions, WhoisThat provides complete user autonomy through its TUI and CLI, allowing inspection, per-group mode switching (`auto`/`manual`/`subscription`), and live rule toggling.
+* **Decoupled User Control**: For provider-managed [JSON subscriptions](/networking/json-subscriptions), the embedded provider routing is read-only, but WhoisThat's own Routing tab keeps working: manual rules are editable and take priority over the provider baseline, while the routing mode and bundled Happ profile selectors are disabled for those groups. Regular share-link subscriptions keep full `auto`/`manual`/`subscription` control.
 
 ---
 

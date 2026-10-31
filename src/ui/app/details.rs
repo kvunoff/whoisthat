@@ -43,7 +43,12 @@ impl App {
         match node {
             Some(TreeNode::Group(gi)) => {
                 let g = &self.groups[gi];
-                let title = format!(" {} ", g.group.name);
+                let json_marker = if g.group.subscription_format == "json" {
+                    " [JSON]"
+                } else {
+                    ""
+                };
+                let title = format!(" {}{} ", g.group.name, json_marker);
                 f.render_widget(
                     Paragraph::new(title).style(s_accent_bold()),
                     Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).split(inner)[0],
@@ -80,6 +85,9 @@ impl App {
 
         rows.push(section_header("Group"));
         rows.push(kv_row("Name", &g.group.name));
+        if g.group.subscription_format == "json" {
+            rows.push(kv_row("Format", "JSON (provider routing, read-only)"));
+        }
         let plen = g.profiles.len().to_string();
         rows.push(kv_row("Profiles", &plen));
 
@@ -180,9 +188,11 @@ impl App {
         };
 
         let port = if !uri_params.port.is_empty() {
-            &uri_params.port
+            uri_params.port.clone()
+        } else if p.port > 0 {
+            p.port.to_string()
         } else {
-            "—"
+            "—".to_string()
         };
 
         let sni = if !uri_params.sni.is_empty() {
@@ -215,6 +225,9 @@ impl App {
             kv_row("Protocol", &protocol),
             kv_row("Group", group_name),
         ];
+        if p.managed {
+            rows.push(kv_row("Routing", "Provider JSON (read-only)"));
+        }
 
         if let Some(g) = self.current_group() {
             if !g.group.subscription_url.is_empty() {
@@ -233,7 +246,7 @@ impl App {
                 &p.address
             },
         ));
-        rows.push(kv_row("Port", port));
+        rows.push(kv_row("Port", &port));
         rows.push(kv_row("SNI", sni));
         rows.push(kv_row("Transport", transport));
         rows.push(kv_row("Security", security));
@@ -275,6 +288,9 @@ impl App {
                 kv_row("Protocol", &protocol),
                 kv_row("Group", group_name),
             ];
+            if p.managed {
+                left_rows.push(kv_row("Routing", "Provider JSON (read-only)"));
+            }
             if let Some(g) = self.current_group() {
                 if !g.group.subscription_url.is_empty() {
                     left_rows.push(kv_row("Sub", redact_url(&g.group.subscription_url)));
@@ -290,7 +306,7 @@ impl App {
                     &p.address
                 },
             ));
-            left_rows.push(kv_row("Port", port));
+            left_rows.push(kv_row("Port", &port));
             left_rows.push(kv_row("SNI", sni));
             left_rows.push(kv_row("Transport", transport));
             left_rows.push(kv_row("Security", security));

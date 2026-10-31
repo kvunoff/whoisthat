@@ -604,7 +604,13 @@ async fn handle_normal_input(
             false
         }
         AppAction::OpenHappProfiles => {
-            if app.routing_selected_group().is_some() {
+            if app
+                .routing_selected_group()
+                .map(|g| g.group.subscription_format == "json")
+                .unwrap_or(false)
+            {
+                app.msg("Provider routing is immutable for JSON subscriptions");
+            } else if app.routing_selected_group().is_some() {
                 app.routing_popup = Some(RoutingPopup::HappProfiles { cursor: 0 });
             } else {
                 app.msg("Select a subscription group to manage Happ profiles");
@@ -612,7 +618,13 @@ async fn handle_normal_input(
             false
         }
         AppAction::CycleRoutingMode => {
-            if let Some(group) = app.routing_selected_group() {
+            if app
+                .routing_selected_group()
+                .map(|g| g.group.subscription_format == "json")
+                .unwrap_or(false)
+            {
+                app.msg("Routing mode is provider-managed for JSON subscriptions");
+            } else if let Some(group) = app.routing_selected_group() {
                 let gid = group.group.id;
                 let cur = match group.group.routing_mode.as_str() {
                     "manual" => "manual",
@@ -669,8 +681,14 @@ async fn handle_normal_input(
                 };
 
                 let gid = app.routing_page_group_id();
+                let is_json = app
+                    .routing_selected_group()
+                    .map(|g| g.group.subscription_format == "json")
+                    .unwrap_or(false);
                 if gid == 0 {
                     app.msg("Select a subscription group to import Happ routing");
+                } else if is_json {
+                    app.msg("Provider routing is immutable for JSON subscriptions");
                 } else {
                     let _ = client.import_happ_routing(gid, &link).await;
                     app.msg("Importing Happ routing from clipboard...");
