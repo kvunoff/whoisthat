@@ -575,6 +575,8 @@ fn check_dns_and_routing(cfg: &AppConfig) -> CheckCategory {
         ));
     }
 
+    items.push(split_policy_route_item(tun_up, &core_cfg.split_mode));
+
     let dns_rules = probe_dns_rules();
     match &dns_rules {
         DnsRules::Happ { text, ipv6 } => {
@@ -783,6 +785,65 @@ fn read_core_runtime_config() -> CoreRuntimeConfig {
             .unwrap_or("")
             .to_string(),
     }
+}
+
+/// Exclude-mode split relies on `fwmark 1 -> table 100` (physical gateway).
+/// TUN start installs it, but a startup reconcile or a network reset can drop
+/// it while the TUN stays up — split apps then silently use the tunnel. These
+/// ip commands are readable without root, unlike the nftables marking rules.
+fn split_policy_route_item(tun_up: bool, split_mode: &str) -> CheckItem {
+    const NAME: &str = "Split-tunnel routing";
+
+    if !tun_up {
+        return CheckItem::info(NAME, "TUN is inactive — no split policy route expected");
+    }
+    if split_mode != "exclude" {
+        let mode = if split_mode.is_empty() {
+            "off"
+        } else {
+            split_mode
+        };
+        return CheckItem::info(
+            NAME,
+            format!("split mode {mode} — mark 1/table 100 is not used"),
+        );
+    }
+
+    let has_rule = Command::new("ip")
+        .args(["rule", "show"])
+        .output()
+        .map(|o| has_mark1_policy_rule(&String::from_utf8_lossy(&o.stdout)))
+        .unwrap_or(false);
+    let has_route = Command::new("ip")
+        .args(["route", "show", "table", "100"])
+        .output()
+        .map(|o| has_default_route(&String::from_utf8_lossy(&o.stdout)))
+        .unwrap_or(false);
+
+    if has_rule && has_route {
+        CheckItem::pass(
+            NAME,
+            "exclude mode: mark 1 is routed via table 100 (physical link)",
+        )
+    } else {
+        CheckItem::fail(
+            NAME,
+            "split exclude is on, but the mark 1 → table 100 policy route is missing; excluded apps are tunnelled",
+            Some("Re-apply the mode: whoisthat settings set split-tunnel=exclude (or restart TUN)".into()),
+        )
+    }
+}
+
+fn has_mark1_policy_rule(rules: &str) -> bool {
+    rules
+        .lines()
+        .any(|l| l.contains("fwmark 0x1") && (l.contains("lookup 100") || l.contains("table 100")))
+}
+
+fn has_default_route(routes: &str) -> bool {
+    routes
+        .lines()
+        .any(|l| l.trim_start().starts_with("default "))
 }
 
 fn probe_dns_rules() -> DnsRules {
@@ -1303,6 +1364,24 @@ mod dns_checks_tests {
             fake_pool_overlap("1: tun inet6 fd00::1/128 scope global tun"),
             None
         );
+    }
+
+    #[test]
+    fn detects_split_policy_route() {
+        assert!(has_mark1_policy_rule(
+            "0:\tfrom all lookup local\n32765:\tfrom all fwmark 0x1 lookup 100"
+        ));
+        assert!(!has_mark1_policy_rule(
+            "0:\tfrom all lookup local\n32766:\tfrom all lookup main"
+        ));
+        assert!(!has_mark1_policy_rule(
+            "32765:\tfrom all fwmark 0x2 lookup 200"
+        ));
+
+        assert!(has_default_route(
+            "default via 192.168.3.1 dev wlan0 \n192.168.3.1 dev wlan0 scope link"
+        ));
+        assert!(!has_default_route("192.168.3.1 dev wlan0 scope link"));
     }
 
     #[test]
