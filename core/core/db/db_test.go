@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"whoisthat-core/structs"
 )
@@ -615,5 +616,58 @@ func TestUpdateGroupAndProfilesKeepsDuplicateURIsStable(t *testing.T) {
 	}
 	if got := second[1]; got.TestResult != 87 || got.TestedAt != 123456 || got.LossPct != 4 || got.JitterMs != 9 {
 		t.Errorf("duplicate latency lost: %+v", got)
+	}
+}
+
+func TestGroupAutoNameAndReset(t *testing.T) {
+	database := newTestDB(t)
+
+	added, err := database.AddGroup("", "https://provider.example/sub/token")
+	if err != nil {
+		t.Fatalf("AddGroup: %v", err)
+	}
+	group, err := database.LoadGroupConfig(added.Id)
+	if err != nil {
+		t.Fatalf("LoadGroupConfig: %v", err)
+	}
+	if group.Name != "provider.example" || group.SubName != "provider.example" {
+		t.Fatalf("auto name = %q/%q, want provider.example", group.Name, group.SubName)
+	}
+	if added.Name != group.Name {
+		t.Errorf("group-added name = %q, want %q", added.Name, group.Name)
+	}
+
+	// Manual rename survives a URL edit.
+	if _, err := database.UpdateGroupConfig(added.Id, "My name", group.SubscriptionUrl); err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+	group, _ = database.UpdateGroupConfig(added.Id, "My name", "https://other.example/x")
+	if group.Name != "My name" {
+		t.Fatalf("manual name lost on URL change: %q", group.Name)
+	}
+
+	// Empty name resets to the provider/host name.
+	group, err = database.UpdateGroupConfig(added.Id, "", group.SubscriptionUrl)
+	if err != nil {
+		t.Fatalf("reset: %v", err)
+	}
+	if group.Name != "other.example" {
+		t.Errorf("reset name = %q, want other.example", group.Name)
+	}
+
+	// An auto-named group follows a URL change even when the caller passes the
+	// old name along with it.
+	group, _ = database.UpdateGroupConfig(added.Id, group.Name, "https://third.example/x")
+	if group.Name != "third.example" {
+		t.Errorf("auto name after URL change = %q, want third.example", group.Name)
+	}
+
+	manual, err := database.AddGroup("", "")
+	if err != nil {
+		t.Fatalf("AddGroup manual: %v", err)
+	}
+	manualGroup, _ := database.LoadGroupConfig(manual.Id)
+	if want := "Group " + strconv.Itoa(manual.Id); manualGroup.Name != want {
+		t.Errorf("manual group name = %q, want %q", manualGroup.Name, want)
 	}
 }

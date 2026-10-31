@@ -280,6 +280,10 @@ type Group struct {
 	ManualRoutingMode             string `json:"manual_routing_mode,omitzero"`
 	ActiveRoutingProfileId        string `json:"active_routing_profile_id,omitzero"`
 	PendingActiveRoutingProfileId string `json:"pending_active_routing_profile_id,omitzero"`
+	// SubName is the provider-supplied name (profile-title header) or the URL
+	// host. Name follows it while it still equals SubName; a manual rename
+	// breaks that link so refreshes never overwrite the user's choice.
+	SubName string `json:"sub_name,omitzero"`
 }
 
 type Profile struct {
