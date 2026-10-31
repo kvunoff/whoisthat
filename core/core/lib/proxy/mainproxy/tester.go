@@ -293,7 +293,10 @@ func (p *ProxyManager) test(req TestRequest) pingResult {
 		// samples will legitimately fail and report 100% loss then.
 		// For hysteria2 (UDP), skip the direct TCP probe.
 		if !p.serverReachable(req.Profile) {
-			logger.Warnf("test %s (gid=%d id=%d): serverReachable failed for %s://%s — proceeding anyway",
+			// Still useful for debugging, but at default WARN it flooded the
+			// log: every tested profile produced a line even when xray later
+			// connected fine. The final result stays at WARN.
+			logger.Debugf("test %s (gid=%d id=%d): serverReachable failed for %s://%s — proceeding anyway",
 				req.Profile.Name, req.Profile.GroupId, req.Profile.Id,
 				req.Profile.Protocol, req.Profile.Address)
 		}

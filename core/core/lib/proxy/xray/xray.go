@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -33,6 +34,38 @@ type XrayCore struct {
 // satisfies mainproxy's coreProc interface.
 func (x *XrayCore) ExitedCh() chan error {
 	return x.Exited
+}
+
+// failedUnexpectedly distinguishes a real xray crash from an intentional
+// stop: Stop() cancels the context before killing the process, so ctxErr is
+// non-nil for normal stops.
+func failedUnexpectedly(ctxErr error, waitErr error) bool {
+	return ctxErr == nil && waitErr != nil
+}
+
+// crashTail returns at most limit bytes from the end of name. xray config
+// errors are short; reading the whole file would let a chatty runtime fill
+// core.log.
+func crashTail(name string, limit int64) string {
+	file, err := os.Open(name)
+	if err != nil {
+		return ""
+	}
+	defer file.Close()
+
+	info, err := file.Stat()
+	if err != nil {
+		return ""
+	}
+	offset := info.Size() - limit
+	if offset < 0 {
+		offset = 0
+	}
+	if _, err := file.Seek(offset, io.SeekStart); err != nil {
+		return ""
+	}
+	tail, _ := io.ReadAll(io.LimitReader(file, limit))
+	return strings.TrimSpace(string(tail))
 }
 
 func setOrReplaceEnv(env []string, key, val string) []string {
@@ -77,10 +110,10 @@ func (x *XrayCore) Start(stdinPipe []byte, assetDir string) error {
 	xrayLog, err := os.CreateTemp("", "whoisthat-xray-*.log")
 	if err == nil {
 		cmd.Stderr = xrayLog
-		logger.Infof("xray stderr -> %s", xrayLog.Name())
 	} else {
 		xrayLog = nil
 		cmd.Stderr = nil
+		logger.Warnf("xray: cannot capture stderr: %v", err)
 	}
 
 	cmd.SysProcAttr = &syscall.SysProcAttr{
@@ -121,7 +154,16 @@ func (x *XrayCore) Start(stdinPipe []byte, assetDir string) error {
 
 	if err := cmd.Start(); err != nil {
 		cancel()
+		if xrayLog != nil {
+			_ = xrayLog.Close()
+			_ = os.Remove(xrayLog.Name())
+		}
 		return err
+	}
+
+	// The child inherited its own fd; the parent copy is no longer needed.
+	if xrayLog != nil {
+		_ = xrayLog.Close()
 	}
 
 	logger.Infof("xray started (pid=%d)", cmd.Process.Pid)
@@ -142,14 +184,20 @@ func (x *XrayCore) Start(stdinPipe []byte, assetDir string) error {
 		defer close(waitDone)
 		err := cmd.Wait()
 		logger.Infof("xray stopped (pid=%d)", cmd.Process.Pid)
-		// Keep the stderr log when the process exited with an error so
-		// failures are diagnosable (e.g. hysteria2 protocol fed to xray
-		// by mistake — its config-rejection error lives in this log).
-		// Clean exit (err == nil and ctx not cancelled) frees the temp log.
-		if xrayLog != nil && err == nil && ctx.Err() == nil {
-			_ = os.Remove(xrayLog.Name())
-		} else if xrayLog != nil {
-			logger.Warnf("xray exited with error; stderr retained at %s (err=%v)", xrayLog.Name(), err)
+		// An intentional stop cancels ctx before killing the process; both
+		// "signal: killed" and "context canceled" land here and are not
+		// failures. A real crash (including xray rejecting the config, e.g.
+		// hysteria2 fed to it by mistake) has ctx.Err() == nil.
+		if xrayLog != nil {
+			name := xrayLog.Name()
+			if failedUnexpectedly(ctx.Err(), err) {
+				logger.Errorf("xray exited with error: %v", err)
+				if tail := crashTail(name, 4096); tail != "" {
+					// One line keeps the level tag/parse target intact.
+					logger.Errorf("xray stderr: %s", strings.ReplaceAll(tail, "\n", " | "))
+				}
+			}
+			_ = os.Remove(name)
 		}
 		x.mu.Lock()
 		defer x.mu.Unlock()

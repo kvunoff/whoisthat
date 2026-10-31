@@ -3,51 +3,88 @@ package logger
 import (
 	"log"
 	"strings"
+	"sync/atomic"
 )
 
-type Level int
+type Level int32
 
 const (
 	ERROR Level = iota
 	WARN
 	INFO
+	DEBUG
 )
 
-var logLevel = INFO
+var logLevel atomic.Int32
 
+func init() {
+	logLevel.Store(int32(INFO))
+}
+
+// SetLevel is safe to call at runtime (the TUI changes it over IPC). An empty
+// value (no WHOISTHAT_LOG_LEVEL) means the default info level.
 func SetLevel(s string) {
-	switch strings.ToLower(s) {
+	trimmed := strings.TrimSpace(strings.ToLower(s))
+
+	var level Level
+	unknown := false
+	switch trimmed {
+	case "", "info":
+		level = INFO
 	case "error":
-		logLevel = ERROR
+		level = ERROR
 	case "warn":
-		logLevel = WARN
+		level = WARN
 	case "debug", "trace":
-		logLevel = INFO
+		// The daemon has no separate trace level; trace is the most verbose.
+		level = DEBUG
 	default:
-		logLevel = INFO
+		level = INFO
+		unknown = true
+	}
+
+	logLevel.Store(int32(level))
+	if unknown {
+		Warnf("unknown log level %q, using info", s)
 	}
 }
 
+func enabled(level Level) bool {
+	return Level(logLevel.Load()) >= level
+}
+
 func Info(v ...interface{}) {
-	if logLevel >= INFO {
+	if enabled(INFO) {
 		log.Println(append([]interface{}{"[INFO]"}, v...)...)
 	}
 }
 
 func Infof(format string, v ...interface{}) {
-	if logLevel >= INFO {
+	if enabled(INFO) {
 		log.Printf("[INFO] "+format, v...)
 	}
 }
 
+func Debug(v ...interface{}) {
+	if enabled(DEBUG) {
+		log.Println(append([]interface{}{"[DEBU]"}, v...)...)
+	}
+}
+
+func Debugf(format string, v ...interface{}) {
+	if enabled(DEBUG) {
+		log.Printf("[DEBU] "+format, v...)
+	}
+}
+
 func Warn(v ...interface{}) {
-	if logLevel >= WARN {
+	if enabled(WARN) {
 		log.Println(append([]interface{}{"[WARN]"}, v...)...)
 	}
 }
 
 func Warnf(format string, v ...interface{}) {
-	if logLevel >= WARN {
+	if enabled(WARN) {
 		log.Printf("[WARN] "+format, v...)
 	}
 }

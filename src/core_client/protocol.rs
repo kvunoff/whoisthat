@@ -241,6 +241,11 @@ pub struct ConnectData {
 pub struct DisconnectData {}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SetLogLevelData {
+    pub level: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AddProfilesData {
     pub uris: String,
     pub group_id: i32,

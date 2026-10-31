@@ -136,7 +136,14 @@ func (cmd *Cmd) MoveProfile(data structs.MoveProfileData, pm *mainproxy.ProxyMan
 }
 
 func (cmd *Cmd) warn(key string, msg string) {
+	logger.Debugf("warn %s: %s", key, msg)
 	cmd.Broadcast(lib.CreateJsonNotificationWithID("warn", structs.Warning{Key: key, Content: msg}, cmd.RequestID))
+}
+
+// Warn lets the IPC dispatcher emit the same user-facing warning shape for
+// protocol-level errors (e.g. an invalid log level).
+func (cmd *Cmd) Warn(key string, msg string) {
+	cmd.warn(key, msg)
 }
 
 func (cmd *Cmd) send(msg string, obj any) {
