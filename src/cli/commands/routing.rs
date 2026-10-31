@@ -30,16 +30,183 @@ enum Action {
     Disable,
 }
 
+/// Routing selection the core will apply, mirroring `db.ResolveRouting`:
+/// `auto` prefers a usable Happ profile and falls back to manual rules,
+/// `subscription` never falls back to manual, `manual` ignores Happ.
+struct EffectiveRouting {
+    mode: &'static str,
+    source: &'static str, // "happ" | "manual" | "lan"
+    manual_source: &'static str,
+    profile: Option<String>,
+    rules: usize,
+}
+
+fn effective_routing(groups: &[GroupWithProfiles], group_id: i32) -> EffectiveRouting {
+    if group_id == 0 {
+        return EffectiveRouting {
+            mode: "global",
+            source: "manual",
+            manual_source: "global",
+            profile: None,
+            rules: 0,
+        };
+    }
+    let Some(group) = groups.iter().find(|g| g.group.id == group_id) else {
+        return EffectiveRouting {
+            mode: "auto",
+            source: "manual",
+            manual_source: "global",
+            profile: None,
+            rules: 0,
+        };
+    };
+    let mode = match group.group.routing_mode.as_str() {
+        "manual" => "manual",
+        "subscription" => "subscription",
+        _ => "auto",
+    };
+    let manual_source = if group.group.manual_routing_mode == "custom" {
+        "custom"
+    } else {
+        "global"
+    };
+    let active = group
+        .routing_profiles
+        .iter()
+        .find(|p| p.id == group.group.active_routing_profile_id);
+    // A profile in the error state has no usable geo assets; the core falls
+    // back to manual rules in `auto` and to LAN-only in `subscription`.
+    // shortcut: readiness comes from the profile state, so geo files deleted
+    // after a successful download are not detected here (the core would fall back).
+    let usable = active.filter(|p| p.state != "error" && p.rules_count > 0);
+    let source = match mode {
+        "manual" => "manual",
+        "subscription" => {
+            if usable.is_some() {
+                "happ"
+            } else {
+                "lan"
+            }
+        }
+        _ => {
+            if usable.is_some() {
+                "happ"
+            } else {
+                "manual"
+            }
+        }
+    };
+    EffectiveRouting {
+        mode,
+        source,
+        manual_source,
+        profile: active.map(|p| p.name.clone()),
+        rules: usable.map_or(0, |p| p.rules_count),
+    }
+}
+
+fn manual_shadowed(eff: &EffectiveRouting) -> bool {
+    eff.mode == "subscription" || (eff.mode == "auto" && eff.source == "happ")
+}
+
+/// Groups that use the global manual rules and currently route through Happ.
+fn global_shadowed_groups(groups: &[GroupWithProfiles]) -> Vec<String> {
+    groups
+        .iter()
+        .filter(|g| g.group.manual_routing_mode != "custom")
+        .filter(|g| manual_shadowed(&effective_routing(groups, g.group.id)))
+        .map(|g| g.group.name.clone())
+        .collect()
+}
+
+fn describe_effective(eff: &EffectiveRouting) -> String {
+    match eff.source {
+        "happ" => format!(
+            "Happ \"{}\" (rules: {})",
+            eff.profile.as_deref().unwrap_or("?"),
+            eff.rules
+        ),
+        "lan" => match &eff.profile {
+            Some(name) => format!("Happ \"{name}\" — LAN only (profile not usable)"),
+            None => "LAN only (no active Happ profile)".to_string(),
+        },
+        _ => format!("manual ({} rules)", eff.manual_source),
+    }
+}
+
+fn shadow_warning(groups: &[GroupWithProfiles], group_id: i32) -> Option<String> {
+    if group_id == 0 {
+        let names = global_shadowed_groups(groups);
+        if names.is_empty() {
+            return None;
+        }
+        return Some(format!(
+            "warning: global manual rules are shadowed in groups with active Happ routing: {}; edits are saved but will not affect them",
+            names.join(", ")
+        ));
+    }
+    let eff = effective_routing(groups, group_id);
+    if !manual_shadowed(&eff) {
+        return None;
+    }
+    let name = groups
+        .iter()
+        .find(|g| g.group.id == group_id)
+        .map(|g| g.group.name.as_str())
+        .unwrap_or("GROUP");
+    let label = match eff.source {
+        "happ" => format!("Happ \"{}\"", eff.profile.as_deref().unwrap_or("?")),
+        "lan" => "Happ routing".to_string(),
+        _ => "manual routing".to_string(),
+    };
+    let hint = if eff.mode == "subscription" {
+        format!("use 'whoisthat route mode {name} manual' to apply them")
+    } else {
+        format!("use 'whoisthat route mode {name} manual' or 'whoisthat route profile off {name}'")
+    };
+    Some(format!(
+        "warning: manual rules are shadowed by {label} (mode {}); edits are saved but will not affect traffic — {hint}",
+        eff.mode
+    ))
+}
+
+fn manual_shadowed_for_edit(groups: &[GroupWithProfiles], group_id: i32) -> bool {
+    if group_id == 0 {
+        !global_shadowed_groups(groups).is_empty()
+    } else {
+        manual_shadowed(&effective_routing(groups, group_id))
+    }
+}
+
 async fn list(g: &GlobalArgs, group: Option<&str>) -> Result<(), CliError> {
     let out = Out::new(g);
     let mut session = Session::open(g).await?;
     let state = session.state().await?;
     let group_id = group_id_for(&state, group)?;
     let config = get_config(&mut session, group_id).await?;
+    let eff = effective_routing(&state.groups, group_id);
+    let shadowed = manual_shadowed_for_edit(&state.groups, group_id);
+    let warning = shadow_warning(&state.groups, group_id);
 
     if g.json {
-        out.json(&config);
+        let mut payload = serde_json::to_value(&config).unwrap_or_default();
+        payload["effective"] = json!({
+            "mode": eff.mode,
+            "source": eff.source,
+            "manual_source": eff.manual_source,
+            "profile": eff.profile,
+            "profile_rules": eff.rules,
+        });
+        payload["manual_shadowed"] = json!(shadowed);
+        if group_id == 0 {
+            payload["shadowed_groups"] = json!(global_shadowed_groups(&state.groups));
+        }
+        out.json(&payload);
         return Ok(());
+    }
+    out.line(format!("Effective: {}", describe_effective(&eff)));
+    if let Some(warning) = &warning {
+        out.line(warning);
     }
     let mut rows = Vec::new();
     for (i, rule) in config.rules.iter().enumerate() {
@@ -72,6 +239,10 @@ async fn add(g: &GlobalArgs, args: RouteAddArgs) -> Result<(), CliError> {
             }
         }
     }
+    if let Some(warning) = shadow_warning(&state.groups, group_id) {
+        out.note(warning);
+    }
+    let shadowed = manual_shadowed_for_edit(&state.groups, group_id);
     if !matches!(args.outbound.as_str(), "proxy" | "direct" | "block") {
         return Err(CliError::Usage(
             "outbound must be proxy|direct|block".into(),
@@ -98,7 +269,10 @@ async fn add(g: &GlobalArgs, args: RouteAddArgs) -> Result<(), CliError> {
     let mut config = get_config(&mut session, group_id).await?;
     config.rules.push(rule);
     update_config(&mut session, group_id, config).await?;
-    out.ok("Routing rule added.", serde_json::json!({"added": true}));
+    out.ok(
+        "Routing rule added.",
+        serde_json::json!({"added": true, "manual_shadowed": shadowed}),
+    );
     Ok(())
 }
 
@@ -111,6 +285,10 @@ async fn mutate_indexes(
     let mut session = Session::open_or_spawn(g).await?;
     let state = session.state().await?;
     let group_id = group_id_for(&state, args.group.as_deref())?;
+    if let Some(warning) = shadow_warning(&state.groups, group_id) {
+        out.note(warning);
+    }
+    let shadowed = manual_shadowed_for_edit(&state.groups, group_id);
     let mut config = get_config(&mut session, group_id).await?;
 
     let len = config.rules.len();
@@ -121,7 +299,7 @@ async fn mutate_indexes(
             )));
         }
     }
-    match action {
+    let (human, result) = match action {
         Action::Remove => {
             let mut indexes = args.indexes.clone();
             indexes.sort_unstable();
@@ -129,26 +307,29 @@ async fn mutate_indexes(
             for index in indexes.into_iter().rev() {
                 config.rules.remove(index - 1);
             }
-            out.ok(
-                "Routing rule(s) removed.",
-                serde_json::json!({"indexes": args.indexes}),
-            );
+            (
+                "Routing rule(s) removed.".to_string(),
+                json!({"indexes": args.indexes}),
+            )
         }
         Action::Enable | Action::Disable => {
             let enable = matches!(action, Action::Enable);
             for index in &args.indexes {
                 config.rules[*index - 1].enabled = enable;
             }
-            out.ok(
+            (
                 format!(
                     "Routing rule(s) {}.",
                     if enable { "enabled" } else { "disabled" }
                 ),
-                serde_json::json!({"indexes": args.indexes, "enabled": enable}),
-            );
+                json!({"indexes": args.indexes, "enabled": enable}),
+            )
         }
-    }
+    };
     update_config(&mut session, group_id, config).await?;
+    let mut result = result;
+    result["manual_shadowed"] = json!(shadowed);
+    out.ok(human, result);
     Ok(())
 }
 
@@ -157,6 +338,10 @@ async fn move_rule(g: &GlobalArgs, args: RouteMoveArgs) -> Result<(), CliError> 
     let mut session = Session::open_or_spawn(g).await?;
     let state = session.state().await?;
     let group_id = group_id_for(&state, args.group.as_deref())?;
+    if let Some(warning) = shadow_warning(&state.groups, group_id) {
+        out.note(warning);
+    }
+    let shadowed = manual_shadowed_for_edit(&state.groups, group_id);
     let mut config = get_config(&mut session, group_id).await?;
     let len = config.rules.len();
     if args.index == 0 || args.index > len || args.new_index == 0 || args.new_index > len {
@@ -167,7 +352,11 @@ async fn move_rule(g: &GlobalArgs, args: RouteMoveArgs) -> Result<(), CliError> 
     update_config(&mut session, group_id, config).await?;
     out.ok(
         "Routing rule moved.",
-        serde_json::json!({"from": args.index, "to": args.new_index}),
+        serde_json::json!({
+            "from": args.index,
+            "to": args.new_index,
+            "manual_shadowed": shadowed,
+        }),
     );
     Ok(())
 }
@@ -412,6 +601,10 @@ async fn preset_apply(
     let mut session = Session::open_or_spawn(g).await?;
     let state = session.state().await?;
     let gid = group_id_for(&state, group)?;
+    if let Some(warning) = shadow_warning(&state.groups, gid) {
+        out.note(warning);
+    }
+    let shadowed = manual_shadowed_for_edit(&state.groups, gid);
     let mut config = get_config(&mut session, gid).await?;
 
     if apply {
@@ -439,7 +632,11 @@ async fn preset_apply(
             preset.title,
             if apply { "applied" } else { "removed" }
         ),
-        serde_json::json!({"preset": preset.id, "applied": apply}),
+        serde_json::json!({
+            "preset": preset.id,
+            "applied": apply,
+            "manual_shadowed": shadowed,
+        }),
     );
     Ok(())
 }
@@ -518,5 +715,106 @@ fn rule_field(rule: &RoutingRule) -> String {
         format!("port:{}", rule.port)
     } else {
         "—".into()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn happ(state: &str, rules: usize) -> RoutingProfileInfo {
+        RoutingProfileInfo {
+            id: "happ".into(),
+            name: "Happ".into(),
+            state: state.into(),
+            rules_count: rules,
+            ..Default::default()
+        }
+    }
+
+    fn group(
+        id: i32,
+        mode: &str,
+        manual: &str,
+        profile: Option<RoutingProfileInfo>,
+    ) -> GroupWithProfiles {
+        let active = profile.as_ref().map(|p| p.id.clone()).unwrap_or_default();
+        GroupWithProfiles {
+            group: Group {
+                id,
+                name: format!("g{id}"),
+                routing_mode: mode.into(),
+                manual_routing_mode: manual.into(),
+                active_routing_profile_id: active,
+                ..Default::default()
+            },
+            routing_profiles: profile.into_iter().collect(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn auto_with_happ_shadows_manual() {
+        let groups = vec![group(1, "auto", "custom", Some(happ("ready", 1)))];
+        let eff = effective_routing(&groups, 1);
+        assert_eq!(eff.mode, "auto");
+        assert_eq!(eff.source, "happ");
+        assert_eq!(eff.manual_source, "custom");
+        assert_eq!(eff.rules, 1);
+        assert!(manual_shadowed(&eff));
+        assert!(shadow_warning(&groups, 1).is_some());
+    }
+
+    #[test]
+    fn manual_mode_ignores_happ() {
+        let groups = vec![group(1, "manual", "custom", Some(happ("ready", 3)))];
+        let eff = effective_routing(&groups, 1);
+        assert_eq!(eff.source, "manual");
+        assert!(!manual_shadowed(&eff));
+        assert!(shadow_warning(&groups, 1).is_none());
+    }
+
+    #[test]
+    fn auto_without_usable_profile_uses_manual() {
+        let groups = vec![group(1, "auto", "global", None)];
+        let eff = effective_routing(&groups, 1);
+        assert_eq!(eff.source, "manual");
+        assert!(!manual_shadowed(&eff));
+
+        // A ready profile with no rules is unusable too.
+        let groups = vec![group(1, "auto", "global", Some(happ("ready", 0)))];
+        let eff = effective_routing(&groups, 1);
+        assert_eq!(eff.source, "manual");
+    }
+
+    #[test]
+    fn subscription_falls_back_to_lan_and_ignores_manual() {
+        let groups = vec![group(1, "subscription", "custom", Some(happ("error", 3)))];
+        let eff = effective_routing(&groups, 1);
+        assert_eq!(eff.source, "lan");
+        assert_eq!(eff.rules, 0);
+        assert!(manual_shadowed(&eff));
+        assert!(describe_effective(&eff).contains("LAN only"));
+    }
+
+    #[test]
+    fn global_shadowing_skips_custom_and_manual_groups() {
+        let groups = vec![
+            group(1, "auto", "global", Some(happ("ready", 1))),
+            group(2, "auto", "custom", Some(happ("ready", 1))),
+            group(3, "manual", "global", None),
+            group(4, "subscription", "global", None),
+        ];
+        assert_eq!(global_shadowed_groups(&groups), vec!["g1", "g4"]);
+        assert!(shadow_warning(&groups, 0).is_some());
+    }
+
+    #[test]
+    fn global_scope_is_manual() {
+        let groups = vec![group(1, "auto", "global", Some(happ("ready", 1)))];
+        let eff = effective_routing(&groups, 0);
+        assert_eq!(eff.mode, "global");
+        assert_eq!(eff.source, "manual");
+        assert!(!manual_shadowed(&eff));
     }
 }
