@@ -24,6 +24,10 @@ build_base() {
     ( cd "$ROOT" && git ls-files -z | tar --null -T - -cf - ) | tar -xf - -C "$dst"
     cp "$ROOT/scripts/bump.sh" "$dst/scripts/bump.sh"
     chmod +x "$dst/scripts/bump.sh" "$dst/scripts/check-versions.sh"
+    # Pin the fixture: the assertions below use fixed versions, so the suite
+    # must not follow the released versions in the live tree.
+    ( cd "$dst" && ./scripts/check-versions.sh --set tui=0.15.1 core=0.3.8 protocol=3 pkgrel=1 >/dev/null ) \
+        || { bad "build_base: cannot pin fixture versions"; return 1; }
     git -C "$dst" init -q -b main
     git -C "$dst" config user.email test@example.com
     git -C "$dst" config user.name Test
@@ -186,6 +190,14 @@ setup_case neg-untracked
 printf 'junk\n' > "$CASE_DIR/junk.txt"
 ( cd "$CASE_DIR" && GH_LOG="$CASE_LOG" PATH="$TMP/bin:$PATH" ./scripts/bump.sh --kind tui --bump-type 3 --fast --push ) >/dev/null 2>&1
 assert_eq "$?" "1" "untracked files rejected"
+
+printf '\nmissing changelog base\n'
+setup_case neg-base
+git -C "$CASE_DIR" tag -d v0.15.1 >/dev/null
+out="$TMP/out-neg-base.log"
+( cd "$CASE_DIR" && GH_LOG="$CASE_LOG" PATH="$TMP/bin:$PATH" ./scripts/bump.sh --kind tui --bump-type 3 --fast --push ) > "$out" 2>&1
+assert_eq "$?" "1" "missing patch base rejected"
+assert_grep "$out" "cannot resolve the changelog base" "missing patch base message"
 
 setup_case neg-changelog
 printf '**Full Changelog**: https://example.com\n' >> "$CASE_DIR/.local/bump/release.md"

@@ -345,7 +345,7 @@ oldest_tag() {
 
 resolve_base() {
     local prefix=$1 level=$2 old=$3
-    local major minor patch candidate pattern
+    local major minor patch candidate="" pattern=""
     IFS=. read -r major minor patch <<< "$old"
     case "$level" in
         patch)
