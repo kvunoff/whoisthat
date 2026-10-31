@@ -1,9 +1,13 @@
 package appconfig
 
 import (
+	"encoding/json"
 	"net"
+	"os"
+	"path/filepath"
 	"regexp"
 	"testing"
+	"whoisthat-core/lib/version"
 )
 
 func TestDefaultConfigPorts(t *testing.T) {
@@ -70,8 +74,64 @@ func TestGenerateHwidIsRandom(t *testing.T) {
 
 func TestDefaultConfigUserAgent(t *testing.T) {
 	cfg := defaultConfig()
-	if cfg.UserAgent == "" {
-		t.Error("UserAgent must not be empty")
+	want := "whoisthat/v" + version.CoreVersion
+	if cfg.UserAgent != want {
+		t.Errorf("UserAgent = %q, want %q", cfg.UserAgent, want)
+	}
+}
+
+func TestMigrateUserAgent(t *testing.T) {
+	cases := []struct {
+		in      string
+		want    string
+		changed bool
+	}{
+		{"whoisthat-core/v0.3.8", "whoisthat/v0.3.8", true},
+		{"whoisthat-core/custom", "whoisthat/custom", true},
+		{"whoisthat/v0.3.8", "whoisthat/v0.3.8", false},
+		{"Happ/1.0", "Happ/1.0", false},
+		{"", "", false},
+	}
+	for _, c := range cases {
+		got, changed := migrateUserAgent(c.in)
+		if got != c.want || changed != c.changed {
+			t.Errorf("migrateUserAgent(%q) = (%q, %v), want (%q, %v)",
+				c.in, got, changed, c.want, c.changed)
+		}
+	}
+}
+
+func TestLoadConfigMigratesLegacyUserAgent(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	configDir := filepath.Join(dir, "whoisthat")
+	if err := os.MkdirAll(configDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(configDir, "config.json")
+	legacy := `{"hwid-enabled": false, "user-agent": "whoisthat-core/v0.3.8"}`
+	if err := os.WriteFile(path, []byte(legacy), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	old := application_configuration
+	t.Cleanup(func() { application_configuration = old })
+
+	LoadConfig()
+	if got := GetConfig().UserAgent; got != "whoisthat/v0.3.8" {
+		t.Fatalf("UserAgent = %q, want whoisthat/v0.3.8", got)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saved AppConfig
+	if err := json.Unmarshal(data, &saved); err != nil {
+		t.Fatal(err)
+	}
+	if saved.UserAgent != "whoisthat/v0.3.8" {
+		t.Errorf("persisted UserAgent = %q, want whoisthat/v0.3.8", saved.UserAgent)
 	}
 }
 
