@@ -185,6 +185,16 @@ impl CoreClient {
             .await
     }
 
+    /// Restore config.json from the core's last known good copy.
+    pub async fn repair_config(&self) -> std::io::Result<()> {
+        self.writer.lock().await.send("repair-config", &()).await
+    }
+
+    /// Restore the encrypted database from the newest daily snapshot.
+    pub async fn restore_db(&self) -> std::io::Result<()> {
+        self.writer.lock().await.send("restore-db", &()).await
+    }
+
     pub async fn rename_profile(
         &self,
         group_id: i32,

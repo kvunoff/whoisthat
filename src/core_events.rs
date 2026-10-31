@@ -46,47 +46,69 @@ pub(crate) async fn handle_core_event(
         CoreEvent::ApplicationState(s) => {
             let was_connected = s.connection_status.connection == "connected";
             let already_migrated = app.autoconnect_enabled;
+            let config_state = s.config_status.state.clone();
+            let db_state = s.db_status.state.clone();
+            let db_day = s.db_status.snapshot_at.clone();
             if !s.core_version.is_empty() && cfg.core_version != s.core_version {
                 cfg.core_version = s.core_version.clone();
                 config::save_config(cfg);
             }
             app.apply_state(*s);
+            // Do not push recovered/daemon values into the offline cache while
+            // the core's own settings file is damaged: that would make the
+            // loss permanent. The user restores first, then the cache follows.
+            let config_usable = config_state != "corrupt";
+            if !app.recovery_prompted {
+                let needs_config = config_state == "corrupt";
+                let needs_db = !db_state.is_empty() && db_state != "ok";
+                if needs_config || needs_db {
+                    app.recovery_prompted = true;
+                    app.popup = Some(crate::ui::app::Popup::Recovery {
+                        config: needs_config,
+                        db: needs_db,
+                        day: db_day,
+                    });
+                }
+            }
             // Mirror daemon-authoritative settings into the offline cache.
             let mut cfg_changed = false;
-            if cfg.tun_name != app.tun_name {
-                cfg.tun_name = app.tun_name.clone();
-                cfg_changed = true;
-            }
-            if cfg.kill_switch_enabled != app.kill_switch_enabled {
-                cfg.kill_switch_enabled = app.kill_switch_enabled;
-                cfg_changed = true;
-            }
-            if cfg.test_concurrency != app.test_config.concurrency {
-                cfg.test_concurrency = app.test_config.concurrency;
-                cfg_changed = true;
-            }
-            if cfg.test_timeout_seconds != app.test_config.timeout_seconds {
-                cfg.test_timeout_seconds = app.test_config.timeout_seconds;
-                cfg_changed = true;
-            }
-            if cfg.test_samples != app.test_config.samples_per_test {
-                cfg.test_samples = app.test_config.samples_per_test;
-                cfg_changed = true;
-            }
-            if cfg.test_endpoint != app.test_config.test_endpoint {
-                cfg.test_endpoint = app.test_config.test_endpoint.clone();
-                cfg_changed = true;
-            }
-            if cfg.auto_test_on_subscribe != app.test_config.auto_test_on_subscribe {
-                cfg.auto_test_on_subscribe = app.test_config.auto_test_on_subscribe;
-                cfg_changed = true;
-            }
-            if cfg_changed {
-                config::save_config(cfg);
+            if config_usable {
+                if cfg.tun_name != app.tun_name {
+                    cfg.tun_name = app.tun_name.clone();
+                    cfg_changed = true;
+                }
+                if cfg.kill_switch_enabled != app.kill_switch_enabled {
+                    cfg.kill_switch_enabled = app.kill_switch_enabled;
+                    cfg_changed = true;
+                }
+                if cfg.test_concurrency != app.test_config.concurrency {
+                    cfg.test_concurrency = app.test_config.concurrency;
+                    cfg_changed = true;
+                }
+                if cfg.test_timeout_seconds != app.test_config.timeout_seconds {
+                    cfg.test_timeout_seconds = app.test_config.timeout_seconds;
+                    cfg_changed = true;
+                }
+                if cfg.test_samples != app.test_config.samples_per_test {
+                    cfg.test_samples = app.test_config.samples_per_test;
+                    cfg_changed = true;
+                }
+                if cfg.test_endpoint != app.test_config.test_endpoint {
+                    cfg.test_endpoint = app.test_config.test_endpoint.clone();
+                    cfg_changed = true;
+                }
+                if cfg.auto_test_on_subscribe != app.test_config.auto_test_on_subscribe {
+                    cfg.auto_test_on_subscribe = app.test_config.auto_test_on_subscribe;
+                    cfg_changed = true;
+                }
+                if cfg_changed {
+                    config::save_config(cfg);
+                }
             }
             if *first_state {
                 *first_state = false;
-                if !cfg.autoconnect_migrated
+                if config_usable
+                    && !cfg.autoconnect_migrated
                     && cfg.autoconnect
                     && cfg.last_profile_id != 0
                     && !already_migrated

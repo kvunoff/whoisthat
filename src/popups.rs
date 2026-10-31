@@ -71,6 +71,25 @@ pub(crate) async fn handle_popup_input(
                 app.popup = Some(Popup::TabSwitcher { cursor });
             }
         },
+        Some(Popup::Recovery { config, db, day }) => match key.code {
+            KeyCode::Enter => {
+                if config {
+                    let _ = client.repair_config().await;
+                }
+                if db {
+                    let _ = client.restore_db().await;
+                }
+                app.msg("Restoring...");
+                app.focus = Focus::LeftPanel;
+            }
+            KeyCode::Esc => {
+                app.focus = Focus::LeftPanel;
+            }
+            _ => {
+                app.popup = Some(Popup::Recovery { config, db, day });
+                return false;
+            }
+        },
         Some(Popup::Help) => match key.code {
             KeyCode::Char('j') | KeyCode::Down => {
                 app.help_scroll = app.help_scroll.saturating_add(1);
