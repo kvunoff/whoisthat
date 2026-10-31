@@ -47,6 +47,9 @@ pub struct App {
     pub details_scroll: usize,
     pub popup: Option<Popup>,
     pub help_scroll: usize,
+    /// Set once the "settings/database need repair" popup was offered, so it
+    /// does not reappear after the user dismisses it.
+    pub recovery_prompted: bool,
 
     pub settings_state: SettingsState,
     pub logs_state: LogsState,
@@ -114,6 +117,7 @@ impl App {
             details_scroll: 0,
             popup: None,
             help_scroll: 0,
+            recovery_prompted: false,
             settings_state: SettingsState::new(),
             logs_state: LogsState::new(
                 config::config_dir()

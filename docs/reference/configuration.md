@@ -27,7 +27,7 @@ last_group_id = 0
 last_profile_id = 0
 
 # Last seen core version from the IPC handshake (display fallback only)
-core_version = "0.3.10"
+core_version = "0.3.11"
 
 # Display public IP address in the header
 show_ip = true
@@ -90,7 +90,7 @@ Auto-generated and synchronized by the Go core daemon:
   "tun-name": "whoisthattun",
   "hwid-enabled": true,
   "hwid": "1fb1e0141ab3e35a",
-  "user-agent": "whoisthat/v0.3.10",
+  "user-agent": "whoisthat/v0.3.11",
   "kill-switch-enabled": false,
   "autoconnect-enabled": false,
   "autoconnect-group-id": 0,
@@ -150,6 +150,8 @@ whoisthat settings set theme=tokyo-night log-level=debug
 | Directory Path | Content & Purpose | Permissions |
 | :--- | :--- | :---: |
 | `~/.local/share/whoisthat/db/` | AES-256-GCM encrypted database: `config.json`, `routing.json`, and per-group directories (`groups/<id>/group_config.json`, profile files). | `0700` |
+| `~/.local/share/whoisthat/backups/db-YYYYMMDD/` | Daily database snapshot (last three kept) used by **Repair WhoisThat** on the next start. | `0700` |
+| `~/.config/whoisthat/config.json.bak` | Last known good copy of the daemon settings; `config.json` is never replaced by defaults when it cannot be parsed. | `0600` |
 | `~/.local/share/whoisthat/db/routing.json` | Global manual routing rules shared by groups that inherit them. | `0600` |
 | `~/.local/share/whoisthat/db/groups/<id>/routing/manual.json` | Custom manual routing rules for one group (`manual_routing_mode = "custom"`). | `0600` |
 | `~/.config/whoisthat/db.key` | 32-byte cryptographic master key. | `0600` |

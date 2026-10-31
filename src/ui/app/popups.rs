@@ -61,6 +61,9 @@ impl App {
                 field,
             } => self.render_group_form(f, "Add Group", name, url, *cursor, *field, area),
             Popup::TabSwitcher { cursor } => self.render_tab_switcher_popup(f, *cursor, area),
+            Popup::Recovery { config, db, day } => {
+                self.render_recovery_popup(f, *config, *db, day, area)
+            }
         }
     }
 
@@ -277,6 +280,52 @@ impl App {
 
         f.render_widget(
             Paragraph::new(" Enter confirm | Esc cancel ")
+                .style(s_accent())
+                .alignment(Alignment::Center),
+            chunks[1],
+        );
+    }
+
+    fn render_recovery_popup(&self, f: &mut Frame, config: bool, db: bool, day: &str, area: Rect) {
+        let pa = responsive_rect(62, 10, 94, 60, area);
+        f.render_widget(Clear, pa);
+
+        let block = Block::default()
+            .title(" Repair WhoisThat ")
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(Style::default().fg(error()))
+            .style(s_surface());
+
+        let inner = block.inner(pa);
+        f.render_widget(block, pa);
+
+        let mut msg = String::from("WhoisThat could not read:\n");
+        if config {
+            msg.push_str("  - settings (tun name, split tunnel, autoconnect)\n");
+        }
+        if db {
+            msg.push_str("  - profiles and groups\n");
+        }
+        msg.push_str("\nThe damaged files were kept. WhoisThat can restore them");
+        if db && !day.is_empty() {
+            msg.push_str(&format!(" from the backup of {}.", day));
+        } else {
+            msg.push('.');
+        }
+
+        let chunks = Layout::vertical([Constraint::Min(4), Constraint::Length(2)]).split(inner);
+
+        f.render_widget(
+            Paragraph::new(msg)
+                .style(s_text())
+                .alignment(Alignment::Left)
+                .wrap(Wrap { trim: true }),
+            chunks[0],
+        );
+
+        f.render_widget(
+            Paragraph::new(" Enter restore | Esc later ")
                 .style(s_accent())
                 .alignment(Alignment::Center),
             chunks[1],

@@ -97,6 +97,8 @@ The core replies with `{"msg":"hello-ok","data":{"protocol_version":3}}` or `{"m
 | `set-group-routing-mode` | `{"group_id": int, "mode": "auto" \| "manual" \| "subscription"}` | `group-updated` |
 | `set-active-routing-profile` | `{"group_id": int, "profile_id": "string"}` (`"off"` deactivates) | `group-updated`, then `subscription-updated` after any geo refresh |
 | `delete-routing-profile` | `{"group_id": int, "profile_id": "string"}` | `subscription-updated` |
+| `repair-config` | `{}` | Restores `config.json` from the last known good copy and replies with `application-state`. |
+| `restore-db` | `{}` | Replaces the encrypted database with the newest daily snapshot and replies with `application-state`. |
 
 ---
 
@@ -104,7 +106,7 @@ The core replies with `{"msg":"hello-ok","data":{"protocol_version":3}}` or `{"m
 
 | Notification (`msg`) | `data` Object Payload | Description |
 | :--- | :--- | :--- |
-| `application-state` | Complete system state | Response to `get-application-state` (the TUI requests it on connect). Includes groups, profiles, active connection, TUN status, `tun_name`, `test_config`, and configurations. `tun_name`/`test_config` are authoritative: the TUI mirrors them into `config.toml` instead of the other way around. |
+| `application-state` | Complete system state | Response to `get-application-state` (the TUI requests it on connect). Includes groups, profiles, active connection, TUN status, `tun_name`, `test_config`, and configurations. `tun_name`/`test_config` are authoritative: the TUI mirrors them into `config.toml` instead of the other way around. `config_status` (`ok`/`missing`/`corrupt`/`repaired`) and `db_status` (`ok`/`read-only` plus `snapshot_at`) report unreadable files so the TUI can offer a one-click restore. |
 | `status-changed` | `{"connection": "connected" \| "disconnected", "profile": { ... }, "connected_at": int, "reason": "string"?}` | Fired when VPN connects or disconnects. `reason` is present when the connection dropped unexpectedly. |
 | `profiles-added` | `{"profiles": [ ... ]}` | Fired when new server profiles are imported. |
 | `profiles-deleted` | `{"deleted-profiles": [ ... ]}` | Fired when profiles are deleted. |
