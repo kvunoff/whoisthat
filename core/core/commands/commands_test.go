@@ -340,3 +340,97 @@ func TestHappRoutingCommands_CRUD_Lifecycle(t *testing.T) {
 		t.Errorf("expected active routing profile to be empty after delete, got %q", subUpdated2.Data.Group.ActiveRoutingProfileId)
 	}
 }
+
+func TestDecodeProfileTitle(t *testing.T) {
+	plain := func(s string) string { return base64.StdEncoding.EncodeToString([]byte(s)) }
+	cases := []struct{ in, want string }{
+		{"base64:" + plain("Tuqise"), "Tuqise"},
+		{"base64:" + base64.RawStdEncoding.EncodeToString([]byte("@OutlineKeysRobot")), "@OutlineKeysRobot"},
+		{`  "Plain Provider"  `, "Plain Provider"},
+		{`"base64:` + plain("Quoted") + `"`, "Quoted"},
+		{"base64:not-valid-*", ""},
+		{"", ""},
+	}
+	for _, c := range cases {
+		if got := decodeProfileTitle(c.in); got != c.want {
+			t.Errorf("decodeProfileTitle(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+func subTestServer(t *testing.T, title string) *httptest.Server {
+	t.Helper()
+	profileURI := "vless://11111111-2222-3333-4444-555555555555@1.2.3.4:443?type=tcp&security=none#Node\n"
+	content := base64.StdEncoding.EncodeToString([]byte(profileURI))
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if title != "" {
+			w.Header().Set("profile-title", title)
+		}
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(content))
+	}))
+	t.Cleanup(ts.Close)
+	return ts
+}
+
+func TestUpdateSubscriptionUsesProfileTitle(t *testing.T) {
+	cmd, pm, msgChan := newTestCmd(t)
+	ts := subTestServer(t, "base64:"+base64.StdEncoding.EncodeToString([]byte("Provider One")))
+
+	cmd.AddGroup(structs.AddGroupData{SubscriptionUrl: ts.URL}, pm)
+	waitForMessage(t, msgChan, "group-added", 2*time.Second)
+	raw := waitForMessage(t, msgChan, "subscription-updated", 3*time.Second)
+	var updated struct {
+		Data structs.SubscriptionUpdated `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &updated); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if updated.Data.Group.Name != "Provider One" || updated.Data.Group.SubName != "Provider One" {
+		t.Errorf("group = %q/%q, want Provider One", updated.Data.Group.Name, updated.Data.Group.SubName)
+	}
+}
+
+func TestSubscriptionTitleFallsBackToHostAndRenameSurvives(t *testing.T) {
+	cmd, pm, msgChan := newTestCmd(t)
+	ts := subTestServer(t, "")
+
+	cmd.AddGroup(structs.AddGroupData{SubscriptionUrl: ts.URL}, pm)
+	waitForMessage(t, msgChan, "group-added", 2*time.Second)
+	raw := waitForMessage(t, msgChan, "subscription-updated", 3*time.Second)
+	var updated struct {
+		Data structs.SubscriptionUpdated `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &updated); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	gid := updated.Data.GroupId
+	if updated.Data.Group.Name != "127.0.0.1" {
+		t.Fatalf("fallback name = %q, want host 127.0.0.1", updated.Data.Group.Name)
+	}
+
+	cmd.UpdateGroup(structs.UpdateGroupData{Id: gid, Name: "Mine", SubscriptionUrl: ts.URL}, pm)
+	waitForMessage(t, msgChan, "group-updated", 2*time.Second)
+
+	cmd.UpdateSubscription(structs.UpdateSubscriptionData{GroupId: gid}, pm)
+	raw = waitForMessage(t, msgChan, "subscription-updated", 3*time.Second)
+	if err := json.Unmarshal(raw, &updated); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if updated.Data.Group.Name != "Mine" {
+		t.Errorf("manual name overwritten by refresh: %q", updated.Data.Group.Name)
+	}
+
+	// Empty name resets to the provider fallback.
+	cmd.UpdateGroup(structs.UpdateGroupData{Id: gid, SubscriptionUrl: ts.URL}, pm)
+	raw = waitForMessage(t, msgChan, "group-updated", 2*time.Second)
+	var grp struct {
+		Data structs.Group `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &grp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if grp.Data.Name != "127.0.0.1" {
+		t.Errorf("reset name = %q, want 127.0.0.1", grp.Data.Name)
+	}
+}

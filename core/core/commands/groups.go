@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,12 +11,14 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 	"whoisthat-core/lib"
 	appconfig "whoisthat-core/lib/AppConfig"
 	"whoisthat-core/lib/happ"
 	"whoisthat-core/lib/logger"
 	proxy "whoisthat-core/lib/proxy/mainproxy"
 	"whoisthat-core/structs"
+	"whoisthat-core/utils"
 )
 
 var subscription_mutex = sync.Mutex{}
@@ -58,6 +61,13 @@ func (cmd *Cmd) UpdateSubscription(data structs.UpdateSubscriptionData, proxy_ma
 
 	// Parse subscription-userinfo header (traffic / expiry)
 	parseSubUserInfo(resp, &group)
+	// The provider name wins over the current auto name, never over a rename.
+	if title := subscriptionTitle(resp, group.SubscriptionUrl); title != "" {
+		if group.Name == "" || group.Name == group.SubName {
+			group.Name = title
+		}
+		group.SubName = title
+	}
 	group.SubLastUpdated = time.Now().Unix()
 	cmd.DB.SaveGroup(group)
 
@@ -247,4 +257,44 @@ func parseSubUserInfo(resp *http.Response, group *structs.Group) {
 			group.SubExpires = val
 		}
 	}
+}
+
+// subscriptionTitle returns the display name a provider advertises in the
+// profile-title response header (Happ/Remnawave send it, optionally base64
+// encoded), falling back to the subscription URL host.
+func subscriptionTitle(resp *http.Response, subscriptionURL string) string {
+	if resp != nil {
+		if title := decodeProfileTitle(resp.Header.Get("profile-title")); title != "" {
+			return title
+		}
+	}
+	return utils.SubscriptionHost(subscriptionURL)
+}
+
+func decodeProfileTitle(raw string) string {
+	title := strings.Trim(strings.TrimSpace(raw), `"'`)
+	if encoded, ok := strings.CutPrefix(title, "base64:"); ok {
+		encoded = strings.TrimSpace(encoded)
+		decoded, err := base64.StdEncoding.DecodeString(encoded)
+		if err != nil {
+			decoded, err = base64.RawStdEncoding.DecodeString(encoded)
+		}
+		if err != nil {
+			return ""
+		}
+		title = string(decoded)
+	}
+	title = strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, title)
+	title = strings.Join(strings.Fields(title), " ")
+	title = strings.Trim(title, `"'`)
+	// Keep the tree readable even if a provider sends a paragraph.
+	if runes := []rune(title); len(runes) > 80 {
+		title = string(runes[:80])
+	}
+	return title
 }

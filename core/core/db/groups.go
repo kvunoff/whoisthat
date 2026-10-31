@@ -9,6 +9,7 @@ import (
 	"strings"
 	"whoisthat-core/lib/logger"
 	"whoisthat-core/structs"
+	"whoisthat-core/utils"
 )
 
 // UpdateGroupAndProfiles replaces a subscription group's profile list while
@@ -331,8 +332,15 @@ func (db *DB) AddGroup(name string, subscription_url string) (structs.GroupAdded
 		Id:              group_id,
 		SubscriptionUrl: subscription_url,
 		Name:            name,
+		SubName:         utils.SubscriptionHost(subscription_url),
 		LastId:          0,
 		ProfileOrder:    []int{},
+	}
+	if group.Name == "" {
+		group.Name = group.SubName
+		if group.Name == "" {
+			group.Name = "Group " + strconv.Itoa(group_id)
+		}
 	}
 
 	if err := db.writeEncryptedJSON(group_config_path, group); err != nil {
@@ -341,7 +349,7 @@ func (db *DB) AddGroup(name string, subscription_url string) (structs.GroupAdded
 
 	group_added = structs.GroupAdded{
 		Id:              group_id,
-		Name:            name,
+		Name:            group.Name,
 		SubscriptionUrl: subscription_url,
 	}
 
@@ -434,11 +442,24 @@ func (db *DB) UpdateGroupConfig(group_id int, name string, subscription_url stri
 	if err != nil {
 		return group, fmt.Errorf("failed to load group %d: %w", group_id, err)
 	}
-	if name != "" {
-		group.Name = name
-	}
+	// An auto-named group still carries the last provider/host name; anything
+	// else is a manual rename that a URL change must not discard.
+	autoNamed := group.Name == "" || group.Name == group.SubName
 	if subscription_url != "" {
+		if host := utils.SubscriptionHost(subscription_url); host != "" {
+			group.SubName = host
+		}
 		group.SubscriptionUrl = subscription_url
+	}
+	switch {
+	case name == "" || (autoNamed && name == group.Name):
+		// Empty name (or an unchanged auto name) = follow the provider name.
+		group.Name = group.SubName
+		if group.Name == "" {
+			group.Name = "Group " + strconv.Itoa(group_id)
+		}
+	default:
+		group.Name = name
 	}
 	err = db.updateGroup(group)
 	return group, err
