@@ -29,11 +29,11 @@ func TestSplitCgroupLevelMatchesPathDepth(t *testing.T) {
 	}
 }
 
-// Exclude mode marks split-app sockets with mark 1, which reuses the existing
-// table-100 fwmark routing (physical gateway). It must NOT install its own
-// routing table or touch the system default route.
+// Exclude mode marks split-app sockets with mark 1 and must make sure the
+// physical table-100 route for that mark exists: TUN start installs it too, but
+// a reconcile/network reset can drop it while the TUN stays up.
 func TestSplitExcludeModeReusesTable100(t *testing.T) {
-	script := buildSplitSetupScript("exclude", 1000, "whoisthattun", true, true)
+	script := buildSplitSetupScript("exclude", 1000, "whoisthattun", "wlan0", "192.168.3.1", true, true)
 
 	if !strings.Contains(script, "nft add table inet whoisthat_split") {
 		t.Error("exclude script must create the whoisthat_split nft table")
@@ -54,19 +54,35 @@ func TestSplitExcludeModeReusesTable100(t *testing.T) {
 	if !strings.Contains(script, "nft 'add rule inet whoisthat_split postrouting meta mark 1 oifname != \"whoisthattun\" oifname != \"lo\" masquerade'") {
 		t.Errorf("exclude script missing masquerade rule: %s", script)
 	}
-	// Exclude mode must not create its own routing table — it piggybacks on 100.
+	// Exclude mode must not touch the include-mode table 200.
 	if strings.Contains(script, "table 200") {
 		t.Error("exclude script must not reference the include-mode table 200")
 	}
-	if strings.Contains(script, "ip rule add fwmark") {
-		t.Error("exclude script must not add its own fwmark rule (reuses table 100)")
+	// The mark-1 policy route must be (re)installed idempotently.
+	if !strings.Contains(script, "ip rule add fwmark 1 table 100") {
+		t.Error("exclude script must re-assert the mark-1 fwmark rule")
+	}
+	if !strings.Contains(script, "ip route replace default via 192.168.3.1 table 100") {
+		t.Errorf("exclude script must re-assert the table-100 default route: %s", script)
+	}
+}
+
+// Without a parsed physical gateway there is no valid table-100 route to
+// install; the script must skip it instead of emitting broken commands.
+func TestSplitExcludeModeSkipsRouteWithoutPhysicalGateway(t *testing.T) {
+	script := buildSplitSetupScript("exclude", 1000, "whoisthattun", "", "", true, false)
+	if strings.Contains(script, "ip rule add fwmark 1 table 100") {
+		t.Errorf("exclude script must not route mark 1 without a physical gateway: %s", script)
+	}
+	if strings.Contains(script, "ip route replace default via  table 100") {
+		t.Errorf("exclude script emitted an empty gateway: %s", script)
 	}
 }
 
 // When the physical link lacks IPv6, exclude mode must blackhole mark 1 IPv6 so
 // dual-stack apps fall back to physical IPv4 instead of leaking into the TUN.
 func TestSplitExcludeModeFallbackV6WhenPhysicalAbsent(t *testing.T) {
-	script := buildSplitSetupScript("exclude", 1000, "whoisthattun", true, false)
+	script := buildSplitSetupScript("exclude", 1000, "whoisthattun", "wlan0", "192.168.3.1", true, false)
 	if !strings.Contains(script, "ip -6 rule add fwmark 1 table 100") {
 		t.Errorf("exclude script must add fwmark 1 v6 rule when physV6=false, script: %s", script)
 	}
@@ -78,7 +94,7 @@ func TestSplitExcludeModeFallbackV6WhenPhysicalAbsent(t *testing.T) {
 // With a physical IPv6 gateway the fallback must not exist: table 100 already
 // carries Xray's direct route there.
 func TestSplitExcludeModeSkipsFallbackWhenPhysicalV6Present(t *testing.T) {
-	script := buildSplitSetupScript("exclude", 1000, "whoisthattun", true, true)
+	script := buildSplitSetupScript("exclude", 1000, "whoisthattun", "wlan0", "192.168.3.1", true, true)
 	if strings.Contains(script, "unreachable") {
 		t.Errorf("exclude script must not blackhole v6 when physV6=true, script: %s", script)
 	}
@@ -87,7 +103,7 @@ func TestSplitExcludeModeSkipsFallbackWhenPhysicalV6Present(t *testing.T) {
 // Include mode is the inverted model: only split apps use the tunnel. It marks
 // with mark 2 and installs a dedicated table whose default route is the TUN dev.
 func TestSplitIncludeModeInstallsTunTable(t *testing.T) {
-	script := buildSplitSetupScript("include", 1000, "whoisthattun", true, true)
+	script := buildSplitSetupScript("include", 1000, "whoisthattun", "wlan0", "192.168.3.1", true, true)
 
 	if !strings.Contains(script, "meta mark set 2") {
 		t.Errorf("include script must set mark %d", splitIncludeMark)
@@ -110,7 +126,7 @@ func TestSplitIncludeModeInstallsTunTable(t *testing.T) {
 // Without an IPv6 TUN address, include mode must not emit v6 routing commands
 // (they would fail on a v4-only tunnel/host).
 func TestSplitIncludeModeSkipsV6WhenTunAbsent(t *testing.T) {
-	script := buildSplitSetupScript("include", 1000, "whoisthattun", false, false)
+	script := buildSplitSetupScript("include", 1000, "whoisthattun", "wlan0", "192.168.3.1", false, false)
 	if strings.Contains(script, "ip -6 ") {
 		t.Errorf("include script must omit IPv6 commands when tunV6=false, script: %s", script)
 	}
@@ -119,7 +135,7 @@ func TestSplitIncludeModeSkipsV6WhenTunAbsent(t *testing.T) {
 // Unknown / off modes must produce no script at all (no rules installed).
 func TestSplitOffModeProducesNoScript(t *testing.T) {
 	for _, mode := range []string{"off", "", "bogus"} {
-		if s := buildSplitSetupScript(mode, 1000, "whoisthattun", true, true); s != "" {
+		if s := buildSplitSetupScript(mode, 1000, "whoisthattun", "wlan0", "192.168.3.1", true, true); s != "" {
 			t.Errorf("mode %q must yield an empty script, got: %s", mode, s)
 		}
 	}

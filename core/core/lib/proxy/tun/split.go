@@ -55,13 +55,16 @@ func splitCgroupLevel(relPath string) int {
 // buildSplitSetupScript returns the shell script that installs split-tunnel
 // marking + routing for the given mode. Returns "" for "off"/unknown modes.
 //
+// physIface/physGateway identify the physical link exclude mode must route
+// marked traffic through.
+//
 // tunV6: the TUN device carries IPv6 (include mode routes v6 into the tunnel).
 // physV6: the physical link has an IPv6 default gateway (exclude mode points
 // excluded apps at the physical link through table 100; without v6 they must
 // be blackholed instead of leaking into the tunnel).
 //
 // Pure text so it is unit-testable without root or a live cgroup tree.
-func buildSplitSetupScript(mode string, uid int, tunName string, tunV6, physV6 bool) string {
+func buildSplitSetupScript(mode string, uid int, tunName, physIface, physGateway string, tunV6, physV6 bool) string {
 	paths := splitCgroupRelPaths(uid)
 
 	var mark int
@@ -114,6 +117,15 @@ func buildSplitSetupScript(mode string, uid int, tunName string, tunV6, physV6 b
 			fmt.Fprintf(&b, "ip -6 route replace default dev %s table %d\n", tunName, splitIncludeTable)
 		}
 	} else if mode == "exclude" {
+		// Re-assert the mark-1 policy route instead of trusting the one that
+		// addFwmarkRouting installed at TUN start: a startup reconcile, a
+		// network reset or a reapply can drop it while the TUN stays up, and
+		// then excluded apps silently go through the tunnel.
+		if physIface != "" && physGateway != "" {
+			fmt.Fprintf(&b, "ip rule add fwmark %d table %d 2>/dev/null || true\n", mark, splitExcludeTable)
+			fmt.Fprintf(&b, "ip route replace %s/32 dev %s table %d\n", physGateway, physIface, splitExcludeTable)
+			fmt.Fprintf(&b, "ip route replace default via %s table %d\n", physGateway, splitExcludeTable)
+		}
 		if !physV6 {
 			// Physical interface has no IPv6 default gateway. Excluded apps must NOT
 			// leak into the tunnel's default IPv6 route. Route mark 1 IPv6 packets
@@ -162,6 +174,8 @@ func (t *TunModeManager) applySplitRules() error {
 		cfg.Mode,
 		uid,
 		t.tun_name,
+		t.default_interface,
+		t.default_interface_ip,
 		t.tun_ipv6 != "",
 		t.default_interface_ipv6 != "",
 	)
