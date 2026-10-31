@@ -57,9 +57,9 @@ pub(crate) async fn handle_core_event(
             // Do not push recovered/daemon values into the offline cache while
             // the core's own settings file is damaged: that would make the
             // loss permanent. The user restores first, then the cache follows.
-            let config_usable = config_state != "corrupt";
+            let config_usable = config_state != "corrupt" && config_state != "orphaned";
             if !app.recovery_prompted {
-                let needs_config = config_state == "corrupt";
+                let needs_config = config_state == "corrupt" || config_state == "orphaned";
                 let needs_db = !db_state.is_empty() && db_state != "ok";
                 if needs_config || needs_db {
                     app.recovery_prompted = true;
