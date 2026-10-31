@@ -22,6 +22,10 @@ type Options struct {
 	BootstrapHosts     map[string][]string
 	UserRules          []structs.RoutingRule
 	UserDomainStrategy string
+	// GlobalGeoExt is set when the runtime asset directory also contains
+	// geoip-global.dat/geosite-global.dat next to the provider's own geo files.
+	// Manual rules with global geo codes are then compiled against those copies.
+	GlobalGeoExt bool
 }
 
 // Prepared is the runtime configuration plus metadata the proxy manager needs.
@@ -208,7 +212,7 @@ func mergeRouting(routing map[string]interface{}, outbounds []interface{}, proxy
 		})
 	}
 
-	userRules, extraBalancer := buildUserRules(opts.UserRules, outbounds, asSlice(routing["balancers"]), proxyTags)
+	userRules, extraBalancer := buildUserRules(opts.UserRules, opts.GlobalGeoExt, outbounds, asSlice(routing["balancers"]), proxyTags)
 
 	rules := make([]interface{}, 0, len(structural)+len(userRules)+len(providerRules))
 	rules = append(rules, structural...)
@@ -234,7 +238,7 @@ func mergeRouting(routing map[string]interface{}, outbounds []interface{}, proxy
 // buildUserRules translates manual rules into the provider's outbound tags.
 // Manual rules only know proxy/direct/block; provider configs often have no
 // outbound literally tagged "proxy", so a user balancer is added when needed.
-func buildUserRules(configured []structs.RoutingRule, outbounds, balancers []interface{}, proxyTags []string) ([]interface{}, map[string]interface{}) {
+func buildUserRules(configured []structs.RoutingRule, globalGeoExt bool, outbounds, balancers []interface{}, proxyTags []string) ([]interface{}, map[string]interface{}) {
 	if len(configured) == 0 {
 		return nil, nil
 	}
@@ -261,10 +265,10 @@ func buildUserRules(configured []structs.RoutingRule, outbounds, balancers []int
 			rule["type"] = "field"
 		}
 		if r.Domain != "" {
-			rule["domain"] = splitAndTrim(r.Domain)
+			rule["domain"] = rewriteGeoList(splitAndTrim(r.Domain), globalGeoExt, false)
 		}
 		if r.IP != "" {
-			rule["ip"] = splitAndTrim(r.IP)
+			rule["ip"] = rewriteGeoList(splitAndTrim(r.IP), globalGeoExt, true)
 		}
 		if r.Protocol != "" {
 			rule["protocol"] = []string{r.Protocol}
@@ -435,6 +439,39 @@ func asSlice(value interface{}) []interface{} {
 		return s
 	}
 	return nil
+}
+
+// rewriteGeoList points manual geo rules at the global copies that
+// geo.EnsureGlobalCopies places next to the provider's own assets. Provider
+// rules are left untouched and keep using geoip.dat/geosite.dat.
+func rewriteGeoList(values []string, enabled, ip bool) []string {
+	if !enabled {
+		return values
+	}
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		out = append(out, rewriteGeo(value, ip))
+	}
+	return out
+}
+
+func rewriteGeo(value string, ip bool) string {
+	if ip {
+		switch {
+		case strings.HasPrefix(value, "geoip:ext:"):
+			return value
+		case strings.HasPrefix(value, "geoip:"):
+			return "ext-ip:geoip-global.dat:" + strings.TrimPrefix(value, "geoip:")
+		}
+		return value
+	}
+	switch {
+	case strings.HasPrefix(value, "geosite:ext:"):
+		return value
+	case strings.HasPrefix(value, "geosite:"):
+		return "ext-domain:geosite-global.dat:" + strings.TrimPrefix(value, "geosite:")
+	}
+	return value
 }
 
 func splitAndTrim(value string) []string {

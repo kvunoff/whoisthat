@@ -12,6 +12,7 @@ import (
 	"time"
 	"whoisthat-core/lib"
 	appconfig "whoisthat-core/lib/AppConfig"
+	"whoisthat-core/lib/geo"
 	"whoisthat-core/lib/logger"
 	"whoisthat-core/lib/proxy/xray"
 	"whoisthat-core/lib/xrayjson"
@@ -379,16 +380,17 @@ func (p *ProxyManager) testViaXray(profile structs.Profile, method string, sampl
 		if loadErr != nil {
 			return pingResult{latencyMs: -1, sampleCount: samples, lossPct: 100, failReason: fmt.Sprintf("load provider config: %v", loadErr)}
 		}
+		geoDir, _ = p.DB.ResolveGroupGeoDir(profile.GroupId)
 		prepared, prepErr := xrayjson.Prepare(raw, xrayjson.Options{
-			SocksPort:  port,
-			HttpPort:   -1,
-			DNSServers: appconfig.GetConfig().DnsServers,
+			SocksPort:    port,
+			HttpPort:     -1,
+			DNSServers:   appconfig.GetConfig().DnsServers,
+			GlobalGeoExt: geo.EnsureGlobalCopies(geoDir),
 		})
 		if prepErr != nil {
 			return pingResult{latencyMs: -1, sampleCount: samples, lossPct: 100, failReason: fmt.Sprintf("prepare provider config: %v", prepErr)}
 		}
 		parsed = prepared.Config
-		geoDir, _ = p.DB.ResolveGroupGeoDir(profile.GroupId)
 	} else {
 		parsed, err = lib.ParseUri(profile.Uri, port, -1)
 	}
