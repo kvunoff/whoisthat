@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 	"whoisthat-core/lib/crypto"
 	"whoisthat-core/lib/logger"
@@ -24,6 +25,37 @@ type DB struct {
 	KeyPath string
 	key     []byte
 	mu      sync.Mutex
+	// degraded marks a database whose files could not be decrypted. In that
+	// state writes are refused: overwriting would destroy data that a correct
+	// key (or a backup) could still recover.
+	degraded    atomic.Bool
+	degradedErr atomic.Value
+}
+
+// Status reports whether the database can be written and which daily snapshot
+// is available for the one-click restore.
+type Status struct {
+	State      string `json:"state"` // "ok" | "read-only"
+	Error      string `json:"error,omitempty"`
+	SnapshotAt string `json:"snapshot_at,omitempty"`
+}
+
+func (db *DB) Status() Status {
+	st := Status{State: "ok", SnapshotAt: db.latestSnapshotDay()}
+	if db.degraded.Load() {
+		st.State = "read-only"
+		if v, ok := db.degradedErr.Load().(string); ok {
+			st.Error = v
+		}
+	}
+	return st
+}
+
+func (db *DB) markDegraded(err error) {
+	if db.degraded.CompareAndSwap(false, true) {
+		logger.Warnf("db: read-only mode: %v (existing files are left untouched)", err)
+	}
+	db.degradedErr.Store(err.Error())
 }
 
 func (db *DB) saveDBConfig(db_config structs.DBConfig) error {
@@ -219,6 +251,7 @@ func (db *DB) readEncryptedJSON(path string, target any) error {
 	if json.Unmarshal(data, &wrapper) == nil && wrapper.Ciphertext != "" {
 		plain, err := crypto.DecryptBase64(wrapper.Ciphertext, db.key)
 		if err != nil {
+			db.markDegraded(err)
 			return fmt.Errorf("decrypt %s: %w", path, err)
 		}
 		return json.Unmarshal(plain, target)
@@ -228,6 +261,9 @@ func (db *DB) readEncryptedJSON(path string, target any) error {
 }
 
 func (db *DB) writeEncryptedJSON(path string, data any) error {
+	if db.degraded.Load() {
+		return fmt.Errorf("database is read-only: %s could not be decrypted", path)
+	}
 	jsonData, err := json.MarshalIndent(data, "", " ")
 	if err != nil {
 		return err

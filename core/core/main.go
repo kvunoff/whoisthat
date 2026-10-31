@@ -93,7 +93,8 @@ func main() {
 	}
 	database := db.DB{}
 	database.Initialize()
-	appconfig.SaveConfig()
+	// No unconditional SaveConfig here: writing the in-memory config on every
+	// start used to turn a failed read into permanent data loss.
 	proxy_manager := proxy.ProxyManager{}
 	proxy_manager.DB = &database
 	proxy_manager.Init()

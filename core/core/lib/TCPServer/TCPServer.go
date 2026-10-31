@@ -460,6 +460,12 @@ func (s *Server) handleConnection(cc *clientConn, clientID string, requireAuth b
 			}
 			handler.GetApplicationState(data, s.proxy_manager, s.tun_manager)
 
+		case "repair-config":
+			handler.RepairConfig(s.proxy_manager, s.tun_manager)
+
+		case "restore-db":
+			handler.RestoreDB(s.proxy_manager, s.tun_manager)
+
 		case "update-subscription":
 			var data structs.UpdateSubscriptionData
 			if err := json.Unmarshal(raw_tcp_message.Data, &data); err != nil {

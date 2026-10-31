@@ -26,6 +26,13 @@ func (db *DB) Initialize() {
 	_ = os.Chmod(db.Path, 0700)
 	db.loadOrCreateKey()
 	db.ensureDBConfigExistance()
+	// Keep a daily copy before anything can rewrite the files. Never snapshot a
+	// database the current key cannot open: that copy would be useless.
+	if db.KeyPath != "" {
+		if matches, checked := db.keyMatchesDatabase(db.key); !checked || matches {
+			db.snapshotDaily()
+		}
+	}
 	db.MigrateToEncrypted()
 }
 

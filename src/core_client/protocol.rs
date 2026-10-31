@@ -151,6 +151,32 @@ pub struct ApplicationState {
     /// Daemon-authoritative latency-test settings.
     #[serde(rename = "test_config", default)]
     pub test_config: TestConfig,
+    /// How config.json was read; drives the one-click settings restore.
+    #[serde(rename = "config_status", default)]
+    pub config_status: ConfigStatus,
+    /// Encrypted database state; drives the one-click profiles restore.
+    #[serde(rename = "db_status", default)]
+    pub db_status: DbStatus,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub struct ConfigStatus {
+    /// "ok" | "missing" | "corrupt" | "repaired"
+    #[serde(default)]
+    pub state: String,
+    #[serde(default)]
+    pub error: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub struct DbStatus {
+    /// "ok" | "read-only"
+    #[serde(default)]
+    pub state: String,
+    #[serde(default)]
+    pub error: String,
+    #[serde(rename = "snapshot_at", default)]
+    pub snapshot_at: String,
 }
 
 /// IPC contract version expected by this TUI. The value is mirrored in
