@@ -131,7 +131,7 @@ whoisthat doctor
 Example successful output:
 
 ```
-WhoisThat Doctor v0.17.0 / core v0.4.0 (protocol 3) — System Diagnostics
+WhoisThat Doctor v0.17.0 / core v0.4.1 (protocol 3) — System Diagnostics
 
 [+] Binaries & Runtimes
   ✓ whoisthat: /usr/local/bin/whoisthat (v0.17.0)

@@ -75,6 +75,7 @@ Only the structural pieces are changed:
 - `freedom` outbounds get `sockopt.mark = 1` so direct traffic bypasses the tunnel;
 - `stats`, the StatsService API inbound and the api rule are injected (provider `policy` levels are kept);
 - a `port 53 -> dns-out` rule is added in TUN mode, and DNS hijack uses the tunnel sink like a Happ profile;
+- when the provider brings custom geo assets, the global `geoip.dat`/`geosite.dat` are exposed alongside them as `geoip-global.dat`/`geosite-global.dat`; manual `geoip:`/`geosite:` rules are compiled to Xray's `ext-ip:`/`ext-domain:` references so both datasets resolve in one Xray process;
 - every outbound server address is resolved before TUN starts, added to `dns.hosts` and to the kill-switch allow-list — one JSON profile may contain several servers and balancers;
 - traffic counters are summed across all proxy outbounds.
 
