@@ -81,7 +81,7 @@ func defaultConfig() AppConfig {
 		DnsServers:      []string{"1.1.1.1", "8.8.8.8", "2606:4700:4700::1111", "2001:4860:4860::8888"},
 		TunName:         "whoisthattun",
 		HwidEnabled:     true,
-		UserAgent:       "whoisthat-core/v" + version.CoreVersion,
+		UserAgent:       "whoisthat/v" + version.CoreVersion,
 		AutoconnectMode: "proxy",
 		TestConfig: TestConfig{
 			Concurrency:    16,
@@ -188,6 +188,8 @@ func LoadConfig() {
 	config.TunName = sanitizeTunName(config.TunName)
 	config.AutoconnectMode = sanitizeAutoconnectMode(config.AutoconnectMode)
 	config.TestConfig = sanitizeTestConfig(config.TestConfig)
+	var migratedUserAgent bool
+	config.UserAgent, migratedUserAgent = migrateUserAgent(config.UserAgent)
 	// include-mode split tunnel only routes the marked apps through the VPN;
 	// a system-wide kill-switch would block everything else, contradicting the
 	// mode's purpose. Refuse the combination rather than creating a surprise
@@ -197,6 +199,21 @@ func LoadConfig() {
 		config.KillSwitchEnabled = false
 	}
 	application_configuration = config
+	if migratedUserAgent {
+		SaveConfig()
+	}
+}
+
+const legacyUserAgentPrefix = "whoisthat-core/"
+
+// migrateUserAgent renames the product in the stored default User-Agent.
+// Values that do not use the legacy prefix (custom client signatures) are
+// returned unchanged.
+func migrateUserAgent(ua string) (string, bool) {
+	if rest, ok := strings.CutPrefix(ua, legacyUserAgentPrefix); ok {
+		return "whoisthat/" + rest, true
+	}
+	return ua, false
 }
 
 // sanitizeDnsServers drops any entry that is not a literal IP address. DNS
