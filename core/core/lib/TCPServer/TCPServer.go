@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 	cmd "whoisthat-core/commands"
@@ -345,9 +346,28 @@ func (s *Server) handleConnection(cc *clientConn, clientID string, requireAuth b
 		// read the id of a later request.
 		handler := baseHandler
 		handler.RequestID = raw_tcp_message.ID
+		// Name and id only: payloads may contain subscription URIs/tokens.
+		logger.Debugf("ipc: %s (id=%q) from %s", raw_tcp_message.Msg, raw_tcp_message.ID, conn.RemoteAddr())
 		switch raw_tcp_message.Msg {
 		case "die":
 			s.stop_sig <- true
+		case "set-log-level":
+			// Fire-and-forget: replying "ok" would be broadcast to every
+			// client and the TUI dispatcher treats unknown frames as errors.
+			var data struct {
+				Level string `json:"level"`
+			}
+			if err := json.Unmarshal(raw_tcp_message.Data, &data); err != nil {
+				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
+				return
+			}
+			switch strings.ToLower(strings.TrimSpace(data.Level)) {
+			case "error", "warn", "info", "debug", "trace":
+				logger.SetLevel(data.Level)
+				logger.Infof("log level set to %s", data.Level)
+			default:
+				handler.Warn("set-log-level-failed", "unknown log level: "+data.Level)
+			}
 		case "add-profiles":
 			var data structs.AddProfilesData
 			if err := json.Unmarshal(raw_tcp_message.Data, &data); err != nil {

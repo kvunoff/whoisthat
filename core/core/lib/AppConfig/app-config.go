@@ -495,6 +495,7 @@ func SaveConfig() {
 		return
 	}
 	loadStatus = LoadStatus{State: "ok"}
+	logger.Debugf("config saved to %s", config_path)
 }
 
 func readConfig() (AppConfig, LoadStatus) {

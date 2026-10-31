@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime/debug"
 	"syscall"
 	"time"
 	cmd "whoisthat-core/commands"
@@ -34,22 +35,25 @@ func main() {
 		}
 	}
 	configDir := utils.ConfigDir()
-	logPath := filepath.Join(configDir, "core.log")
-	if err := os.MkdirAll(configDir, 0700); err != nil {
-		logPath = "/tmp/whoisthat-core.log"
-	}
+	logPath := coreLogPath(configDir)
 
 	log.SetOutput(&lumberjack.Logger{
 		Filename:   logPath,
 		MaxSize:    20,
-		MaxBackups: 1,
+		MaxBackups: 2,
 		MaxAge:     0,
 		Compress:   false,
 	})
 
-	log.SetFlags(log.Ltime)
+	log.SetFlags(log.LstdFlags)
 	logger.SetLevel(os.Getenv("WHOISTHAT_LOG_LEVEL"))
-	logger.Info("whoisthat-core starting")
+	logger.Infof(
+		"whoisthat-core v%s starting (protocol %d, log: %s)",
+		version.CoreVersion,
+		version.ProtocolVersion,
+		logPath,
+	)
+	setupCrashLog()
 
 	// A second daemon must not race the first one for the IPC socket, the TUN
 	// device and the firewall. The lock is held until the process exits.
@@ -194,6 +198,50 @@ func acquireInstanceLock() (bool, error) {
 	}
 	instanceLock = f
 	return true, nil
+}
+
+// coreAlreadyRunning reports whether another whoisthat-core is already
+// coreLogPath returns the first writable location. A read-only config
+// directory (which exists, so MkdirAll succeeds) must not silently swallow the
+// log: probe the actual file and fall back to a per-user temp directory.
+func coreLogPath(configDir string) string {
+	candidate := filepath.Join(configDir, "core.log")
+	if err := os.MkdirAll(configDir, 0700); err == nil {
+		probe, err := os.OpenFile(candidate, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+		if err == nil {
+			_ = probe.Close()
+			return candidate
+		}
+	}
+
+	fallbackDir := filepath.Join(os.TempDir(), fmt.Sprintf("whoisthat-%d", utils.RealUserUid()))
+	_ = os.MkdirAll(fallbackDir, 0700)
+	_ = os.Chmod(fallbackDir, 0700)
+	return filepath.Join(fallbackDir, "core.log")
+}
+
+// setupCrashLog captures unhandled panics and fatal runtime errors. They go to
+// stderr, which is /dev/null when the TUI spawned us, so without this a core
+// crash leaves no trace anywhere.
+func setupCrashLog() {
+	dataDir := utils.DataDir()
+	if err := os.MkdirAll(dataDir, 0700); err != nil {
+		return
+	}
+	path := filepath.Join(dataDir, "core-crash.log")
+
+	// Bound crash-loop growth.
+	if st, err := os.Stat(path); err == nil && st.Size() > 1<<20 {
+		_ = os.Rename(path, path+".1")
+	}
+
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		return
+	}
+	// SetCrashOutput duplicates the fd, so the original can be closed.
+	_ = debug.SetCrashOutput(file, debug.CrashOptions{})
+	_ = file.Close()
 }
 
 // coreAlreadyRunning reports whether another whoisthat-core is already
