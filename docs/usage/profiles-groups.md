@@ -20,8 +20,9 @@ Groups allow you to categorize profiles (e.g. by provider, protocol, or geograph
 
 | Action | Shortcut | Description |
 | :--- | :---: | :--- |
-| **Add Group** | <kbd>A</kbd> / <kbd>n</kbd> | Opens modal to create a new group with a custom name and optional subscription URL. |
+| **Add Group** | <kbd>A</kbd> / <kbd>n</kbd> | Opens a modal asking only for the subscription URL. The group name comes from the provider (`profile-title` response header) or, if absent, from the URL host. |
 | **Edit Group** | <kbd>e</kbd> | Edit group name or update subscription URL. Updating the URL automatically triggers an immediate profile fetch! |
+| **Reset Group Name** | <kbd>Ctrl+R</kbd> (in Edit Group) | Restores the provider's name. Manual renames are never overwritten by subscription refreshes. |
 | **Delete Group** | <kbd>X</kbd> | Prompts confirmation to delete the entire group and all contained profiles. |
 | **Refresh Group** | <kbd>u</kbd> / <kbd>r</kbd> | Fetches the latest server list from the subscription provider, updating metadata and profiles. |
 | **Move Group** | <kbd>J</kbd> / <kbd>K</kbd> | Move group up or down in the tree. Order is saved persistently to disk. |
@@ -31,11 +32,13 @@ Groups allow you to categorize profiles (e.g. by provider, protocol, or geograph
 
 ## 2. Subscription Metadata
 
-When a subscription URL is fetched, the core daemon inspects HTTP response headers (such as `subscription-userinfo`):
+When a subscription URL is fetched, the core daemon inspects HTTP response headers (`subscription-userinfo`, `profile-title`):
 
 ```
 upload=1048576; download=52428800; total=107374182400; expire=1720000000
 ```
+
+The group is named after the provider's `profile-title` header (both plain and `base64:` values are supported) and falls back to the subscription URL host when the header is missing. Renaming the group manually pins your name; use <kbd>Ctrl+R</kbd> in the Edit Group modal to go back to the provider name.
 
 The Details panel dynamically displays:
 * **Used Bandwidth**: Total data consumed (Upload + Download) formatted in human-readable units (e.g., `51.0 MB`).

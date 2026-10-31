@@ -169,6 +169,7 @@ The core replies with `{"msg":"hello-ok","data":{"protocol_version":3}}` or `{"m
 {
   "id": 1,
   "name": "Premium Subscription",
+  "sub_name": "Premium Subscription",
   "subscription_url": "https://provider.com/sub/token",
   "last_id": 48,
   "sub_last_updated": 1712345678,
@@ -180,6 +181,9 @@ The core replies with `{"msg":"hello-ok","data":{"protocol_version":3}}` or `{"m
 ```
 
 Subscription metadata (`sub_*`) is automatically populated from the standard `subscription-userinfo` HTTP response header.
+
+Group naming: `add-group` with an empty `name` uses the subscription group's name, taken from the `profile-title` HTTP response header (base64-prefixed values are decoded) or, when absent, the subscription URL host. Both are stored in `sub_name`. `name` follows `sub_name` while the two are equal, so a manual rename survives later subscription refreshes. `update-group` with an empty `name` resets the group to `sub_name`.
+
 
 ### Routing Profile Info Structure
 
