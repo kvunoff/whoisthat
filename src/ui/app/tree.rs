@@ -192,10 +192,15 @@ impl App {
             } else {
                 s_accent()
             };
+            let json_marker = if g.group.subscription_format == "json" {
+                " [JSON]"
+            } else {
+                ""
+            };
             let mut spans = vec![
                 Span::styled(format!("{}{}", fold_icon, marker), group_style),
                 Span::styled(
-                    format!(" {} ({})", g.group.name, g.profiles.len()),
+                    format!(" {}{} ({})", g.group.name, json_marker, g.profiles.len()),
                     s_text(),
                 ),
             ];

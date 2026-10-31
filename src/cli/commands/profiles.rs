@@ -108,7 +108,9 @@ pub async fn show(
         );
     }
     println!("  active:   {}", is_active(&state, profile));
-    if reveal {
+    if profile.managed {
+        println!("  config:   provider JSON (routing read-only)");
+    } else if reveal {
         println!("  uri:      {}", profile.uri);
     } else {
         println!("  uri:      {} (use --reveal)", redact_url(&profile.uri));
@@ -426,7 +428,9 @@ fn profile_json(
         "name": p.name,
         "protocol": p.protocol,
         "address": p.address,
+        "port": p.port,
         "host": p.host,
+        "managed": p.managed,
         "test_result": p.test_result,
         "loss_pct": p.loss_pct,
         "jitter_ms": p.jitter_ms,

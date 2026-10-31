@@ -108,6 +108,7 @@ export default defineConfig({
           { text: 'Kill-Switch Firewall', link: '/networking/killswitch' },
           { text: 'Routing Rules & Presets', link: '/networking/routing-rules' },
           { text: 'Happ Routing Profiles', link: '/networking/happ-routing' },
+          { text: 'JSON Subscriptions', link: '/networking/json-subscriptions' },
           { text: 'Supported Protocols', link: '/networking/protocols' }
         ]
       },

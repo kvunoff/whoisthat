@@ -29,9 +29,14 @@ pub async fn list(g: &GlobalArgs, reveal: bool) -> Result<(), CliError> {
         .map(|g| {
             let gr = &g.group;
             let used = gr.sub_upload + gr.sub_download;
+            let name = if gr.subscription_format == "json" {
+                format!("{} [JSON]", gr.name)
+            } else {
+                gr.name.clone()
+            };
             vec![
                 gr.id.to_string(),
-                gr.name.clone(),
+                name,
                 g.profiles.len().to_string(),
                 format_epoch(gr.sub_last_updated),
                 format_epoch(gr.sub_expires),
@@ -70,7 +75,12 @@ pub async fn show(g: &GlobalArgs, selector: &str, reveal: bool) -> Result<(), Cl
     }
 
     let gr = &group.group;
-    println!("Group #{}: {}", gr.id, gr.name);
+    let name = if gr.subscription_format == "json" {
+        format!("{} [JSON]", gr.name)
+    } else {
+        gr.name.clone()
+    };
+    println!("Group #{}: {}", gr.id, name);
     println!("  profiles:  {}", group.profiles.len());
     println!("  updated:   {}", format_epoch(gr.sub_last_updated));
     println!("  expires:   {}", format_epoch(gr.sub_expires));
@@ -83,6 +93,9 @@ pub async fn show(g: &GlobalArgs, selector: &str, reveal: bool) -> Result<(), Cl
         "  routing:   {} / {}",
         gr.routing_mode, gr.manual_routing_mode
     );
+    if !gr.subscription_format.is_empty() {
+        println!("  format:    {}", gr.subscription_format);
+    }
     if reveal {
         println!("  url:       {}", gr.subscription_url);
     } else if !gr.subscription_url.is_empty() {
@@ -450,6 +463,7 @@ fn group_json(
         "total": gr.sub_total,
         "routing_mode": gr.routing_mode,
         "manual_routing_mode": gr.manual_routing_mode,
+        "subscription_format": gr.subscription_format,
         "active": active,
         "routing_profiles": group.routing_profiles,
     })
