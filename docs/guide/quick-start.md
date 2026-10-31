@@ -23,9 +23,8 @@ There are three ways to import VPN profiles:
 ### Method A: Subscription URL (Recommended)
 
 1. Press <kbd>A</kbd> or <kbd>n</kbd> in the TUI to open the **Add Group** modal.
-2. Enter a descriptive group name (e.g., `Personal VPN` or `Mullvad`).
-3. Paste your subscription URL into the **Subscription URL** field.
-4. Press <kbd>Enter</kbd> to save.
+2. Paste your subscription URL into the **Subscription URL** field.
+3. Press <kbd>Enter</kbd> to save. The group is named after the provider's `profile-title` (or the URL host if the provider sends none); rename it later with <kbd>e</kbd>.
 
 ::: tip Automatic Ingestion & Testing
 The core daemon immediately fetches the subscription, parses all supported proxy URIs, populates metadata (traffic usage, plan expiry), and automatically triggers latency tests for newly added servers.

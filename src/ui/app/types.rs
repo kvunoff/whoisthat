@@ -30,10 +30,8 @@ pub enum Popup {
         name: String,
     },
     AddGroup {
-        name: String,
         url: String,
         cursor: usize,
-        field: usize,
     },
     EditSubscription {
         name: String,

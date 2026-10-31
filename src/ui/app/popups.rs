@@ -52,14 +52,11 @@ impl App {
                 cursor,
                 field,
                 ..
-            } => self.render_group_form(f, "Edit Group", name, url, *cursor, *field, area),
+            } => self.render_group_form(f, "Edit Group", Some(name), url, *cursor, *field, area),
             Popup::Help => self.render_help_popup(f, area),
-            Popup::AddGroup {
-                name,
-                url,
-                cursor,
-                field,
-            } => self.render_group_form(f, "Add Group", name, url, *cursor, *field, area),
+            Popup::AddGroup { url, cursor } => {
+                self.render_group_form(f, "Add Group", None, url, *cursor, 0, area)
+            }
             Popup::TabSwitcher { cursor } => self.render_tab_switcher_popup(f, *cursor, area),
             Popup::Recovery { config, db, day } => {
                 self.render_recovery_popup(f, *config, *db, day, area)
@@ -178,13 +175,13 @@ impl App {
         &self,
         f: &mut Frame,
         title: &str,
-        name: &str,
+        name: Option<&str>,
         url: &str,
         _cursor: usize,
         field: usize,
         area: Rect,
     ) {
-        let pa = responsive_rect(65, 14, 92, 90, area);
+        let pa = responsive_rect(65, if name.is_some() { 14 } else { 10 }, 92, 90, area);
         f.render_widget(Clear, pa);
 
         let block = Block::default()
@@ -203,26 +200,33 @@ impl App {
         let w = inner.width.saturating_sub(2);
         let mut y = inner.y;
 
-        f.render_widget(
-            Paragraph::new("Name:").style(field0_style),
-            Rect::new(inner.x + 1, y, w, 1),
-        );
-        y += 1;
-        let name_display = if name.is_empty() { "My Group" } else { name };
-        f.render_widget(
-            Paragraph::new(name_display)
-                .block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .border_style(field0_style),
-                )
-                .style(s_text()),
-            Rect::new(inner.x + 1, y, w, 3),
-        );
-        y += 4;
+        if let Some(name) = name {
+            f.render_widget(
+                Paragraph::new("Name:").style(field0_style),
+                Rect::new(inner.x + 1, y, w, 1),
+            );
+            y += 1;
+            let name_display = if name.is_empty() { "My Group" } else { name };
+            f.render_widget(
+                Paragraph::new(name_display)
+                    .block(
+                        Block::default()
+                            .borders(Borders::ALL)
+                            .border_style(field0_style),
+                    )
+                    .style(s_text()),
+                Rect::new(inner.x + 1, y, w, 3),
+            );
+            y += 4;
+        }
 
+        let url_field_style = if name.is_some() {
+            field1_style
+        } else {
+            field0_style
+        };
         f.render_widget(
-            Paragraph::new("Subscription URL:").style(field1_style),
+            Paragraph::new("Subscription URL:").style(url_field_style),
             Rect::new(inner.x + 1, y, w, 1),
         );
         y += 1;
@@ -232,17 +236,17 @@ impl App {
                 .block(
                     Block::default()
                         .borders(Borders::ALL)
-                        .border_style(field1_style),
+                        .border_style(url_field_style),
                 )
                 .style(s_text()),
             Rect::new(inner.x + 1, y, w, 3),
         );
         y += 4;
 
-        let hint = if field == 0 {
-            " Tab to switch field | Enter next | Esc cancel "
-        } else {
-            " Tab to switch field | Enter save | Esc cancel "
+        let hint = match (name.is_some(), field) {
+            (true, 0) => " Tab to switch field | Ctrl+R reset name | Enter next | Esc cancel ",
+            (true, _) => " Tab to switch field | Ctrl+R reset name | Enter save | Esc cancel ",
+            (false, _) => " Enter save | Esc cancel ",
         };
         f.render_widget(
             Paragraph::new(hint)

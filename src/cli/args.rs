@@ -297,7 +297,8 @@ pub struct SubRefreshArgs {
 #[derive(Debug, Args)]
 pub struct SubRenameArgs {
     pub selector: String,
-    pub new_name: String,
+    /// New name; omit to reset to the provider name from the subscription
+    pub new_name: Option<String>,
 }
 
 #[derive(Debug, Args)]

@@ -101,7 +101,9 @@ async fn dispatch(cmd: Command, g: &GlobalArgs) -> Result<(), CliError> {
             SubCmd::Refresh(x) => {
                 commands::subs::refresh(g, x.selector.as_deref(), x.all, x.no_wait).await
             }
-            SubCmd::Rename(x) => commands::subs::rename(g, &x.selector, &x.new_name).await,
+            SubCmd::Rename(x) => {
+                commands::subs::rename(g, &x.selector, x.new_name.as_deref()).await
+            }
             SubCmd::Url(x) => commands::subs::url(g, &x.selector, x.set.as_deref(), x.reveal).await,
             SubCmd::Reorder(x) => commands::subs::reorder(g, &x.selector, x.new_index).await,
         },
@@ -262,6 +264,28 @@ mod tests {
                 cmd: TestCmd::Config(args),
             })) => assert_eq!(args.test_timeout, Some(5)),
             _ => panic!("unexpected command"),
+        }
+    }
+
+    #[test]
+    fn sub_rename_name_is_optional() {
+        let parsed = Cli::try_parse_from(["whoisthat", "sub", "rename", "12"]).expect("reset form");
+        match parsed.cmd {
+            Some(Command::Sub(a)) => match a.cmd {
+                SubCmd::Rename(r) => assert_eq!(r.new_name, None),
+                _ => panic!("expected sub rename"),
+            },
+            _ => panic!("expected sub"),
+        }
+
+        let parsed =
+            Cli::try_parse_from(["whoisthat", "sub", "rename", "12", "Home"]).expect("named form");
+        match parsed.cmd {
+            Some(Command::Sub(a)) => match a.cmd {
+                SubCmd::Rename(r) => assert_eq!(r.new_name.as_deref(), Some("Home")),
+                _ => panic!("expected sub rename"),
+            },
+            _ => panic!("expected sub"),
         }
     }
 

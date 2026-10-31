@@ -112,12 +112,14 @@ By default `profile list`/`show` omit the `uri` field; use `--reveal` when you r
 whoisthat sub list
 whoisthat sub list --json            # flat group list with profiles_count
 whoisthat sub show 12
+whoisthat sub add 'https://provider/sub/token'               # name from profile-title / URL host
 whoisthat sub add 'https://provider/sub/token' --name "Provider"
 whoisthat sub add 'https://provider/sub/token' "Provider"   # legacy positional name
 whoisthat sub refresh 12
 whoisthat sub refresh --all
 whoisthat sub refresh 12 --no-wait
 whoisthat sub rename 12 "New name"
+whoisthat sub rename 12               # reset to the provider name
 whoisthat sub url 12
 whoisthat sub url 12 --set 'https://provider/sub/new-token'
 whoisthat sub rm 12 --yes

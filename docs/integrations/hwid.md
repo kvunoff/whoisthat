@@ -14,7 +14,7 @@ When updating subscription groups, providers often enforce multi-device limits (
 | `x-device-os` | `linux` | Go `runtime.GOOS` identifier (lowercase OS name, not architecture). |
 | `x-ver-os` | `6.12.0-arch1-1` | Active Linux kernel release (`uname -r`). |
 | `x-device-model` | `Arch Linux` | Distribution name extracted from `/etc/os-release` (`PRETTY_NAME`). |
-| `user-agent` | `whoisthat/v0.3.11` | Configurable HTTP User-Agent header. |
+| `user-agent` | `whoisthat/v0.3.12` | Configurable HTTP User-Agent header. |
 
 ---
 

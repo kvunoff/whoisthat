@@ -408,12 +408,9 @@ async fn handle_normal_input(
             false
         }
         AppAction::AddGroup => {
-            let default_name = format!("Group {}", app.groups.len() + 1);
             app.popup = Some(Popup::AddGroup {
-                name: default_name,
                 url: String::new(),
                 cursor: 0,
-                field: 0,
             });
             app.focus = Focus::Popup;
             false

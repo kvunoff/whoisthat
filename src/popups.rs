@@ -1,4 +1,4 @@
-use crossterm::event::{self, KeyCode};
+use crossterm::event::{self, KeyCode, KeyModifiers};
 
 use crate::core_client::protocol::{ProfileID, SetHwidData};
 use crate::core_client::CoreClient;
@@ -257,6 +257,13 @@ pub(crate) async fn handle_popup_input(
             mut cursor,
             mut field,
         }) => {
+            if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('r') {
+                let _ = client.update_group(group_id, "", &url).await;
+                app.msg("Resetting group name to provider default...");
+                app.popup = None;
+                app.focus = Focus::LeftPanel;
+                return false;
+            }
             let consumed =
                 handle_two_field_popup(&mut name, &mut url, &mut cursor, &mut field, key);
             if consumed {
@@ -282,34 +289,28 @@ pub(crate) async fn handle_popup_input(
             }
         }
         Some(Popup::AddGroup {
-            mut name,
             mut url,
             mut cursor,
-            mut field,
-        }) => {
-            let consumed =
-                handle_two_field_popup(&mut name, &mut url, &mut cursor, &mut field, key);
-            if consumed {
-                let has_sub = !url.trim().is_empty();
-                let _ = client.add_group(&name, &url).await;
-                if has_sub {
-                    app.msg("Adding group and updating subscription...");
-                } else {
-                    app.msg("Adding group...");
-                }
-                app.focus = Focus::LeftPanel;
-            } else if key.code == KeyCode::Esc {
+        }) => match key.code {
+            KeyCode::Esc => {
                 app.popup = None;
                 app.focus = Focus::LeftPanel;
-            } else {
-                app.popup = Some(Popup::AddGroup {
-                    name,
-                    url,
-                    cursor,
-                    field,
-                });
             }
-        }
+            KeyCode::Enter => {
+                let url = url.trim().to_string();
+                let _ = client.add_group("", &url).await;
+                if url.is_empty() {
+                    app.msg("Adding group...");
+                } else {
+                    app.msg("Adding group and updating subscription...");
+                }
+                app.focus = Focus::LeftPanel;
+            }
+            _ => {
+                edit_text_field(&mut url, &mut cursor, key);
+                app.popup = Some(Popup::AddGroup { url, cursor });
+            }
+        },
         None => {}
     }
     false

@@ -123,13 +123,14 @@ pub async fn add(
     }
     let out = Out::new(g);
     let mut session = Session::open_or_spawn(g).await?;
-    let name = name.map(str::to_string).unwrap_or_else(|| derive_name(url));
-    out.note(format!("Adding subscription '{name}'..."));
+    // Without an explicit name the core uses profile-title from the
+    // subscription response, falling back to the URL host.
+    out.note("Adding subscription...".to_string());
     let id = session
         .send(
             "add-group",
             &AddGroupData {
-                name: name.clone(),
+                name: name.unwrap_or_default().to_string(),
                 subscription_url: url.to_string(),
             },
         )
@@ -146,7 +147,7 @@ pub async fn add(
 
     if no_wait {
         out.ok(
-            format!("Subscription '{name}' added (#{}).", added.id),
+            format!("Subscription '{}' added (#{}).", added.name, added.id),
             json!({"group_id": added.id, "updated": false}),
         );
         return Ok(());
@@ -166,7 +167,7 @@ pub async fn add(
         Ok(updated) => out.ok(
             format!(
                 "Subscription '{}' added ({} profiles imported).",
-                name,
+                updated.group.name,
                 updated.profiles.len()
             ),
             json!({"group_id": updated.group_id, "profiles": updated.profiles.len()}),
@@ -174,8 +175,8 @@ pub async fn add(
         Err(CliError::Core(msg)) => {
             out.ok(
                 format!(
-                    "Subscription '{name}' added (#{}), but update failed: {msg}",
-                    added.id
+                    "Subscription '{}' added (#{}), but update failed: {msg}",
+                    added.name, added.id
                 ),
                 json!({"group_id": added.id, "updated": false, "error": msg}),
             );
@@ -307,7 +308,11 @@ pub async fn refresh(
     Ok(())
 }
 
-pub async fn rename(g: &GlobalArgs, selector: &str, new_name: &str) -> Result<(), CliError> {
+pub async fn rename(
+    g: &GlobalArgs,
+    selector: &str,
+    new_name: Option<&str>,
+) -> Result<(), CliError> {
     let out = Out::new(g);
     let mut session = Session::open_or_spawn(g).await?;
     let state = session.state().await?;
@@ -317,7 +322,8 @@ pub async fn rename(g: &GlobalArgs, selector: &str, new_name: &str) -> Result<()
             "update-group",
             &UpdateGroupData {
                 id: group.id,
-                name: new_name.to_string(),
+                // An empty name resets the group to the provider's name.
+                name: new_name.unwrap_or_default().to_string(),
                 subscription_url: group.subscription_url.clone(),
             },
             Reply::Id {
@@ -326,8 +332,13 @@ pub async fn rename(g: &GlobalArgs, selector: &str, new_name: &str) -> Result<()
             },
         )
         .await?;
+    let action = if new_name.is_some() {
+        "Renamed"
+    } else {
+        "Reset"
+    };
     out.ok(
-        format!("Renamed group #{} to '{}'.", updated.id, updated.name),
+        format!("{action} group #{}: '{}'.", updated.id, updated.name),
         json!({"group_id": updated.id, "name": updated.name}),
     );
     Ok(())
@@ -442,20 +453,4 @@ fn group_json(
         "active": active,
         "routing_profiles": group.routing_profiles,
     })
-}
-
-fn derive_name(url: &str) -> String {
-    let trimmed = url
-        .strip_prefix("https://")
-        .or_else(|| url.strip_prefix("http://"))
-        .unwrap_or(url);
-    let host = trimmed
-        .split(['/', '?', '#', ':'])
-        .next()
-        .unwrap_or("Subscription");
-    if host.is_empty() {
-        "Subscription".into()
-    } else {
-        host.to_string()
-    }
 }
