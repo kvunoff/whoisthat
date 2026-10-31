@@ -53,7 +53,7 @@ pub fn settings_layout() -> Vec<SettingsRow> {
             kind: SettingsKind::Toggle,
         },
         SettingsRow::Item {
-            label: "TUI log",
+            label: "Verbose TUI log",
             kind: SettingsKind::Toggle,
         },
         SettingsRow::Item {

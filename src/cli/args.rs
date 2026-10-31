@@ -509,12 +509,33 @@ pub enum HwidCmd {
     UserAgent { value: String },
 }
 
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+pub enum LogLevelArg {
+    Error,
+    Warn,
+    Info,
+    Debug,
+    Trace,
+}
+
+impl LogLevelArg {
+    pub fn level(self) -> crate::logfmt::Level {
+        match self {
+            LogLevelArg::Error => crate::logfmt::Level::Error,
+            LogLevelArg::Warn => crate::logfmt::Level::Warn,
+            LogLevelArg::Info => crate::logfmt::Level::Info,
+            LogLevelArg::Debug => crate::logfmt::Level::Debug,
+            LogLevelArg::Trace => crate::logfmt::Level::Trace,
+        }
+    }
+}
+
 #[derive(Debug, Args)]
 pub struct LogsArgs {
     #[arg(long, default_value_t = 100)]
     pub lines: usize,
-    #[arg(long, value_name = "error|warn|info|debug|trace")]
-    pub level: Option<String>,
+    #[arg(long, value_enum, value_name = "error|warn|info|debug|trace")]
+    pub level: Option<LogLevelArg>,
     #[arg(long, short = 'f')]
     pub follow: bool,
     /// Read the TUI log instead of the core log

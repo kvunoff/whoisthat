@@ -27,7 +27,7 @@ last_group_id = 0
 last_profile_id = 0
 
 # Last seen core version from the IPC handshake (display fallback only)
-core_version = "0.3.13"
+core_version = "0.3.14"
 
 # Display public IP address in the header
 show_ip = true
@@ -35,10 +35,13 @@ show_ip = true
 # Active color palette: graphite-dark, graphite-light, tokyo-night, dracula
 theme = "graphite-dark"
 
-# Enable Rust TUI debug file logging (~/.local/share/whoisthat/tui.log)
+# Verbose TUI file logging. When false, the TUI level is capped at warn
+# (errors always, warnings unless log_level = "error"); when true, it receives
+# log_level and above.
 log_enabled = false
 
-# Minimum log severity threshold: error, warn, info, debug, trace
+# Minimum log severity: error, warn, info, debug, trace.
+# Applied to the TUI immediately and to the running core over IPC.
 log_level = "warn"
 
 # Latency test method: tcp, http-get, http-head
@@ -90,7 +93,7 @@ Auto-generated and synchronized by the Go core daemon:
   "tun-name": "whoisthattun",
   "hwid-enabled": true,
   "hwid": "1fb1e0141ab3e35a",
-  "user-agent": "whoisthat/v0.3.13",
+  "user-agent": "whoisthat/v0.3.14",
   "kill-switch-enabled": false,
   "autoconnect-enabled": false,
   "autoconnect-group-id": 0,

@@ -167,6 +167,8 @@ impl CoreWriteHalf {
             payload["id"] = serde_json::Value::String(id.to_string());
         }
         let json = serde_json::to_vec(&payload)?;
+        // Message name only: payloads may contain subscription URIs/tokens.
+        log::debug!("ipc -> {msg} (id={})", id.unwrap_or("-"));
 
         let len = json.len() as u32;
         if len == 0 || len as usize > MAX_FRAME_SIZE {

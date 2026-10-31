@@ -199,7 +199,7 @@ impl App {
             ActiveTab::Profiles => self.render_profiles_view(f, area),
             ActiveTab::Logs => {
                 let focused = self.focus == Focus::LeftPanel;
-                render_logs(f, area, &self.logs_state, focused);
+                render_logs(f, area, &mut self.logs_state, focused);
             }
             ActiveTab::Settings => {
                 let focused = self.focus == Focus::LeftPanel;

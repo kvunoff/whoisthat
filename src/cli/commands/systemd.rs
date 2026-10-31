@@ -1,5 +1,3 @@
-use crate::config;
-
 use super::super::args::{GlobalArgs, SystemdCmd};
 use super::super::error::CliError;
 use super::super::output::Out;
@@ -36,7 +34,6 @@ pub async fn dispatch(g: &GlobalArgs, cmd: SystemdCmd) -> Result<(), CliError> {
 
 async fn set(g: &GlobalArgs, enable: bool) -> Result<(), CliError> {
     let out = Out::new(g);
-    let cfg = config::load_config();
     if enable {
         if crate::systemd::systemd_is_enabled() {
             out.ok(
@@ -46,7 +43,7 @@ async fn set(g: &GlobalArgs, enable: bool) -> Result<(), CliError> {
             return Ok(());
         }
         let core = crate::core_spawn::find_core_binary();
-        crate::systemd::setup_systemd_service(&core, &cfg.log_level).map_err(CliError::Core)?;
+        crate::systemd::setup_systemd_service(&core).map_err(CliError::Core)?;
         out.ok(
             "Systemd user service enabled (whoisthat-core.service).",
             serde_json::json!({"enabled": true}),

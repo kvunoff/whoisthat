@@ -3,7 +3,6 @@ use std::collections::{HashMap, HashSet};
 
 use ratatui::layout::Rect;
 
-use crate::config;
 use crate::core_client::protocol::*;
 
 use crate::ui::logs::LogsState;
@@ -119,12 +118,7 @@ impl App {
             help_scroll: 0,
             recovery_prompted: false,
             settings_state: SettingsState::new(),
-            logs_state: LogsState::new(
-                config::config_dir()
-                    .join("core.log")
-                    .to_str()
-                    .unwrap_or("core.log"),
-            ),
+            logs_state: LogsState::new(),
             traffic_stats: TrafficStats::default(),
             traffic_history: TrafficHistory::new(),
             routing: RoutingConfig::default(),

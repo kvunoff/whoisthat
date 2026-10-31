@@ -212,10 +212,12 @@ pub(crate) async fn handle_core_event(
         }
 
         CoreEvent::Warning { content, .. } => {
+            log::warn!("core warning: {content}");
             app.msg(format!("Warning: {}", content));
         }
 
         CoreEvent::Error(e) => {
+            log::error!("core error: {e}");
             app.msg(format!("Error: {}", e));
         }
 
@@ -225,12 +227,16 @@ pub(crate) async fn handle_core_event(
         }
 
         CoreEvent::Disconnected => {
+            log::error!("core disconnected and recovery failed");
             app.msg("Error: Core disconnected and recovery failed. Press q to quit.");
         }
 
         CoreEvent::Reconnected => {
             log::info!("Core reconnected; re-syncing state");
             app.msg("Core reconnected. Re-syncing state...");
+            // A respawned core starts with the level from WHOISTHAT_LOG_LEVEL;
+            // re-apply the current setting so a runtime change survives.
+            let _ = client.set_log_level(&cfg.log_level).await;
             let _ = client.get_application_state().await;
             let _ = client.get_routing(0).await;
         }
