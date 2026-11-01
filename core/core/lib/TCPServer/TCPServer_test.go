@@ -338,8 +338,8 @@ func TestTCPAuthRequiresToken(t *testing.T) {
 		payload string
 		ok      bool
 	}{
-		{"valid", `{"msg":"hello","data":{"token":"secret","protocol_version":3}}`, true},
-		{"bad-token", `{"msg":"hello","data":{"token":"wrong","protocol_version":3}}`, false},
+		{"valid", `{"msg":"hello","data":{"token":"secret","protocol_version":4}}`, true},
+		{"bad-token", `{"msg":"hello","data":{"token":"wrong","protocol_version":4}}`, false},
 		{"bad-protocol", `{"msg":"hello","data":{"token":"secret","protocol_version":2}}`, false},
 		{"wrong-message", `{"msg":"connect","data":{}}`, false},
 	}

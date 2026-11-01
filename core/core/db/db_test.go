@@ -619,6 +619,55 @@ func TestUpdateGroupAndProfilesKeepsDuplicateURIsStable(t *testing.T) {
 	}
 }
 
+func TestGroupAutoUpdateSettingsAndLightweightListing(t *testing.T) {
+	database := newTestDB(t)
+	added, err := database.AddGroup("G", "https://example.test/sub")
+	if err != nil {
+		t.Fatalf("AddGroup: %v", err)
+	}
+
+	disabled := false
+	override := int64(12 * 3600)
+	group, err := database.UpdateGroupConfig(added.Id, "G", added.SubscriptionUrl, &disabled, &override)
+	if err != nil {
+		t.Fatalf("disable auto-update: %v", err)
+	}
+	if !group.SubAutoUpdateDisabled || group.SubUpdateIntervalOverride != override {
+		t.Fatalf("auto-update settings not persisted: %+v", group)
+	}
+
+	enabled := true
+	clear := int64(0)
+	group, err = database.UpdateGroupConfig(added.Id, "G", added.SubscriptionUrl, &enabled, &clear)
+	if err != nil {
+		t.Fatalf("enable auto-update: %v", err)
+	}
+	if group.SubAutoUpdateDisabled || group.SubUpdateIntervalOverride != 0 {
+		t.Fatalf("auto-update settings not cleared: %+v", group)
+	}
+
+	provider := int64(6 * 3600)
+	last := int64(1234)
+	group, err = database.MergeSubscriptionFields(added.Id, SubscriptionFields{
+		ProviderInterval: &provider,
+		LastUpdated:      &last,
+	})
+	if err != nil {
+		t.Fatalf("merge subscription fields: %v", err)
+	}
+	if group.SubUpdateInterval != provider || group.SubLastUpdated != last {
+		t.Fatalf("merged fields = %+v", group)
+	}
+
+	groups, err := database.GetAllGroupConfigs()
+	if err != nil {
+		t.Fatalf("GetAllGroupConfigs: %v", err)
+	}
+	if len(groups) != 1 || groups[0].Id != added.Id || groups[0].SubUpdateInterval != provider {
+		t.Fatalf("lightweight listing = %+v", groups)
+	}
+}
+
 func TestGroupAutoNameAndReset(t *testing.T) {
 	database := newTestDB(t)
 
@@ -638,16 +687,16 @@ func TestGroupAutoNameAndReset(t *testing.T) {
 	}
 
 	// Manual rename survives a URL edit.
-	if _, err := database.UpdateGroupConfig(added.Id, "My name", group.SubscriptionUrl); err != nil {
+	if _, err := database.UpdateGroupConfig(added.Id, "My name", group.SubscriptionUrl, nil, nil); err != nil {
 		t.Fatalf("rename: %v", err)
 	}
-	group, _ = database.UpdateGroupConfig(added.Id, "My name", "https://other.example/x")
+	group, _ = database.UpdateGroupConfig(added.Id, "My name", "https://other.example/x", nil, nil)
 	if group.Name != "My name" {
 		t.Fatalf("manual name lost on URL change: %q", group.Name)
 	}
 
 	// Empty name resets to the provider/host name.
-	group, err = database.UpdateGroupConfig(added.Id, "", group.SubscriptionUrl)
+	group, err = database.UpdateGroupConfig(added.Id, "", group.SubscriptionUrl, nil, nil)
 	if err != nil {
 		t.Fatalf("reset: %v", err)
 	}
@@ -657,7 +706,7 @@ func TestGroupAutoNameAndReset(t *testing.T) {
 
 	// An auto-named group follows a URL change even when the caller passes the
 	// old name along with it.
-	group, _ = database.UpdateGroupConfig(added.Id, group.Name, "https://third.example/x")
+	group, _ = database.UpdateGroupConfig(added.Id, group.Name, "https://third.example/x", nil, nil)
 	if group.Name != "third.example" {
 		t.Errorf("auto name after URL change = %q, want third.example", group.Name)
 	}

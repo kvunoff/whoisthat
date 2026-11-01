@@ -201,6 +201,98 @@ func (db *DB) SaveGroup(group structs.Group) error {
 	return db.updateGroup(group)
 }
 
+// SubscriptionFields is a partial update for subscription-derived group state.
+// Nil fields are left untouched; pointers to zero values clear the field. The
+// merge happens under db.mu against a freshly loaded group, so a network fetch
+// can never overwrite a concurrent rename or auto-update toggle.
+type SubscriptionFields struct {
+	ProviderInterval *int64
+	LastUpdated      *int64
+	Title            *string
+	Upload           *int64
+	Download         *int64
+	Total            *int64
+	Expires          *int64
+	Format           *string
+}
+
+func (db *DB) MergeSubscriptionFields(group_id int, f SubscriptionFields) (structs.Group, error) {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	group, err := db.loadGroupConfig(group_id)
+	if err != nil {
+		return group, err
+	}
+	if f.ProviderInterval != nil {
+		group.SubUpdateInterval = *f.ProviderInterval
+	}
+	if f.LastUpdated != nil {
+		group.SubLastUpdated = *f.LastUpdated
+	}
+	if f.Upload != nil {
+		group.SubUpload = *f.Upload
+	}
+	if f.Download != nil {
+		group.SubDownload = *f.Download
+	}
+	if f.Total != nil {
+		group.SubTotal = *f.Total
+	}
+	if f.Expires != nil {
+		group.SubExpires = *f.Expires
+	}
+	if f.Format != nil {
+		group.SubscriptionFormat = *f.Format
+	}
+	if f.Title != nil {
+		title := strings.TrimSpace(*f.Title)
+		if title != "" {
+			if group.Name == "" || group.Name == group.SubName {
+				group.Name = title
+			}
+			group.SubName = title
+		}
+	}
+	if err := db.updateGroup(group); err != nil {
+		return group, err
+	}
+	return group, nil
+}
+
+// GetAllGroupConfigs returns group configs without loading their profiles. The
+// auto-update scheduler runs often enough that decrypting every profile file
+// just to read subscription state would be wasteful.
+func (db *DB) GetAllGroupConfigs() ([]structs.Group, error) {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	groups := []structs.Group{}
+	entries, err := os.ReadDir(db.GetGroupsDirPath())
+	if err != nil {
+		return groups, fmt.Errorf("Error reading directory: %w", err)
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		group_id, err := strconv.Atoi(entry.Name())
+		if err != nil {
+			continue
+		}
+		group, err := db.loadGroupConfig(group_id)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			logger.Warn("warning while gathering group configs:", err)
+			continue
+		}
+		groups = append(groups, group)
+	}
+	return groups, nil
+}
+
 func (db *DB) GetAllGroupsAndProfiles() ([]structs.GroupWithProfiles, error) {
 	db.mu.Lock()
 	defer db.mu.Unlock()
@@ -496,13 +588,22 @@ func (db *DB) MoveProfile(from_group_id int, to_group_id int, profile_id int) (s
 	return moved, nil
 }
 
-func (db *DB) UpdateGroupConfig(group_id int, name string, subscription_url string) (structs.Group, error) {
+func (db *DB) UpdateGroupConfig(group_id int, name string, subscription_url string, auto_update *bool, update_interval *int64) (structs.Group, error) {
 	db.mu.Lock()
 	defer db.mu.Unlock()
 
 	group, err := db.loadGroupConfig(group_id)
 	if err != nil {
 		return group, fmt.Errorf("failed to load group %d: %w", group_id, err)
+	}
+	if auto_update != nil {
+		group.SubAutoUpdateDisabled = !*auto_update
+	}
+	if update_interval != nil {
+		if *update_interval < 0 {
+			return group, fmt.Errorf("invalid update interval %d", *update_interval)
+		}
+		group.SubUpdateIntervalOverride = *update_interval
 	}
 	// An auto-named group still carries the last provider/host name; anything
 	// else is a manual rename that a URL change must not discard.

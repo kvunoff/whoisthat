@@ -3,6 +3,7 @@ package lib
 import (
 	"encoding/base64"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/matoous/go-nanoid/v2"
@@ -124,6 +125,37 @@ func getDBAddProfileDataFromURI(uri string, group_id int) (structs.DBAddProfileD
 		NanoID:   generateNanoID(),
 	}
 	return profile_data, nil
+}
+
+// SubscriptionHeader returns the value of a "#key: value" or "key: value"
+// line in a subscription body. Some providers put profile metadata in the body
+// instead of (or in addition to) HTTP headers; the body may be base64 encoded.
+func SubscriptionHeader(body, key string) (string, bool) {
+	if v, ok := scanSubscriptionHeader(body, key); ok {
+		return v, true
+	}
+	clean := strings.Map(func(r rune) rune {
+		if unicode.IsSpace(r) {
+			return -1
+		}
+		return r
+	}, strings.TrimSpace(body))
+	if clean == "" {
+		return "", false
+	}
+	return scanSubscriptionHeader(decode64(clean), key)
+}
+
+func scanSubscriptionHeader(text, key string) (string, bool) {
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.TrimPrefix(strings.TrimSpace(line), "#")
+		k, v, ok := strings.Cut(line, ":")
+		if !ok || !strings.EqualFold(strings.TrimSpace(k), key) {
+			continue
+		}
+		return strings.Trim(strings.TrimSpace(v), `"'`), true
+	}
+	return "", false
 }
 
 func decode64(str string) string {

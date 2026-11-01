@@ -168,6 +168,9 @@ type SubscriptionUpdated struct {
 	Group           Group                `json:"group"`
 	Profiles        []Profile            `json:"profiles"`
 	RoutingProfiles []RoutingProfileInfo `json:"routing_profiles,omitzero"`
+	// Auto marks a background refresh so the TUI can update data without
+	// showing the same "Subscription updated" toast as a manual refresh.
+	Auto bool `json:"auto,omitzero"`
 }
 
 type Warning struct {
@@ -210,6 +213,10 @@ type UpdateGroupData struct {
 	Id              int    `json:"id"`
 	Name            string `json:"name,omitzero"`
 	SubscriptionUrl string `json:"subscription_url,omitzero"`
+	AutoUpdate      *bool  `json:"auto_update,omitempty"`
+	// UpdateInterval is the manual auto-update interval in seconds. A pointer
+	// to 0 clears the override; nil leaves it unchanged.
+	UpdateInterval *int64 `json:"update_interval,omitempty"`
 }
 
 type SetKillSwitchData struct {
@@ -274,15 +281,24 @@ type GroupWithProfiles struct {
 }
 
 type Group struct {
-	Id                            int    `json:"id"`
-	SubscriptionUrl               string `json:"subscription_url"`
-	Name                          string `json:"name"`
-	LastId                        int    `json:"last_id"`
-	SubLastUpdated                int64  `json:"sub_last_updated,omitzero"`
-	SubExpires                    int64  `json:"sub_expires,omitzero"`
-	SubUpload                     int64  `json:"sub_upload,omitzero"`
-	SubDownload                   int64  `json:"sub_download,omitzero"`
-	SubTotal                      int64  `json:"sub_total,omitzero"`
+	Id              int    `json:"id"`
+	SubscriptionUrl string `json:"subscription_url"`
+	Name            string `json:"name"`
+	LastId          int    `json:"last_id"`
+	SubLastUpdated  int64  `json:"sub_last_updated,omitzero"`
+	SubExpires      int64  `json:"sub_expires,omitzero"`
+	SubUpload       int64  `json:"sub_upload,omitzero"`
+	SubDownload     int64  `json:"sub_download,omitzero"`
+	SubTotal        int64  `json:"sub_total,omitzero"`
+	// SubUpdateInterval is the provider-advertised refresh interval in seconds
+	// (0 when the provider is silent or has not been parsed yet).
+	SubUpdateInterval int64 `json:"sub_update_interval,omitzero"`
+	// SubUpdateIntervalOverride is a user-set interval in seconds that wins
+	// over the provider value. 0 means "use the provider value".
+	SubUpdateIntervalOverride int64 `json:"sub_update_interval_override,omitzero"`
+	// SubAutoUpdateDisabled defaults to false, so groups created before this
+	// field existed keep auto-update enabled without a migration.
+	SubAutoUpdateDisabled         bool   `json:"sub_auto_update_disabled,omitzero"`
 	ProfileOrder                  []int  `json:"profile_order,omitempty"`
 	RoutingMode                   string `json:"routing_mode,omitzero"`
 	ManualRoutingMode             string `json:"manual_routing_mode,omitzero"`

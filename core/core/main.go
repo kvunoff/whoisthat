@@ -136,7 +136,13 @@ func main() {
 	server := TCPServer.NewServer(&database, &proxy_manager, &tun_manager, stop_sig, missing)
 	server.Start()
 
-	go bootAutoconnect(&database, &proxy_manager, &tun_manager, server)
+	go func() {
+		// Auto-update first probes all unknown intervals. Waiting for
+		// autoconnect means the VPN is up before any subscription traffic.
+		bootAutoconnect(&database, &proxy_manager, &tun_manager, server)
+		autoCmd := cmd.Cmd{DB: &database, Broadcast: server.Broadcast, TunManager: &tun_manager}
+		autoCmd.AutoUpdateLoop(&proxy_manager)
+	}()
 
 	go func() {
 		sigs := make(chan os.Signal, 1)
