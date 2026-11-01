@@ -41,6 +41,7 @@
 - **Fail-Safe Kill-Switch**: Independent nftables firewall protection blocks non-VPN traffic if the connection drops unexpectedly.
 - **Happ Routing & Presets**: Ingests provider Happ routing profiles (`happ://routing/...`) with per-group modes (`auto`, `manual`, `subscription`) and 1-click preset rules (ad blocking, domestic bypass, media, AI).
 - **JSON Subscriptions**: Imports per-server Xray configurations (`<subscription>/json`) with provider-owned routing and balancers. Provider rules stay immutable while manual rules keep priority.
+- **Provider-Driven Auto-Update**: Honours `profile-update-interval` (header or body, hours), catches up missed refreshes after a long shutdown, and can be disabled or overridden per subscription. Background refreshes never disturb a live VPN session.
 - **DNS Hijack & FakeDNS**: Captures system DNS through a reserved TUN sink, routes queries through tagged domestic/remote resolvers, and allocates FakeDNS addresses only in safe TUN + global-proxy modes. Split-excluded apps keep resolving directly.
 - **Encrypted State at Rest**: Credentials, subscriptions, and custom rules are encrypted locally with AES-256-GCM.
 - **Real-Time Traffic Monitoring**: Unicode Braille bandwidth monitor (RX/TX), dynamic scaling, and interface health metrics.
@@ -71,9 +72,9 @@ cd core/core && go build -o whoisthat-core && cd ../..
 cargo build --release
 
 # Install & set capabilities
-sudo install -Dm755 target/release/whoisthat /usr/local/bin/whoisthat
-sudo install -Dm755 core/core/whoisthat-core  /usr/local/bin/whoisthat-core
-sudo setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep /usr/local/bin/whoisthat-core
+sudo install -Dm755 target/release/whoisthat /usr/bin/whoisthat
+sudo install -Dm755 core/core/whoisthat-core  /usr/bin/whoisthat-core
+sudo setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep /usr/bin/whoisthat-core
 ```
 
 ---

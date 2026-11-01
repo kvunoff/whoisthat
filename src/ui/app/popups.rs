@@ -52,11 +52,25 @@ impl App {
                 url,
                 cursor,
                 field,
+                auto_update,
+                interval_hours,
+                provider_interval_secs,
                 ..
-            } => self.render_group_form(f, "Edit Group", Some(name), url, *cursor, *field, area),
+            } => self.render_group_form(
+                f,
+                "Edit Group",
+                Some(name),
+                url,
+                *cursor,
+                *field,
+                *auto_update,
+                interval_hours,
+                *provider_interval_secs,
+                area,
+            ),
             Popup::Help => self.render_help_popup(f, area),
             Popup::AddGroup { url, cursor } => {
-                self.render_group_form(f, "Add Group", None, url, *cursor, 0, area)
+                self.render_group_form(f, "Add Group", None, url, *cursor, 0, true, "", 0, area)
             }
             Popup::TabSwitcher { cursor } => self.render_tab_switcher_popup(f, *cursor, area),
             Popup::Recovery { config, db, day } => {
@@ -180,9 +194,12 @@ impl App {
         url: &str,
         _cursor: usize,
         field: usize,
+        auto_update: bool,
+        interval_hours: &str,
+        provider_interval_secs: i64,
         area: Rect,
     ) {
-        let pa = responsive_rect(65, if name.is_some() { 14 } else { 10 }, 92, 90, area);
+        let pa = responsive_rect(65, if name.is_some() { 20 } else { 10 }, 92, 90, area);
         f.render_widget(Clear, pa);
 
         let block = Block::default()
@@ -195,15 +212,21 @@ impl App {
         let inner = block.inner(pa);
         f.render_widget(block, pa);
 
-        let field0_style = if field == 0 { s_accent() } else { s_dim() };
-        let field1_style = if field == 1 { s_accent() } else { s_dim() };
+        let style_for = |field_no: usize| {
+            if field == field_no {
+                s_accent()
+            } else {
+                s_dim()
+            }
+        };
 
         let w = inner.width.saturating_sub(2);
         let mut y = inner.y;
 
         if let Some(name) = name {
+            let name_style = style_for(0);
             f.render_widget(
-                Paragraph::new("Name:").style(field0_style),
+                Paragraph::new("Name:").style(name_style),
                 Rect::new(inner.x + 1, y, w, 1),
             );
             y += 1;
@@ -213,7 +236,7 @@ impl App {
                     .block(
                         Block::default()
                             .borders(Borders::ALL)
-                            .border_style(field0_style),
+                            .border_style(name_style),
                     )
                     .style(s_text()),
                 Rect::new(inner.x + 1, y, w, 3),
@@ -221,13 +244,10 @@ impl App {
             y += 4;
         }
 
-        let url_field_style = if name.is_some() {
-            field1_style
-        } else {
-            field0_style
-        };
+        let url_field = if name.is_some() { 1 } else { 0 };
+        let url_style = style_for(url_field);
         f.render_widget(
-            Paragraph::new("Subscription URL:").style(url_field_style),
+            Paragraph::new("Subscription URL:").style(url_style),
             Rect::new(inner.x + 1, y, w, 1),
         );
         y += 1;
@@ -237,17 +257,60 @@ impl App {
                 .block(
                     Block::default()
                         .borders(Borders::ALL)
-                        .border_style(url_field_style),
+                        .border_style(url_style),
                 )
                 .style(s_text()),
             Rect::new(inner.x + 1, y, w, 3),
         );
         y += 4;
 
+        if name.is_some() {
+            let auto_style = style_for(2);
+            let mark = if auto_update { "● on" } else { "○ off" };
+            f.render_widget(
+                Paragraph::new(format!("Auto-update: {mark}   (Space to toggle)"))
+                    .style(auto_style),
+                Rect::new(inner.x + 1, y, w, 1),
+            );
+            y += 1;
+
+            let interval_style = style_for(3);
+            let provider_hint = if provider_interval_secs > 0 {
+                format!(
+                    "blank = provider: {}",
+                    format_interval_secs(provider_interval_secs)
+                )
+            } else {
+                "blank = provider: not set".to_string()
+            };
+            f.render_widget(
+                Paragraph::new(format!("Interval, hours ({provider_hint})")).style(interval_style),
+                Rect::new(inner.x + 1, y, w, 1),
+            );
+            y += 1;
+            let interval_display = if interval_hours.is_empty() {
+                "auto"
+            } else {
+                interval_hours
+            };
+            f.render_widget(
+                Paragraph::new(interval_display)
+                    .block(
+                        Block::default()
+                            .borders(Borders::ALL)
+                            .border_style(interval_style),
+                    )
+                    .style(s_text()),
+                Rect::new(inner.x + 1, y, w, 3),
+            );
+            y += 4;
+        }
+
         let hint = match (name.is_some(), field) {
-            (true, 0) => " Tab to switch field | Ctrl+R reset name | Enter next | Esc cancel ",
-            (true, _) => " Tab to switch field | Ctrl+R reset name | Enter save | Esc cancel ",
             (false, _) => " Enter save | Esc cancel ",
+            (true, 0 | 1) => " Tab to switch field | Ctrl+R reset name | Enter next | Esc cancel ",
+            (true, 2) => " Tab to switch field | Space toggle | Enter next | Esc cancel ",
+            (true, _) => " Tab to switch field | Enter save | Esc cancel ",
         };
         f.render_widget(
             Paragraph::new(hint)

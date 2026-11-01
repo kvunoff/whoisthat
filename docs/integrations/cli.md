@@ -124,10 +124,17 @@ whoisthat sub url 12
 whoisthat sub url 12 --set 'https://provider/sub/new-token'
 whoisthat sub rm 12 --yes
 whoisthat sub reorder 12 2
+whoisthat sub auto 12 off              # disable background refresh
+whoisthat sub auto 12 on
+whoisthat sub interval 12 24           # manual override, hours
+whoisthat sub interval 12 none         # clear the override, use the provider value
 ```
 
 Subscription URLs are masked in output (`https://provider/…`); `--reveal` prints the token.
 `sub add`/`sub refresh` wait for `subscription-updated` unless `--no-wait` is given.
+`sub list` includes an `AUTO` column (`on 6h`, `on —`, `off`); `sub show --json` exposes
+`auto_update`, `update_interval`, `update_interval_override` and `update_interval_provider`.
+`sub auto`/`sub interval` go through `update-group` and preserve the current name and URL.
 
 ---
 

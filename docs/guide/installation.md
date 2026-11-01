@@ -31,8 +31,8 @@ tag. To install a specific release, pass `--branch vX.Y.Z`, or download
 1. Installs distribution build and runtime prerequisites (C compiler/make, `git`, `curl`, `unzip`, `libcap`/`setcap`, `iproute2`, `nftables`). `pkexec`/`iptables` are optional and reported by `whoisthat doctor`.
 2. Installs or adopts precompiled **Xray-core (pinned v26.10.29)** with SHA256 checksum verification. The installer **fails closed**: a missing or mismatched official checksum aborts the installation (override only with the explicit `--insecure-skip-verify` flag).
 3. Builds `whoisthat-core` (Go) and `whoisthat` (Rust).
-4. Installs binaries into `/usr/local/bin/`.
-5. Grants `cap_net_admin,cap_net_raw,cap_setpcap=+ep` to `/usr/local/bin/whoisthat-core`.
+4. Installs binaries into `/usr/bin/` and removes legacy copies from `/usr/local/bin/`.
+5. Grants `cap_net_admin,cap_net_raw,cap_setpcap=+ep` to `/usr/bin/whoisthat-core`.
 6. Installs `whoisthat.desktop` into `/usr/share/applications` and refreshes the desktop database. The `wit://` scheme handler is registered per-user by the TUI on launch (`xdg-mime`), not by the installer.
 
 ---
@@ -82,11 +82,11 @@ cd ../..
 cargo build --release
 
 # 4. Install binaries
-sudo install -Dm755 target/release/whoisthat /usr/local/bin/whoisthat
-sudo install -Dm755 core/core/whoisthat-core /usr/local/bin/whoisthat-core
+sudo install -Dm755 target/release/whoisthat /usr/bin/whoisthat
+sudo install -Dm755 core/core/whoisthat-core /usr/bin/whoisthat-core
 
 # 5. Grant network capabilities to the core daemon
-sudo setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep /usr/local/bin/whoisthat-core
+sudo setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep /usr/bin/whoisthat-core
 
 # 6. Install desktop launcher and register wit:// deep link handler (optional)
 cp pkg/whoisthat.desktop ~/.local/share/applications/
@@ -131,11 +131,11 @@ whoisthat doctor
 Example successful output:
 
 ```
-WhoisThat Doctor v0.17.1 / core v0.4.1 (protocol 3) — System Diagnostics
+WhoisThat Doctor v0.17.2 / core v0.4.2 (protocol 4) — System Diagnostics
 
 [+] Binaries & Runtimes
-  ✓ whoisthat: /usr/local/bin/whoisthat (v0.17.1)
-  ✓ whoisthat-core: /usr/local/bin/whoisthat-core
+  ✓ whoisthat: /usr/bin/whoisthat (v0.17.2)
+  ✓ whoisthat-core: /usr/bin/whoisthat-core
   ✓ xray-core: ~/.local/share/whoisthat/runtimes/xray/v26.10.29/xray (v26.10.29)
   ✓ system tools: ip, getcap, setcap, pkexec available
 

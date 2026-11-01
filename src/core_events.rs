@@ -244,9 +244,12 @@ pub(crate) async fn handle_core_event(
             group,
             profiles,
             routing_profiles,
+            auto,
         } => {
             app.apply_subscription_updated(group, profiles, routing_profiles);
-            app.msg("Subscription updated");
+            if !auto {
+                app.msg("Subscription updated");
+            }
         }
 
         CoreEvent::GroupAdded(g) => {

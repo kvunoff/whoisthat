@@ -34,6 +34,11 @@ GO_MIN_VERSION="1.26.0"
 GO_INSTALL_VERSION="1.26.8"
 XRAY_VERSION="v26.10.29"
 
+# Canonical install location. /usr/local/bin is kept only as a legacy cleanup
+# target so upgrades stop being shadowed by an old copy.
+BIN_DIR="/usr/bin"
+LEGACY_BIN_DIR="/usr/local/bin"
+
 # --- configuration & defaults ------------------------------------------------
 WORK_DIR=""
 BUILD_DIR=""
@@ -108,7 +113,7 @@ require_platform_and_privileges() {
     elif command -v sudo &>/dev/null; then
         SUDO="sudo"
     else
-        err "This installer requires superuser privileges to install binaries to /usr/local/bin."
+        err "This installer requires superuser privileges to install binaries to $BIN_DIR."
         err "Please install 'sudo' or run as root."
         exit 1
     fi
@@ -163,7 +168,7 @@ Options:
   --branch <name>    Build from a specific git branch or tag (default: latest release tag)
   --local            Build directly from current repository directory instead of cloning
   --insecure-skip-verify  Skip Xray archive checksum verification (DANGEROUS, not recommended)
-  --uninstall        Remove whoisthat binaries from /usr/local/bin
+  --uninstall        Remove whoisthat binaries from $BIN_DIR (and legacy $LEGACY_BIN_DIR)
   -h, --help         Show this help message and exit
 
 Environment Variables:
@@ -304,8 +309,10 @@ uninstall_whoisthat() {
     if command -v systemctl >/dev/null 2>&1; then
         as_target systemctl --user disable --now whoisthat-core.service >/dev/null 2>&1 || true
     fi
-    if [ -x /usr/local/bin/whoisthat ]; then
-        as_target /usr/local/bin/whoisthat core stop >/dev/null 2>&1 || true
+    if [ -x "$BIN_DIR/whoisthat" ]; then
+        as_target "$BIN_DIR/whoisthat" core stop >/dev/null 2>&1 || true
+    elif [ -x "$LEGACY_BIN_DIR/whoisthat" ]; then
+        as_target "$LEGACY_BIN_DIR/whoisthat" core stop >/dev/null 2>&1 || true
     fi
     if command -v pkill >/dev/null 2>&1; then
         pkill -TERM -u "$TARGET_USER" -x whoisthat-core >/dev/null 2>&1 || true
@@ -338,17 +345,19 @@ uninstall_whoisthat() {
     update-desktop-database "$TARGET_HOME/.local/share/applications" >/dev/null 2>&1 || true
     update-desktop-database /usr/share/applications >/dev/null 2>&1 || true
 
-    local removed=0
-    for bin in whoisthat whoisthat-core whoisthat-parser; do
-        if [ -f "/usr/local/bin/$bin" ]; then
-            $SUDO rm -f "/usr/local/bin/$bin"
-            info "Removed /usr/local/bin/$bin"
-            removed=1
-        fi
+    local removed=0 dir bin
+    for dir in "$BIN_DIR" "$LEGACY_BIN_DIR"; do
+        for bin in whoisthat whoisthat-core whoisthat-parser; do
+            if [ -f "$dir/$bin" ]; then
+                $SUDO rm -f "$dir/$bin"
+                info "Removed $dir/$bin"
+                removed=1
+            fi
+        done
     done
 
     if [ "$removed" -eq 0 ]; then
-        info "No WhoisThat binaries were found in /usr/local/bin."
+        info "No WhoisThat binaries were found in $BIN_DIR or $LEGACY_BIN_DIR."
     else
         info "WhoisThat binaries removed successfully."
     fi
@@ -634,7 +643,7 @@ build_whoisthat() {
 
 # --- step 6: install binaries & set capabilities -----------------------------
 install_binaries() {
-    step "Step 6/6: Install binaries to /usr/local/bin"
+    step "Step 6/6: Install binaries to $BIN_DIR"
 
     cd "$BUILD_SRC_DIR"
 
@@ -642,19 +651,28 @@ install_binaries() {
     # the new core has capabilities, so an interrupted or failed install never
     # leaves a new TUI next to an old, incompatible core.
     info "Installing whoisthat and whoisthat-core..."
-    $SUDO install -Dm755 target/release/whoisthat /usr/local/bin/.whoisthat.new
-    $SUDO install -Dm755 core/core/whoisthat-core /usr/local/bin/.whoisthat-core.new
+    $SUDO install -Dm755 target/release/whoisthat "$BIN_DIR/.whoisthat.new"
+    $SUDO install -Dm755 core/core/whoisthat-core "$BIN_DIR/.whoisthat-core.new"
 
     info "Granting network capabilities to whoisthat-core..."
-    if $SUDO setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep /usr/local/bin/.whoisthat-core.new 2>/dev/null; then
+    if $SUDO setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep "$BIN_DIR/.whoisthat-core.new" 2>/dev/null; then
         info "Capabilities configured: cap_net_admin, cap_net_raw, cap_setpcap"
     else
         warn "setcap failed or filesystem does not support capabilities."
         warn "Run 'whoisthat doctor' for the manual setup command."
     fi
 
-    $SUDO mv -f /usr/local/bin/.whoisthat.new /usr/local/bin/whoisthat
-    $SUDO mv -f /usr/local/bin/.whoisthat-core.new /usr/local/bin/whoisthat-core
+    $SUDO mv -f "$BIN_DIR/.whoisthat.new" "$BIN_DIR/whoisthat"
+    $SUDO mv -f "$BIN_DIR/.whoisthat-core.new" "$BIN_DIR/whoisthat-core"
+
+    # Remove binaries from the old canonical location so PATH order can never
+    # pick a stale copy over the new /usr/bin install.
+    for bin in whoisthat whoisthat-core whoisthat-parser; do
+        if [ -f "$LEGACY_BIN_DIR/$bin" ]; then
+            $SUDO rm -f "$LEGACY_BIN_DIR/$bin"
+            info "Removed legacy $LEGACY_BIN_DIR/$bin"
+        fi
+    done
 
     if [ -f "pkg/whoisthat.desktop" ]; then
         local desktop="/usr/share/applications/whoisthat.desktop"
@@ -668,11 +686,6 @@ install_binaries() {
         fi
     fi
 
-    # Clean up legacy parser binary if present from earlier versions (< v0.11.5)
-    if [ -f "/usr/local/bin/whoisthat-parser" ]; then
-        info "Removing obsolete /usr/local/bin/whoisthat-parser (parser is now embedded in whoisthat-core)..."
-        $SUDO rm -f "/usr/local/bin/whoisthat-parser"
-    fi
 }
 
 # --- Xray archive verification ------------------------------------------------
@@ -820,17 +833,17 @@ install_xray() {
 # --- pre-flight checks -------------------------------------------------------
 check_disk_space() {
     local avail
-    avail=$(df -Pk /tmp /usr/local 2>/dev/null | awk 'NR > 1 {print $4}' | sort -n | head -1 || true)
+    avail=$(df -Pk /tmp /usr/bin 2>/dev/null | awk 'NR > 1 {print $4}' | sort -n | head -1 || true)
     if [ -n "${avail:-}" ] && [ "$avail" -lt 2097152 ]; then
-        warn "Less than 2 GB free on /tmp or /usr/local; the build may fail."
+        warn "Less than 2 GB free on /tmp or /usr/bin; the build may fail."
     fi
 }
 
 # --- post-install verification -----------------------------------------------
 verify_installation() {
     local tui core
-    tui=$(as_target /usr/local/bin/whoisthat --version 2>/dev/null | head -1 || true)
-    core=$(as_target /usr/local/bin/whoisthat-core --version 2>/dev/null | head -1 || true)
+    tui=$(as_target "$BIN_DIR/whoisthat" --version 2>/dev/null | head -1 || true)
+    core=$(as_target "$BIN_DIR/whoisthat-core" --version 2>/dev/null | head -1 || true)
     if [ -z "$tui" ] || [ -z "$core" ]; then
         err "Installed binaries did not run:"
         err "  whoisthat: ${tui:-<no output>}"
@@ -840,7 +853,7 @@ verify_installation() {
     info "Verified: ${tui}; ${core}"
     # doctor exits non-zero on missing capabilities, which is exactly the state
     # after a failed setcap, so it is a hint here, never a failure.
-    if ! as_target /usr/local/bin/whoisthat doctor >/dev/null 2>&1; then
+    if ! as_target "$BIN_DIR/whoisthat" doctor >/dev/null 2>&1; then
         warn "whoisthat doctor reported issues; run 'whoisthat doctor' for details."
     fi
 }
@@ -864,9 +877,9 @@ print_final_message() {
     echo -e "    ${BOLD}whoisthat${NC}"
     echo
     case ":$PATH:" in
-        *":/usr/local/bin:"*) ;;
+        *":$BIN_DIR:"*) ;;
         *)
-            echo -e "  ${YELLOW}[!]${NC} /usr/local/bin is not in PATH; add it or use the full path."
+            echo -e "  ${YELLOW}[!]${NC} $BIN_DIR is not in PATH; add it or use the full path."
             echo
             ;;
     esac
@@ -914,7 +927,7 @@ main() {
         uninstall_whoisthat
     fi
 
-    if command -v whoisthat &>/dev/null || [ -f /usr/local/bin/whoisthat ]; then
+    if command -v whoisthat &>/dev/null || [ -f "$BIN_DIR/whoisthat" ] || [ -f "$LEGACY_BIN_DIR/whoisthat" ]; then
         MODE="Upgrade"
         info "Existing whoisthat installation found -> Upgrading"
         # Do not stop the running core: the daemon keeps the old inode and the TUI

@@ -22,6 +22,7 @@ pub enum CoreEvent {
         group: Group,
         profiles: Vec<Profile>,
         routing_profiles: Vec<RoutingProfileInfo>,
+        auto: bool,
     },
     TunStatusChanged(bool),
     IsRootAnswer(bool),
@@ -212,6 +213,7 @@ pub(crate) fn dispatch(msg: TcpMessage) -> CoreEvent {
                     group: d.group,
                     profiles: d.profiles,
                     routing_profiles: d.routing_profiles,
+                    auto: d.auto,
                 }
             })
         }
@@ -460,11 +462,13 @@ mod tests {
             group,
             profiles,
             routing_profiles,
+            auto,
         } = event
         {
             assert_eq!(group.id, 1);
             assert_eq!(profiles.len(), 1);
             assert_eq!(routing_profiles.len(), 0);
+            assert!(!auto);
         } else {
             panic!("expected SubscriptionUpdated");
         }
@@ -491,6 +495,7 @@ mod tests {
             group,
             profiles: _,
             routing_profiles,
+            auto: _,
         } = event
         {
             assert_eq!(group.routing_mode, "auto");

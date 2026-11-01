@@ -28,9 +28,12 @@ When `whoisthat-core` starts, it executes a rigorous preparation sequence:
    ├─► 8. Initialize Xray Runtime Manager (Verify Pinned v26.10.29)
    │
    ├─► 9. Open IPC Listeners (Unix Domain Socket & Optional TCP)
+   ├─► 10. Start Boot Autoconnect
    │
-   └─► 10. Enter Main Event Loop & Wait for Client Connections
+   └─► 11. Enter Main Event Loop & Wait for Client Connections
 ```
+
+Once autoconnect settles, the daemon starts a subscription auto-update loop. It probes groups with an unknown interval, then refreshes subscriptions whose provider or manual interval has elapsed. Background refreshes never run latency tests or reload a live DNS/routing/TUN session.
 
 ### Key Initialization Steps
 

@@ -21,7 +21,7 @@ Groups allow you to categorize profiles (e.g. by provider, protocol, or geograph
 | Action | Shortcut | Description |
 | :--- | :---: | :--- |
 | **Add Group** | <kbd>A</kbd> / <kbd>n</kbd> | Opens a modal asking only for the subscription URL. The group name comes from the provider (`profile-title` response header) or, if absent, from the URL host. |
-| **Edit Group** | <kbd>e</kbd> | Edit group name or update subscription URL. Updating the URL automatically triggers an immediate profile fetch! |
+| **Edit Group** | <kbd>e</kbd> | Edit group name, subscription URL, auto-update toggle and manual interval. Updating the URL automatically triggers an immediate profile fetch! |
 | **Reset Group Name** | <kbd>Ctrl+R</kbd> (in Edit Group) | Restores the provider's name. Manual renames are never overwritten by subscription refreshes. |
 | **Delete Group** | <kbd>X</kbd> | Prompts confirmation to delete the entire group and all contained profiles. |
 | **Refresh Group** | <kbd>u</kbd> / <kbd>r</kbd> | Fetches the latest server list from the subscription provider, updating metadata and profiles. |
@@ -32,7 +32,7 @@ Groups allow you to categorize profiles (e.g. by provider, protocol, or geograph
 
 ## 2. Subscription Metadata
 
-When a subscription URL is fetched, the core daemon inspects HTTP response headers (`subscription-userinfo`, `profile-title`):
+When a subscription URL is fetched, the core daemon inspects HTTP response headers (`subscription-userinfo`, `profile-title`, `profile-update-interval`):
 
 ```
 upload=1048576; download=52428800; total=107374182400; expire=1720000000
@@ -40,11 +40,23 @@ upload=1048576; download=52428800; total=107374182400; expire=1720000000
 
 The group is named after the provider's `profile-title` header (both plain and `base64:` values are supported) and falls back to the subscription URL host when the header is missing. Renaming the group manually pins your name; use <kbd>Ctrl+R</kbd> in the Edit Group modal to go back to the provider name.
 
+### Automatic subscription refresh
+
+The core reads the standard `profile-update-interval` response header (hours) and also accepts a `#profile-update-interval: N` directive in the body (plain or base64). Auto-update is enabled by default for every group. The Edit Group modal (<kbd>e</kbd>) exposes:
+
+* **Auto-update** — on/off per subscription.
+* **Interval, hours** — optional manual override; blank means "use the provider value". Enter `0` or clear the field to remove the override.
+
+A manual value always wins over the provider value. If the provider stops sending the header, the stored interval is cleared and the schedule waits for a manual value.
+
+The daemon checks subscriptions every 10 minutes. On startup, after autoconnect, it performs one probe for groups whose interval is not known yet, so missed updates after a long shutdown are picked up automatically. Background refreshes download and store new profiles but do not run latency tests or reconfigure a live DNS/routing/TUN session; the new configuration applies on the next connect or a manual refresh (<kbd>u</kbd>). A failed background refresh keeps the old profiles and retries with exponential backoff (30m → 1h → 2h → 4h → 6h).
+
 The Details panel dynamically displays:
 * **Used Bandwidth**: Total data consumed (Upload + Download) formatted in human-readable units (e.g., `51.0 MB`).
 * **Data Limit**: Total quota allocated to the account (e.g., `100.0 GB`).
 * **Expiration Date**: Calendar timestamp when the subscription expires.
 * **Last Updated**: Relative timestamp since the last successful sync.
+* **Auto-update**: Whether the background refresh is on, and whether the interval came from the provider or a manual override.
 
 ---
 
