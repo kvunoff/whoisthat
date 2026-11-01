@@ -96,11 +96,18 @@ fn line_level(line: &str) -> Option<Level> {
     logfmt::parse(line).level
 }
 
-fn line_passes_filter(line: &str, filter: LogFilter) -> bool {
-    let Some(min) = filter.min_level() else {
-        return true;
-    };
-    line_level(line).is_some_and(|level| level <= min)
+fn line_passes_filter(line: &str, filter: LogFilter, query: Option<&str>) -> bool {
+    if let Some(min) = filter.min_level() {
+        if !line_level(line).is_some_and(|level| level <= min) {
+            return false;
+        }
+    }
+    if let Some(query) = query {
+        if !line.to_lowercase().contains(query) {
+            return false;
+        }
+    }
+    true
 }
 
 fn line_style(line: &str) -> Style {
@@ -119,6 +126,9 @@ pub struct LogsState {
     pub auto_scroll: bool,
     pub filter: LogFilter,
     pub source: LogSource,
+    pub search_input: String,
+    pub search_query: Option<String>,
+    pub search_active: bool,
     reader: Option<BufReader<File>>,
     log_path: String,
     /// Height of the rendered list; used to clamp `scroll` (top line index).
@@ -141,6 +151,9 @@ impl LogsState {
             auto_scroll: true,
             filter: LogFilter::All,
             source: LogSource::Core,
+            search_input: String::new(),
+            search_query: None,
+            search_active: false,
             reader,
             log_path: path.to_string_lossy().into_owned(),
             viewport: 20,
@@ -159,6 +172,12 @@ impl LogsState {
 
     pub fn cycle_source(&mut self) {
         self.source = self.source.next();
+        self.reload();
+    }
+
+    /// Re-read the current source, keeping the filter and search. Also used
+    /// after the log file is cleared.
+    pub fn reload(&mut self) {
         let path = config::first_existing(&self.source.paths());
         self.log_path = path.to_string_lossy().into_owned();
         (self.lines, self.reader) = read_log_file(&self.log_path);
@@ -169,10 +188,42 @@ impl LogsState {
         self.scroll = self.max_scroll();
     }
 
+    pub fn start_search(&mut self) {
+        self.search_active = true;
+        self.search_input.clear();
+        self.search_query = None;
+        self.auto_scroll = true;
+        self.scroll = self.max_scroll();
+    }
+
+    /// Called after a keystroke edited `search_input`.
+    pub fn search_changed(&mut self) {
+        self.search_query = if self.search_input.is_empty() {
+            None
+        } else {
+            Some(self.search_input.to_lowercase())
+        };
+        self.auto_scroll = true;
+        self.scroll = self.max_scroll();
+    }
+
+    pub fn finish_search(&mut self) {
+        self.search_active = false;
+    }
+
+    pub fn clear_search(&mut self) {
+        self.search_active = false;
+        self.search_input.clear();
+        self.search_query = None;
+        self.auto_scroll = true;
+        self.scroll = self.max_scroll();
+    }
+
     fn filtered_lines(&self) -> Vec<&String> {
+        let query = self.search_query.as_deref();
         self.lines
             .iter()
-            .filter(|l| line_passes_filter(l, self.filter))
+            .filter(|line| line_passes_filter(line, self.filter, query))
             .collect()
     }
 
@@ -306,11 +357,27 @@ fn read_log_file(path: &str) -> (Vec<String>, Option<BufReader<File>>) {
 pub fn render_logs(f: &mut Frame, area: Rect, state: &mut LogsState, focused: bool) {
     let border_color = if focused { border_active() } else { border() };
 
-    let title = format!(
-        " Logs [{}] [{}] ",
-        state.source.label(),
-        state.filter.label()
-    );
+    let title = if state.search_active {
+        format!(" Logs [/{}█] ", state.search_input)
+    } else if let Some(query) = &state.search_query {
+        let shown: String = query.chars().take(20).collect();
+        let ellipsis = if query.chars().count() > 20 {
+            "…"
+        } else {
+            ""
+        };
+        format!(
+            " Logs [{}] [{}] [/{shown}{ellipsis}] ",
+            state.source.label(),
+            state.filter.label()
+        )
+    } else {
+        format!(
+            " Logs [{}] [{}] ",
+            state.source.label(),
+            state.filter.label()
+        )
+    };
 
     let block = Block::default()
         .title(title)
@@ -335,9 +402,17 @@ pub fn render_logs(f: &mut Frame, area: Rect, state: &mut LogsState, focused: bo
         ])
         .split(inner)[1];
         f.render_widget(
-            Paragraph::new(format!("No logs at {} level.", state.filter.label()))
-                .style(s_dim())
-                .alignment(Alignment::Center),
+            Paragraph::new(match &state.search_query {
+                Some(query) => {
+                    format!(
+                        "No logs matching /{query} at {} level.",
+                        state.filter.label()
+                    )
+                }
+                None => format!("No logs at {} level.", state.filter.label()),
+            })
+            .style(s_dim())
+            .alignment(Alignment::Center),
             mid,
         );
         return;
@@ -414,6 +489,9 @@ mod tests {
             auto_scroll: true,
             filter: LogFilter::All,
             source: LogSource::Core,
+            search_input: String::new(),
+            search_query: None,
+            search_active: false,
             reader: None,
             log_path: path.to_str().unwrap().to_string(),
             viewport: 20,
@@ -449,18 +527,83 @@ mod tests {
     fn fatal_is_an_error_for_filtering() {
         assert!(line_passes_filter(
             "2026/10/31 13:37:11 [FATA] encryption key is invalid",
-            LogFilter::Error
+            LogFilter::Error,
+            None
         ));
         assert!(!line_passes_filter(
             "2026/10/31 13:37:11 [INFO] fine",
-            LogFilter::Error
+            LogFilter::Error,
+            None
         ));
     }
 
     #[test]
     fn old_tui_lines_are_filtered_too() {
-        assert!(line_passes_filter("12:00:00 WARN  boom", LogFilter::Warn));
-        assert!(!line_passes_filter("12:00:00 INFO  ok", LogFilter::Warn));
+        assert!(line_passes_filter(
+            "12:00:00 WARN  boom",
+            LogFilter::Warn,
+            None
+        ));
+        assert!(!line_passes_filter(
+            "12:00:00 INFO  ok",
+            LogFilter::Warn,
+            None
+        ));
+    }
+
+    #[test]
+    fn search_is_case_insensitive_and_combines_with_level() {
+        assert!(line_passes_filter(
+            "2026/10/31 13:37:11 [WARN] Needle found",
+            LogFilter::Warn,
+            Some("needle")
+        ));
+        assert!(!line_passes_filter(
+            "2026/10/31 13:37:11 [INFO] needle found",
+            LogFilter::Warn,
+            Some("needle")
+        ));
+        assert!(!line_passes_filter(
+            "2026/10/31 13:37:11 [WARN] hay",
+            LogFilter::Warn,
+            Some("needle")
+        ));
+    }
+
+    #[test]
+    fn search_updates_the_filtered_count_and_scroll() {
+        let path = tmp_path("search");
+        std::fs::write(
+            &path,
+            "2026/10/31 10:00:00 [WARN] needle\n2026/10/31 10:00:01 [WARN] hay\n",
+        )
+        .unwrap();
+        let mut state = LogsState {
+            lines: Vec::new(),
+            scroll: 0,
+            auto_scroll: true,
+            filter: LogFilter::All,
+            source: LogSource::Core,
+            search_input: String::new(),
+            search_query: None,
+            search_active: true,
+            reader: None,
+            log_path: path.to_str().unwrap().to_string(),
+            viewport: 10,
+            file_id: None,
+            file_len: 0,
+        };
+        (state.lines, state.reader) = read_log_file(&state.log_path);
+
+        state.search_input = "needle".into();
+        state.search_changed();
+        assert_eq!(state.filtered_lines().len(), 1);
+        assert_eq!(state.max_scroll(), 0);
+
+        state.clear_search();
+        assert_eq!(state.filtered_lines().len(), 2);
+        assert!(!state.search_active);
+        std::fs::remove_dir_all(path.parent().unwrap()).ok();
     }
 
     #[test]
@@ -473,6 +616,9 @@ mod tests {
             auto_scroll: true,
             filter: LogFilter::All,
             source: LogSource::Core,
+            search_input: String::new(),
+            search_query: None,
+            search_active: false,
             reader: None,
             log_path: path.to_str().unwrap().to_string(),
             viewport: 10,

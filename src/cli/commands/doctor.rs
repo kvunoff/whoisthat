@@ -1,10 +1,10 @@
-use super::super::args::GlobalArgs;
+use super::super::args::{DoctorArgs, GlobalArgs};
 use super::super::error::CliError;
 use super::super::output::Out;
 
-pub async fn run(g: &GlobalArgs) -> Result<(), CliError> {
+pub async fn run(g: &GlobalArgs, args: DoctorArgs) -> Result<(), CliError> {
     let out = Out::new(g);
-    let report = crate::doctor::run_doctor().await;
+    let report = crate::doctor::run_doctor(args.logs).await;
     if g.json {
         out.json(&report);
     } else {

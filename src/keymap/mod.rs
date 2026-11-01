@@ -183,6 +183,8 @@ fn resolve_logs(key: &KeyEvent) -> AppAction {
         KeyCode::Char('G') => AppAction::ScrollBottom,
         KeyCode::Char('f') | KeyCode::Char('F') => AppAction::LogsCycleFilter,
         KeyCode::Char('s') | KeyCode::Char('S') => AppAction::LogsCycleSource,
+        KeyCode::Char('/') => AppAction::LogsStartSearch,
+        KeyCode::Char('c') | KeyCode::Char('C') => AppAction::LogsClear,
         KeyCode::Esc => AppAction::Dismiss,
         _ => AppAction::None,
     }
@@ -412,6 +414,14 @@ pub const LOGS_HELP: &[HelpEntry] = &[
         key: "s",
         desc: "Switch log source (core/tui)",
     },
+    HelpEntry {
+        key: "/",
+        desc: "Search the log (Esc clears)",
+    },
+    HelpEntry {
+        key: "c",
+        desc: "Clear the current log (confirm)",
+    },
 ];
 
 pub const TRAFFIC_HELP: &[HelpEntry] = &[
@@ -525,6 +535,22 @@ mod tests {
         assert_eq!(
             resolve_action(KeyContext::Logs, &key(KeyCode::Char('['))),
             AppAction::PrevTab
+        );
+    }
+
+    #[test]
+    fn logs_search_and_clear_keys() {
+        assert_eq!(
+            resolve_action(KeyContext::Logs, &key(KeyCode::Char('/'))),
+            AppAction::LogsStartSearch
+        );
+        assert_eq!(
+            resolve_action(KeyContext::Logs, &key(KeyCode::Char('c'))),
+            AppAction::LogsClear
+        );
+        assert_eq!(
+            resolve_action(KeyContext::Logs, &key(KeyCode::Char('s'))),
+            AppAction::LogsCycleSource
         );
     }
 

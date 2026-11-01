@@ -15,7 +15,7 @@ use crate::doctor::types::{CheckCategory, CheckItem, DoctorReport};
 /// Must match `xraymgr.PinnedVersion` in core/core/lib/xraymgr/version.go.
 const PINNED_XRAY_VERSION: &str = "26.10.29";
 
-pub async fn run_doctor() -> DoctorReport {
+pub async fn run_doctor(include_logs: bool) -> DoctorReport {
     let cfg = config::load_config();
 
     let cat_binaries = check_binaries();
@@ -25,14 +25,18 @@ pub async fn run_doctor() -> DoctorReport {
     let cat_dns = check_dns_and_routing(&cfg);
     let cat_config = check_config_and_storage(&cfg);
 
-    let mut report = DoctorReport::new(vec![
+    let mut categories = vec![
         cat_binaries,
         cat_capabilities,
         cat_polkit,
         cat_ipc,
         cat_dns,
         cat_config,
-    ]);
+    ];
+    if include_logs {
+        categories.push(check_logs());
+    }
+    let mut report = DoctorReport::new(categories);
     if let Some((cv, proto)) = crate::core_client::query::fetch_core_version_ipc().await {
         report.core_version = Some(cv);
         report.core_protocol_version = Some(proto);
@@ -1178,6 +1182,175 @@ fn check_config_and_storage(cfg: &AppConfig) -> CheckCategory {
     CheckCategory::new("Configuration & Storage", items)
 }
 
+fn check_logs() -> CheckCategory {
+    let mut items = Vec::new();
+
+    for (label, paths) in [
+        ("core", config::core_log_paths()),
+        ("tui", config::tui_log_paths()),
+    ] {
+        let path = config::first_existing(&paths);
+        let Ok(meta) = fs::metadata(&path) else {
+            items.push(CheckItem::info(
+                format!("{label} log"),
+                format!("{} (not created yet)", path.display()),
+            ));
+            continue;
+        };
+
+        let mode = meta.permissions().mode() & 0o777;
+        let message = format!(
+            "{} ({}, mode {:04o}, modified {})",
+            path.display(),
+            human_bytes(meta.len()),
+            mode,
+            age(&meta)
+        );
+        if mode & 0o077 != 0 {
+            items.push(CheckItem::warn(
+                format!("{label} log"),
+                message,
+                Some(format!("chmod 600 {}", path.display())),
+            ));
+        } else {
+            items.push(CheckItem::pass(format!("{label} log"), message));
+        }
+
+        items.push(rotation_item(label, &path));
+        items.push(recent_errors_item(label, &path));
+    }
+
+    let crash = config::data_dir().join("core-crash.log");
+    match fs::metadata(&crash) {
+        Ok(meta) if meta.len() > 0 => items.push(CheckItem::warn(
+            "core crash log",
+            format!(
+                "{} ({}, mode {:04o}) — a previous crash was recorded",
+                crash.display(),
+                human_bytes(meta.len()),
+                meta.permissions().mode() & 0o777
+            ),
+            Some("inspect it, then clear with: whoisthat logs clear --source core --yes".into()),
+        )),
+        Ok(_) => items.push(CheckItem::pass(
+            "core crash log",
+            format!("{} (empty)", crash.display()),
+        )),
+        Err(_) => items.push(CheckItem::info(
+            "core crash log",
+            format!("{} (not created)", crash.display()),
+        )),
+    }
+    let crash_backup = crate::logfile::backup_path(&crash);
+    if let Ok(meta) = fs::metadata(&crash_backup) {
+        items.push(CheckItem::info(
+            "core crash backup",
+            format!("{} ({})", crash_backup.display(), human_bytes(meta.len())),
+        ));
+    }
+
+    CheckCategory::new("Logs", items)
+}
+
+fn rotation_item(label: &str, path: &Path) -> CheckItem {
+    if label == "core" {
+        let backups = crate::logfile::rotated_backups(path);
+        if backups.is_empty() {
+            return CheckItem::pass("core log backups", "none");
+        }
+        let bytes: u64 = backups
+            .iter()
+            .filter_map(|path| fs::metadata(path).ok())
+            .map(|meta| meta.len())
+            .sum();
+        return CheckItem::info(
+            "core log backups",
+            format!("{} file(s), {}", backups.len(), human_bytes(bytes)),
+        );
+    }
+
+    let backup = crate::logfile::backup_path(path);
+    match fs::metadata(&backup) {
+        Ok(meta) => CheckItem::info(
+            "tui log backup",
+            format!(
+                "{} ({}, mode {:04o})",
+                backup.display(),
+                human_bytes(meta.len()),
+                meta.permissions().mode() & 0o777
+            ),
+        ),
+        Err(_) => CheckItem::pass("tui log backup", "none"),
+    }
+}
+
+fn recent_errors_item(label: &str, path: &Path) -> CheckItem {
+    let errors = recent_errors(path);
+    let name = format!("{label} recent errors");
+    if errors.is_empty() {
+        CheckItem::pass(name, "no error/fatal lines in the last 256 KiB")
+    } else {
+        CheckItem::warn(
+            name,
+            errors.join(" | "),
+            Some(format!("whoisthat logs --source {label} --level error")),
+        )
+    }
+}
+
+fn recent_errors(path: &Path) -> Vec<String> {
+    let Ok((lines, _)) = crate::logfile::read_tail(path, 256 * 1024) else {
+        return Vec::new();
+    };
+    let mut errors: Vec<String> = lines
+        .iter()
+        .filter(|line| crate::logfmt::parse(line).level == Some(crate::logfmt::Level::Error))
+        .map(|line| truncate_line(line, 160))
+        .collect();
+    let start = errors.len().saturating_sub(5);
+    errors.drain(..start);
+    errors
+}
+
+fn truncate_line(line: &str, max: usize) -> String {
+    if line.chars().count() <= max {
+        return line.to_string();
+    }
+    let mut out: String = line.chars().take(max.saturating_sub(3)).collect();
+    out.push_str("...");
+    out
+}
+
+fn human_bytes(bytes: u64) -> String {
+    const KIB: f64 = 1024.0;
+    const MIB: f64 = 1024.0 * 1024.0;
+    let bytes = bytes as f64;
+    if bytes >= MIB {
+        format!("{:.1} MiB", bytes / MIB)
+    } else if bytes >= KIB {
+        format!("{:.1} KiB", bytes / KIB)
+    } else {
+        format!("{bytes:.0} B")
+    }
+}
+
+fn age(meta: &fs::Metadata) -> String {
+    meta.modified()
+        .ok()
+        .and_then(|time| std::time::SystemTime::now().duration_since(time).ok())
+        .map(|elapsed| {
+            let secs = elapsed.as_secs();
+            if secs >= 86_400 {
+                format!("{}d ago", secs / 86_400)
+            } else if secs >= 3_600 {
+                format!("{}h ago", secs / 3_600)
+            } else {
+                format!("{}m ago", secs / 60)
+            }
+        })
+        .unwrap_or_else(|| "unknown".into())
+}
+
 fn find_binary(name: &str, candidates: &[&str]) -> Option<String> {
     if let Ok(output) = Command::new("which").arg(name).output() {
         if output.status.success() {
@@ -1312,6 +1485,45 @@ mod tests {
         assert!(json.contains("\"passed\":1"));
         assert!(json.contains("\"is_healthy\":true"));
         assert!(json.contains("\"test\""));
+    }
+
+    #[test]
+    fn recent_errors_keeps_the_last_five_error_lines() {
+        let dir = std::env::temp_dir().join(format!(
+            "whoisthat-doctor-logs-{}-{}",
+            std::process::id(),
+            "recent"
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("core.log");
+        let mut text = String::new();
+        for i in 0..7 {
+            text.push_str(&format!("2026/10/31 10:00:0{i} [ERRO] boom {i}\n"));
+            text.push_str("2026/10/31 10:00:00 [INFO] ok\n");
+        }
+        text.push_str("2026/10/31 10:00:09 [FATA] fatal\n");
+        std::fs::write(&path, text).unwrap();
+
+        let errors = recent_errors(&path);
+        assert_eq!(errors.len(), 5);
+        assert!(errors[4].contains("fatal"));
+        assert!(!errors[0].contains("boom 2"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn long_error_lines_are_truncated() {
+        let line = "x".repeat(200);
+        let out = truncate_line(&line, 20);
+        assert_eq!(out.chars().count(), 20);
+        assert!(out.ends_with("..."));
+    }
+
+    #[test]
+    fn formats_log_sizes() {
+        assert_eq!(human_bytes(512), "512 B");
+        assert_eq!(human_bytes(2048), "2.0 KiB");
+        assert_eq!(human_bytes(2 * 1024 * 1024), "2.0 MiB");
     }
 }
 

@@ -46,6 +46,7 @@ impl App {
             Popup::ConfirmDeleteGroup { name, .. } => {
                 self.render_confirm_popup(f, "group", name, area)
             }
+            Popup::ConfirmClearLogs { source } => self.render_clear_logs_popup(f, *source, area),
             Popup::EditSubscription {
                 name,
                 url,
@@ -282,6 +283,51 @@ impl App {
             chunks[0],
         );
 
+        f.render_widget(
+            Paragraph::new(" Enter confirm | Esc cancel ")
+                .style(s_accent())
+                .alignment(Alignment::Center),
+            chunks[1],
+        );
+    }
+
+    fn render_clear_logs_popup(
+        &self,
+        f: &mut Frame,
+        source: crate::ui::logs::LogSource,
+        area: Rect,
+    ) {
+        let pa = responsive_rect(56, 8, 90, 40, area);
+        f.render_widget(Clear, pa);
+
+        let block = Block::default()
+            .title(" Clear Logs ")
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(Style::default().fg(error()))
+            .style(s_surface());
+
+        let inner = block.inner(pa);
+        f.render_widget(block, pa);
+
+        let message = match source {
+            crate::ui::logs::LogSource::Core => {
+                "Clear core logs?\ncore.log is truncated; backups and core-crash.log are removed.\nThis cannot be undone."
+            }
+            crate::ui::logs::LogSource::Tui => {
+                "Clear TUI log?\ntui.log is truncated and tui.log.1 is removed.\nThis cannot be undone."
+            }
+        };
+        let chunks =
+            Layout::vertical([Constraint::Percentage(50), Constraint::Percentage(50)]).split(inner);
+
+        f.render_widget(
+            Paragraph::new(message)
+                .style(s_text())
+                .alignment(Alignment::Center)
+                .wrap(Wrap { trim: true }),
+            chunks[0],
+        );
         f.render_widget(
             Paragraph::new(" Enter confirm | Esc cancel ")
                 .style(s_accent())

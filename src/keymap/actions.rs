@@ -61,6 +61,8 @@ pub enum AppAction {
     // Logs
     LogsCycleFilter,
     LogsCycleSource,
+    LogsStartSearch,
+    LogsClear,
 
     // Unmapped
     None,
