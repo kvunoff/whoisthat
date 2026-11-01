@@ -66,8 +66,12 @@ func (cmd *Cmd) UpdateProfile(data structs.UpdateProfileData) {
 }
 
 func (cmd *Cmd) UpdateGroup(data structs.UpdateGroupData, proxy_manager *mainproxy.ProxyManager) {
+	if data.UpdateInterval != nil && (*data.UpdateInterval < 0 || *data.UpdateInterval > maxUpdateIntervalSeconds) {
+		cmd.warn("update-group-failed", "Update interval must be between 0 and 8760 hours")
+		return
+	}
 	oldGroup, _ := cmd.DB.LoadGroupConfig(data.Id)
-	group, err := cmd.DB.UpdateGroupConfig(data.Id, data.Name, data.SubscriptionUrl)
+	group, err := cmd.DB.UpdateGroupConfig(data.Id, data.Name, data.SubscriptionUrl, data.AutoUpdate, data.UpdateInterval)
 	if err != nil {
 		logger.Warnf("failed to update group %d: %s", data.Id, err.Error())
 		cmd.warn("update-group-failed", "there was an error updating the group")

@@ -97,6 +97,15 @@ pub struct Group {
     pub sub_download: i64,
     #[serde(default)]
     pub sub_total: i64,
+    /// Provider-advertised refresh interval in seconds (0 = unknown/silent).
+    #[serde(default)]
+    pub sub_update_interval: i64,
+    /// User override in seconds (0 = use the provider value).
+    #[serde(default)]
+    pub sub_update_interval_override: i64,
+    /// Inverted so old groups (missing field) default to auto-update enabled.
+    #[serde(default)]
+    pub sub_auto_update_disabled: bool,
     #[serde(default)]
     pub profile_order: Vec<i32>,
     #[serde(default)]
@@ -194,7 +203,7 @@ pub struct DbStatus {
 /// `core/core/lib/version/protocol.txt` (embedded by both sides); the test
 /// below fails if they drift.
 /// A running core is reused while versions match; on mismatch it is restarted.
-pub const EXPECTED_CORE_PROTOCOL_VERSION: u32 = 3;
+pub const EXPECTED_CORE_PROTOCOL_VERSION: u32 = 4;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct XrayStatusInfo {
@@ -358,13 +367,18 @@ pub struct UpdateProfileData {
     pub name: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct UpdateGroupData {
     pub id: i32,
     #[serde(default)]
     pub name: String,
     #[serde(default)]
     pub subscription_url: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auto_update: Option<bool>,
+    /// Manual update interval in seconds; `Some(0)` clears the override.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub update_interval: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -446,6 +460,9 @@ pub struct SubscriptionUpdated {
     pub profiles: Vec<Profile>,
     #[serde(default)]
     pub routing_profiles: Vec<RoutingProfileInfo>,
+    /// True for background auto-refreshes: apply data, but do not toast.
+    #[serde(default)]
+    pub auto: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -616,7 +633,7 @@ pub struct DeleteRoutingProfileData {
 
 #[cfg(test)]
 mod tests {
-    use super::RoutingProfileInfo;
+    use super::{Group, RoutingProfileInfo, UpdateGroupData};
 
     #[test]
     fn routing_profile_info_decodes_dns_fields() {
@@ -649,6 +666,27 @@ mod tests {
         assert!(!info.fake_dns_enabled);
         assert!(info.remote_dns.is_empty());
         assert!(info.domestic_dns.is_empty());
+    }
+
+    #[test]
+    fn group_defaults_keep_auto_update_enabled() {
+        let group: Group = serde_json::from_str(r#"{"id":1,"name":"Old"}"#).expect("decode group");
+        assert!(!group.sub_auto_update_disabled);
+        assert_eq!(group.sub_update_interval, 0);
+        assert_eq!(group.sub_update_interval_override, 0);
+    }
+
+    #[test]
+    fn update_group_data_omits_absent_options() {
+        let data = UpdateGroupData {
+            id: 1,
+            name: "Name".into(),
+            subscription_url: "https://example.test/sub".into(),
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&data).expect("encode update group");
+        assert!(!json.contains("auto_update"));
+        assert!(!json.contains("update_interval"));
     }
 
     #[test]

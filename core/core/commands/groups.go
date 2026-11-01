@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 	"unicode"
+	"whoisthat-core/db"
 	"whoisthat-core/lib"
 	appconfig "whoisthat-core/lib/AppConfig"
 	"whoisthat-core/lib/happ"
@@ -37,24 +38,56 @@ func redactSecret(s string) string {
 	return queryRe.ReplaceAllString(s, "?…")
 }
 
+// UpdateSubscription is the manual/foreground refresh path. It blocks on the
+// subscription lock so a CLI `sub refresh` or a just-added group is never
+// dropped because the background scheduler happens to be fetching.
 func (cmd *Cmd) UpdateSubscription(data structs.UpdateSubscriptionData, proxy_manager *proxy.ProxyManager) {
-	if subscription_mutex.TryLock() == false {
-		cmd.warn("command-ignored", "update-subscription")
-		return
+	subscription_mutex.Lock()
+	defer subscription_mutex.Unlock()
+	cmd.updateSubscriptionLocked(data, proxy_manager, false)
+}
+
+// AutoUpdateSubscription is the background path. It never waits for a manual
+// update, re-checks the group under the lock, and returns whether an attempt
+// was made so the scheduler can drive retries/backoff.
+func (cmd *Cmd) AutoUpdateSubscription(data structs.UpdateSubscriptionData, proxy_manager *proxy.ProxyManager, force bool) (ok bool, attempted bool) {
+	if !subscription_mutex.TryLock() {
+		return true, false
 	}
 	defer subscription_mutex.Unlock()
 
 	group, err := cmd.DB.LoadGroupConfig(data.GroupId)
 	if err != nil {
+		logger.Warnf("auto-update: cannot load group %d: %v", data.GroupId, err)
+		return false, true
+	}
+	if group.SubscriptionUrl == "" || group.SubAutoUpdateDisabled {
+		return true, false
+	}
+	if force {
+		// A manual update may have learned the interval while this target sat
+		// in the probe queue.
+		if effectiveUpdateInterval(group) > 0 {
+			return true, false
+		}
+	} else if !subscriptionDue(group, time.Now()) {
+		return true, false
+	}
+	return cmd.updateSubscriptionLocked(data, proxy_manager, true), true
+}
+
+func (cmd *Cmd) updateSubscriptionLocked(data structs.UpdateSubscriptionData, proxy_manager *proxy.ProxyManager, background bool) bool {
+	group, err := cmd.DB.LoadGroupConfig(data.GroupId)
+	if err != nil {
 		cmd.warn("update-subscription-failed", "Failed to load group config for updating subscription")
-		return
+		return false
 	}
 
 	subscription_content, resp, isJSON, err := fetchSubscription(group)
 	if err != nil {
 		logger.Warnf("update-subscription: failed to GET %s: %s", redactSecret(group.SubscriptionUrl), redactSecret(err.Error()))
 		cmd.warn("update-subscription-failed", "Failed to get subscription")
-		return
+		return false
 	}
 
 	// Extract Happ routing links from response headers and body. A JSON
@@ -62,50 +95,65 @@ func (cmd *Cmd) UpdateSubscription(data structs.UpdateSubscriptionData, proxy_ma
 	happLinks := happ.ExtractLinksFromResponse(resp)
 	happLinks = append(happLinks, happ.ExtractLinks([]byte(subscription_content))...)
 
-	// Parse subscription-userinfo header (traffic / expiry)
-	parseSubUserInfo(resp, &group)
-	// The provider name wins over the current auto name, never over a rename.
-	if title := subscriptionTitle(resp, group.SubscriptionUrl); title != "" {
-		if group.Name == "" || group.Name == group.SubName {
-			group.Name = title
-		}
-		group.SubName = title
-	}
-	group.SubLastUpdated = time.Now().Unix()
-
 	db_profiles := lib.GetDBAddProfileDatasFromStr(subscription_content, data.GroupId)
-	group.SubscriptionFormat = "uri"
+	format := "uri"
 	if isJSON {
-		group.SubscriptionFormat = "json"
+		format = "json"
 	}
 	for _, profile := range db_profiles {
 		if profile.Managed {
-			group.SubscriptionFormat = "json"
+			format = "json"
 			break
 		}
 	}
+
+	// Persist subscription-derived metadata against a fresh group snapshot.
+	// Never save the pre-fetch struct: a concurrent rename, auto-update toggle
+	// or routing-mode change must not be overwritten.
+	fields := subscriptionFieldsFromResponse(resp, subscription_content, group.SubscriptionUrl, format)
 	if len(db_profiles) == 0 {
-		cmd.DB.SaveGroup(group)
+		// An empty body says nothing about the subscription format.
+		fields.Format = nil
+	}
+	group, err = cmd.DB.MergeSubscriptionFields(data.GroupId, fields)
+	if err != nil {
+		logger.Warn("update-subscription: failed to save subscription metadata:", err)
+		cmd.warn("update-subscription-failed", "Failed to save subscription metadata")
+		return false
+	}
+
+	if len(db_profiles) == 0 {
 		logger.Warnf("update-subscription: parsed 0 profiles from content (len=%d)", len(subscription_content))
 		cmd.warn("update-subscription-failed", "No profiles found in subscription")
-		return
+		return false
 	}
-	cmd.DB.SaveGroup(group)
-	status := proxy_manager.GetStatus()
+
 	keep_profile_id := 0
-	if status.Connection == "connected" && status.Profile.GroupId == data.GroupId {
-		keep_profile_id = status.Profile.Id
+	if proxy_manager != nil {
+		status := proxy_manager.GetStatus()
+		if status.Connection == "connected" && status.Profile.GroupId == data.GroupId {
+			keep_profile_id = status.Profile.Id
+		}
 	}
 
 	profiles, err := cmd.DB.UpdateGroupAndProfiles(data.GroupId, db_profiles, keep_profile_id)
 	if err != nil {
 		logger.Warn("update-subscription: failed to update DB:", err)
 		cmd.warn("update-subscription-failed", "Failed to add new subscription content to database")
-		return
+		return false
+	}
+
+	// The timestamp means "last successful profile merge", so it moves only
+	// after the profiles are durable.
+	now := time.Now().Unix()
+	group, err = cmd.DB.MergeSubscriptionFields(data.GroupId, db.SubscriptionFields{LastUpdated: &now})
+	if err != nil {
+		logger.Warn("update-subscription: failed to save last-updated timestamp:", err)
+		cmd.warn("update-subscription-failed", "Failed to save subscription metadata")
+		return false
 	}
 
 	// Upsert extracted Happ routing profiles
-	now := time.Now().Unix()
 	var profilesNeedingGeo []structs.RoutingProfile
 	happRoutingMutex.Lock()
 	for _, link := range happLinks {
@@ -126,15 +174,20 @@ func (cmd *Cmd) UpdateSubscription(data structs.UpdateSubscriptionData, proxy_ma
 	}
 
 	routingProfiles, _ := cmd.DB.ListRoutingProfileInfos(data.GroupId, group.ActiveRoutingProfileId)
-	logger.Infof("subscription %s: %d profiles, %d routing profiles", group.Name, len(profiles), len(routingProfiles))
+	if background {
+		logger.Debugf("auto-update: subscription %s: %d profiles, %d routing profiles", group.Name, len(profiles), len(routingProfiles))
+	} else {
+		logger.Infof("subscription %s: %d profiles, %d routing profiles", group.Name, len(profiles), len(routingProfiles))
+	}
 	cmd.send("subscription-updated", structs.SubscriptionUpdated{
 		GroupId:         data.GroupId,
 		Group:           group,
 		Profiles:        profiles,
 		RoutingProfiles: routingProfiles,
+		Auto:            background,
 	})
 
-	if proxy_manager != nil {
+	if !background && proxy_manager != nil {
 		st := proxy_manager.GetStatus()
 		if st.Connection == "connected" && st.Profile.GroupId == data.GroupId {
 			cmd.refreshDnsHijackFor(st.Profile)
@@ -142,7 +195,7 @@ func (cmd *Cmd) UpdateSubscription(data structs.UpdateSubscriptionData, proxy_ma
 	}
 
 	if len(profilesNeedingGeo) > 0 {
-		go func(gID int, profs []structs.RoutingProfile) {
+		go func(gID int, profs []structs.RoutingProfile, bg bool) {
 			for _, p := range profs {
 				ctx, cancel := context.WithTimeout(context.Background(), 7*time.Minute)
 				err := happ.EnsureProfileGeo(ctx, cmd.DB, &p)
@@ -157,7 +210,9 @@ func (cmd *Cmd) UpdateSubscription(data structs.UpdateSubscriptionData, proxy_ma
 						_ = cmd.DB.SetActiveRoutingProfile(gID, p.Id)
 						grp.ActiveRoutingProfileId = p.Id
 					}
-					if proxy_manager != nil {
+					// A background refresh must not reconfigure a live session;
+					// the new routing profile applies on the next connect.
+					if !bg && proxy_manager != nil {
 						st := proxy_manager.GetStatus()
 						if st.Connection == "connected" && st.Profile.GroupId == gID && grp.ActiveRoutingProfileId == p.Id {
 							_ = proxy_manager.ReloadRouting(appconfig.GetConfig().TunName)
@@ -171,23 +226,25 @@ func (cmd *Cmd) UpdateSubscription(data structs.UpdateSubscriptionData, proxy_ma
 						Group:           grp,
 						Profiles:        groupWithProfiles.Profiles,
 						RoutingProfiles: rProfiles,
+						Auto:            bg,
 					})
 				}
 				happRoutingMutex.Unlock()
 			}
-		}(data.GroupId, profilesNeedingGeo)
+		}(data.GroupId, profilesNeedingGeo, background)
 	}
 
 	// Auto-test the freshly-imported profiles so users see live latencies
-	// immediately after `u`. Skip if disabled in core config; skip if
-	// the subscription is large (>50 profiles) to avoid port-pool
-	// exhaustion on slow machines.
+	// immediately after `u`. Skip for background refreshes so the network is
+	// not put under test load, and skip large subscriptions to avoid
+	// port-pool exhaustion on slow machines.
 	ac := appconfig.GetConfig()
-	if ac.TestConfig.AutoTestOnSub && len(profiles) > 0 && len(profiles) <= 50 {
+	if !background && proxy_manager != nil && ac.TestConfig.AutoTestOnSub && len(profiles) > 0 && len(profiles) <= 50 {
 		method := "http-get"
 		total := proxy_manager.TestGroup(profiles, method, 0)
 		proxy_manager.SeedTestProgress(data.GroupId, total)
 	}
+	return true
 }
 
 // maxSubBytes caps how much we'll read from a subscription endpoint. A
@@ -274,35 +331,97 @@ func fetchSubscriptionURL(subscriptionURL string) (string, *http.Response, error
 	return string(bodyBytes), resp, nil
 }
 
-func parseSubUserInfo(resp *http.Response, group *structs.Group) {
-	if resp == nil {
-		return
+const (
+	minUpdateIntervalHours   = 1
+	maxUpdateIntervalHours   = 8760
+	maxUpdateIntervalSeconds = maxUpdateIntervalHours * 3600
+)
+
+type updateIntervalAction int
+
+const (
+	updateIntervalKeep updateIntervalAction = iota
+	updateIntervalSet
+	updateIntervalClear
+)
+
+// parseUpdateIntervalValue interprets the provider value. The standard unit is
+// hours; 0 explicitly disables the schedule. Invalid values are ignored so a
+// single bad header cannot erase a working interval.
+func parseUpdateIntervalValue(raw string) (int64, updateIntervalAction) {
+	raw = strings.Trim(strings.TrimSpace(raw), `"'`)
+	if raw == "" {
+		return 0, updateIntervalKeep
 	}
-	hdr := resp.Header.Get("subscription-userinfo")
-	if hdr == "" {
-		return
+	hours, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, updateIntervalKeep
 	}
-	for _, part := range strings.Split(hdr, ";") {
-		part = strings.TrimSpace(part)
-		kv := strings.SplitN(part, "=", 2)
-		if len(kv) != 2 {
-			continue
-		}
-		val, err := strconv.ParseInt(strings.TrimSpace(kv[1]), 10, 64)
-		if err != nil {
-			continue
-		}
-		switch strings.TrimSpace(kv[0]) {
-		case "upload":
-			group.SubUpload = val
-		case "download":
-			group.SubDownload = val
-		case "total":
-			group.SubTotal = val
-		case "expire":
-			group.SubExpires = val
+	switch {
+	case hours == 0:
+		return 0, updateIntervalClear
+	case hours < minUpdateIntervalHours || hours > maxUpdateIntervalHours:
+		return 0, updateIntervalKeep
+	default:
+		return int64(hours) * 3600, updateIntervalSet
+	}
+}
+
+// parseProfileUpdateInterval prefers the standard HTTP header and falls back to
+// a body directive (plain or base64), which some providers use instead.
+func parseProfileUpdateInterval(resp *http.Response, body string) (int64, updateIntervalAction) {
+	sawValue := false
+	if resp != nil {
+		if raw := strings.TrimSpace(resp.Header.Get("profile-update-interval")); raw != "" {
+			sawValue = true
+			if seconds, action := parseUpdateIntervalValue(raw); action != updateIntervalKeep {
+				return seconds, action
+			}
 		}
 	}
+	if raw, ok := lib.SubscriptionHeader(body, "profile-update-interval"); ok {
+		sawValue = true
+		if seconds, action := parseUpdateIntervalValue(raw); action != updateIntervalKeep {
+			return seconds, action
+		}
+	}
+	if sawValue {
+		return 0, updateIntervalKeep
+	}
+	return 0, updateIntervalClear
+}
+
+func subscriptionFieldsFromResponse(resp *http.Response, body, subscriptionURL, format string) db.SubscriptionFields {
+	fields := db.SubscriptionFields{Format: &format}
+	if title := subscriptionTitle(resp, subscriptionURL); title != "" {
+		fields.Title = &title
+	}
+	if resp != nil {
+		for _, part := range strings.Split(resp.Header.Get("subscription-userinfo"), ";") {
+			kv := strings.SplitN(strings.TrimSpace(part), "=", 2)
+			if len(kv) != 2 {
+				continue
+			}
+			val, err := strconv.ParseInt(strings.TrimSpace(kv[1]), 10, 64)
+			if err != nil {
+				continue
+			}
+			switch strings.TrimSpace(kv[0]) {
+			case "upload":
+				fields.Upload = &val
+			case "download":
+				fields.Download = &val
+			case "total":
+				fields.Total = &val
+			case "expire":
+				fields.Expires = &val
+			}
+		}
+	}
+	if seconds, action := parseProfileUpdateInterval(resp, body); action != updateIntervalKeep {
+		fields.ProviderInterval = &seconds
+	}
+	return fields
 }
 
 // subscriptionTitle returns the display name a provider advertises in the
