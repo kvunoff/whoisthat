@@ -42,6 +42,9 @@ pub enum Popup {
         group_id: i32,
         cursor: usize,
         field: usize,
+        auto_update: bool,
+        interval_hours: String,
+        provider_interval_secs: i64,
     },
     EditUserAgent {
         input: String,

@@ -19,7 +19,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/whoisthat-core
+ExecStart=/usr/bin/whoisthat-core
 Restart=on-failure
 RestartSec=5
 

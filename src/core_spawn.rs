@@ -30,8 +30,10 @@ pub(crate) fn find_core_binary() -> String {
         "./whoisthat-core",
         "./core/core/whoisthat-core",
         "./bin/whoisthat-core",
-        "/usr/local/bin/whoisthat-core",
         "/usr/bin/whoisthat-core",
+        // Legacy install location; kept last so a stale copy cannot shadow
+        // the canonical /usr/bin binary.
+        "/usr/local/bin/whoisthat-core",
     ];
     for c in candidates {
         if std::path::Path::new(c).exists() {

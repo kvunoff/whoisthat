@@ -5,7 +5,9 @@ use crate::core_client::protocol::*;
 use super::super::args::GlobalArgs;
 use super::super::client::{Reply, Session};
 use super::super::error::CliError;
-use super::super::output::{format_bytes, format_epoch, print_table, redact_url, Out};
+use super::super::output::{
+    format_bytes, format_epoch, format_interval, print_table, redact_url, Out,
+};
 use super::super::resolve;
 
 pub async fn list(g: &GlobalArgs, reveal: bool) -> Result<(), CliError> {
@@ -38,6 +40,7 @@ pub async fn list(g: &GlobalArgs, reveal: bool) -> Result<(), CliError> {
                 gr.id.to_string(),
                 name,
                 g.profiles.len().to_string(),
+                auto_label(gr),
                 format_epoch(gr.sub_last_updated),
                 format_epoch(gr.sub_expires),
                 format!("{} / {}", format_bytes(used), format_bytes(gr.sub_total)),
@@ -49,6 +52,7 @@ pub async fn list(g: &GlobalArgs, reveal: bool) -> Result<(), CliError> {
             "ID",
             "NAME",
             "PROFILES",
+            "AUTO",
             "UPDATED",
             "EXPIRES",
             "USED / TOTAL",
@@ -83,6 +87,7 @@ pub async fn show(g: &GlobalArgs, selector: &str, reveal: bool) -> Result<(), Cl
     println!("Group #{}: {}", gr.id, name);
     println!("  profiles:  {}", group.profiles.len());
     println!("  updated:   {}", format_epoch(gr.sub_last_updated));
+    println!("  auto:      {}", auto_detail(gr));
     println!("  expires:   {}", format_epoch(gr.sub_expires));
     println!(
         "  traffic:   {} / {}",
@@ -338,6 +343,8 @@ pub async fn rename(
                 // An empty name resets the group to the provider's name.
                 name: new_name.unwrap_or_default().to_string(),
                 subscription_url: group.subscription_url.clone(),
+                auto_update: None,
+                update_interval: None,
             },
             Reply::Id {
                 expect: &["group-updated"],
@@ -381,6 +388,8 @@ pub async fn url(
                     id: group.id,
                     name: group.name.clone(),
                     subscription_url: new_url.to_string(),
+                    auto_update: None,
+                    update_interval: None,
                 },
                 Reply::Id {
                     expect: &["group-updated"],
@@ -439,6 +448,132 @@ pub async fn reorder(g: &GlobalArgs, selector: &str, new_index: usize) -> Result
     Ok(())
 }
 
+pub async fn auto(g: &GlobalArgs, selector: &str, state: &str) -> Result<(), CliError> {
+    let enabled = if state.eq_ignore_ascii_case("on") {
+        true
+    } else if state.eq_ignore_ascii_case("off") {
+        false
+    } else {
+        return Err(CliError::Usage("sub auto expects 'on' or 'off'".into()));
+    };
+    let out = Out::new(g);
+    let updated = patch_group(g, selector, Some(enabled), None).await?;
+    out.ok(
+        format!(
+            "Auto-update for '{}' (#{}): {}.",
+            updated.name,
+            updated.id,
+            if enabled { "on" } else { "off" }
+        ),
+        json!({"group_id": updated.id, "auto_update": enabled}),
+    );
+    Ok(())
+}
+
+pub async fn interval(g: &GlobalArgs, selector: &str, hours: &str) -> Result<(), CliError> {
+    let secs = if hours.eq_ignore_ascii_case("none") {
+        0
+    } else {
+        let parsed: u64 = hours
+            .parse()
+            .map_err(|_| CliError::Usage("interval must be hours (1..8760) or 'none'".into()))?;
+        if !(1..=8760).contains(&parsed) {
+            return Err(CliError::Usage(
+                "interval must be hours (1..8760) or 'none'".into(),
+            ));
+        }
+        (parsed * 3600) as i64
+    };
+    let out = Out::new(g);
+    let updated = patch_group(g, selector, None, Some(secs)).await?;
+    let label = if secs == 0 {
+        "cleared".to_string()
+    } else {
+        format!("{}h", secs / 3600)
+    };
+    out.ok(
+        format!(
+            "Manual update interval for '{}' (#{}): {label}.",
+            updated.name, updated.id
+        ),
+        json!({"group_id": updated.id, "update_interval": secs}),
+    );
+    Ok(())
+}
+
+async fn patch_group(
+    g: &GlobalArgs,
+    selector: &str,
+    auto_update: Option<bool>,
+    update_interval: Option<i64>,
+) -> Result<Group, CliError> {
+    let mut session = Session::open_or_spawn(g).await?;
+    let state = session.state().await?;
+    if state.protocol_version != EXPECTED_CORE_PROTOCOL_VERSION {
+        return Err(CliError::Offline(format!(
+            "whoisthat-core protocol {} does not support auto-update settings; restart the core",
+            state.protocol_version
+        )));
+    }
+    let group = resolve::find_group(&state.groups, selector)?.clone();
+    let updated: Group = session
+        .request(
+            "update-group",
+            &UpdateGroupData {
+                id: group.id,
+                name: group.name.clone(),
+                subscription_url: group.subscription_url.clone(),
+                auto_update,
+                update_interval,
+            },
+            Reply::Id {
+                expect: &["group-updated"],
+                fatal_warns: &["update-group-failed"],
+            },
+        )
+        .await?;
+    Ok(updated)
+}
+
+fn effective_interval(group: &Group) -> i64 {
+    if group.sub_update_interval_override > 0 {
+        group.sub_update_interval_override
+    } else {
+        group.sub_update_interval
+    }
+}
+
+fn auto_label(group: &Group) -> String {
+    if group.sub_auto_update_disabled {
+        return "off".to_string();
+    }
+    let secs = effective_interval(group);
+    if secs > 0 {
+        format!("on {}", format_interval(secs))
+    } else {
+        "on —".to_string()
+    }
+}
+
+fn auto_detail(group: &Group) -> String {
+    if group.sub_auto_update_disabled {
+        return "off".to_string();
+    }
+    if group.sub_update_interval_override > 0 {
+        return format!(
+            "on (manual {})",
+            format_interval(group.sub_update_interval_override)
+        );
+    }
+    if group.sub_update_interval > 0 {
+        return format!(
+            "on (provider {})",
+            format_interval(group.sub_update_interval)
+        );
+    }
+    "on (no interval)".to_string()
+}
+
 fn group_json(
     state: &ApplicationState,
     group: &GroupWithProfiles,
@@ -457,6 +592,10 @@ fn group_json(
         "profiles_count": group.profiles.len(),
         "subscription_url": if reveal { Some(gr.subscription_url.as_str()) } else { None },
         "last_updated": gr.sub_last_updated,
+        "auto_update": !gr.sub_auto_update_disabled,
+        "update_interval": effective_interval(gr),
+        "update_interval_override": gr.sub_update_interval_override,
+        "update_interval_provider": gr.sub_update_interval,
         "expires": gr.sub_expires,
         "upload": gr.sub_upload,
         "download": gr.sub_download,

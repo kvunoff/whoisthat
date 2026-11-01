@@ -100,6 +100,22 @@ impl App {
                 let ago = format_relative(g.group.sub_last_updated);
                 rows.push(kv_row("Updated", &ago));
             }
+            let auto = if g.group.sub_auto_update_disabled {
+                "off".to_string()
+            } else if g.group.sub_update_interval_override > 0 {
+                format!(
+                    "on (manual {})",
+                    format_interval_secs(g.group.sub_update_interval_override)
+                )
+            } else if g.group.sub_update_interval > 0 {
+                format!(
+                    "on (provider {})",
+                    format_interval_secs(g.group.sub_update_interval)
+                )
+            } else {
+                "on (no interval)".to_string()
+            };
+            rows.push(kv_row("Auto-update", &auto));
             if g.group.sub_expires > 0 {
                 let expiry = format_expiry(g.group.sub_expires);
                 rows.push(kv_row("Expires", &expiry));

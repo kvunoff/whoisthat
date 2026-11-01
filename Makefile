@@ -1,4 +1,5 @@
 SHELL := /bin/bash
+BINDIR ?= /usr/bin
 
 .PHONY: all build core rust test test-go test-rust test-bump lint version-check fmt integration docs install clean
 
@@ -48,10 +49,20 @@ fmt:
 docs:
 	npm run docs:build
 
-install: build
-	sudo install -Dm755 target/release/whoisthat /usr/local/bin/whoisthat
-	sudo install -Dm755 core/core/whoisthat-core /usr/local/bin/whoisthat-core
-	sudo setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep /usr/local/bin/whoisthat-core
+install:
+	@if [ "$$(id -u)" = "0" ]; then \
+		echo "Run 'make install' without sudo: the build needs your rustup toolchain."; \
+		echo "It will ask for sudo only for the install steps."; \
+		exit 1; \
+	fi
+	$(MAKE) build
+	sudo install -Dm755 target/release/whoisthat $(BINDIR)/whoisthat
+	sudo install -Dm755 core/core/whoisthat-core $(BINDIR)/whoisthat-core
+	sudo setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep $(BINDIR)/whoisthat-core
+	@if [ -e /usr/local/bin/whoisthat ] || [ -e /usr/local/bin/whoisthat-core ]; then \
+		echo "Removing legacy /usr/local/bin/whoisthat binaries"; \
+		sudo rm -f /usr/local/bin/whoisthat /usr/local/bin/whoisthat-core; \
+	fi
 
 clean:
 	cargo clean

@@ -443,12 +443,20 @@ async fn handle_normal_input(
         AppAction::EditItem => {
             if app.on_group() {
                 if let Some(g) = app.current_group() {
+                    let override_hours = if g.group.sub_update_interval_override > 0 {
+                        (g.group.sub_update_interval_override / 3600).to_string()
+                    } else {
+                        String::new()
+                    };
                     app.popup = Some(Popup::EditSubscription {
                         name: g.group.name.clone(),
                         url: g.group.subscription_url.clone(),
                         group_id: g.group.id,
                         cursor: g.group.subscription_url.chars().count(),
                         field: 1,
+                        auto_update: !g.group.sub_auto_update_disabled,
+                        interval_hours: override_hours,
+                        provider_interval_secs: g.group.sub_update_interval,
                     });
                     app.focus = Focus::Popup;
                 }

@@ -17,7 +17,7 @@ This document provides a complete technical specification for the length-prefixe
 * **Payload**: UTF-8 encoded JSON object.
 * **Maximum Frame**: 64 MiB on both sides. Larger frames are rejected before allocation/parsing.
 * **Request correlation (optional)**: a client may include an `"id"` string in a request; notifications produced while handling it carry the same `"id"`. The current TUI is event-driven and does not require it.
-* **Protocol Version**: `3` (shared by `core/core/lib/version/protocol.txt`). The TCP handshake rejects a mismatch; on UDS the TUI compares `application-state.protocol_version` and kills/respawns a mismatched core instead of reattaching.
+* **Protocol Version**: `4` (shared by `core/core/lib/version/protocol.txt`). The TCP handshake rejects a mismatch; on UDS the TUI compares `application-state.protocol_version` and kills/respawns a mismatched core instead of reattaching.
 
 ### Request correlation
 
@@ -52,10 +52,10 @@ warnings alone as failure.
 UDS clients are authenticated by filesystem permissions. The opt-in TCP transport additionally requires a token that the core writes to `$XDG_RUNTIME_DIR/whoisthat/ipc.token` (`0600`). The first frame on a TCP connection must be:
 
 ```json
-{"msg":"hello","data":{"token":"<64 hex chars>","protocol_version":3}}
+{"msg":"hello","data":{"token":"<64 hex chars>","protocol_version":4}}
 ```
 
-The core replies with `{"msg":"hello-ok","data":{"protocol_version":3}}` or `{"msg":"hello-error","data":{"error":"..."}}` and closes the connection. Commands sent before a successful handshake are never processed.
+The core replies with `{"msg":"hello-ok","data":{"protocol_version":4}}` or `{"msg":"hello-error","data":{"error":"..."}}` and closes the connection. Commands sent before a successful handshake are never processed.
 
 ---
 
@@ -77,7 +77,7 @@ The core replies with `{"msg":"hello-ok","data":{"protocol_version":3}}` or `{"m
 | `disable-tun` | `{}` | `tun-status-changed` |
 | `is-root` | `{}` | `is-root-answer` |
 | `update-profile` | `{"Profile": {"id": int, "group_id": int}, "Name": "string"}` | `profile-updated` |
-| `update-group` | `{"id": int, "name": "string", "subscription_url": "string"}` | `group-updated` |
+| `update-group` | `{"id": int, "name": "string", "subscription_url": "string", "auto_update": bool?, "update_interval": int?}` | `group-updated` |
 | `add-group` | `{"name": "string", "subscription_url": "string"}` | `group-added` |
 | `delete-group` | `{"id": int}` | `group-deleted` |
 | `update-subscription` | `{"group_id": int}` | `subscription-updated` |
@@ -117,7 +117,7 @@ The core replies with `{"msg":"hello-ok","data":{"protocol_version":3}}` or `{"m
 | `group-added` | `{"id": int, "name": "string", "subscription_url": "string"}` | Fired when a new group is created. |
 | `group-deleted` | `{"id": int}` | Fired when a group is deleted. |
 | `group-updated` | Full `Group` structure (no embedded profiles or routing profiles) | Fired when a group's name, URL, routing mode or active routing profile changes. |
-| `subscription-updated` | `{"group_id": int, "group": { ... }, "profiles": [ ... ], "routing_profiles": [ ... ]}` | Fired when a subscription finishes downloading and parsing, or when Happ routing profiles/geo assets change. |
+| `subscription-updated` | `{"group_id": int, "group": { ... }, "profiles": [ ... ], "routing_profiles": [ ... ], "auto": bool?}` | Fired when a subscription finishes downloading and parsing, or when Happ routing profiles/geo assets change. `auto: true` marks a background refresh; the TUI applies the data without showing the manual `u` toast. |
 | `tun-status-changed` | `{"is_enabled": bool}` | Fired when TUN mode is toggled. |
 | `tun-name-updated` | `{"tun_name": "string"}` | Fired when the TUN interface name changes. |
 | `is-root-answer` | `{"IsRoot": bool}` | Result of `CanTun()`: whether the daemon can create a TUN device (root **or** `CAP_NET_ADMIN`), not literally euid 0. |
@@ -176,13 +176,18 @@ The core replies with `{"msg":"hello-ok","data":{"protocol_version":3}}` or `{"m
   "sub_expires": 1720000000,
   "sub_upload": 1048576,
   "sub_download": 52428800,
-  "sub_total": 107374182400
+  "sub_total": 107374182400,
+  "sub_update_interval": 21600,
+  "sub_update_interval_override": 0,
+  "sub_auto_update_disabled": false
 }
 ```
 
-Subscription metadata (`sub_*`) is automatically populated from the standard `subscription-userinfo` HTTP response header.
+Subscription metadata (`sub_*`) is automatically populated from the standard `subscription-userinfo` HTTP response header. `sub_update_interval` is the provider's `profile-update-interval` value in seconds; `sub_update_interval_override` is a user-set value in seconds that wins over it; `sub_auto_update_disabled` defaults to `false` (auto-update enabled).
 
 Group naming: `add-group` with an empty `name` uses the subscription group's name, taken from the `profile-title` HTTP response header (base64-prefixed values are decoded) or, when absent, the subscription URL host. Both are stored in `sub_name`. `name` follows `sub_name` while the two are equal, so a manual rename survives later subscription refreshes. `update-group` with an empty `name` resets the group to `sub_name`.
+
+`update-group` accepts two optional fields. Omitting `auto_update` leaves the current setting; `false` disables background refreshes. Omitting `update_interval` leaves the manual override unchanged; `0` clears it, and a positive value sets it in seconds (validated as 1–8760 hours). An older protocol-3 daemon ignores these fields; protocol 4 prevents the TUI from attaching to one.
 
 
 ### Routing Profile Info Structure

@@ -293,27 +293,93 @@ pub(crate) async fn handle_popup_input(
             group_id,
             mut cursor,
             mut field,
+            mut auto_update,
+            mut interval_hours,
+            provider_interval_secs,
         }) => {
             if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('r') {
-                let _ = client.update_group(group_id, "", &url).await;
+                let _ = client
+                    .update_group(
+                        group_id,
+                        "",
+                        &url,
+                        Some(auto_update),
+                        Some(manual_interval_secs(&interval_hours)),
+                    )
+                    .await;
                 app.msg("Resetting group name to provider default...");
                 app.popup = None;
                 app.focus = Focus::LeftPanel;
                 return false;
             }
-            let consumed =
-                handle_two_field_popup(&mut name, &mut url, &mut cursor, &mut field, key);
-            if consumed {
+            let mut save = false;
+            match key.code {
+                KeyCode::Esc => {
+                    app.popup = None;
+                    app.focus = Focus::LeftPanel;
+                    return false;
+                }
+                KeyCode::Tab | KeyCode::BackTab => {
+                    field = if key.code == KeyCode::BackTab {
+                        (field + 3) % 4
+                    } else {
+                        (field + 1) % 4
+                    };
+                    cursor = match field {
+                        0 => name.chars().count(),
+                        1 => url.chars().count(),
+                        3 => interval_hours.chars().count(),
+                        _ => 0,
+                    };
+                }
+                KeyCode::Enter => {
+                    if field < 3 {
+                        field += 1;
+                        cursor = match field {
+                            0 => name.chars().count(),
+                            1 => url.chars().count(),
+                            3 => interval_hours.chars().count(),
+                            _ => 0,
+                        };
+                    } else {
+                        save = true;
+                    }
+                }
+                KeyCode::Char(' ') if field == 2 => {
+                    auto_update = !auto_update;
+                }
+                _ if field == 2 => {}
+                _ if field == 3 => {
+                    // Interval is a whole number of hours; ignore other input.
+                    if let KeyCode::Char(c) = key.code {
+                        if c.is_ascii_digit() {
+                            edit_text_field(&mut interval_hours, &mut cursor, key);
+                        }
+                    } else {
+                        edit_text_field(&mut interval_hours, &mut cursor, key);
+                    }
+                }
+                _ => {
+                    let target = if field == 0 { &mut name } else { &mut url };
+                    edit_text_field(target, &mut cursor, key);
+                }
+            }
+            if save {
                 let has_sub = !url.trim().is_empty();
-                let _ = client.update_group(group_id, &name, &url).await;
+                let _ = client
+                    .update_group(
+                        group_id,
+                        &name,
+                        &url,
+                        Some(auto_update),
+                        Some(manual_interval_secs(&interval_hours)),
+                    )
+                    .await;
                 if has_sub {
                     app.msg("Updating group and subscription...");
                 } else {
                     app.msg("Updating group...");
                 }
-                app.focus = Focus::LeftPanel;
-            } else if key.code == KeyCode::Esc {
-                app.popup = None;
                 app.focus = Focus::LeftPanel;
             } else {
                 app.popup = Some(Popup::EditSubscription {
@@ -322,6 +388,9 @@ pub(crate) async fn handle_popup_input(
                     group_id,
                     cursor,
                     field,
+                    auto_update,
+                    interval_hours,
+                    provider_interval_secs,
                 });
             }
         }
@@ -589,38 +658,9 @@ pub(crate) async fn handle_routing_popup_input(
     }
 }
 
-fn handle_two_field_popup(
-    field0: &mut String,
-    field1: &mut String,
-    cursor: &mut usize,
-    field: &mut usize,
-    key: event::KeyEvent,
-) -> bool {
-    match key.code {
-        KeyCode::Tab | KeyCode::BackTab => {
-            *field = if *field == 0 { 1 } else { 0 };
-            *cursor = if *field == 0 {
-                field0.chars().count()
-            } else {
-                field1.chars().count()
-            };
-            false
-        }
-        KeyCode::Enter => {
-            if *field == 0 {
-                *field = 1;
-                *cursor = field1.chars().count();
-                false
-            } else {
-                true
-            }
-        }
-        _ => {
-            let target = if *field == 0 { field0 } else { field1 };
-            edit_text_field(target, cursor, key);
-            false
-        }
-    }
+pub(crate) fn manual_interval_secs(input: &str) -> i64 {
+    let hours = input.trim().parse::<u64>().unwrap_or(0).min(8760);
+    (hours * 3600) as i64
 }
 
 pub(crate) enum FormResult {
@@ -696,5 +736,19 @@ fn handle_routing_form(
             FormResult::Continue
         }
         _ => FormResult::Continue,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::manual_interval_secs;
+
+    #[test]
+    fn manual_interval_parses_hours() {
+        assert_eq!(manual_interval_secs("24"), 24 * 3600);
+        assert_eq!(manual_interval_secs(""), 0);
+        assert_eq!(manual_interval_secs("0"), 0);
+        assert_eq!(manual_interval_secs("abc"), 0);
+        assert_eq!(manual_interval_secs("99999"), 8760 * 3600);
     }
 }

@@ -30,6 +30,10 @@ source "$ROOT/install.sh"
 set +eu
 set +o pipefail
 
+echo "== install paths"
+assert_eq "$BIN_DIR" "/usr/bin" "canonical install dir is /usr/bin"
+assert_eq "$LEGACY_BIN_DIR" "/usr/local/bin" "legacy install dir is /usr/local/bin"
+
 echo "== versions"
 assert_eq "$(version_ge 1.26.8 1.26.0 && echo yes)" "yes" "1.26.8 >= 1.26.0"
 assert_eq "$(version_ge 1.25.0 1.26.0 || echo no)" "no" "1.25.0 < 1.26.0"

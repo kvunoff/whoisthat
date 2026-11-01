@@ -297,6 +297,8 @@ impl CoreClient {
         id: i32,
         name: &str,
         subscription_url: &str,
+        auto_update: Option<bool>,
+        update_interval: Option<i64>,
     ) -> std::io::Result<()> {
         self.writer
             .lock()
@@ -307,6 +309,8 @@ impl CoreClient {
                     id,
                     name: name.to_string(),
                     subscription_url: subscription_url.to_string(),
+                    auto_update,
+                    update_interval,
                 },
             )
             .await

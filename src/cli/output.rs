@@ -67,6 +67,21 @@ pub fn format_bytes(bytes: i64) -> String {
     }
 }
 
+pub fn format_interval(secs: i64) -> String {
+    if secs <= 0 {
+        return "—".to_string();
+    }
+    if secs < 3600 {
+        return format!("{}m", secs / 60);
+    }
+    let hours = secs / 3600;
+    if hours % 24 == 0 {
+        format!("{}d", hours / 24)
+    } else {
+        format!("{}h", hours)
+    }
+}
+
 pub fn format_epoch(ts: i64) -> String {
     if ts <= 0 {
         return "—".to_string();

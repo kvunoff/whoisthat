@@ -57,6 +57,21 @@ pub fn format_relative(unix_ts: i64) -> String {
     format!("{}d ago", diff / 86400)
 }
 
+pub fn format_interval_secs(secs: i64) -> String {
+    if secs <= 0 {
+        return "—".to_string();
+    }
+    if secs < 3600 {
+        return format!("{}m", secs / 60);
+    }
+    let hours = secs / 3600;
+    if hours % 24 == 0 {
+        format!("{}d", hours / 24)
+    } else {
+        format!("{}h", hours)
+    }
+}
+
 pub fn format_expiry(unix_ts: i64) -> String {
     let dt = chrono::DateTime::from_timestamp(unix_ts, 0);
     let Some(dt) = dt else {

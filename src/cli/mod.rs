@@ -106,6 +106,8 @@ async fn dispatch(cmd: Command, g: &GlobalArgs) -> Result<(), CliError> {
             }
             SubCmd::Url(x) => commands::subs::url(g, &x.selector, x.set.as_deref(), x.reveal).await,
             SubCmd::Reorder(x) => commands::subs::reorder(g, &x.selector, x.new_index).await,
+            SubCmd::Auto(x) => commands::subs::auto(g, &x.selector, &x.state).await,
+            SubCmd::Interval(x) => commands::subs::interval(g, &x.selector, &x.hours).await,
         },
         Command::Route(a) => commands::routing::dispatch(g, a.cmd).await,
         Command::Test(a) => commands::tests::dispatch(g, a.cmd).await,
@@ -284,6 +286,35 @@ mod tests {
             Some(Command::Sub(a)) => match a.cmd {
                 SubCmd::Rename(r) => assert_eq!(r.new_name.as_deref(), Some("Home")),
                 _ => panic!("expected sub rename"),
+            },
+            _ => panic!("expected sub"),
+        }
+    }
+
+    #[test]
+    fn sub_auto_and_interval_parse() {
+        let parsed =
+            Cli::try_parse_from(["whoisthat", "sub", "auto", "12", "off"]).expect("sub auto");
+        match parsed.cmd {
+            Some(Command::Sub(a)) => match a.cmd {
+                SubCmd::Auto(x) => {
+                    assert_eq!(x.selector, "12");
+                    assert_eq!(x.state, "off");
+                }
+                _ => panic!("expected sub auto"),
+            },
+            _ => panic!("expected sub"),
+        }
+
+        let parsed = Cli::try_parse_from(["whoisthat", "sub", "interval", "12", "none"])
+            .expect("sub interval");
+        match parsed.cmd {
+            Some(Command::Sub(a)) => match a.cmd {
+                SubCmd::Interval(x) => {
+                    assert_eq!(x.selector, "12");
+                    assert_eq!(x.hours, "none");
+                }
+                _ => panic!("expected sub interval"),
             },
             _ => panic!("expected sub"),
         }

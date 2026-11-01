@@ -14,13 +14,13 @@ When updating subscription groups, providers often enforce multi-device limits (
 | `x-device-os` | `linux` | Go `runtime.GOOS` identifier (lowercase OS name, not architecture). |
 | `x-ver-os` | `6.12.0-arch1-1` | Active Linux kernel release (`uname -r`). |
 | `x-device-model` | `Arch Linux` | Distribution name extracted from `/etc/os-release` (`PRETTY_NAME`). |
-| `user-agent` | `whoisthat/v0.4.1` | Configurable HTTP User-Agent header. |
+| `user-agent` | `whoisthat/v0.4.2` | Configurable HTTP User-Agent header. |
 
 ---
 
 ## Response Header Handling
 
-WhoisThat parses only the standard `subscription-userinfo` response header (traffic quota, expiry, last update). Provider-specific `x-hwid-*` response headers (`x-hwid-max-devices-reached`, `x-hwid-limit`, `x-hwid-not-supported`) are currently **not** interpreted and do not produce an in-app warning; the subscription fetch succeeds or fails based on the HTTP status and body.
+WhoisThat parses the standard `subscription-userinfo` response header (traffic quota, expiry, last update) and `profile-update-interval` (auto-refresh cadence); it also understands body directives for those values. Provider-specific `x-hwid-*` response headers (`x-hwid-max-devices-reached`, `x-hwid-limit`, `x-hwid-not-supported`) are currently **not** interpreted and do not produce an in-app warning; the subscription fetch succeeds or fails based on the HTTP status and body.
 
 ---
 

@@ -6,7 +6,7 @@ This guide explains how to build, test, debug, and contribute to the WhoisThat c
 
 ## Local Development Loop
 
-No installation step is required during development. The Rust TUI resolves `whoisthat-core` in this order: `PATH`, `./whoisthat-core`, `./core/core/whoisthat-core`, `./bin/whoisthat-core`, `/usr/local/bin`, `/usr/bin`.
+No installation step is required during development. The Rust TUI resolves `whoisthat-core` in this order: `PATH`, `./whoisthat-core`, `./core/core/whoisthat-core`, `./bin/whoisthat-core`, `/usr/bin`, and the legacy `/usr/local/bin`.
 
 ```bash
 # 1. Build the Go core daemon (must be built first)

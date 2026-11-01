@@ -259,6 +259,10 @@ pub enum SubCmd {
     Rename(SubRenameArgs),
     Url(SubUrlArgs),
     Reorder(SubReorderArgs),
+    /// Enable or disable automatic refresh for one subscription
+    Auto(SubAutoArgs),
+    /// Set or clear the manual refresh interval in hours
+    Interval(SubIntervalArgs),
 }
 
 #[derive(Debug, Args)]
@@ -321,6 +325,20 @@ pub struct SubUrlArgs {
 pub struct SubReorderArgs {
     pub selector: String,
     pub new_index: usize,
+}
+
+#[derive(Debug, Args)]
+pub struct SubAutoArgs {
+    pub selector: String,
+    /// on or off
+    pub state: String,
+}
+
+#[derive(Debug, Args)]
+pub struct SubIntervalArgs {
+    pub selector: String,
+    /// Interval in hours, or "none" to clear the manual override
+    pub hours: String,
 }
 
 #[derive(Debug, Args)]

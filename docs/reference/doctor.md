@@ -40,7 +40,7 @@ The diagnostic engine performs comprehensive, non-destructive system inspections
 
 ### 1. Binaries & Runtimes
 * **`whoisthat` (Client)**: Resolves the active binary path (`std::env::current_exe()`) and confirms it matches the compiled crate version (`CARGO_PKG_VERSION`).
-* **`whoisthat-core` (Daemon)**: Searches `PATH`, `./whoisthat-core`, `./core/core/whoisthat-core`, `./bin/whoisthat-core`, `/usr/local/bin`, and `/usr/bin` (in that order) for the daemon binary.
+* **`whoisthat-core` (Daemon)**: Searches `PATH`, `./whoisthat-core`, `./core/core/whoisthat-core`, `./bin/whoisthat-core`, `/usr/bin`, and the legacy `/usr/local/bin` (in that order) for the daemon binary.
 * **`xray-core` (Proxy Runtime)**: Probes for available Xray-core runtimes in `~/.local/share/whoisthat/runtimes/xray/` and system `PATH`. Checks if version matches the pinned **v26.10.29** release.
 * **System CLI Tools**: Validates the presence of essential Linux networking utilities: `ip` (`iproute2`), `getcap` & `setcap` (`libcap`), and `pkexec` (`polkit`).
 
@@ -99,9 +99,9 @@ When running `whoisthat doctor --json`:
 
 ```json
 {
-  "version": "0.17.1",
-  "core_version": "0.4.1",
-  "core_protocol_version": 3,
+  "version": "0.17.2",
+  "core_version": "0.4.2",
+  "core_protocol_version": 4,
   "categories": [
     {
       "title": "Binaries & Runtimes",
@@ -109,12 +109,12 @@ When running `whoisthat doctor --json`:
         {
           "name": "whoisthat",
           "status": "pass",
-          "message": "/usr/local/bin/whoisthat (v0.17.1)"
+          "message": "/usr/bin/whoisthat (v0.17.2)"
         },
         {
           "name": "whoisthat-core",
           "status": "pass",
-          "message": "/usr/local/bin/whoisthat-core"
+          "message": "/usr/bin/whoisthat-core"
         },
         {
           "name": "xray-core",
@@ -130,7 +130,7 @@ When running `whoisthat doctor --json`:
           "name": "whoisthat-core caps",
           "status": "warn",
           "message": "missing required network capabilities for rootless TUN mode",
-          "fix_hint": "sudo setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep /usr/local/bin/whoisthat-core"
+          "fix_hint": "sudo setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep /usr/bin/whoisthat-core"
         }
       ]
     }
@@ -153,7 +153,7 @@ When running `whoisthat doctor --json`:
 
 | Failure / Warning | Technical Cause | Immediate Fix Command |
 | :--- | :--- | :--- |
-| **`daemon binary not found in PATH or standard directories`** | Daemon binary missing from standard PATH directories. | `sudo install -Dm755 core/core/whoisthat-core /usr/local/bin/whoisthat-core` |
+| **`daemon binary not found in PATH or standard directories`** | Daemon binary missing from standard PATH directories. | `sudo install -Dm755 core/core/whoisthat-core /usr/bin/whoisthat-core` |
 | **`missing required network capabilities for rootless TUN mode`** | Rebuilt daemon lost file capabilities on new inode. | `sudo setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep $(which whoisthat-core)` |
 | **`virtual device /dev/net/tun not found`** | Linux kernel `tun` module is not loaded. | `sudo modprobe tun && echo "tun" \| sudo tee -a /etc/modules-load.d/tun.conf` |
 | **`neither nftables nor iptables found`** | Host lacks a compatible firewall backend. | Arch: `sudo pacman -S nftables`<br>Debian/Ubuntu: `sudo apt install nftables` |
