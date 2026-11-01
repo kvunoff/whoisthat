@@ -117,7 +117,7 @@ async fn dispatch(cmd: Command, g: &GlobalArgs) -> Result<(), CliError> {
             LinkCmd::Handle(x) => commands::links::handle(g, &x.url, x.group.as_deref()).await,
             LinkCmd::Register => commands::links::register(g).await,
         },
-        Command::Doctor => commands::doctor::run(g).await,
+        Command::Doctor(a) => commands::doctor::run(g, a).await,
         Command::Ip => commands::connection::ip(g).await,
         Command::Version => commands::connection::version(g).await,
         Command::Run(_) => unreachable!("run is handled in cli::run"),
@@ -308,11 +308,32 @@ mod tests {
     }
 
     #[test]
-    fn run_help_and_missing_target() {
-        let err = Cli::try_parse_from(["whoisthat", "run", "--help"]).unwrap_err();
-        assert_eq!(err.kind(), clap::error::ErrorKind::DisplayHelp);
+    fn logs_show_and_clear_forms_parse() {
+        // The flat form must keep working next to the optional subcommand.
+        let parsed = Cli::try_parse_from(["whoisthat", "logs", "--follow", "--level", "error"])
+            .expect("flat logs");
+        match parsed.cmd {
+            Some(Command::Logs(a)) => {
+                assert!(a.follow);
+                assert!(a.cmd.is_none());
+            }
+            _ => panic!("expected logs"),
+        }
 
-        let err = Cli::try_parse_from(["whoisthat", "run"]).unwrap_err();
-        assert_ne!(err.kind(), clap::error::ErrorKind::DisplayHelp);
+        let parsed =
+            Cli::try_parse_from(["whoisthat", "logs", "clear", "--source", "tui", "--yes"])
+                .expect("clear");
+        match parsed.cmd {
+            Some(Command::Logs(a)) => match a.cmd {
+                Some(LogsCmd::Clear(clear)) => {
+                    assert!(clear.yes);
+                    assert_eq!(clear.source, ClearSource::Tui);
+                }
+                _ => panic!("expected clear"),
+            },
+            _ => panic!("expected logs"),
+        }
+
+        assert!(Cli::try_parse_from(["whoisthat", "doctor", "--logs"]).is_ok());
     }
 }

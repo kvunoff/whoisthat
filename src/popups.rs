@@ -2,8 +2,11 @@ use crossterm::event::{self, KeyCode, KeyModifiers};
 
 use crate::core_client::protocol::{ProfileID, SetHwidData};
 use crate::core_client::CoreClient;
+use crate::logfile::ClearAction;
+use crate::logger::FileLogger;
 use crate::text_edit::edit_text_field;
 use crate::ui::app::{ActiveTab, Focus, Popup};
+use crate::ui::logs::LogSource;
 use crate::ui::routing::{form_to_rule, toggle_preset, RoutingPopup, ROUTING_PRESETS};
 use crate::ui::App;
 
@@ -11,6 +14,7 @@ pub(crate) async fn handle_popup_input(
     app: &mut App,
     client: &CoreClient,
     key: event::KeyEvent,
+    logger: &'static FileLogger,
 ) -> bool {
     match app.popup.take() {
         Some(Popup::TabSwitcher { mut cursor }) => match key.code {
@@ -248,6 +252,39 @@ pub(crate) async fn handle_popup_input(
                     name: String::new(),
                 });
                 return false;
+            }
+        },
+        Some(Popup::ConfirmClearLogs { source }) => match key.code {
+            KeyCode::Enter => {
+                let message = match source {
+                    LogSource::Tui => match logger.clear() {
+                        Ok(_) => "TUI log cleared".to_string(),
+                        Err(e) => format!("Clear failed: {e}"),
+                    },
+                    LogSource::Core => {
+                        let mut results =
+                            crate::logfile::clear_core(&crate::config::core_log_paths());
+                        results.extend(crate::logfile::clear_crash(&crate::config::data_dir()));
+                        let failed = results
+                            .iter()
+                            .filter(|item| item.action == ClearAction::Failed)
+                            .count();
+                        if failed == 0 {
+                            "Core logs cleared".to_string()
+                        } else {
+                            format!("Clear failed for {failed} file(s) (permissions?)")
+                        }
+                    }
+                };
+                app.logs_state.reload();
+                app.msg(message);
+                app.focus = Focus::LeftPanel;
+            }
+            KeyCode::Esc => {
+                app.focus = Focus::LeftPanel;
+            }
+            _ => {
+                app.popup = Some(Popup::ConfirmClearLogs { source });
             }
         },
         Some(Popup::EditSubscription {

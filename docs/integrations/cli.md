@@ -265,10 +265,14 @@ whoisthat hwid user-agent 'whoisthat/1.0'
 whoisthat logs                        # last 100 core log lines
 whoisthat logs --lines 500
 whoisthat logs --level error
+whoisthat logs --source tui           # ~/.local/share/whoisthat/tui.log (--tui still works)
+whoisthat logs --since 1h             # relative duration, date/time, today or yesterday
+whoisthat logs --grep timeout         # case-insensitive substring over the raw line
 whoisthat logs --follow               # tail -f
 whoisthat logs --json                 # JSON array
 whoisthat logs -f --json              # NDJSON stream
-whoisthat logs --tui                  # ~/.local/share/whoisthat/tui.log
+whoisthat logs clear --yes            # truncate core+tui logs, remove backups
+whoisthat logs clear --source core --yes  # also removes core-crash.log
 ```
 
 The parser understands the current format (`2026/10/29 12:00:00 [INFO] ...`), the old core format
@@ -276,6 +280,18 @@ The parser understands the current format (`2026/10/29 12:00:00 [INFO] ...`), th
 `error|warn|info|debug|trace`; anything else is rejected by the argument parser. `--json` adds a
 full `timestamp` alongside the legacy `time`. Rotation is detected by inode, and the TUI/core
 fallback paths (`$TMPDIR/whoisthat-<uid>/...`) are used when the primary file is missing.
+
+`--source` replaces `--tui` (which remains as a hidden alias) and cannot be combined with it.
+`--since` accepts `YYYY-MM-DD`, `YYYY-MM-DD HH:MM[:SS]`, `YYYY-MM-DDTHH:MM[:SS]`, `30m`/`2h`/`3d`,
+`today` and `yesterday`. Lines from the old format carry no date and are kept rather than dropped.
+`--grep` is a case-insensitive substring match, not a regular expression. Both filters apply to the
+tail that `--lines` reads, not to the whole file, and they combine with `--level`.
+
+`logs clear` truncates active files in place (writers keep their descriptor) and removes rotated
+backups; `--source core` also clears `core-crash.log`. It requires `--yes`, accepts
+`--source core|tui|all`, prints one line per file, and with `--json` returns an array of
+`{path, action, bytes, error?}` objects. A file owned by another user is reported as `failed` and
+the command exits `1`.
 
 ---
 
@@ -314,6 +330,7 @@ whoisthat link register
 
 whoisthat doctor
 whoisthat doctor --json
+whoisthat doctor --logs        # add log paths, permissions, rotation, recent errors
 whoisthat ip
 whoisthat ip --json
 whoisthat version --json

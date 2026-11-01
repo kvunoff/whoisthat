@@ -29,6 +29,9 @@ pub enum Popup {
         gid: i32,
         name: String,
     },
+    ConfirmClearLogs {
+        source: crate::ui::logs::LogSource,
+    },
     AddGroup {
         url: String,
         cursor: usize,

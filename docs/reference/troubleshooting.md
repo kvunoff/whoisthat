@@ -23,14 +23,15 @@ Encountering an issue? Consult this troubleshooting matrix and frequently asked 
 | **Logs pane in TUI is completely empty** | Minimum severity filter is hiding messages or core hasn't written events yet. | Press <kbd>f</kbd> in the Logs tab to cycle level filter to `ALL`, or raise **Log level** in Settings. |
 | **App closes when closing terminal** | Application was started in foreground interactive mode without the `-d` flag. | Use `whoisthat run -d <app>` (or `-b`, `--detach`) to spawn as an independent transient systemd user service. |
 
-::: tip First Step When Debugging Any Issue
+:: tip First Step When Debugging Any Issue
 Tail both logs in a separate terminal (or use the Logs tab, <kbd>s</kbd> switches core/tui):
 ```bash
 tail -f ~/.config/whoisthat/core.log ~/.local/share/whoisthat/tui.log
 whoisthat logs --level error
-whoisthat logs --tui --follow
+whoisthat logs --source tui --follow
+whoisthat logs --since 1h --grep error
 ```
-The core forwards exact dial errors, DNS lookup failures, and firewall command exit codes directly to `core.log`. Xray's own stderr is inlined as a single `[ERRO]` line when it exits unexpectedly. A daemon panic lands in `~/.local/share/whoisthat/core-crash.log` (or journald when run as a service).
+The core forwards exact dial errors, DNS lookup failures, and firewall command exit codes directly to `core.log`. Xray's own stderr is inlined as a single `[ERRO]` line when it exits unexpectedly. A daemon panic lands in `~/.local/share/whoisthat/core-crash.log` (or journald when run as a service). If the logs grow too large, `whoisthat logs clear --yes` truncates them and removes rotated backups.
 :::
 
 ---

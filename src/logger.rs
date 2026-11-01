@@ -68,6 +68,29 @@ impl FileLogger {
         self.write_locked(&mut inner, level, args);
     }
 
+    /// Empty `tui.log` and drop its backup. Also resets the byte counter, so
+    /// the next write does not immediately rotate an empty file.
+    pub(crate) fn clear(&self) -> std::io::Result<u64> {
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        if inner.degraded {
+            if let Ok(file) = open_log(&inner.path) {
+                let len = file.metadata().map(|m| m.len()).unwrap_or(0);
+                inner.file = file;
+                inner.written = len;
+                inner.degraded = false;
+            }
+        }
+        let size = inner
+            .file
+            .metadata()
+            .map(|m| m.len())
+            .unwrap_or(inner.written);
+        inner.file.set_len(0)?;
+        inner.written = 0;
+        let _ = fs::remove_file(backup_path(&inner.path));
+        Ok(size)
+    }
+
     fn write_locked(&self, inner: &mut Inner, level: Level, args: std::fmt::Arguments<'_>) {
         // A previous rotation renamed the file but could not create the new
         // one. Keep appending to the old fd (now tui.log.1) and retry reopen
@@ -164,6 +187,12 @@ fn open_log(path: &Path) -> std::io::Result<File> {
         .open(path)?;
     let _ = fs::set_permissions(path, fs::Permissions::from_mode(0o600));
     Ok(file)
+}
+
+fn backup_path(path: &Path) -> PathBuf {
+    let mut name = path.as_os_str().to_os_string();
+    name.push(".1");
+    PathBuf::from(name)
 }
 
 fn rotate(inner: &mut Inner) {
@@ -287,6 +316,56 @@ pub(crate) fn configure_logger(logger: &FileLogger, enabled: bool, level: &str) 
     log::set_max_level(effective);
 }
 
+pub(crate) fn filter_name(filter: LevelFilter) -> &'static str {
+    match filter {
+        LevelFilter::Off => "off",
+        LevelFilter::Error => "error",
+        LevelFilter::Warn => "warn",
+        LevelFilter::Info => "info",
+        LevelFilter::Debug => "debug",
+        LevelFilter::Trace => "trace",
+    }
+}
+
+/// Session-wide override for the TUI logger. `RUST_LOG` wins over
+/// `WHOISTHAT_LOG_LEVEL`. Module filters are not applied: `whoisthat=debug`
+/// only selects the level.
+pub(crate) fn env_log_level() -> Option<(LevelFilter, &'static str)> {
+    for name in ["RUST_LOG", "WHOISTHAT_LOG_LEVEL"] {
+        let Ok(value) = std::env::var(name) else {
+            continue;
+        };
+        if value.trim().is_empty() {
+            continue;
+        }
+        match parse_env_level(&value) {
+            Some(level) => return Some((level, name)),
+            None => log::warn!("ignoring {name}={value:?}; expected error|warn|info|debug|trace"),
+        }
+    }
+    None
+}
+
+fn parse_env_level(value: &str) -> Option<LevelFilter> {
+    for part in value.split(',') {
+        let part = part.trim();
+        if part.is_empty() {
+            continue;
+        }
+        let (target, level) = match part.rsplit_once('=') {
+            Some((target, level)) => (target.trim(), level.trim()),
+            None => ("", part),
+        };
+        if !target.is_empty() && !target.starts_with("whoisthat") {
+            continue;
+        }
+        if let Some(level) = parse_level(level) {
+            return Some(level);
+        }
+    }
+    None
+}
+
 pub(crate) fn install_panic_hook(logger: &'static FileLogger) {
     let default = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
@@ -398,6 +477,39 @@ mod tests {
             std::fs::metadata(&backup).unwrap().permissions().mode() & 0o777,
             0o600
         );
+        std::fs::remove_dir_all(path.parent().unwrap()).ok();
+    }
+
+    #[test]
+    fn parses_env_levels_and_ignores_other_targets() {
+        assert_eq!(parse_env_level("debug"), Some(LevelFilter::Debug));
+        assert_eq!(parse_env_level("whoisthat=info"), Some(LevelFilter::Info));
+        assert_eq!(
+            parse_env_level("hyper=warn,whoisthat::logger=error"),
+            Some(LevelFilter::Error)
+        );
+        assert_eq!(parse_env_level("hyper=warn"), None);
+        assert_eq!(parse_env_level("nonsense"), None);
+        assert_eq!(parse_env_level(""), None);
+    }
+
+    #[test]
+    fn clear_empty_file_resets_the_counter_and_removes_backup() {
+        let (logger, path) = tmp_logger("clear");
+        logger.log_always(Level::Warn, format_args!("before"));
+        let backup = backup_path(&path);
+        std::fs::write(&backup, "old").unwrap();
+
+        let bytes = logger.clear().unwrap();
+        assert!(bytes > 0);
+        assert_eq!(std::fs::metadata(&path).unwrap().len(), 0);
+        assert!(!backup.exists());
+
+        // A cleared file must not count as full: the next record stays in it.
+        logger.log_always(Level::Warn, format_args!("after"));
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.contains("[WARN] after"));
+        assert!(!backup.exists());
         std::fs::remove_dir_all(path.parent().unwrap()).ok();
     }
 }

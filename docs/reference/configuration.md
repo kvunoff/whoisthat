@@ -42,6 +42,7 @@ log_enabled = false
 
 # Minimum log severity: error, warn, info, debug, trace.
 # Applied to the TUI immediately and to the running core over IPC.
+# RUST_LOG / WHOISTHAT_LOG_LEVEL override both log settings for one session.
 log_level = "warn"
 
 # Latency test method: tcp, http-get, http-head
@@ -66,6 +67,8 @@ ipc_socket_path = ""
 # Connect via legacy loopback TCP instead of Unix Domain Socket
 use_tcp = false
 ```
+
+`RUST_LOG` or `WHOISTHAT_LOG_LEVEL` (a bare level or `whoisthat=debug`) overrides `log_enabled`/`log_level` for the current session and applies the level to the core; nothing is written back to this file.
 
 ---
 

@@ -12,11 +12,17 @@ For programmatic monitoring, desktop widget checks, or CI pipelines, output mach
 whoisthat doctor --json
 ```
 
+Add the log-file diagnostics (paths, permissions, rotation, recent errors):
+
+```bash
+whoisthat doctor --logs
+```
+
 ---
 
-## The 6 Diagnostic Categories
+## The Diagnostic Categories
 
-The diagnostic engine performs comprehensive, non-destructive system inspections divided into six categories implemented in `src/doctor/checks.rs`:
+The diagnostic engine performs comprehensive, non-destructive system inspections divided into six categories implemented in `src/doctor/checks.rs`. `--logs` appends a seventh, `Logs`:
 
 ```
 ┌────────────────────────────────────────────────────────┐
@@ -28,6 +34,7 @@ The diagnostic engine performs comprehensive, non-destructive system inspections
 │  4. IPC & Daemon                 (UDS socket, handshake)│
 │  5. DNS & Routing               (sink, pools, hijack, KS)│
 │  6. Configuration & Storage      (DB key, configs, geo) │
+│  7. Logs (--logs)                (paths, perms, rotation)│
 └────────────────────────────────────────────────────────┘
 ```
 
@@ -76,6 +83,14 @@ Reading nftables/iptables state usually requires root. When `whoisthat doctor` r
 * **Encrypted DB**: Checks that `~/.local/share/whoisthat/db/` exists and inspects the key (`~/.config/whoisthat/db.key`, legacy `db/.key`): exactly 32 bytes and mode `0600`. The DB directory mode itself is not asserted.
 * **Geo Assets**: Confirms `geoip.dat` and `geosite.dat` exist in `~/.config/whoisthat/geo/` and warns when `geoip.dat` is under 10 MiB. `geosite.dat` size is reported but not thresholded (the core's own floor is 1 MiB).
 
+### 7. Logs (`--logs`)
+* **`core` / `tui` log**: path (primary or fallback), size, mode and age. A mode broader than `0600` is a warning with a `chmod 600` hint.
+* **Backups**: `tui.log.1` size and mode; for the core, the number and total size of lumberjack's timestamped `core-…log` backups.
+* **Recent errors**: up to five last `[ERRO]`/`[FATA]` lines from the last 256 KiB of each file, truncated for the report.
+* **`core-crash.log`**: warns when the file is non-empty (a previous panic was recorded) and reports the `.1` backup if present. Inspect it before clearing with `whoisthat logs clear --source core --yes`.
+
+This category is opt-in so the default report keeps its existing shape and item count.
+
 ---
 
 ## Machine-Readable JSON Output Format
@@ -84,7 +99,7 @@ When running `whoisthat doctor --json`:
 
 ```json
 {
-  "version": "0.17.0",
+  "version": "0.17.1",
   "core_version": "0.4.1",
   "core_protocol_version": 3,
   "categories": [
@@ -94,7 +109,7 @@ When running `whoisthat doctor --json`:
         {
           "name": "whoisthat",
           "status": "pass",
-          "message": "/usr/local/bin/whoisthat (v0.17.0)"
+          "message": "/usr/local/bin/whoisthat (v0.17.1)"
         },
         {
           "name": "whoisthat-core",

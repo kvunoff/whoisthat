@@ -1,4 +1,4 @@
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 
 /// Top-level CLI definition. Every command that needs the daemon talks to it
 /// through `Session`; local-only commands never do.
@@ -79,13 +79,20 @@ pub enum Command {
     /// Deep links and desktop registration
     Link(LinkArgs),
     /// System diagnostics
-    Doctor,
+    Doctor(DoctorArgs),
     /// Public IPv4/IPv6
     Ip,
     /// Print version
     Version,
     /// Launch an application inside the split-tunnel slice
     Run(RunArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct DoctorArgs {
+    /// Include log files: paths, permissions, rotation, recent errors
+    #[arg(long)]
+    pub logs: bool,
 }
 
 #[derive(Debug, Args)]
@@ -530,17 +537,57 @@ impl LogLevelArg {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum LogSourceArg {
+    Core,
+    Tui,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum ClearSource {
+    Core,
+    Tui,
+    All,
+}
+
 #[derive(Debug, Args)]
 pub struct LogsArgs {
+    #[command(subcommand)]
+    pub cmd: Option<LogsCmd>,
     #[arg(long, default_value_t = 100)]
     pub lines: usize,
     #[arg(long, value_enum, value_name = "error|warn|info|debug|trace")]
     pub level: Option<LogLevelArg>,
     #[arg(long, short = 'f')]
     pub follow: bool,
-    /// Read the TUI log instead of the core log
-    #[arg(long)]
+    /// Read the TUI log instead of the core log (alias for --source tui)
+    #[arg(long, hide = true)]
     pub tui: bool,
+    /// Log source: core (default) or tui
+    #[arg(long, value_enum, value_name = "core|tui")]
+    pub source: Option<LogSourceArg>,
+    /// Only lines at or after this time: YYYY-MM-DD[ HH:MM[:SS]], 30m/2h/3d, today, yesterday
+    #[arg(long, value_name = "TIME")]
+    pub since: Option<String>,
+    /// Case-insensitive substring match
+    #[arg(long, value_name = "PATTERN")]
+    pub grep: Option<String>,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum LogsCmd {
+    /// Truncate active logs and remove rotated backups
+    Clear(ClearLogsArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct ClearLogsArgs {
+    /// What to clear: core (includes crash log), tui, or all
+    #[arg(long, value_enum, default_value = "all", value_name = "core|tui|all")]
+    pub source: ClearSource,
+    /// Confirm the deletion
+    #[arg(long)]
+    pub yes: bool,
 }
 
 #[derive(Debug, Args)]

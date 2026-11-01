@@ -37,6 +37,8 @@ whoisthat settings set theme=tokyo-night log-level=debug
 | **Reset HWID** | Action button | — | Generates a new random hardware identifier. |
 | **User-Agent** | Editable text | `whoisthat/v0.4.1` | Custom HTTP User-Agent header sent with subscription requests. |
 
+`RUST_LOG` or `WHOISTHAT_LOG_LEVEL` (for example `WHOISTHAT_LOG_LEVEL=debug whoisthat`) overrides **Verbose TUI log** and **Log Level** for that session and is never written to `config.toml`; `RUST_LOG` wins when both are set.
+
 ---
 
 ## Modifying Values in the TUI

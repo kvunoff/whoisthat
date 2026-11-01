@@ -8,14 +8,18 @@ From a terminal:
 whoisthat logs --follow
 whoisthat logs --level error
 whoisthat logs --json
-whoisthat logs --tui
+whoisthat logs --source tui
+whoisthat logs --since 1h --grep timeout
+whoisthat logs clear --yes
 ```
 
 ---
 
 ## Log Viewer Features
 
-* **Sources**: the tab shows the core log by default. Press <kbd>s</kbd> to switch to the TUI log and back. Both files use the same line format.
+* **Sources**: the tab shows the core log by default. Press <kbd>s</kbd> to switch to the TUI log and back. Both files use the same line format. From the CLI, `--source core|tui` selects the file (`--tui` is still accepted as an alias).
+* **Search (<kbd>/</kbd>)**: filters the current file by a case-insensitive substring while you type. <kbd>Enter</kbd> keeps the filter, <kbd>Esc</kbd> clears it. Search combines with the level filter and survives a source switch.
+* **Clear (<kbd>c</kbd>)**: after confirmation, truncates the current source and removes its rotated backup (and `core-crash.log` when the source is core).
 * **Live Auto-Scroll**: as new lines arrive the viewer tails the file; auto-scroll pauses when you scroll up and resumes at the bottom.
 * **Scroll Pausing & Navigation**: <kbd>j</kbd>/<kbd>k</kbd> or <kbd>↑</kbd>/<kbd>↓</kbd> scroll line by line, <kbd>Ctrl+U</kbd>/<kbd>Ctrl+D</kbd> by half a page, <kbd>g</kbd> jumps to the top, <kbd>G</kbd> to the bottom.
 * **Level Filtering (<kbd>f</kbd>)**: cycles
@@ -54,7 +58,25 @@ Older files with `12:00:00 [WARN] ...` (core) or `12:00:00 WARN  ...` (TUI) are 
 
 The TUI backup (`tui.log.1`) is removed at startup when older than a week. Files are `0600`; the per-user fallback directory is `0700`.
 
+`core-crash.log` is rotated only at core startup, when it exceeds 1 MB. Crash output is written while the process is dying, so a live rotation cannot bound a dump that ends the process; the startup check bounds crash loops instead.
+
 Xray stderr is no longer left in `/tmp`. When xray exits unexpectedly (including a rejected config), the last ~4 KB of its stderr are written to `core.log` as one `[ERRO]` line and the temporary file is deleted.
+
+---
+
+## Clearing Logs
+
+```bash
+whoisthat logs clear --yes                    # core.log and tui.log
+whoisthat logs clear --source core --yes      # core.log, backups, core-crash.log
+whoisthat logs clear --source tui --yes       # tui.log and tui.log.1
+```
+
+Active files are truncated in place instead of deleted, so the core and TUI keep writing to the same file without a restart. Rotated backups (`.1`, lumberjack's `core-YYYY-….log`) and, for `--source core`, `core-crash.log` are removed. The command requires `--yes`; text output lists every file it touched (`truncated`, `removed`, `failed`) and `--json` also reports `missing` entries.
+
+A log owned by another user (for example a core started with `sudo`) cannot be cleared by an unprivileged client; the command reports `failed: permission denied` and exits `1`. Clearing `core.log` from a terminal while the core is running may make lumberjack rotate once, because its in-memory size counter is not reset by an external truncate; no records are lost.
+
+Clearing `core-crash.log` destroys the only post-mortem record of a daemon crash — inspect it first (`whoisthat doctor --logs` summarizes it).
 
 ---
 
@@ -68,7 +90,9 @@ Xray stderr is no longer left in `/tmp`. When xray exits unexpectedly (including
 | `debug` | + `[DEBU]` (the core treats `trace` as `debug`) |
 | `trace` | + `[TRAC]` (TUI only) |
 
-The TUI's **Verbose TUI log** toggle only affects the TUI file: with `off` the level is capped at `warn` (errors always, warnings unless Log Level is `error`; `info`/`debug` are not written). The core level changes take effect immediately over IPC; `WHOISTHAT_LOG_LEVEL` is used only as the startup value for a daemon launched outside the TUI.
+The TUI's **Verbose TUI log** toggle only affects the TUI file: with `off` the level is capped at `warn` (errors always, warnings unless Log Level is `error`; `info`/`debug` are not written). The core level changes take effect immediately over IPC; a standalone daemon launched outside the TUI uses `WHOISTHAT_LOG_LEVEL` as its startup value (default `info`).
+
+For a one-off session, `RUST_LOG=debug whoisthat` or `WHOISTHAT_LOG_LEVEL=debug whoisthat` turns the TUI file log on at that level and applies the same level to the core. `RUST_LOG` wins; a bare level or `whoisthat=debug` is accepted (module filters are ignored). The override is not written back to `config.toml`, and changing the level in Settings afterwards takes over for the rest of the session.
 
 ---
 

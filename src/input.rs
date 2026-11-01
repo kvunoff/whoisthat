@@ -51,7 +51,7 @@ pub(crate) async fn handle_input(
                 }
 
                 if app.popup.is_some() {
-                    return handle_popup_input(app, client, key).await;
+                    return handle_popup_input(app, client, key, logger).await;
                 }
 
                 return handle_normal_input(app, client, key, cfg, logger, ip_tx).await;
@@ -104,6 +104,22 @@ async fn handle_normal_input(
                 edit_text_field(&mut app.search_input, &mut cur, key);
                 app.search_query = Some(app.search_input.clone());
                 app.cursor = 0;
+            }
+            _ => {}
+        }
+        return false;
+    }
+
+    if app.tab == ActiveTab::Logs && app.logs_state.search_active {
+        match key.code {
+            KeyCode::Esc => app.logs_state.clear_search(),
+            KeyCode::Enter => app.logs_state.finish_search(),
+            KeyCode::Down => app.logs_state.scroll_down(),
+            KeyCode::Up => app.logs_state.scroll_up(),
+            KeyCode::Char(_) | KeyCode::Backspace => {
+                let mut cursor = app.logs_state.search_input.chars().count();
+                edit_text_field(&mut app.logs_state.search_input, &mut cursor, key);
+                app.logs_state.search_changed();
             }
             _ => {}
         }
@@ -958,6 +974,17 @@ async fn handle_normal_input(
         AppAction::LogsCycleSource => {
             app.logs_state.cycle_source();
             app.msg(format!("Log source: {}", app.logs_state.source.label()));
+            false
+        }
+        AppAction::LogsStartSearch => {
+            app.logs_state.start_search();
+            false
+        }
+        AppAction::LogsClear => {
+            app.popup = Some(Popup::ConfirmClearLogs {
+                source: app.logs_state.source,
+            });
+            app.focus = Focus::Popup;
             false
         }
         AppAction::None => false,

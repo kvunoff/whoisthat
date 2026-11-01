@@ -37,7 +37,7 @@ use core_client::protocol::{
 };
 use core_client::{CoreClient, CoreConnection};
 use event_loop::{run_loop, AppEvent};
-use logger::{configure_logger, init_logger, install_panic_hook};
+use logger::{configure_logger, env_log_level, filter_name, init_logger, install_panic_hook};
 use net_info::check_sudo_env;
 use systemd::systemd_is_enabled;
 use ui::App;
@@ -67,6 +67,13 @@ async fn main() -> io::Result<()> {
     install_panic_hook(logger);
 
     let mut cfg = config::load_config();
+    // A deliberate env override turns file logging on for this session and is
+    // not written back, so it also drives the core spawn/IPC level below.
+    let env_override = env_log_level();
+    if let Some((level, _)) = env_override {
+        cfg.log_enabled = true;
+        cfg.log_level = filter_name(level).to_string();
+    }
     if !ui::theme::set_theme(&cfg.theme) {
         let fallback = ui::theme::current_theme().id.to_string();
         log::warn!(
@@ -85,6 +92,9 @@ async fn main() -> io::Result<()> {
         cfg.log_enabled,
         cfg.log_level
     );
+    if let Some((_, var)) = env_override {
+        log::info!("log level overridden by {var} (session only)");
+    }
 
     // Auto-register wit:// desktop scheme handler in background
     deeplink::ensure_desktop_registered();

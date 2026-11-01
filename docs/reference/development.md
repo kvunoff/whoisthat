@@ -191,7 +191,7 @@ authoritative dependency set; update it deliberately with `cargo update`.
 
 ### Verbose Logging
 
-The TUI reads its level from `config.toml` (`log_level`). When `log_enabled = false` the level is capped at `warn` (errors always, warnings unless `log_level = "error"`); enabling **Verbose TUI log** removes the cap and writes the configured level. `WHOISTHAT_LOG_LEVEL` is not read by the Rust logger; the TUI passes it when spawning the core and also applies the level to a running core over IPC (`set-log-level`).
+The TUI reads its level from `config.toml` (`log_level`). When `log_enabled = false` the level is capped at `warn` (errors always, warnings unless `log_level = "error"`); enabling **Verbose TUI log** removes the cap and writes the configured level. `RUST_LOG` or `WHOISTHAT_LOG_LEVEL` (a bare level, or `whoisthat=debug`) overrides both values for the session and applies the same level to the core; the override is not saved to `config.toml`. The TUI also passes the configured level when spawning the core and applies it to a running core over IPC (`set-log-level`).
 
 For a standalone daemon with debug logging:
 
@@ -199,7 +199,7 @@ For a standalone daemon with debug logging:
 WHOISTHAT_LOG_LEVEL=debug ./core/core/whoisthat-core
 ```
 
-Without the variable a standalone daemon uses `info`. `cargo run` with the environment variable alone will not enable TUI debug output (use the Settings toggle or `settings set log-enabled=true log-level=debug`). Debug logs are shared with all clients of the daemon.
+Without the variable a standalone daemon uses `info`. `WHOISTHAT_LOG_LEVEL=debug cargo run` enables TUI debug output for that session. Debug logs are shared with all clients of the daemon.
 
 ### Manual Socket and Daemon Inspection
 
