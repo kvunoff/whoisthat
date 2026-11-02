@@ -145,10 +145,10 @@ whoisthat doctor
 Example successful output:
 
 ```
-WhoisThat Doctor v0.17.3 / core v0.4.3 (protocol 4) — System Diagnostics
+WhoisThat Doctor v0.17.4 / core v0.4.4 (protocol 4) — System Diagnostics
 
 [+] Binaries & Runtimes
-  ✓ whoisthat: /usr/bin/whoisthat (v0.17.3)
+  ✓ whoisthat: /usr/bin/whoisthat (v0.17.4)
   ✓ whoisthat-core: /usr/bin/whoisthat-core
   ✓ xray-core: ~/.local/share/whoisthat/runtimes/xray/v26.10.31/xray (v26.10.31)
   ✓ system tools: ip, getcap, setcap, pkexec available
