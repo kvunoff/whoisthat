@@ -135,11 +135,7 @@ pub async fn mode(g: &GlobalArgs, cmd: ModeCmd) -> Result<(), CliError> {
 
     if matches!(cmd, ModeCmd::Status) {
         let mode = if state.connection_status.connection == "connected" {
-            if state.tun_status {
-                "tun"
-            } else {
-                "proxy"
-            }
+            if state.tun_status { "tun" } else { "proxy" }
         } else {
             "off"
         };
@@ -287,10 +283,10 @@ fn select_target(
 
     if cfg.last_profile_id != 0 {
         for g in &state.groups {
-            if g.group.id == cfg.last_group_id {
-                if let Some(p) = g.profiles.iter().find(|p| p.id == cfg.last_profile_id) {
-                    return Ok((g.group.id, p.id, p.name.clone()));
-                }
+            if g.group.id == cfg.last_group_id
+                && let Some(p) = g.profiles.iter().find(|p| p.id == cfg.last_profile_id)
+            {
+                return Ok((g.group.id, p.id, p.name.clone()));
             }
         }
     }

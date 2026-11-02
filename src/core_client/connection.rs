@@ -5,7 +5,7 @@ use serde::Serialize;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpStream, UnixStream};
 
-use super::protocol::{TcpMessage, EXPECTED_CORE_PROTOCOL_VERSION};
+use super::protocol::{EXPECTED_CORE_PROTOCOL_VERSION, TcpMessage};
 
 /// Maximum accepted IPC frame. Kept in sync with
 /// core/core/lib/TCPServer/TCPServer.go:MaxFrameSize (64 MiB).

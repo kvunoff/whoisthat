@@ -3,21 +3,21 @@ use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use tokio::sync::mpsc;
 
 use crate::config;
-use crate::core_client::protocol::SetHwidData;
 use crate::core_client::CoreClient;
+use crate::core_client::protocol::SetHwidData;
 use crate::core_events::refresh_public_ip;
 use crate::core_spawn::find_core_binary;
 use crate::event_loop::AppEvent;
-use crate::keymap::{resolve_action, AppAction, KeyContext};
-use crate::logger::{configure_logger, FileLogger};
+use crate::keymap::{AppAction, KeyContext, resolve_action};
+use crate::logger::{FileLogger, configure_logger};
 use crate::popups::{handle_popup_input, handle_routing_popup_input};
 use crate::systemd::{setup_systemd_service, teardown_systemd_service};
 use crate::testing::{build_test_list, persist_and_sync_test_config, run_test_batch};
 use crate::text_edit::{edit_text_field, read_clipboard};
-use crate::ui::app::{ActiveTab, Focus, ItemMoveAction, Popup, TreeNode};
-use crate::ui::routing::{rule_to_form, RoutingPopup};
-use crate::ui::settings::next_split_tunnel_mode;
 use crate::ui::App;
+use crate::ui::app::{ActiveTab, Focus, ItemMoveAction, Popup, TreeNode};
+use crate::ui::routing::{RoutingPopup, rule_to_form};
+use crate::ui::settings::next_split_tunnel_mode;
 
 pub(crate) async fn handle_input(
     app: &mut App,
@@ -365,18 +365,18 @@ async fn handle_normal_input(
             if let Some(p) = app.selected_profile() {
                 let _ = client.connect(p.group_id, p.id).await;
                 app.msg("Connecting...");
-            } else if let Some(TreeNode::Group(gi)) = app.tree_node_at(app.cursor) {
-                if let Some(g) = app.groups.get(gi) {
-                    app.toggle_group_collapsed(g.group.id);
-                }
+            } else if let Some(TreeNode::Group(gi)) = app.tree_node_at(app.cursor)
+                && let Some(g) = app.groups.get(gi)
+            {
+                app.toggle_group_collapsed(g.group.id);
             }
             false
         }
         AppAction::ToggleGroup => {
-            if let Some(TreeNode::Group(gi)) = app.tree_node_at(app.cursor) {
-                if let Some(g) = app.groups.get(gi) {
-                    app.toggle_group_collapsed(g.group.id);
-                }
+            if let Some(TreeNode::Group(gi)) = app.tree_node_at(app.cursor)
+                && let Some(g) = app.groups.get(gi)
+            {
+                app.toggle_group_collapsed(g.group.id);
             }
             false
         }
@@ -408,13 +408,13 @@ async fn handle_normal_input(
                 return false;
             }
             let clip = read_clipboard();
-            if let Some(text) = clip {
-                if !text.is_empty() {
-                    let gid = app.current_group().map(|g| g.group.id).unwrap_or(0);
-                    let _ = client.add_profiles(&text, gid).await;
-                    app.msg("Importing from clipboard...");
-                    return false;
-                }
+            if let Some(text) = clip
+                && !text.is_empty()
+            {
+                let gid = app.current_group().map(|g| g.group.id).unwrap_or(0);
+                let _ = client.add_profiles(&text, gid).await;
+                app.msg("Importing from clipboard...");
+                return false;
             }
             app.popup = Some(Popup::Import {
                 input: String::new(),
@@ -432,11 +432,11 @@ async fn handle_normal_input(
             false
         }
         AppAction::UpdateSubscription => {
-            if let Some(g) = app.current_group() {
-                if !g.group.subscription_url.is_empty() {
-                    let _ = client.update_subscription(g.group.id).await;
-                    app.msg("Updating subscription...");
-                }
+            if let Some(g) = app.current_group()
+                && !g.group.subscription_url.is_empty()
+            {
+                let _ = client.update_subscription(g.group.id).await;
+                app.msg("Updating subscription...");
             }
             false
         }

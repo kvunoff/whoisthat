@@ -1,15 +1,15 @@
+use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders, Paragraph};
-use ratatui::Frame;
 
 use super::helpers::*;
 use super::state::App;
 use super::types::*;
 use crate::ui::logs::render_logs;
 use crate::ui::routing::{render_routing_popup, render_routing_tab};
-use crate::ui::settings::{render_settings, SettingsValues};
+use crate::ui::settings::{SettingsValues, render_settings};
 use crate::ui::theme::*;
 use crate::ui::traffic::render_traffic_tab;
 
@@ -383,8 +383,8 @@ impl App {
 mod tests {
     use super::*;
     use crate::core_client::protocol::TestConfig;
-    use ratatui::backend::TestBackend;
     use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
 
     fn test_app() -> App {
         App::new(

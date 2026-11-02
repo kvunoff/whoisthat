@@ -390,19 +390,19 @@ pub async fn run_deeplink_action(action: DeepLinkAction) -> Result<(), Box<dyn s
                         }
                     }
                     "subscription-updated" => {
-                        if let Ok(sub) = serde_json::from_value::<SubscriptionUpdated>(msg.data) {
-                            if group_id.is_none() || group_id == Some(sub.group_id) {
-                                profiles_count = Some(sub.profiles.len());
-                                break;
-                            }
+                        if let Ok(sub) = serde_json::from_value::<SubscriptionUpdated>(msg.data)
+                            && (group_id.is_none() || group_id == Some(sub.group_id))
+                        {
+                            profiles_count = Some(sub.profiles.len());
+                            break;
                         }
                     }
                     "warn" => {
-                        if let Ok(w) = serde_json::from_value::<Warning>(msg.data) {
-                            if w.key.contains("subscription") || w.key.contains("add-group") {
-                                warning_msg = Some(w.content);
-                                break;
-                            }
+                        if let Ok(w) = serde_json::from_value::<Warning>(msg.data)
+                            && (w.key.contains("subscription") || w.key.contains("add-group"))
+                        {
+                            warning_msg = Some(w.content);
+                            break;
                         }
                     }
                     _ => {}
@@ -598,32 +598,30 @@ pub async fn run_deeplink_action(action: DeepLinkAction) -> Result<(), Box<dyn s
 
                 match msg.msg.as_str() {
                     "subscription-updated" => {
-                        if let Ok(sub) = serde_json::from_value::<SubscriptionUpdated>(msg.data) {
-                            if sub.group_id == target_gid {
-                                if let Some(active) =
-                                    sub.routing_profiles.iter().find(|rp| rp.active)
-                                {
-                                    profile_name = Some(active.name.clone());
-                                }
-                                success = true;
-                                break;
+                        if let Ok(sub) = serde_json::from_value::<SubscriptionUpdated>(msg.data)
+                            && sub.group_id == target_gid
+                        {
+                            if let Some(active) = sub.routing_profiles.iter().find(|rp| rp.active) {
+                                profile_name = Some(active.name.clone());
                             }
+                            success = true;
+                            break;
                         }
                     }
                     "group-updated" => {
-                        if let Ok(g) = serde_json::from_value::<Group>(msg.data) {
-                            if g.id == target_gid {
-                                success = true;
-                                break;
-                            }
+                        if let Ok(g) = serde_json::from_value::<Group>(msg.data)
+                            && g.id == target_gid
+                        {
+                            success = true;
+                            break;
                         }
                     }
                     "warn" => {
-                        if let Ok(w) = serde_json::from_value::<Warning>(msg.data) {
-                            if w.key.contains("happ") || w.key.contains("routing") {
-                                warn_msg = Some(w.content);
-                                break;
-                            }
+                        if let Ok(w) = serde_json::from_value::<Warning>(msg.data)
+                            && (w.key.contains("happ") || w.key.contains("routing"))
+                        {
+                            warn_msg = Some(w.content);
+                            break;
                         }
                     }
                     _ => {}
@@ -701,7 +699,9 @@ pub fn register_desktop_handler() -> Result<(), Box<dyn std::error::Error>> {
             println!("✓ Registered whoisthat.desktop as default handler for x-scheme-handler/wit");
         }
         _ => {
-            println!("⚠ Note: 'xdg-mime default whoisthat.desktop x-scheme-handler/wit' returned non-zero (xdg-utils might not be installed)");
+            println!(
+                "⚠ Note: 'xdg-mime default whoisthat.desktop x-scheme-handler/wit' returned non-zero (xdg-utils might not be installed)"
+            );
         }
     }
 

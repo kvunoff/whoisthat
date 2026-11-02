@@ -44,10 +44,9 @@ pub(crate) fn find_core_binary() -> String {
 }
 
 pub(crate) fn has_cap_net(path: &std::path::Path) -> bool {
-    if let Ok(output) = Command::new("getcap").arg(path).output() {
-        String::from_utf8_lossy(&output.stdout).contains("cap_net_admin")
-    } else {
-        false
+    match Command::new("getcap").arg(path).output() {
+        Ok(output) => String::from_utf8_lossy(&output.stdout).contains("cap_net_admin"),
+        _ => false,
     }
 }
 
@@ -90,7 +89,12 @@ pub(crate) fn ensure_core_caps(core_path: &str) {
                     core.display()
                 );
             } else {
-                eprintln!("whoisthat: pkexec reported success but caps missing on {}. Run: sudo setcap {} {}", core.display(), caps, core.display());
+                eprintln!(
+                    "whoisthat: pkexec reported success but caps missing on {}. Run: sudo setcap {} {}",
+                    core.display(),
+                    caps,
+                    core.display()
+                );
             }
         }
         _ => eprintln!(

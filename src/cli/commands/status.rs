@@ -207,10 +207,10 @@ pub async fn run(g: &GlobalArgs, short: bool, watch: bool) -> Result<(), CliErro
     let state_timeout = Duration::from_secs(g.timeout.unwrap_or(3));
     let state: ApplicationState = tokio::time::timeout(state_timeout, async {
         while let Ok(msg) = read_half.recv().await {
-            if msg.msg == "application-state" {
-                if let Ok(state) = serde_json::from_value::<ApplicationState>(msg.data) {
-                    return Ok(state);
-                }
+            if msg.msg == "application-state"
+                && let Ok(state) = serde_json::from_value::<ApplicationState>(msg.data)
+            {
+                return Ok(state);
             }
         }
         Err(CliError::Core("failed to receive application state".into()))
@@ -224,11 +224,11 @@ pub async fn run(g: &GlobalArgs, short: bool, watch: bool) -> Result<(), CliErro
         // Give the 1 Hz stats collector a chance to produce a first sample.
         let _ = tokio::time::timeout(Duration::from_millis(1100), async {
             while let Ok(msg) = read_half.recv().await {
-                if msg.msg == "traffic-stats" {
-                    if let Ok(stats) = serde_json::from_value::<TrafficStats>(msg.data) {
-                        current.update_traffic(&stats);
-                        break;
-                    }
+                if msg.msg == "traffic-stats"
+                    && let Ok(stats) = serde_json::from_value::<TrafficStats>(msg.data)
+                {
+                    current.update_traffic(&stats);
+                    break;
                 }
             }
         })

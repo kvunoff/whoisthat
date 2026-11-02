@@ -13,7 +13,7 @@ use crate::logfmt::{self, Level};
 
 use super::super::args::{ClearLogsArgs, ClearSource, GlobalArgs, LogSourceArg, LogsArgs, LogsCmd};
 use super::super::error::CliError;
-use super::super::output::{format_bytes, Out};
+use super::super::output::{Out, format_bytes};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Parsed {
@@ -48,22 +48,22 @@ impl Filter {
     }
 
     fn passes(&self, line: &Parsed) -> bool {
-        if let Some(min) = self.min {
-            if !line.level.is_some_and(|level| level <= min) {
-                return false;
-            }
+        if let Some(min) = self.min
+            && !line.level.is_some_and(|level| level <= min)
+        {
+            return false;
         }
         // Lines from the old format carry no date; keep them rather than
         // silently dropping data that might be recent.
-        if let Some(since) = self.since {
-            if line.at.is_some_and(|at| at < since) {
-                return false;
-            }
+        if let Some(since) = self.since
+            && line.at.is_some_and(|at| at < since)
+        {
+            return false;
         }
-        if let Some(grep) = &self.grep {
-            if !line.raw.to_lowercase().contains(grep) {
-                return false;
-            }
+        if let Some(grep) = &self.grep
+            && !line.raw.to_lowercase().contains(grep)
+        {
+            return false;
         }
         true
     }
@@ -322,13 +322,16 @@ impl Tail {
             .map(|m| inode(&m) != self.inode || m.len() < self.offset)
             .unwrap_or(true);
         if rotated {
-            if let Ok(file) = File::open(&self.path) {
-                self.inode = file.metadata().map(|m| inode(&m)).unwrap_or(self.inode);
-                self.offset = 0;
-                self.pending.clear();
-                self.file = file;
-            } else {
-                return Vec::new();
+            match File::open(&self.path) {
+                Ok(file) => {
+                    self.inode = file.metadata().map(|m| inode(&m)).unwrap_or(self.inode);
+                    self.offset = 0;
+                    self.pending.clear();
+                    self.file = file;
+                }
+                _ => {
+                    return Vec::new();
+                }
             }
         }
 

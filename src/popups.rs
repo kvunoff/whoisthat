@@ -1,14 +1,14 @@
 use crossterm::event::{self, KeyCode, KeyModifiers};
 
-use crate::core_client::protocol::{ProfileID, SetHwidData};
 use crate::core_client::CoreClient;
+use crate::core_client::protocol::{ProfileID, SetHwidData};
 use crate::logfile::ClearAction;
 use crate::logger::FileLogger;
 use crate::text_edit::edit_text_field;
+use crate::ui::App;
 use crate::ui::app::{ActiveTab, Focus, Popup};
 use crate::ui::logs::LogSource;
-use crate::ui::routing::{form_to_rule, toggle_preset, RoutingPopup, ROUTING_PRESETS};
-use crate::ui::App;
+use crate::ui::routing::{ROUTING_PRESETS, RoutingPopup, form_to_rule, toggle_preset};
 
 pub(crate) async fn handle_popup_input(
     app: &mut App,

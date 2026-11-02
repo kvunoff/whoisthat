@@ -1,4 +1,4 @@
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::config;
 use crate::core_client::protocol::*;
@@ -619,11 +619,13 @@ fn core_value(state: &ApplicationState, cfg: &config::AppConfig, key: &str) -> O
         "autoconnect-mode" => json!(state.autoconnect.mode),
         "tun-name" => json!(state.tun_name),
         "hwid-enabled" => json!(state.hwid_info.as_ref().map(|h| h.enabled).unwrap_or(false)),
-        "user-agent" => json!(state
-            .hwid_info
-            .as_ref()
-            .map(|h| h.user_agent.clone())
-            .unwrap_or_default()),
+        "user-agent" => json!(
+            state
+                .hwid_info
+                .as_ref()
+                .map(|h| h.user_agent.clone())
+                .unwrap_or_default()
+        ),
         "test.concurrency" => json!(state.test_config.concurrency),
         "test.timeout" => json!(state.test_config.timeout_seconds),
         "test.samples" => json!(state.test_config.samples_per_test),

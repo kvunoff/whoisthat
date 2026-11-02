@@ -8,7 +8,7 @@ use crate::core_client::protocol::*;
 use super::super::args::GlobalArgs;
 use super::super::client::{Reply, Session};
 use super::super::error::CliError;
-use super::super::output::{redact_url, Out};
+use super::super::output::{Out, redact_url};
 use super::super::resolve;
 
 pub async fn list(

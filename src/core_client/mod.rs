@@ -6,4 +6,4 @@ pub mod query;
 
 pub use commands::CoreClient;
 pub use connection::CoreConnection;
-pub use dispatch::{spawn_read_loop, CoreEvent};
+pub use dispatch::{CoreEvent, spawn_read_loop};

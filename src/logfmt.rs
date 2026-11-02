@@ -60,32 +60,34 @@ pub struct LogLine<'a> {
 }
 
 pub fn parse(line: &str) -> LogLine<'_> {
-    if let Some(ts) = line.get(0..19) {
-        if looks_like_timestamp(ts) && line.as_bytes().get(19) == Some(&b' ') {
-            let rest = line[19..].trim_start();
-            let (level, tag, message) = split_level(rest);
-            return LogLine {
-                timestamp: Some(ts),
-                time: &ts[11..19],
-                level,
-                tag,
-                message,
-            };
-        }
+    if let Some(ts) = line.get(0..19)
+        && looks_like_timestamp(ts)
+        && line.as_bytes().get(19) == Some(&b' ')
+    {
+        let rest = line[19..].trim_start();
+        let (level, tag, message) = split_level(rest);
+        return LogLine {
+            timestamp: Some(ts),
+            time: &ts[11..19],
+            level,
+            tag,
+            message,
+        };
     }
 
-    if let Some(ts) = line.get(0..8) {
-        if looks_like_time(ts) && line.as_bytes().get(8) == Some(&b' ') {
-            let rest = line[9..].trim_start();
-            let (level, tag, message) = split_level(rest);
-            return LogLine {
-                timestamp: None,
-                time: ts,
-                level,
-                tag,
-                message,
-            };
-        }
+    if let Some(ts) = line.get(0..8)
+        && looks_like_time(ts)
+        && line.as_bytes().get(8) == Some(&b' ')
+    {
+        let rest = line[9..].trim_start();
+        let (level, tag, message) = split_level(rest);
+        return LogLine {
+            timestamp: None,
+            time: ts,
+            level,
+            tag,
+            message,
+        };
     }
 
     let (level, tag, message) = split_level(line);
@@ -100,12 +102,11 @@ pub fn parse(line: &str) -> LogLine<'_> {
 
 fn split_level(rest: &str) -> (Option<Level>, Option<&str>, &str) {
     let rest = rest.trim_start();
-    if let Some(stripped) = rest.strip_prefix('[') {
-        if let Some((tag, tail)) = stripped.split_once(']') {
-            if let Some(level) = Level::from_tag(tag) {
-                return (Some(level), Some(tag), tail.trim_start());
-            }
-        }
+    if let Some(stripped) = rest.strip_prefix('[')
+        && let Some((tag, tail)) = stripped.split_once(']')
+        && let Some(level) = Level::from_tag(tag)
+    {
+        return (Some(level), Some(tag), tail.trim_start());
     }
 
     // Older TUI format: `WARN  message`.

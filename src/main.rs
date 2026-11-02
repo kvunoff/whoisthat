@@ -25,7 +25,7 @@ use std::time::Duration;
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture},
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use io::Write;
 use ratatui::backend::CrosstermBackend;
@@ -33,10 +33,10 @@ use tokio::sync::mpsc;
 
 use crate::core_events::refresh_public_ip;
 use core_client::protocol::{
-    ApplicationState, DieData, GetApplicationStateData, TestConfig, EXPECTED_CORE_PROTOCOL_VERSION,
+    ApplicationState, DieData, EXPECTED_CORE_PROTOCOL_VERSION, GetApplicationStateData, TestConfig,
 };
 use core_client::{CoreClient, CoreConnection};
-use event_loop::{run_loop, AppEvent};
+use event_loop::{AppEvent, run_loop};
 use logger::{configure_logger, env_log_level, filter_name, init_logger, install_panic_hook};
 use net_info::check_sudo_env;
 use systemd::systemd_is_enabled;
@@ -46,14 +46,14 @@ use ui::App;
 async fn main() -> io::Result<()> {
     let argv: Vec<String> = std::env::args().collect();
 
-    if let Some(cmd) = argv.get(1).map(String::as_str) {
-        if cmd.starts_with("wit://") || cmd.starts_with("wit:") {
-            match deeplink::run_deeplink(cmd).await {
-                Ok(_) => std::process::exit(0),
-                Err(e) => {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
+    if let Some(cmd) = argv.get(1).map(String::as_str)
+        && (cmd.starts_with("wit://") || cmd.starts_with("wit:"))
+    {
+        match deeplink::run_deeplink(cmd).await {
+            Ok(_) => std::process::exit(0),
+            Err(e) => {
+                eprintln!("Error: {e}");
+                std::process::exit(1);
             }
         }
     }
@@ -156,11 +156,11 @@ async fn main() -> io::Result<()> {
             }
             tokio::time::sleep(Duration::from_millis(1000)).await;
         }
-        if let Some(state) = query_core_state(&endpoint).await {
-            if !state.core_version.is_empty() {
-                cfg.core_version = state.core_version;
-                config::save_config(&cfg);
-            }
+        if let Some(state) = query_core_state(&endpoint).await
+            && !state.core_version.is_empty()
+        {
+            cfg.core_version = state.core_version;
+            config::save_config(&cfg);
         }
     }
     let (read_half, write_half) = CoreConnection::connect_split(&endpoint)
@@ -218,12 +218,11 @@ async fn main() -> io::Result<()> {
     let input_tx2 = input_tx.clone();
     tokio::spawn(async move {
         loop {
-            if let Ok(true) = event::poll(Duration::from_millis(100)) {
-                if let Ok(ev) = event::read() {
-                    if input_tx2.send(AppEvent::Input(ev)).is_err() {
-                        break;
-                    }
-                }
+            if let Ok(true) = event::poll(Duration::from_millis(100))
+                && let Ok(ev) = event::read()
+                && input_tx2.send(AppEvent::Input(ev)).is_err()
+            {
+                break;
             }
         }
     });

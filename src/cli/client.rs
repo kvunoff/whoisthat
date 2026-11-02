@@ -1,8 +1,8 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 
 use crate::config::{self, AppConfig};
 use crate::core_client::connection::{CoreConnection, CoreReadHalf, CoreWriteHalf, Endpoint};
@@ -138,19 +138,19 @@ impl Session {
                 .map_err(|_| CliError::Timeout(format!("waiting for reply to '{id}'")))??;
 
             if msg.msg == "warn" {
-                if msg.id.as_deref() == Some(id) {
-                    if let Ok(w) = serde_json::from_value::<Warning>(msg.data.clone()) {
-                        let fatal = match &reply {
-                            Reply::Id { fatal_warns, .. } => fatal_warns.contains(&w.key.as_str()),
-                            Reply::Broadcast { fatal_warns, .. } => {
-                                fatal_warns.contains(&w.key.as_str())
-                            }
-                        };
-                        if fatal {
-                            return Err(CliError::Core(w.content));
+                if msg.id.as_deref() == Some(id)
+                    && let Ok(w) = serde_json::from_value::<Warning>(msg.data.clone())
+                {
+                    let fatal = match &reply {
+                        Reply::Id { fatal_warns, .. } => fatal_warns.contains(&w.key.as_str()),
+                        Reply::Broadcast { fatal_warns, .. } => {
+                            fatal_warns.contains(&w.key.as_str())
                         }
-                        self.warnings.push(w);
+                    };
+                    if fatal {
+                        return Err(CliError::Core(w.content));
                     }
+                    self.warnings.push(w);
                 }
                 continue;
             }
