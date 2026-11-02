@@ -136,6 +136,7 @@ export default withMermaid(defineConfig({
           { text: 'TCP & IPC Wire Protocol', link: '/reference/protocol' },
           { text: 'Configuration Files', link: '/reference/configuration' },
           { text: 'Routing Precedence', link: '/reference/routing-precedence' },
+          { text: 'Happ Format Reference', link: '/reference/happ-format' },
           { text: 'Doctor Diagnostics', link: '/reference/doctor' },
           { text: 'Troubleshooting & FAQ', link: '/reference/troubleshooting' },
           { text: 'Threat Model & Limitations', link: '/reference/threat-model' },
