@@ -20,6 +20,13 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// Test seams: the real values need privileges (ambient caps) or a downloaded
+// binary, neither of which is available in unit tests.
+var (
+	ambientCaps = []uintptr{unix.CAP_NET_ADMIN, unix.CAP_NET_RAW}
+	getXrayBin  = func() (string, error) { return xraymgr.GetManager().GetXrayBin() }
+)
+
 type XrayCore struct {
 	mu             sync.Mutex
 	cmd            *exec.Cmd
@@ -92,7 +99,7 @@ func (x *XrayCore) Start(stdinPipe []byte, assetDir string) error {
 		x.channel_closed = false
 	}
 
-	xraybin, err := xraymgr.GetManager().GetXrayBin()
+	xraybin, err := getXrayBin()
 	if err != nil {
 		return fmt.Errorf("failed to start xray: %w", err)
 	}
@@ -117,7 +124,7 @@ func (x *XrayCore) Start(stdinPipe []byte, assetDir string) error {
 	}
 
 	cmd.SysProcAttr = &syscall.SysProcAttr{
-		AmbientCaps: []uintptr{unix.CAP_NET_ADMIN, unix.CAP_NET_RAW},
+		AmbientCaps: ambientCaps,
 	}
 
 	if uid := utils.DedicatedUid(); uid > 0 {
