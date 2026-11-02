@@ -33,6 +33,12 @@ jobs:
         run: cargo clippy --all-targets --no-deps -- -D warnings
       - name: Test
         run: cargo test
+      - name: Security audit
+        # Pinned musl build: no toolchain compile, no extra action permissions.
+        run: |
+          curl -sSfL https://github.com/rustsec/rustsec/releases/download/cargo-audit/v0.22.2/cargo-audit-x86_64-unknown-linux-musl-v0.22.2.tgz \
+            | tar xz -C /tmp
+          /tmp/cargo-audit-x86_64-unknown-linux-musl-v0.22.2/cargo-audit audit
 
   go:
     name: Go (vet + test)
@@ -69,9 +75,6 @@ jobs:
         run: go mod tidy -diff
       - name: Vulnerability scan
         working-directory: core/core
-        # Informational: transitive Xray/grpc advisories should not block a
-        # release, but the report is visible in the job log.
-        continue-on-error: true
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
 
   shell:
