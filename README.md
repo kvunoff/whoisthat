@@ -156,6 +156,7 @@ Full, comprehensive documentation with technical deep-dives, configuration guide
 
 - **[GNOME Shell Extension](https://github.com/kvunoff/whoisthat-extension)** — Top-bar status badge, real-time speed monitor, and quick controls.
 - **[Deep Links (`wit://`)](https://docs.tuqise.com/integrations/deeplinks)** — One-click profile and subscription imports directly from web browsers.
+- **[whoisthat-core](https://github.com/kvunoff/whoisthat-core)** — Standalone mirror of the Go daemon (`core/core`), rebuilt on every core change and `core-v*` tag.
 
 ---
 

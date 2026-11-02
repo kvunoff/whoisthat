@@ -25,6 +25,12 @@ cargo run
 Every time you run `go build`, Linux assigns a new filesystem **inode** to the output binary, which automatically wipes any previously attached file capabilities (`setcap`). Remember to reapply capabilities after recompiling `whoisthat-core`. The TUI detects this on startup and offers a one-time `pkexec` prompt if capabilities are missing, but only in an interactive terminal and only when TUN autostart is configured; otherwise it points at the `setcap` command.
 :::
 
+::: tip Standalone core repository
+`core/core` is a self-contained Go module (`module whoisthat-core`). It is mirrored to
+[kvunoff/whoisthat-core](https://github.com/kvunoff/whoisthat-core) on every change under `core/core/**` and on every
+`core-v*` tag. That repository is generated and read-only: open issues and pull requests here.
+:::
+
 ---
 
 ## Annotated File Structure
