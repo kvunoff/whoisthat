@@ -77,6 +77,7 @@ export default withMermaid(defineConfig({
           { text: 'Introduction', link: '/' },
           { text: 'Installation', link: '/guide/installation' },
           { text: 'Quick Start', link: '/guide/quick-start' },
+          { text: 'Recipes & Common Setups', link: '/guide/recipes' },
           { text: 'Upgrading & Uninstalling', link: '/guide/upgrading' },
           { text: 'Repair & Recovery', link: '/guide/recovery' }
         ]
