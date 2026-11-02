@@ -182,6 +182,7 @@ make test         # cargo test + go test ./... + scripts/bump.test.sh
 make lint         # rustfmt --check, clippy, go vet, gofmt
 make integration  # privileged netns suite
 make docs         # VitePress build
+make docs-check   # docs names/links/versions vs the code
 make install      # install both binaries and set capabilities
 ```
 
@@ -285,6 +286,7 @@ Continuous integration is handled via GitHub Actions in `.github/workflows/`:
   * Shell: `shellcheck -S warning install.sh scripts/install.test.sh scripts/check-versions.sh scripts/bump.sh scripts/bump.test.sh`, then `./scripts/install.test.sh`.
   * Bump driver: `./scripts/bump.test.sh` (separate job).
   * Version consistency: `./scripts/check-versions.sh` (Cargo/package/PKGBUILD/.SRCINFO/docs/Xray pins).
+  * Docs: `npm run docs:build` plus `./scripts/check-docs.sh` (IPC/config/CLI names, links, anchors, toolchain strings).
   * Integration: privileged netns suite (`-tags=integration`).
 * **`aur-publish.yml`**: Triggers on every `v*` tag push:
   1. Parses version from tag and runs `./scripts/check-versions.sh --tag <tag>`.

@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { defineConfig } from 'vitepress'
+import { withMermaid } from 'vitepress-plugin-mermaid'
 
 function getClientVersion(): string {
   try {
@@ -20,7 +21,7 @@ function getClientVersion(): string {
 
 const clientVersion = getClientVersion()
 
-export default defineConfig({
+export default withMermaid(defineConfig({
   title: 'WhoisThat',
   description: 'Modern terminal-based VPN client for Linux. Rust TUI frontend with a Go engine backed by Xray-core.',
   base: '/',
@@ -74,7 +75,9 @@ export default defineConfig({
         items: [
           { text: 'Introduction', link: '/' },
           { text: 'Installation', link: '/guide/installation' },
-          { text: 'Quick Start', link: '/guide/quick-start' }
+          { text: 'Quick Start', link: '/guide/quick-start' },
+          { text: 'Upgrading & Uninstalling', link: '/guide/upgrading' },
+          { text: 'Repair & Recovery', link: '/guide/recovery' }
         ]
       },
       {
@@ -132,6 +135,8 @@ export default defineConfig({
           { text: 'Configuration Files', link: '/reference/configuration' },
           { text: 'Doctor Diagnostics', link: '/reference/doctor' },
           { text: 'Troubleshooting & FAQ', link: '/reference/troubleshooting' },
+          { text: 'Threat Model & Limitations', link: '/reference/threat-model' },
+          { text: 'Reporting a Bug', link: '/reference/reporting' },
           { text: 'Development & Testing', link: '/reference/development' }
         ]
       }
@@ -155,4 +160,4 @@ export default defineConfig({
       text: 'Edit this page on GitHub'
     }
   }
-})
+}))
