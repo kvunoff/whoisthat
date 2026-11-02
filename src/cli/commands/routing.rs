@@ -30,15 +30,20 @@ enum Action {
     Disable,
 }
 
-/// Routing selection the core will apply, mirroring `db.ResolveRouting`:
-/// `auto` prefers a usable Happ profile and falls back to manual rules,
-/// `subscription` never falls back to manual, `manual` ignores Happ.
+/// Routing selection the core will apply for URI subscriptions, mirroring
+/// `db.ResolveRouting`: `auto` prefers a usable Happ profile and falls back to
+/// manual rules, `subscription` never falls back to manual, `manual` ignores
+/// Happ. JSON subscriptions are different: the core always loads manual rules
+/// on top of the provider config, so `json` overrides the source to manual.
 struct EffectiveRouting {
     mode: &'static str,
     source: &'static str, // "happ" | "manual" | "lan"
     manual_source: &'static str,
     profile: Option<String>,
     rules: usize,
+    /// JSON subscriptions always use manual rules on top of the provider
+    /// baseline, regardless of an active Happ profile.
+    json: bool,
 }
 
 fn effective_routing(groups: &[GroupWithProfiles], group_id: i32) -> EffectiveRouting {
@@ -49,6 +54,7 @@ fn effective_routing(groups: &[GroupWithProfiles], group_id: i32) -> EffectiveRo
             manual_source: "global",
             profile: None,
             rules: 0,
+            json: false,
         };
     }
     let Some(group) = groups.iter().find(|g| g.group.id == group_id) else {
@@ -58,6 +64,7 @@ fn effective_routing(groups: &[GroupWithProfiles], group_id: i32) -> EffectiveRo
             manual_source: "global",
             profile: None,
             rules: 0,
+            json: false,
         };
     };
     let mode = match group.group.routing_mode.as_str() {
@@ -79,40 +86,59 @@ fn effective_routing(groups: &[GroupWithProfiles], group_id: i32) -> EffectiveRo
     // shortcut: readiness comes from the profile state, so geo files deleted
     // after a successful download are not detected here (the core would fall back).
     let usable = active.filter(|p| p.state != "error" && p.rules_count > 0);
-    let source = match mode {
-        "manual" => "manual",
-        "subscription" => {
-            if usable.is_some() {
-                "happ"
-            } else {
-                "lan"
+    let json = group.group.subscription_format == "json";
+    let source = if json {
+        // mainproxy always loads LoadEffectiveManualRouting for managed JSON
+        // profiles and prepends it to the provider config.
+        "manual"
+    } else {
+        match mode {
+            "manual" => "manual",
+            "subscription" => {
+                if usable.is_some() {
+                    "happ"
+                } else {
+                    "lan"
+                }
+            }
+            _ => {
+                if usable.is_some() {
+                    "happ"
+                } else {
+                    "manual"
+                }
             }
         }
-        _ => {
-            if usable.is_some() {
-                "happ"
-            } else {
-                "manual"
-            }
-        }
+    };
+    let (profile, rules) = if json {
+        // Happ rules are not used for JSON groups; do not expose them in the
+        // effective-routing payload.
+        (None, 0)
+    } else {
+        (
+            active.map(|p| p.name.clone()),
+            usable.map_or(0, |p| p.rules_count),
+        )
     };
     EffectiveRouting {
         mode,
         source,
         manual_source,
-        profile: active.map(|p| p.name.clone()),
-        rules: usable.map_or(0, |p| p.rules_count),
+        profile,
+        rules,
+        json,
     }
 }
 
 fn manual_shadowed(eff: &EffectiveRouting) -> bool {
-    eff.mode == "subscription" || (eff.mode == "auto" && eff.source == "happ")
+    !eff.json && (eff.mode == "subscription" || (eff.mode == "auto" && eff.source == "happ"))
 }
 
 /// Groups that use the global manual rules and currently route through Happ.
 fn global_shadowed_groups(groups: &[GroupWithProfiles]) -> Vec<String> {
     groups
         .iter()
+        .filter(|g| g.group.subscription_format != "json")
         .filter(|g| g.group.manual_routing_mode != "custom")
         .filter(|g| manual_shadowed(&effective_routing(groups, g.group.id)))
         .map(|g| g.group.name.clone())
@@ -120,6 +146,9 @@ fn global_shadowed_groups(groups: &[GroupWithProfiles]) -> Vec<String> {
 }
 
 fn describe_effective(eff: &EffectiveRouting) -> String {
+    if eff.json {
+        return "Provider JSON baseline + manual rules (manual first)".to_string();
+    }
     match eff.source {
         "happ" => format!(
             "Happ \"{}\" (rules: {})",
@@ -196,6 +225,7 @@ async fn list(g: &GlobalArgs, group: Option<&str>) -> Result<(), CliError> {
             "manual_source": eff.manual_source,
             "profile": eff.profile,
             "profile_rules": eff.rules,
+            "json": eff.json,
         });
         payload["manual_shadowed"] = json!(shadowed);
         if group_id == 0 {
@@ -766,6 +796,21 @@ mod tests {
     }
 
     #[test]
+    fn json_group_uses_manual_rules_even_with_happ() {
+        let mut g = group(1, "auto", "custom", Some(happ("ready", 1)));
+        g.group.subscription_format = "json".into();
+        let groups = vec![g];
+        let eff = effective_routing(&groups, 1);
+        assert!(eff.json);
+        assert_eq!(eff.source, "manual");
+        assert!(eff.profile.is_none());
+        assert_eq!(eff.rules, 0);
+        assert!(!manual_shadowed(&eff));
+        assert!(shadow_warning(&groups, 1).is_none());
+        assert!(describe_effective(&eff).contains("Provider JSON baseline"));
+    }
+
+    #[test]
     fn manual_mode_ignores_happ() {
         let groups = vec![group(1, "manual", "custom", Some(happ("ready", 3)))];
         let eff = effective_routing(&groups, 1);
@@ -798,12 +843,15 @@ mod tests {
     }
 
     #[test]
-    fn global_shadowing_skips_custom_and_manual_groups() {
+    fn global_shadowing_skips_custom_manual_and_json_groups() {
+        let mut json = group(5, "subscription", "global", Some(happ("ready", 1)));
+        json.group.subscription_format = "json".into();
         let groups = vec![
             group(1, "auto", "global", Some(happ("ready", 1))),
             group(2, "auto", "custom", Some(happ("ready", 1))),
             group(3, "manual", "global", None),
             group(4, "subscription", "global", None),
+            json,
         ];
         assert_eq!(global_shadowed_groups(&groups), vec!["g1", "g4"]);
         assert!(shadow_warning(&groups, 0).is_some());
