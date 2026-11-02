@@ -87,7 +87,7 @@ whoisthat logs --level error --lines 200
 Install the older release explicitly:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kvunoff/whoisthat/main/install.sh | bash -s -- --branch v0.17.2
+curl -fsSL https://raw.githubusercontent.com/kvunoff/whoisthat/main/install.sh | bash -s -- --branch vX.Y.Z
 ```
 
 AUR users can install an older package version with their helper's downgrade/cache support. When TUI and core versions no longer match the same protocol, the TUI respawns the daemon instead of attaching to it.
