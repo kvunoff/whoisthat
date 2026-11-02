@@ -120,6 +120,7 @@ Get started exploring the documentation:
 
 * **[Installation Guide](/guide/installation)** — Install via quick curl script, Arch Linux AUR (`paru`/`yay`), or build from source.
 * **[Quick Start Tutorial](/guide/quick-start)** — First launch, importing subscriptions, latency testing, and connecting.
+* **[Recipes & Common Setups](/guide/recipes)** — Headless server, proxy-only desktop, per-app bypass, Docker and multi-subscription routing.
 * **[Upgrading & Recovery](/guide/upgrading)** — Update, roll back or uninstall; restore settings and profiles after a failure.
 * **[Architecture Deep-Dive](/architecture/overview)** — Explore the Go daemon, IPC wire framing, and encryption layer.
 * **[TUN Mode & Networking](/networking/tun-mode)** — Learn how rootless TUN, DNS hijacking, and Docker reply conntrack work.
