@@ -55,12 +55,23 @@
 ```bash
 curl -fsSL https://raw.githubusercontent.com/kvunoff/whoisthat/main/install.sh | bash
 ```
+Downloads the prebuilt static binaries from the latest release and verifies
+their SHA-256 checksums. Use `--release vX.Y.Z` to pin a version or
+`--from-source` to build locally.
+
+### Distribution Packages
+Every release ships `.deb` and `.rpm` packages for `amd64` and `arm64`:
+
+```bash
+sudo apt install ./whoisthat_<version>-1_amd64.deb
+sudo dnf install ./whoisthat-<version>-1.x86_64.rpm
+```
 
 ### Arch Linux (AUR)
 ```bash
-paru -S whoisthat
+paru -S whoisthat-bin   # prebuilt binaries
 # or
-yay -S whoisthat
+paru -S whoisthat       # build from source
 ```
 
 ### Build from Source

@@ -207,6 +207,11 @@ The TUI needs **Rust 1.88 or newer** (`Cargo.toml` declares `rust-version`).
 `make build` and `install.sh` build with `--locked`, so `Cargo.lock` is the
 authoritative dependency set; update it deliberately with `cargo update`.
 
+Release assets are static musl builds for `x86_64-unknown-linux-musl` and
+`aarch64-unknown-linux-musl`. Locally install `musl-tools`, add the Rust target,
+and build with `cargo build --release --locked --target <triple>`; the linker and
+static flags live in `.cargo/config.toml`.
+
 ---
 
 ## Runtime Debugging & Inspection
@@ -268,15 +273,19 @@ Then run:
 | Major: `0.15.1 → 1.0.0` | `./scripts/bump.sh --kind tui --bump-type 1` |
 | Minor: `0.15.1 → 0.16.0` | `./scripts/bump.sh --kind tui --bump-type 2` |
 | Patch: `0.15.1 → 0.15.2` | `./scripts/bump.sh --kind tui --bump-type 3` |
-| pkgrel only: `0.15.1-1 → 0.15.1-2` | `./scripts/bump.sh --kind packaging --bump-type 4` |
-| Core fix, TUI unchanged | `./scripts/bump.sh --kind core --bump-type 3` |
+| Packaging-only: new patch bundle | `./scripts/bump.sh --kind packaging --bump-type 3` |
+| Core fix: new `core-v*` + TUI patch | `./scripts/bump.sh --kind core --bump-type 3` |
 | Core + TUI | `./scripts/bump.sh --kind core-bundle --bump-type 3` |
 | Breaking IPC | `./scripts/bump.sh --kind protocol --bump-type 3 --protocol 4` |
 
 Add `--dry-run` to print the version diff and the planned commits/tags/releases
-without writing anything, and `--push` to push `main`/tags and create or update
-the GitHub releases. After a successful `--push`, the texts move to
-`*.md.backup` and the working files are reset to an empty template.
+without writing anything, and `--push` to push `main`/tags and create **draft**
+GitHub releases. After a successful `--push`, the texts move to `*.md.backup`
+and the working files are reset to an empty template.
+
+Published release assets are immutable. Every kind creates new tags; the script
+never moves or force-pushes an existing `v*` tag. `core` therefore bumps the TUI
+patch too, and `packaging` ships as a new patch bundle.
 
 Safety rules enforced by the script:
 
@@ -286,10 +295,28 @@ Safety rules enforced by the script:
 - `kind packaging` refuses `src/**` or `core/core/**` changes unless
   `--allow-source` is passed;
 - untracked files are refused unless `--allow-untracked` is passed;
-- version files are restored if a bump step fails before committing;
-- a `pkgrel` bump never creates a new tag or release: it force-moves the
-  existing `v*` tag, commits as `vX.Y.Z-N: ...`, and appends a package-revision
-  section to that release's notes.
+- version files are restored if a bump step fails before committing.
+
+### Release assets
+
+`bump.sh --push` creates `core-v*` and `v*` as drafts. The `release.yml`
+workflow then builds static musl binaries and publishes:
+
+* `v*`: `whoisthat-linux-<arch>.tar.gz` (both binaries, desktop entry and
+  license), `.deb`, `.rpm`, and `SHA256SUMS`;
+* `core-v*`: `whoisthat-core-linux-<arch>.tar.gz` and `SHA256SUMS`.
+
+Only after every asset is uploaded does CI publish `core-v*`, publish `v*`, set
+`v*` as GitHub Latest, and push `whoisthat-bin` to AUR. `install.sh` resolves
+`/releases/latest`, so users never see a release without binaries. The AUR
+source package (`whoisthat`) is published independently by `aur-publish.yml`
+from the tag. The `whoisthat-bin` repository must exist in AUR before the first
+release; the workflow can push to it but cannot create it.
+
+`release.yml` can also be dispatched manually with a tag. It builds the selected
+branch and refuses unless `check-versions.sh --tag <tag>` confirms that the
+branch version matches, so it is safe for backfilling assets of the current
+release but cannot attach binaries to an older version.
 
 ---
 
@@ -300,11 +327,18 @@ Continuous integration is handled via GitHub Actions in `.github/workflows/`:
 * **`ci.yml`**: Runs on push and PRs targeting `main`:
   * Rust: `cargo fmt --all --check`, `cargo clippy --all-targets --no-deps`, `cargo test`.
   * Go: `go vet ./...`, `go build ./...`, `go test ./...`, `go mod tidy -diff`, `govulncheck`.
-  * Shell: `shellcheck -S warning install.sh scripts/install.test.sh scripts/check-versions.sh scripts/bump.sh scripts/bump.test.sh`, then `./scripts/install.test.sh`.
+  * Shell: `shellcheck -S warning install.sh scripts/install.test.sh scripts/check-versions.sh scripts/bump.sh scripts/bump.test.sh pkg/package-postinstall.sh`, then `./scripts/install.test.sh`.
   * Bump driver: `./scripts/bump.test.sh` (separate job).
-  * Version consistency: `./scripts/check-versions.sh` (Cargo/package/PKGBUILD/.SRCINFO/docs/Xray pins).
+  * Version consistency: `./scripts/check-versions.sh` (Cargo/package/PKGBUILD/aur-bin/.SRCINFO/docs/Xray pins).
+  * Static build: `cargo build --target x86_64-unknown-linux-musl` plus a `CGO_ENABLED=0` core build, asserting both binaries are static.
   * Docs: `npm run docs:build` plus `./scripts/check-docs.sh` (IPC/config/CLI names, links, anchors, toolchain strings).
   * Integration: privileged netns suite (`-tags=integration`).
+* **`release.yml`**: Triggers on every `v*` tag push (or manually with `tag`):
+  1. Builds amd64/arm64 static musl binaries, verifies `ldd` reports both as static.
+  2. Creates the bundle tarballs, `.deb`/`.rpm` via `nfpm`, and smoke-tests the packages in Debian and Fedora containers.
+  3. Uploads assets to the existing draft releases, publishes `core-v*` first and `v*` last, marks `v*` Latest.
+  4. Publishes `whoisthat-bin` to AUR with the release checksums.
+  5. Runs the real `install.sh` in Debian, Ubuntu, Fedora and Arch containers.
 * **`aur-publish.yml`**: Triggers on every `v*` tag push:
   1. Parses version from tag and runs `./scripts/check-versions.sh --tag <tag>`.
   2. Clones the live AUR repo.

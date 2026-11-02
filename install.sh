@@ -5,17 +5,18 @@
 #   curl -fsSL https://raw.githubusercontent.com/kvunoff/whoisthat/main/install.sh | bash
 #   curl -fsSL https://raw.githubusercontent.com/kvunoff/whoisthat/main/install.sh | bash -s -- --yes
 #
-# Works for both fresh installs and upgrades. When whoisthat is already installed,
-# it will rebuild from the latest tagged release and update the binaries.
+# Works for both fresh installs and upgrades. By default it downloads the
+# prebuilt static binaries from the latest GitHub release; --from-source keeps
+# the old behaviour of cloning a tag and building Go + Rust locally.
 #
 # Components:
-#   1. System prerequisites (build-essential/base-devel, git, curl, unzip, libcap)
-#   2. Go 1.26+ (official go.dev distribution)
-#   3. Rust stable (official rustup.rs distribution)
-#   4. WhoisThat suite:
-#        - whoisthat-core   (Go VPN daemon with ambient Linux capabilities & native URI parser)
+#   1. Runtime prerequisites (curl, unzip, libcap, iproute2, nftables)
+#   2. WhoisThat suite (prebuilt release assets):
+#        - whoisthat-core   (Go VPN daemon with ambient Linux capabilities)
 #        - whoisthat        (Ratatui Rust TUI client)
-#   5. Isolated Xray-core runtime (v26.10.31: ~/.local/share/whoisthat/runtimes/xray/)
+#   3. Isolated Xray-core runtime (v26.10.31: ~/.local/share/whoisthat/runtimes/xray/)
+#
+# --from-source additionally installs Go 1.26+ and Rust stable, then builds.
 # =============================================================================
 # Ensure running under bash
 if [ -z "${BASH_VERSION:-}" ]; then
@@ -42,11 +43,14 @@ LEGACY_BIN_DIR="/usr/local/bin"
 # --- configuration & defaults ------------------------------------------------
 WORK_DIR=""
 BUILD_DIR=""
-BUILD_SRC_DIR=""
+ARTIFACT_DIR=""
 GIT_REPO="https://github.com/kvunoff/whoisthat.git"
+GITHUB_REPO="https://github.com/kvunoff/whoisthat"
 ASSUME_YES=false
 TARGET_BRANCH=""
 BUILD_LOCAL=false
+INSTALL_FROM_SOURCE=false
+RELEASE_TAG=""
 UNINSTALL_MODE=false
 INSECURE_SKIP_VERIFY=false
 XRAY_DEGRADED=false
@@ -165,9 +169,11 @@ Usage:
 
 Options:
   -y, --yes          Accepted for compatibility (the installer asks no questions)
-  --branch <name>    Build from a specific git branch or tag (default: latest release tag)
-  --local            Build directly from current repository directory instead of cloning
-  --insecure-skip-verify  Skip Xray archive checksum verification (DANGEROUS, not recommended)
+  --release <tag>    Install a specific release (default: the latest published one)
+  --from-source      Build from source instead of downloading release binaries
+  --branch <name>    Build from a specific git branch or tag (implies --from-source)
+  --local            Build directly from current repository directory (implies --from-source)
+  --insecure-skip-verify  Skip release and Xray checksum verification (DANGEROUS, not recommended)
   --uninstall        Remove whoisthat binaries from $BIN_DIR (and legacy $LEGACY_BIN_DIR)
   -h, --help         Show this help message and exit
 
@@ -195,6 +201,96 @@ latest_release_tag() {
         | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
         | sort -V \
         | tail -n1
+}
+
+release_asset_url() {
+    printf '%s/releases/download/%s' "$GITHUB_REPO" "$1"
+}
+
+release_tag_from_url() {
+    printf '%s\n' "$1" | sed 's|.*/||'
+}
+
+# Resolve --release or the latest published release. Draft releases are not
+# returned by /releases/latest, so a release is visible only after CI uploaded
+# every asset and published it.
+resolve_release_tag() {
+    local tag="${RELEASE_TAG:-}" url
+    if [ -z "$tag" ]; then
+        url=$(curl -fsSLI -o /dev/null -w '%{url_effective}' \
+            "${GITHUB_REPO}/releases/latest" 2>/dev/null || true)
+        tag=$(release_tag_from_url "$url")
+    fi
+    if ! printf '%s' "$tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+        err "Could not resolve a release tag (got '${tag:-<empty>}')."
+        err "Pass --release vX.Y.Z or use --from-source."
+        return 1
+    fi
+    printf '%s\n' "$tag"
+}
+
+verify_release_asset() {
+    local file="$1" name="$2" sums="$3" expected actual
+    if [ "$INSECURE_SKIP_VERIFY" = "true" ]; then
+        warn "Skipping SHA-256 verification for ${name} (--insecure-skip-verify)."
+        return 0
+    fi
+    if ! command -v sha256sum >/dev/null 2>&1; then
+        err "sha256sum is required to verify release assets but was not found."
+        return 1
+    fi
+    expected=$(awk -v n="$name" '$2 == n { print $1; exit }' "$sums")
+    if ! printf '%s' "$expected" | grep -Eq '^[0-9a-fA-F]{64}$'; then
+        err "No SHA-256 checksum for ${name} in SHA256SUMS."
+        err "Refusing to install an unverified binary."
+        return 1
+    fi
+    actual=$(sha256sum "$file" | awk '{print $1}')
+    if [ "${actual,,}" != "${expected,,}" ]; then
+        err "Checksum mismatch for ${name}: expected ${expected}, got ${actual}."
+        err "The download may be corrupted or tampered with."
+        return 1
+    fi
+    info "${name} SHA-256 checksum verified OK"
+}
+
+extract_tarball() {
+    local archive="$1" target_dir="$2"
+    mkdir -p "$target_dir"
+    tar -xzf "$archive" -C "$target_dir"
+}
+
+download_release_artifacts() {
+    step "Download WhoisThat release"
+
+    local tag base bundle dl
+    tag=$(resolve_release_tag) || exit 1
+    base=$(release_asset_url "$tag")
+    bundle="whoisthat-linux-${ARCH_FAMILY}.tar.gz"
+    dl="$WORK_DIR/release"
+    mkdir -p "$dl" "$ARTIFACT_DIR"
+
+    info "Release: ${tag}"
+    if ! download_file_with_fallback "$dl/$bundle" "$base/$bundle"; then
+        err "Release ${tag} does not contain ${bundle}."
+        err "It may still be publishing. Retry in a few minutes, pin an older"
+        err "release with --release, or build from source with --from-source."
+        exit 1
+    fi
+    if ! download_file_with_fallback "$dl/SHA256SUMS" "$base/SHA256SUMS"; then
+        err "Release ${tag} has no SHA256SUMS; refusing to install unverified binaries."
+        exit 1
+    fi
+
+    verify_release_asset "$dl/$bundle" "$bundle" "$dl/SHA256SUMS" || exit 1
+    extract_tarball "$dl/$bundle" "$ARTIFACT_DIR"
+
+    local f
+    for f in whoisthat whoisthat-core whoisthat.desktop; do
+        [ -f "$ARTIFACT_DIR/$f" ] || { err "Release archive is missing ${f}."; exit 1; }
+    done
+    chmod +x "$ARTIFACT_DIR/whoisthat" "$ARTIFACT_DIR/whoisthat-core"
+    info "Downloaded and verified ${tag}."
 }
 
 extract_zip() {
@@ -248,7 +344,10 @@ package_owns() {
 # --- argument parsing --------------------------------------------------------
 parse_args() {
     [ "${ASSUME_YES:-0}" = "1" ] && ASSUME_YES=true
-    [ -n "${WHOISTHAT_BRANCH:-}" ] && TARGET_BRANCH="$WHOISTHAT_BRANCH"
+    if [ -n "${WHOISTHAT_BRANCH:-}" ]; then
+        TARGET_BRANCH="$WHOISTHAT_BRANCH"
+        INSTALL_FROM_SOURCE=true
+    fi
 
     while [ $# -gt 0 ]; do
         case "$1" in
@@ -264,9 +363,23 @@ parse_args() {
                 # Deprecated: Hysteria2 is now natively supported by Xray-core
                 shift
                 ;;
+            --release)
+                if [ -n "${2:-}" ]; then
+                    RELEASE_TAG="$2"
+                    shift 2
+                else
+                    err "--release requires an argument"
+                    exit 1
+                fi
+                ;;
+            --from-source)
+                INSTALL_FROM_SOURCE=true
+                shift
+                ;;
             --branch)
                 if [ -n "${2:-}" ]; then
                     TARGET_BRANCH="$2"
+                    INSTALL_FROM_SOURCE=true
                     shift 2
                 else
                     err "--branch requires an argument"
@@ -275,6 +388,7 @@ parse_args() {
                 ;;
             --local)
                 BUILD_LOCAL=true
+                INSTALL_FROM_SOURCE=true
                 shift
                 ;;
             --insecure-skip-verify)
@@ -296,6 +410,11 @@ parse_args() {
                 ;;
         esac
     done
+
+    if [ "$INSTALL_FROM_SOURCE" = "true" ] && [ -n "$RELEASE_TAG" ]; then
+        err "--release cannot be combined with --from-source, --branch or --local"
+        exit 1
+    fi
 }
 
 # --- uninstallation ----------------------------------------------------------
@@ -349,6 +468,10 @@ uninstall_whoisthat() {
     for dir in "$BIN_DIR" "$LEGACY_BIN_DIR"; do
         for bin in whoisthat whoisthat-core whoisthat-parser; do
             if [ -f "$dir/$bin" ]; then
+                if package_owns "$dir/$bin"; then
+                    info "Leaving package-owned $dir/$bin in place"
+                    continue
+                fi
                 $SUDO rm -f "$dir/$bin"
                 info "Removed $dir/$bin"
                 removed=1
@@ -411,7 +534,7 @@ detect_distro() {
 
 # --- step 1: system build tools ----------------------------------------------
 install_system_deps() {
-    step "Step 1/6: System prerequisites"
+    step "System build prerequisites"
 
     case "$DISTRO_ID" in
         debian|ubuntu|linuxmint|pop)
@@ -467,9 +590,68 @@ install_system_deps() {
     esac
 }
 
+# --- release prerequisites ---------------------------------------------------
+# Prebuilt binaries are static, so only runtime tools are installed here.
+install_runtime_deps() {
+    step "Runtime prerequisites"
+
+    local packages
+    case "$DISTRO_ID" in
+        debian|ubuntu|linuxmint|pop)
+            info "Debian/Ubuntu family — installing curl, unzip, libcap2-bin, iproute2, nftables"
+            $SUDO apt-get update -qq || warn "apt-get update failed; continuing with the existing package lists"
+            $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+                curl unzip libcap2-bin iproute2 nftables ca-certificates
+            return
+            ;;
+        fedora|rhel|centos|rocky|almalinux)
+            info "Fedora/RHEL family — installing curl, unzip, libcap, iproute, nftables"
+            $SUDO dnf install -y -q curl unzip libcap iproute nftables ca-certificates
+            return
+            ;;
+        arch|manjaro|endeavouros)
+            info "Arch family — installing curl, unzip, libcap, iproute2, nftables"
+            $SUDO pacman -S --noconfirm --needed curl unzip libcap iproute2 nftables ca-certificates
+            return
+            ;;
+        alpine)
+            info "Alpine — installing curl, unzip, libcap, iproute2, nftables"
+            $SUDO apk add --no-cache curl unzip libcap iproute2 nftables ca-certificates
+            return
+            ;;
+        opensuse*|suse)
+            info "openSUSE — installing curl, unzip, libcap-progs, iproute2, nftables"
+            $SUDO zypper install -y -l curl unzip libcap-progs iproute2 nftables ca-certificates
+            return
+            ;;
+    esac
+
+    case "${DISTRO_LIKE}" in
+        *debian*|*ubuntu*)
+            info "Debian/Ubuntu derivative (${DISTRO_ID}) — installing runtime prerequisites"
+            $SUDO apt-get update -qq || warn "apt-get update failed; continuing with the existing package lists"
+            $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+                curl unzip libcap2-bin iproute2 nftables ca-certificates
+            ;;
+        *fedora*|*rhel*)
+            info "Fedora/RHEL derivative (${DISTRO_ID}) — installing runtime prerequisites"
+            $SUDO dnf install -y -q curl unzip libcap iproute nftables ca-certificates
+            ;;
+        *arch*)
+            info "Arch derivative (${DISTRO_ID}) — installing runtime prerequisites"
+            $SUDO pacman -S --noconfirm --needed curl unzip libcap iproute2 nftables ca-certificates
+            ;;
+        *)
+            packages="curl unzip libcap (setcap) iproute2 nftables"
+            warn "Unrecognized distribution (${DISTRO_ID})."
+            warn "Ensure you have: ${packages} and ca-certificates."
+            ;;
+    esac
+}
+
 # --- step 2: Go toolchain ----------------------------------------------------
 install_go() {
-    step "Step 2/6: Verify Go toolchain (>= ${GO_MIN_VERSION})"
+    step "Verify Go toolchain (>= ${GO_MIN_VERSION})"
 
     # Check existing environment PATH + standard /usr/local/go/bin
     if [ -d "/usr/local/go/bin" ] && [[ ":$PATH:" != *":/usr/local/go/bin:"* ]]; then
@@ -554,7 +736,7 @@ install_go() {
 
 # --- step 3: Rust toolchain --------------------------------------------------
 install_rust() {
-    step "Step 3/6: Verify Rust toolchain"
+    step "Verify Rust toolchain"
 
     local rust_ver
     if as_target sh -c 'command -v cargo >/dev/null 2>&1 && command -v rustc >/dev/null 2>&1'; then
@@ -588,7 +770,7 @@ install_rust() {
 
 # --- step 4: build WhoisThat binaries ----------------------------------------
 build_whoisthat() {
-    step "Step 4/6: Build WhoisThat suite"
+    step "Build WhoisThat suite"
 
     local src_dir="$BUILD_DIR"
 
@@ -637,22 +819,32 @@ build_whoisthat() {
     ( cd "$src_dir" && as_target cargo build --release --locked )
     [ -f "$src_dir/target/release/whoisthat" ] || { err "whoisthat TUI build failed"; exit 1; }
 
-    BUILD_SRC_DIR="$src_dir"
+    mkdir -p "$ARTIFACT_DIR"
+    cp "$src_dir/target/release/whoisthat" "$ARTIFACT_DIR/whoisthat"
+    cp "$src_dir/core/core/whoisthat-core" "$ARTIFACT_DIR/whoisthat-core"
+    cp "$src_dir/pkg/whoisthat.desktop" "$ARTIFACT_DIR/whoisthat.desktop"
+    [ -f "$src_dir/LICENSE" ] && cp "$src_dir/LICENSE" "$ARTIFACT_DIR/LICENSE"
     info "All WhoisThat components built successfully."
 }
 
 # --- step 6: install binaries & set capabilities -----------------------------
 install_binaries() {
-    step "Step 6/6: Install binaries to $BIN_DIR"
+    step "Install binaries to $BIN_DIR"
 
-    cd "$BUILD_SRC_DIR"
+    # A distro package owns these paths; overwriting them would break dpkg/rpm
+    # verification and the next package upgrade.
+    if package_owns "$BIN_DIR/whoisthat" || package_owns "$BIN_DIR/whoisthat-core"; then
+        err "WhoisThat is installed by a distribution package."
+        err "Upgrade it with your package manager, or remove the package first."
+        exit 1
+    fi
 
     # Stage both binaries as hidden files first: the pair is swapped only after
     # the new core has capabilities, so an interrupted or failed install never
     # leaves a new TUI next to an old, incompatible core.
     info "Installing whoisthat and whoisthat-core..."
-    $SUDO install -Dm755 target/release/whoisthat "$BIN_DIR/.whoisthat.new"
-    $SUDO install -Dm755 core/core/whoisthat-core "$BIN_DIR/.whoisthat-core.new"
+    $SUDO install -Dm755 "$ARTIFACT_DIR/whoisthat" "$BIN_DIR/.whoisthat.new"
+    $SUDO install -Dm755 "$ARTIFACT_DIR/whoisthat-core" "$BIN_DIR/.whoisthat-core.new"
 
     info "Granting network capabilities to whoisthat-core..."
     if $SUDO setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep "$BIN_DIR/.whoisthat-core.new" 2>/dev/null; then
@@ -674,12 +866,12 @@ install_binaries() {
         fi
     done
 
-    if [ -f "pkg/whoisthat.desktop" ]; then
+    if [ -f "$ARTIFACT_DIR/whoisthat.desktop" ]; then
         local desktop="/usr/share/applications/whoisthat.desktop"
         if package_owns "$desktop"; then
             info "Leaving package-owned ${desktop} in place"
         else
-            $SUDO install -Dm644 pkg/whoisthat.desktop "$desktop"
+            $SUDO install -Dm644 "$ARTIFACT_DIR/whoisthat.desktop" "$desktop"
             if command -v update-desktop-database >/dev/null 2>&1; then
                 $SUDO update-desktop-database /usr/share/applications 2>/dev/null || true
             fi
@@ -745,7 +937,7 @@ xray_version() {
 
 # --- step 5: install Xray-core -----------------------------------------------
 install_xray() {
-    step "Step 5/6: Isolated Xray-core runtime (${XRAY_VERSION})"
+    step "Isolated Xray-core runtime (${XRAY_VERSION})"
 
     local xray_dir="${RUNTIMES_DIR}/xray/${XRAY_VERSION}"
     local xray_bin="${xray_dir}/xray"
@@ -832,10 +1024,15 @@ install_xray() {
 
 # --- pre-flight checks -------------------------------------------------------
 check_disk_space() {
-    local avail
+    local avail need=262144
+    [ "$INSTALL_FROM_SOURCE" = "true" ] && need=2097152
     avail=$(df -Pk /tmp /usr/bin 2>/dev/null | awk 'NR > 1 {print $4}' | sort -n | head -1 || true)
-    if [ -n "${avail:-}" ] && [ "$avail" -lt 2097152 ]; then
-        warn "Less than 2 GB free on /tmp or /usr/bin; the build may fail."
+    if [ -n "${avail:-}" ] && [ "$avail" -lt "$need" ]; then
+        if [ "$INSTALL_FROM_SOURCE" = "true" ]; then
+            warn "Less than 2 GB free on /tmp or /usr/bin; the build may fail."
+        else
+            warn "Less than 256 MB free on /tmp or /usr/bin; the download may fail."
+        fi
     fi
 }
 
@@ -919,6 +1116,7 @@ main() {
 
     WORK_DIR="$(mktemp -d)"
     BUILD_DIR="$WORK_DIR/src"
+    ARTIFACT_DIR="$WORK_DIR/bin"
     if [ "$(id -u)" -eq 0 ] && [ "$TARGET_USER" != "root" ] && [ -n "$TARGET_HOME" ]; then
         chown "$TARGET_USER:" "$WORK_DIR"
     fi
@@ -943,10 +1141,15 @@ main() {
     detect_distro
     ensure_sudo
     check_disk_space
-    install_system_deps
-    install_go
-    install_rust
-    build_whoisthat
+    if [ "$INSTALL_FROM_SOURCE" = "true" ]; then
+        install_system_deps
+        install_go
+        install_rust
+        build_whoisthat
+    else
+        install_runtime_deps
+        download_release_artifacts
+    fi
     install_xray
     ensure_sudo
     install_binaries

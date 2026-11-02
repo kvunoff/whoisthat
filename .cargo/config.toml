@@ -1,0 +1,10 @@
+# Release binaries are built for musl so a single artifact runs on both glibc
+# and musl distributions. Each job builds its host architecture, so musl-gcc is
+# always the native wrapper.
+[target.x86_64-unknown-linux-musl]
+linker = "musl-gcc"
+rustflags = ["-C", "target-feature=+crt-static", "-C", "link-arg=-static"]
+
+[target.aarch64-unknown-linux-musl]
+linker = "musl-gcc"
+rustflags = ["-C", "target-feature=+crt-static", "-C", "link-arg=-static"]

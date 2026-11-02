@@ -55,14 +55,33 @@ dddd refs/tags/core-v0.3.8
 eeee refs/tags/v0.9.9
 ffff refs/tags/v0.15.1^{}'
 assert_eq "$(printf '%s\n' "$refs" | latest_release_tag)" "v0.15.1" "stable tag wins over rc and core-v"
+assert_eq "$(release_tag_from_url 'https://github.com/kvunoff/whoisthat/releases/tag/v0.17.4')" "v0.17.4" "release tag parsed from redirect"
+assert_eq "$(release_asset_url v1.2.3)" "https://github.com/kvunoff/whoisthat/releases/download/v1.2.3" "asset base URL"
+
+echo "== release checksums"
+tmp_ck=$(mktemp -d)
+printf 'verified\n' > "$tmp_ck/asset.tar.gz"
+( cd "$tmp_ck" && sha256sum asset.tar.gz > SHA256SUMS )
+( verify_release_asset "$tmp_ck/asset.tar.gz" asset.tar.gz "$tmp_ck/SHA256SUMS" >/dev/null 2>&1 )
+assert_eq "$?" "0" "matching checksum accepted"
+printf 'tampered\n' > "$tmp_ck/asset.tar.gz"
+( verify_release_asset "$tmp_ck/asset.tar.gz" asset.tar.gz "$tmp_ck/SHA256SUMS" >/dev/null 2>&1 )
+assert_eq "$?" "1" "mismatched checksum rejected"
+rm -rf "$tmp_ck"
 
 echo "== argument parsing"
 assert_eq "$( (parse_args --branch v1.2.3; printf '%s' "$TARGET_BRANCH") )" "v1.2.3" "--branch sets tag"
+assert_eq "$( (parse_args --branch v1.2.3; printf '%s' "$INSTALL_FROM_SOURCE") )" "true" "--branch implies source"
 assert_eq "$( (parse_args --local; printf '%s' "$BUILD_LOCAL") )" "true" "--local"
+assert_eq "$( (parse_args --local; printf '%s' "$INSTALL_FROM_SOURCE") )" "true" "--local implies source"
+assert_eq "$( (parse_args --from-source; printf '%s' "$INSTALL_FROM_SOURCE") )" "true" "--from-source"
+assert_eq "$( (parse_args --release v0.17.4; printf '%s' "$RELEASE_TAG") )" "v0.17.4" "--release pins the tag"
+assert_eq "$( (parse_args --release v0.17.4 --from-source >/dev/null 2>&1); printf '%s' "$?" )" "1" "--release conflicts with source"
 assert_eq "$( (parse_args --uninstall; printf '%s' "$UNINSTALL_MODE") )" "true" "--uninstall"
 assert_eq "$( (parse_args --yes; printf '%s' "$ASSUME_YES") )" "true" "--yes accepted"
 assert_eq "$( (parse_args --bogus >/dev/null 2>&1); printf '%s' "$?" )" "2" "unknown option exits 2"
 assert_eq "$( (parse_args --branch >/dev/null 2>&1); printf '%s' "$?" )" "1" "--branch without value exits 1"
+assert_eq "$( (parse_args --release >/dev/null 2>&1); printf '%s' "$?" )" "1" "--release without value exits 1"
 assert_eq "$( (parse_args --help >/dev/null 2>&1); printf '%s' "$?" )" "0" "--help exits 0"
 
 echo "== package manager dispatch"
@@ -76,6 +95,13 @@ out=$( DISTRO_ID=neon DISTRO_LIKE="ubuntu debian" SUDO="echo" install_system_dep
 assert_contains "$out" "DEBIAN_FRONTEND=noninteractive" "ID_LIKE fallback is non-interactive"
 out=$( DISTRO_ID=mystery DISTRO_LIKE="" SUDO="echo" install_system_deps )
 assert_contains "$out" "iproute2" "unknown distro hint mentions iproute2"
+
+echo "== runtime dependency dispatch"
+out=$( DISTRO_ID=debian DISTRO_LIKE="" SUDO="echo" install_runtime_deps )
+assert_contains "$out" "libcap2-bin" "debian runtime uses libcap2-bin"
+assert_contains "$out" "iproute2 nftables" "debian runtime installs network tools"
+out=$( DISTRO_ID=alpine DISTRO_LIKE="" SUDO="echo" install_runtime_deps )
+assert_contains "$out" "libcap" "alpine runtime uses libcap"
 
 echo "== as_target"
 assert_eq "$(as_target id -u)" "$(id -u)" "non-root runs directly"

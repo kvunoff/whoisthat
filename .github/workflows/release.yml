@@ -1,0 +1,339 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing release tag to attach assets to (builds the selected branch; version must match)'
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  # A tag push builds its own tree. A manual dispatch builds the selected branch
+  # and uses --tag as a guard: check-versions fails unless the branch version
+  # matches the tag, which makes an intentional backfill of the latest release
+  # safe.
+  SOURCE_REF: ${{ github.event_name == 'workflow_dispatch' && github.ref || format('refs/tags/{0}', github.ref_name) }}
+
+jobs:
+  build:
+    name: Build ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: amd64
+            target: x86_64-unknown-linux-musl
+            deb_arch: amd64
+            rpm_arch: x86_64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+            target: aarch64-unknown-linux-musl
+            deb_arch: arm64
+            rpm_arch: aarch64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.SOURCE_REF }}
+
+      - name: Verify tag against version files
+        run: ./scripts/check-versions.sh --tag "$TAG"
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: core/core/go.mod
+          cache-dependency-path: core/core/go.sum
+
+      - name: Install musl toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+
+      - name: Build static binaries
+        env:
+          TARGET: ${{ matrix.target }}
+          CC_x86_64_unknown_linux_musl: musl-gcc
+          CC_aarch64_unknown_linux_musl: musl-gcc
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          ( cd core/core && CGO_ENABLED=0 go build -trimpath -ldflags '-s -w' -o "$GITHUB_WORKSPACE/dist/whoisthat-core" )
+          cargo build --release --locked --target "$TARGET"
+          cp "target/$TARGET/release/whoisthat" dist/whoisthat
+          cp pkg/whoisthat.desktop dist/
+          cp LICENSE dist/
+
+          check_static() {
+            if readelf -l "$1" | grep -q 'INTERP'; then
+              echo "$1 is dynamically linked; musl build failed" >&2
+              exit 1
+            fi
+          }
+          check_static dist/whoisthat
+          check_static dist/whoisthat-core
+
+      - name: Create archives
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          mkdir -p stage/bundle stage/core
+          cp dist/whoisthat dist/whoisthat-core dist/whoisthat.desktop dist/LICENSE stage/bundle/
+          cp dist/whoisthat-core dist/LICENSE stage/core/
+          tar -czf "dist/whoisthat-linux-${ARCH}.tar.gz" -C stage/bundle \
+            whoisthat whoisthat-core whoisthat.desktop LICENSE
+          tar -czf "dist/whoisthat-core-linux-${ARCH}.tar.gz" -C stage/core \
+            whoisthat-core LICENSE
+
+      - name: Build deb and rpm
+        env:
+          ARCH: ${{ matrix.arch }}
+          ARTIFACT_DIR: ${{ github.workspace }}/dist
+        run: |
+          set -euo pipefail
+          export VERSION
+          export PKGREL
+          VERSION=$(sed -n 's/^version = "\([^"]*\)"$/\1/p' Cargo.toml | head -n1)
+          PKGREL=$(sed -n 's/^pkgrel=//p' pkg/aur/PKGBUILD)
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+          gopath_bin="$(go env GOPATH)/bin"
+          export PATH="$gopath_bin:$PATH"
+          nfpm package --config pkg/nfpm.yaml --packager deb --target dist/
+          nfpm package --config pkg/nfpm.yaml --packager rpm --target dist/
+
+      - name: Smoke test packages
+        env:
+          DEB_ARCH: ${{ matrix.deb_arch }}
+          RPM_ARCH: ${{ matrix.rpm_arch }}
+        run: |
+          set -euo pipefail
+          docker run --rm -v "$PWD/dist:/dist:ro" debian:12 sh -c \
+            "export DEBIAN_FRONTEND=noninteractive; apt-get update -qq && apt-get install -y -qq /dist/whoisthat_*_${DEB_ARCH}.deb && whoisthat --version && whoisthat-core --version"
+          docker run --rm -v "$PWD/dist:/dist:ro" fedora:42 sh -c \
+            "dnf install -y -q /dist/whoisthat-*.${RPM_ARCH}.rpm && whoisthat --version && whoisthat-core --version"
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: dist-${{ matrix.arch }}
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish release assets
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.SOURCE_REF }}
+
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: dist-*
+          merge-multiple: true
+          path: dist
+
+      - name: Upload assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          CORE_VERSION=$(sed -n 's/^const CoreVersion = "\([^"]*\)"$/\1/p' core/core/lib/version/version.go | head -n1)
+          CORE_TAG="core-v${CORE_VERSION}"
+          echo "CORE_TAG=${CORE_TAG}" >> "$GITHUB_ENV"
+
+          mkdir -p release/bundle release/core
+          cp dist/whoisthat-linux-*.tar.gz dist/whoisthat_*.deb dist/whoisthat-*.rpm release/bundle/
+          cp dist/whoisthat-core-linux-*.tar.gz release/core/
+          ( cd release/bundle && sha256sum -- * > SHA256SUMS )
+          ( cd release/core && sha256sum -- * > SHA256SUMS )
+
+          ensure_release() {
+            local tag=$1
+            if ! gh release view "$tag" >/dev/null 2>&1; then
+              echo "Release ${tag} is missing; creating a draft"
+              gh release create "$tag" --draft --verify-tag \
+                --title "$tag" --generate-notes
+            fi
+          }
+          ensure_release "$CORE_TAG"
+          ensure_release "$TAG"
+
+          gh release upload "$CORE_TAG" release/core/* --clobber
+          gh release upload "$TAG" release/bundle/* --clobber
+
+          latest_v_tag() {
+            gh release list --exclude-drafts --limit 100 --json tagName -q '.[].tagName' |
+              grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' |
+              sort -V |
+              tail -n1
+          }
+          LATEST_BEFORE=$(latest_v_tag || true)
+
+          publish_if_draft() {
+            local tag=$1
+            if [ "$(gh release view "$tag" --json isDraft -q .isDraft)" = "true" ]; then
+              gh release edit "$tag" --draft=false
+            fi
+          }
+          publish_if_draft "$CORE_TAG"
+          publish_if_draft "$TAG"
+
+          # core-v* must never steal Latest from the bundle release.
+          if [ "$LATEST_BEFORE" = "$TAG" ] ||
+             [ "$(printf '%s\n%s\n' "${LATEST_BEFORE:-0.0.0}" "$TAG" | sort -V | tail -n1)" = "$TAG" ]; then
+            gh release edit "$TAG" --latest
+          fi
+
+  aur-bin:
+    name: Publish whoisthat-bin to AUR
+    needs: publish
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.SOURCE_REF }}
+
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: dist-*
+          merge-multiple: true
+          path: dist
+
+      - name: Setup SSH
+        env:
+          AUR_SSH_KEY: ${{ secrets.AUR_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$AUR_SSH_KEY" > ~/.ssh/aur_key
+          chmod 600 ~/.ssh/aur_key
+          printf '%s\n' \
+            'aur.archlinux.org ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEuBKrPzbawxA/k2g6NcyV5jmqwJ2s+zpgZGZ7tpLIcN' \
+            > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<'EOF'
+          Host aur.archlinux.org
+            HostName aur.archlinux.org
+            IdentityFile ~/.ssh/aur_key
+            User aur
+            StrictHostKeyChecking yes
+          EOF
+          chmod 600 ~/.ssh/config
+
+      - name: Update and push PKGBUILD
+        run: |
+          set -euo pipefail
+
+          TMP=$(mktemp -d)
+          GIT_SSH_COMMAND="ssh -i ~/.ssh/aur_key -o StrictHostKeyChecking=yes" \
+            git clone ssh://aur@aur.archlinux.org/whoisthat-bin.git "$TMP"
+
+          VERSION=$(sed -n 's/^version = "\([^"]*\)"$/\1/p' Cargo.toml | head -n1)
+          AUR_VER=$(sed -n 's/^pkgver=//p' "$TMP/PKGBUILD")
+          AUR_REL=$(sed -n 's/^pkgrel=//p' "$TMP/PKGBUILD")
+          if [ "$AUR_VER" = "$VERSION" ]; then
+            PKGREL=$((AUR_REL + 1))
+          else
+            PKGREL=1
+          fi
+          echo "Publishing whoisthat-bin ${VERSION}-${PKGREL}"
+
+          SHA_AMD64=$(sha256sum dist/whoisthat-linux-amd64.tar.gz | awk '{print $1}')
+          SHA_ARM64=$(sha256sum dist/whoisthat-linux-arm64.tar.gz | awk '{print $1}')
+
+          cp pkg/aur-bin/PKGBUILD "$TMP/PKGBUILD"
+          cp pkg/aur-bin/whoisthat-bin.install "$TMP/whoisthat-bin.install"
+          sed -i "s/^pkgver=.*/pkgver=${VERSION}/" "$TMP/PKGBUILD"
+          sed -i "s/^pkgrel=.*/pkgrel=${PKGREL}/" "$TMP/PKGBUILD"
+          sed -i "s/^sha256sums_x86_64=.*/sha256sums_x86_64=('${SHA_AMD64}')/" "$TMP/PKGBUILD"
+          sed -i "s/^sha256sums_aarch64=.*/sha256sums_aarch64=('${SHA_ARM64}')/" "$TMP/PKGBUILD"
+
+          (
+            cd "$TMP"
+            # shellcheck disable=SC1091
+            source PKGBUILD
+            {
+              echo "pkgbase = ${pkgname}"
+              echo -e "\tpkgdesc = ${pkgdesc}"
+              echo -e "\tpkgver = ${pkgver}"
+              echo -e "\tpkgrel = ${pkgrel}"
+              echo -e "\turl = ${url}"
+              echo -e "\tinstall = ${install}"
+              for a in "${arch[@]}"; do echo -e "\tarch = ${a}"; done
+              echo -e "\tlicense = ${license[0]}"
+              for dep in "${provides[@]}"; do echo -e "\tprovides = ${dep}"; done
+              for dep in "${conflicts[@]}"; do echo -e "\tconflicts = ${dep}"; done
+              for dep in "${depends[@]}"; do echo -e "\tdepends = ${dep}"; done
+              for dep in "${optdepends[@]}"; do echo -e "\toptdepends = ${dep}"; done
+              for opt in "${options[@]}"; do echo -e "\toptions = ${opt}"; done
+              for a in "${arch[@]}"; do
+                declare -n srcs="source_${a}"
+                declare -n sums="sha256sums_${a}"
+                for s in "${srcs[@]}"; do echo -e "\tsource_${a} = ${s}"; done
+                for s in "${sums[@]}"; do echo -e "\tsha256sums_${a} = ${s}"; done
+              done
+              echo
+              echo "pkgname = ${pkgname}"
+            } > .SRCINFO
+          )
+
+          git -C "$TMP" config user.email "ci@github-actions"
+          git -C "$TMP" config user.name "GitHub Actions"
+          git -C "$TMP" add -A
+          git -C "$TMP" commit -m "v${VERSION}-${PKGREL}: update package" || {
+            echo "AUR is already up to date"
+            rm -rf "$TMP"
+            exit 0
+          }
+          git -C "$TMP" push
+          rm -rf "$TMP"
+
+  install-smoke:
+    name: Installer smoke (${{ matrix.image }})
+    needs: publish
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: debian:12
+            prep: apt-get update -qq && apt-get install -y -qq curl ca-certificates
+          - image: ubuntu:24.04
+            prep: apt-get update -qq && apt-get install -y -qq curl ca-certificates
+          - image: fedora:42
+            prep: dnf install -y -q curl ca-certificates tar
+          - image: archlinux:latest
+            prep: pacman -Sy --noconfirm curl ca-certificates tar
+    container: ${{ matrix.image }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Install fetch tooling
+        run: ${{ matrix.prep }}
+
+      - name: Install from the published release
+        run: |
+          set -euo pipefail
+          curl -fsSL "https://raw.githubusercontent.com/kvunoff/whoisthat/${GITHUB_REF_NAME}/install.sh" -o /tmp/install.sh
+          bash /tmp/install.sh --release "$TAG"
+          whoisthat --version
+          whoisthat-core --version

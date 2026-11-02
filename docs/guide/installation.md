@@ -1,12 +1,15 @@
 # Installation
 
-WhoisThat can be installed via an automated installer script, from the Arch User Repository (AUR), or compiled manually from source.
+WhoisThat can be installed via an automated installer script, a distribution package (`.deb` / `.rpm`), the Arch User Repository (AUR), or compiled manually from source.
 
 ---
 
 ## 1. Quick Install (Any Linux Distribution)
 
-The automated installation script detects your CPU architecture (`x86_64` or `aarch64`), verifies or installs required build tools (Rust and Go from official upstream sources), builds the latest release binaries, and configures required network capabilities.
+The installer detects your CPU architecture (`x86_64` or `aarch64`), downloads the
+prebuilt **static musl** binaries from the latest GitHub release, verifies their
+SHA-256 checksums, and configures required network capabilities. No Rust or Go
+toolchain is needed.
 
 ### Interactive Installation
 
@@ -23,40 +26,68 @@ The installer never prompts, so it can run from CI or a provisioning script as i
 curl -fsSL https://raw.githubusercontent.com/kvunoff/whoisthat/main/install.sh | bash -s -- --yes
 ```
 
-The script is always fetched from `main`, while the build uses the latest release
-tag. To install a specific release, pass `--branch vX.Y.Z`, or download
-`install.sh` from that tag.
+The script is always fetched from `main`. To install a specific release, pass
+`--release vX.Y.Z`. To build locally instead of downloading, pass
+`--from-source` (optionally with `--branch vX.Y.Z` or `--local`).
 
 **What the install script does:**
-1. Installs distribution build and runtime prerequisites (C compiler/make, `git`, `curl`, `unzip`, `libcap`/`setcap`, `iproute2`, `nftables`). `pkexec`/`iptables` are optional and reported by `whoisthat doctor`.
-2. Installs or adopts precompiled **Xray-core (pinned v26.10.31)** with SHA256 checksum verification. The installer **fails closed**: a missing or mismatched official checksum aborts the installation (override only with the explicit `--insecure-skip-verify` flag).
-3. Builds `whoisthat-core` (Go) and `whoisthat` (Rust).
+1. Installs runtime prerequisites (`curl`, `unzip`, `libcap`/`setcap`, `iproute2`, `nftables`, CA certificates). `pkexec`/`iptables` are optional and reported by `whoisthat doctor`.
+2. Downloads `whoisthat` and `whoisthat-core` from the release bundle and verifies `SHA256SUMS`. The installer **fails closed** on a missing or mismatched checksum (override only with the explicit `--insecure-skip-verify` flag).
+3. Installs or adopts precompiled **Xray-core (pinned v26.10.31)** with the same checksum policy.
 4. Installs binaries into `/usr/bin/` and removes legacy copies from `/usr/local/bin/`.
 5. Grants `cap_net_admin,cap_net_raw,cap_setpcap=+ep` to `/usr/bin/whoisthat-core`.
 6. Installs `whoisthat.desktop` into `/usr/share/applications` and refreshes the desktop database. The `wit://` scheme handler is registered per-user by the TUI on launch (`xdg-mime`), not by the installer.
 
+If a distribution package owns the binaries, the installer refuses to overwrite
+them; upgrade through the package manager instead.
+
 ---
 
-## 2. Arch Linux (AUR)
+## 2. Distribution Packages
 
-WhoisThat is available on the Arch User Repository as [`whoisthat`](https://aur.archlinux.org/packages/whoisthat).
+Every release publishes `.deb` and `.rpm` packages for `amd64`/`x86_64` and
+`arm64`/`aarch64` alongside the installer archives.
+
+```bash
+# Debian / Ubuntu
+sudo apt install ./whoisthat_<version>-1_amd64.deb
+
+# Fedora / RHEL
+sudo dnf install ./whoisthat-<version>-1.x86_64.rpm
+```
+
+Both packages install `/usr/bin/whoisthat`, `/usr/bin/whoisthat-core`, the
+desktop entry and the license, and re-apply file capabilities in their
+post-install script. User configuration and the encrypted database are never
+touched by package upgrades or removal.
+
+---
+
+## 3. Arch Linux (AUR)
+
+WhoisThat is available in two flavours:
+
+* [`whoisthat-bin`](https://aur.archlinux.org/packages/whoisthat-bin) — prebuilt
+  release binaries (recommended);
+* [`whoisthat`](https://aur.archlinux.org/packages/whoisthat) — builds from
+  source.
 
 ```bash
 # Using paru
-paru -S whoisthat
+paru -S whoisthat-bin
 
 # Using yay
-yay -S whoisthat
+yay -S whoisthat-bin
 ```
 
-The AUR package automatically installs:
+Both packages install the same files:
 * `/usr/bin/whoisthat` (client TUI / CLI)
 * `/usr/bin/whoisthat-core` (VPN daemon with capabilities pre-configured)
 * `/usr/share/applications/whoisthat.desktop` (desktop entry with `wit://` deep link handler)
 
 ---
 
-## 3. Manual Build From Source
+## 4. Manual Build From Source
 
 ### Prerequisites
 
@@ -109,7 +140,7 @@ xdg-mime default whoisthat.desktop x-scheme-handler/wit
 
 ---
 
-## 4. Xray-Core Runtime Management
+## 5. Xray-Core Runtime Management
 
 WhoisThat relies on a unified proxy engine: **Xray-core v26.10.31**.
 
@@ -120,7 +151,7 @@ WhoisThat relies on a unified proxy engine: **Xray-core v26.10.31**.
 
 ---
 
-## 5. Network Capabilities (`setcap`)
+## 6. Network Capabilities (`setcap`)
 
 TUN mode creates virtual network interfaces and manipulates routing rules without needing `root` privileges. This is achieved via Linux file capabilities:
 
@@ -134,7 +165,7 @@ If `whoisthat` starts (or spawns) the daemon without the required capabilities *
 
 ---
 
-## 6. Verifying Your Installation (`whoisthat doctor`)
+## 7. Verifying Your Installation (`whoisthat doctor`)
 
 After installing, run the built-in diagnostic tool to verify all binaries, permissions, capabilities, and socket directories:
 

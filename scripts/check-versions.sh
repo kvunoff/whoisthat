@@ -9,7 +9,8 @@
 #   Protocol version core/core/lib/version/protocol.txt
 #   Xray pin         core/core/lib/xraymgr/version.go   (PinnedVersion)
 # Every mirror (Cargo.lock, package.json, package-lock.json, PKGBUILD,
-# .SRCINFO, install.sh, protocol.rs, docs) is checked against them.
+# aur-bin PKGBUILD, .SRCINFO, install.sh, protocol.rs, docs) is checked
+# against them.
 #
 # Usage:
 #   ./scripts/check-versions.sh
@@ -288,6 +289,12 @@ apply_set() {
         -e "s/^pkgver=.*/pkgver=${new_tui}/" \
         -e "s/^pkgrel=.*/pkgrel=${new_pkgrel}/"
 
+    transform pkg/aur-bin/PKGBUILD sed -E \
+        -e "s/^pkgver=.*/pkgver=${new_tui}/" \
+        -e "s/^pkgrel=.*/pkgrel=${new_pkgrel}/" \
+        -e "s|releases/download/v[0-9]+\\.[0-9]+\\.[0-9]+/|releases/download/v${new_tui}/|g" \
+        -e "s|whoisthat-[0-9]+\\.[0-9]+\\.[0-9]+-linux-|whoisthat-${new_tui}-linux-|g"
+
     transform pkg/aur/.SRCINFO sed -E \
         -e "s/^([[:space:]]*)pkgver = .*/\1pkgver = ${new_tui}/" \
         -e "s/^([[:space:]]*)pkgrel = .*/\1pkgrel = ${new_pkgrel}/" \
@@ -333,7 +340,7 @@ run_checks() {
         return
     fi
 
-    local lock docs_pkg npm_lock pkgver pkgrel srcver srcrel srcsource
+    local lock docs_pkg npm_lock pkgver pkgrel srcver srcrel srcsource binver binrel
     lock=$(awk '/^name = "whoisthat"$/ { getline; if ($1 == "version") { gsub(/"/, "", $3); print $3; exit } }' Cargo.lock)
     docs_pkg=$(sed -n 's/.*"version": "\([^"]*\)".*/\1/p' package.json | head -n1)
     npm_lock=$(sed -n 's/^  "version": "\([^"]*\)".*/\1/p' package-lock.json | head -n1)
@@ -342,11 +349,15 @@ run_checks() {
     srcver=$(sed -n 's/^\tpkgver = //p' pkg/aur/.SRCINFO | head -n1)
     srcrel=$(sed -n 's/^\tpkgrel = //p' pkg/aur/.SRCINFO | head -n1)
     srcsource=$(sed -n 's/^\tsource = //p' pkg/aur/.SRCINFO | head -n1)
+    binver=$(sed -n 's/^pkgver=//p' pkg/aur-bin/PKGBUILD)
+    binrel=$(sed -n 's/^pkgrel=//p' pkg/aur-bin/PKGBUILD)
 
     check_eq "Cargo.lock"              "$tui" "$lock"
     check_eq "package.json"            "$tui" "$docs_pkg"
     check_eq "package-lock.json"       "$tui" "$npm_lock"
     check_eq "PKGBUILD pkgver"         "$tui" "$pkgver"
+    check_eq "aur-bin PKGBUILD pkgver" "$tui" "$binver"
+    check_eq "aur-bin PKGBUILD pkgrel" "$pkgrel" "$binrel"
     check_eq ".SRCINFO pkgver"         "$pkgver" "$srcver"
     check_eq ".SRCINFO pkgrel"         "$pkgrel" "$srcrel"
 

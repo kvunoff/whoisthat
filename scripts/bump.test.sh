@@ -120,6 +120,7 @@ assert_eq "$(pkgrel)"    "1"      "pkgrel reset"
 assert_eq "$(tag_rev v0.16.0)" "$(head_rev)" "v0.16.0 on HEAD"
 assert_eq "$(commits 1)" "v0.16.0: Test summary" "commit subject"
 assert_grep "$CASE_LOG" "release create v0.16.0" "bundle release created"
+assert_grep "$CASE_LOG" "release create v0.16.0.*--draft" "bundle release is a draft"
 assert_grep "$CASE_LOG" "compare/v0.15.0...v0.16.0" "minor changelog base"
 assert_grep "$CASE_LOG" "### What's Changed" "release body wrapper"
 assert_grep "$CASE_DIR/.local/bump/commit.md.backup" "Test summary" "commit backup"
@@ -138,30 +139,31 @@ run_bump --kind tui --bump-type 3
 assert_eq "$(tui_ver)" "0.15.2" "tui version"
 assert_grep "$CASE_LOG" "compare/v0.15.1...v0.15.2" "patch changelog base"
 
-printf '\npackaging (pkgrel only, no new tag/release)\n'
+printf '\npackaging (new patch bundle)\n'
 setup_case packaging
 run_bump --kind packaging --bump-type 4
-assert_eq "$(tui_ver)" "0.15.1" "tui unchanged"
-assert_eq "$(pkgrel)"  "2"      "pkgrel bumped"
-assert_eq "$(tag_rev v0.15.1)" "$(head_rev)" "v0.15.1 moved to HEAD"
-assert_eq "$(commits 1)" "v0.15.1-2: Test summary" "commit subject"
-assert_no_grep "$CASE_LOG" "release create" "no new release"
-assert_grep "$CASE_LOG" "release edit v0.15.1" "existing release edited"
-assert_grep "$CASE_LOG" "## Package revision 2" "package revision section"
-assert_grep "$CASE_LOG" "old body" "old notes preserved"
+assert_eq "$(tui_ver)" "0.15.2" "tui patch bumped"
+assert_eq "$(pkgrel)"  "1"      "pkgrel reset"
+assert_eq "$(tag_rev v0.15.2)" "$(head_rev)" "new bundle tag on HEAD"
+assert_eq "$(tag_rev v0.15.1)" "$(git -C "$CASE_DIR" rev-parse v0.15.1)" "old tag not moved"
+assert_eq "$(commits 1)" "v0.15.2: Test summary" "commit subject"
+assert_grep "$CASE_LOG" "release create v0.15.2.*--draft" "new draft release"
+assert_no_grep "$CASE_LOG" "release edit v0.15.1" "existing release not edited"
 
-printf '\ncore (pkgrel ship)\n'
+printf '\ncore (new patch bundle)\n'
 setup_case core
 run_bump --kind core --bump-type 3
 assert_eq "$(core_ver)" "0.3.9"  "core version"
-assert_eq "$(tui_ver)"  "0.15.1" "tui unchanged"
-assert_eq "$(pkgrel)"   "2"      "pkgrel bumped"
-assert_eq "$(tag_rev core-v0.3.9)" "$(git -C "$CASE_DIR" rev-parse HEAD~1)" "core tag on core commit"
-assert_eq "$(tag_rev v0.15.1)" "$(head_rev)" "v0.15.1 moved to HEAD"
-assert_eq "$(commits 2 | tr '\n' '|')" "v0.15.1-2: Test summary|core-v0.3.9: Test summary|" "commit subjects"
+assert_eq "$(tui_ver)"  "0.15.2" "tui patch bumped"
+assert_eq "$(pkgrel)"   "1"      "pkgrel reset"
+assert_eq "$(tag_rev core-v0.3.9)" "$(head_rev)" "core tag on HEAD"
+assert_eq "$(tag_rev v0.15.2)" "$(head_rev)" "bundle tag on HEAD"
+assert_eq "$(tag_rev v0.15.1)" "$(git -C "$CASE_DIR" rev-parse v0.15.1)" "old tag not moved"
+assert_eq "$(commits 1)" "v0.15.2: Test summary" "single commit"
 assert_grep "$CASE_LOG" "release create core-v0.3.9" "core release created"
-assert_grep "$CASE_LOG" "release edit v0.15.1" "bundle release edited"
-assert_no_grep "$CASE_LOG" "release create v0.15.1" "no new bundle release"
+assert_grep "$CASE_LOG" "release create core-v0.3.9.*--draft" "core release is a draft"
+assert_grep "$CASE_LOG" "release create v0.15.2" "bundle release created"
+assert_grep "$CASE_LOG" "release create v0.15.2.*--draft" "bundle release is a draft"
 
 printf '\ncore-bundle\n'
 setup_case core-bundle
@@ -169,7 +171,7 @@ run_bump --kind core-bundle --bump-type 3 --tui-bump-type 3
 assert_eq "$(core_ver)" "0.3.9"  "core version"
 assert_eq "$(tui_ver)"  "0.15.2" "tui version"
 assert_eq "$(pkgrel)"   "1"      "pkgrel reset"
-assert_eq "$(tag_rev core-v0.3.9)" "$(git -C "$CASE_DIR" rev-parse HEAD~1)" "core tag on core commit"
+assert_eq "$(tag_rev core-v0.3.9)" "$(head_rev)" "core tag on HEAD"
 assert_eq "$(tag_rev v0.15.2)" "$(head_rev)" "bundle tag on HEAD"
 assert_grep "$CASE_LOG" "release create core-v0.3.9" "core release created"
 assert_grep "$CASE_LOG" "release create v0.15.2" "bundle release created"
@@ -191,7 +193,7 @@ assert_eq "$?" "0" "dry run exits 0"
 assert_eq "$(tui_ver)" "0.15.1" "dry run writes nothing"
 assert_eq "$(git -C "$CASE_DIR" rev-list --count HEAD)" "1" "dry run creates no commit"
 assert_grep "$TMP/out-dryrun.log" "would update Cargo.toml" "dry run shows diff"
-assert_grep "$TMP/out-dryrun.log" "release  create v0.16.0" "dry run shows plan"
+assert_grep "$TMP/out-dryrun.log" "release  create draft v0.16.0" "dry run shows plan"
 assert_grep "$TMP/out-dryrun.log" "minor release: bundle notes must cover every change since v0.15.0" "dry run prints minor hint"
 
 printf '\nnegatives\n'

@@ -1,0 +1,43 @@
+name: whoisthat
+arch: ${ARCH}
+platform: linux
+version: ${VERSION}
+release: ${PKGREL}
+section: net
+priority: optional
+maintainer: kvunoff <kvunoff@proton.me>
+description: Modern terminal-based VPN client with Xray-core backend
+vendor: WhoisThat
+homepage: https://github.com/kvunoff/whoisthat
+license: MIT
+
+contents:
+  - src: ${ARTIFACT_DIR}/whoisthat
+    dst: /usr/bin/whoisthat
+    expand: true
+  - src: ${ARTIFACT_DIR}/whoisthat-core
+    dst: /usr/bin/whoisthat-core
+    expand: true
+  - src: ${ARTIFACT_DIR}/whoisthat.desktop
+    dst: /usr/share/applications/whoisthat.desktop
+    expand: true
+  - src: ${ARTIFACT_DIR}/LICENSE
+    dst: /usr/share/licenses/whoisthat/LICENSE
+    expand: true
+
+scripts:
+  postinstall: pkg/package-postinstall.sh
+
+depends:
+  - iproute2
+  - nftables
+  - libcap2-bin
+  - systemd
+
+overrides:
+  rpm:
+    depends:
+      - iproute
+      - nftables
+      - libcap
+      - systemd

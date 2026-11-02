@@ -66,7 +66,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: shellcheck
-        run: shellcheck -S warning install.sh scripts/install.test.sh scripts/check-versions.sh scripts/check-docs.sh scripts/bump.sh scripts/bump.test.sh
+        run: shellcheck -S warning install.sh scripts/install.test.sh scripts/check-versions.sh scripts/check-docs.sh scripts/bump.sh scripts/bump.test.sh pkg/package-postinstall.sh
       - name: install.sh tests
         run: ./scripts/install.test.sh
 
@@ -85,6 +85,31 @@ jobs:
       - uses: actions/checkout@v7
       - name: Check version mirrors
         run: ./scripts/check-versions.sh
+
+  musl:
+    name: Static musl build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
+      - name: Install musl toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+      - name: Build
+        env:
+          CC_x86_64_unknown_linux_musl: musl-gcc
+        run: |
+          cargo build --release --locked --target x86_64-unknown-linux-musl
+          ( cd core/core && CGO_ENABLED=0 go build -trimpath -o "$GITHUB_WORKSPACE/whoisthat-core" )
+          for bin in target/x86_64-unknown-linux-musl/release/whoisthat "$GITHUB_WORKSPACE/whoisthat-core"; do
+            if readelf -l "$bin" | grep -q 'INTERP'; then
+              echo "$bin is dynamically linked" >&2
+              exit 1
+            fi
+          done
 
   docs:
     name: Docs build
