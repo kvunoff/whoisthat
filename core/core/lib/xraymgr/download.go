@@ -29,7 +29,7 @@ var downloadMirrors = []string{
 // the same origin as the project's release, not from the same third-party
 // mirror that served the archive. Otherwise a compromised mirror could swap
 // both the binary and its digest.
-const digestBaseURL = "https://github.com/XTLS/Xray-core/releases/download"
+var digestBaseURL = "https://github.com/XTLS/Xray-core/releases/download"
 
 // GetTargetArch maps runtime.GOARCH to Xray release asset architecture naming.
 func GetTargetArch() (string, error) {
@@ -89,6 +89,7 @@ func downloadArchive(client *http.Client, version, arch, destPath string, progre
 	var lastErr error
 
 	for _, mirror := range downloadMirrors {
+		lastErr = nil // a previous mirror's failure must not fail this one
 		url := fmt.Sprintf("%s/%s/%s", mirror, version, zipFileName)
 		logger.Infof("xraymgr: downloading archive from %s", url)
 
