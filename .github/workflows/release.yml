@@ -158,7 +158,9 @@ jobs:
           export PKGREL
           VERSION=$(sed -n 's/^version = "\([^"]*\)"$/\1/p' Cargo.toml | head -n1)
           PKGREL=$(sed -n 's/^pkgrel=//p' pkg/aur/PKGBUILD)
-          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.48.0
+          # nfpm needs a newer Go than the tag's go.mod may pin; setup-go
+          # exports GOTOOLCHAIN=local, so opt this tool install back in.
+          GOTOOLCHAIN=auto go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.48.0
           gopath_bin="$(go env GOPATH)/bin"
           export PATH="$gopath_bin:$PATH"
           nfpm package --config pkg/nfpm.yaml --packager deb --target dist/
