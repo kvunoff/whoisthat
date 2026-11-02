@@ -2,6 +2,7 @@ package xrayjson
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"whoisthat-core/structs"
@@ -242,5 +243,345 @@ func TestPrepareMergesManualRulesAndKeepsProviderRouting(t *testing.T) {
 	hosts := dns["hosts"].(map[string]interface{})
 	if hosts["a.example.com"] != "203.0.113.7" || hosts["static.example"] != "203.0.113.5" {
 		t.Errorf("bootstrap hosts not merged: %+v", hosts)
+	}
+}
+
+const jsonTestProxyOutbounds = `[
+  {"tag":"proxy-a","protocol":"vless","settings":{"vnext":[{"address":"a.example","port":443}]}},
+  {"tag":"proxy-b","protocol":"trojan","settings":{"servers":[{"address":"b.example","port":443}]}},
+  {"tag":"direct","protocol":"freedom"},
+  {"tag":"block","protocol":"blackhole"},
+  {"tag":"dns-out","protocol":"dns"}
+]`
+
+const jsonTestSingleProxyOutbounds = `[
+  {"tag":"proxy-a","protocol":"vless","settings":{"vnext":[{"address":"a.example","port":443}]}},
+  {"tag":"direct","protocol":"freedom"},
+  {"tag":"block","protocol":"blackhole"},
+  {"tag":"dns-out","protocol":"dns"}
+]`
+
+const jsonTestLiteralProxyOutbounds = `[
+  {"tag":"proxy","protocol":"vless","settings":{"vnext":[{"address":"p.example","port":443}]}},
+  {"tag":"proxy-b","protocol":"trojan","settings":{"servers":[{"address":"b.example","port":443}]}},
+  {"tag":"direct","protocol":"freedom"},
+  {"tag":"block","protocol":"blackhole"},
+  {"tag":"dns-out","protocol":"dns"}
+]`
+
+var jsonTestManualProxyRule = structs.RoutingRule{
+	Type:        "field",
+	Domain:      "2ip.io",
+	OutboundTag: "proxy",
+	Enabled:     true,
+}
+
+func jsonTestProvider(outbounds, rules, balancers string) string {
+	return fmt.Sprintf(
+		`{"outbounds":%s,"routing":{"rules":%s,"balancers":%s}}`,
+		outbounds, rules, balancers,
+	)
+}
+
+// jsonTestPrepareManual returns the first rule (the manual one when no API/TUN
+// structural rules are requested) and the routing section.
+func jsonTestPrepareManual(t *testing.T, provider string, rule structs.RoutingRule) (map[string]interface{}, map[string]interface{}) {
+	t.Helper()
+	prepared, err := Prepare([]byte(provider), Options{
+		SocksPort: 3090,
+		HttpPort:  3091,
+		UserRules: []structs.RoutingRule{rule},
+	})
+	if err != nil {
+		t.Fatalf("Prepare: %v", err)
+	}
+	var cfg map[string]interface{}
+	if err := json.Unmarshal(prepared.Config, &cfg); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	routing, ok := cfg["routing"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("routing missing: %#v", cfg)
+	}
+	rules, ok := routing["rules"].([]interface{})
+	if !ok || len(rules) == 0 {
+		t.Fatalf("rules missing: %#v", routing["rules"])
+	}
+	manual, ok := rules[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("manual rule is not a map: %#v", rules[0])
+	}
+	return manual, routing
+}
+
+func jsonTestFindBalancer(routing map[string]interface{}, tag string) map[string]interface{} {
+	balancers, _ := routing["balancers"].([]interface{})
+	for _, raw := range balancers {
+		m, _ := raw.(map[string]interface{})
+		if m["tag"] == tag {
+			return m
+		}
+	}
+	return nil
+}
+
+func TestJSONManualProxyUsesFirstCatchAll(t *testing.T) {
+	provider := jsonTestProvider(
+		jsonTestProxyOutbounds,
+		`[
+		  {"type":"field","network":"tcp,udp","outboundTag":"direct"},
+		  {"type":"field","network":"tcp,udp","balancerTag":"Provider_Main"}
+		]`,
+		`[{"tag":"Provider_Main","selector":["proxy-"],"strategy":{"type":"leastPing"}}]`,
+	)
+	manual, routing := jsonTestPrepareManual(t, provider, jsonTestManualProxyRule)
+	if manual["balancerTag"] != "whoisthat-user-proxy" {
+		t.Fatalf("manual proxy target = %#v, want fallback because the first catch-all is direct", manual)
+	}
+	if balancers, _ := routing["balancers"].([]interface{}); len(balancers) != 2 {
+		t.Fatalf("balancers = %d, want provider + fallback", len(balancers))
+	}
+}
+
+func TestJSONManualProxyUsesCatchAllBalancer(t *testing.T) {
+	provider := jsonTestProvider(
+		jsonTestProxyOutbounds,
+		`[{"type":"field","network":"tcp,udp","balancerTag":"Provider_Main"}]`,
+		`[{"tag":"Provider_Main","selector":["proxy-"],"strategy":{"type":"leastPing"}}]`,
+	)
+	manual, routing := jsonTestPrepareManual(t, provider, jsonTestManualProxyRule)
+	if manual["balancerTag"] != "Provider_Main" {
+		t.Fatalf("manual proxy target = %#v, want Provider_Main", manual)
+	}
+	if balancers, _ := routing["balancers"].([]interface{}); len(balancers) != 1 {
+		t.Fatalf("balancers = %d, want only the provider balancer", len(balancers))
+	}
+}
+
+func TestJSONManualProxyUsesCatchAllOutbound(t *testing.T) {
+	outbounds := `[
+	  {"tag":"proxy-main","protocol":"vless","settings":{"vnext":[{"address":"m.example","port":443}]}},
+	  {"tag":"proxy-b","protocol":"trojan","settings":{"servers":[{"address":"b.example","port":443}]}},
+	  {"tag":"direct","protocol":"freedom"},
+	  {"tag":"block","protocol":"blackhole"},
+	  {"tag":"dns-out","protocol":"dns"}
+	]`
+	provider := jsonTestProvider(
+		outbounds,
+		`[{"type":"field","network":"tcp,udp","outboundTag":"proxy-main"}]`,
+		`[]`,
+	)
+	manual, _ := jsonTestPrepareManual(t, provider, jsonTestManualProxyRule)
+	if manual["outboundTag"] != "proxy-main" {
+		t.Fatalf("manual proxy target = %#v, want proxy-main", manual)
+	}
+}
+
+func TestJSONManualProxyCatchAllDirectFallsBack(t *testing.T) {
+	rules := `[{"type":"field","network":"tcp,udp","outboundTag":"direct"}]`
+
+	t.Run("multiple proxies", func(t *testing.T) {
+		provider := jsonTestProvider(jsonTestProxyOutbounds, rules, `[]`)
+		manual, _ := jsonTestPrepareManual(t, provider, jsonTestManualProxyRule)
+		if manual["balancerTag"] != "whoisthat-user-proxy" {
+			t.Fatalf("manual proxy target = %#v, want fallback", manual)
+		}
+	})
+
+	t.Run("single proxy", func(t *testing.T) {
+		provider := jsonTestProvider(jsonTestSingleProxyOutbounds, rules, `[]`)
+		manual, _ := jsonTestPrepareManual(t, provider, jsonTestManualProxyRule)
+		if manual["outboundTag"] != "proxy-a" {
+			t.Fatalf("manual proxy target = %#v, want proxy-a", manual)
+		}
+	})
+}
+
+func TestJSONManualProxyWithoutCatchAllFallsBack(t *testing.T) {
+	provider := jsonTestProvider(
+		jsonTestProxyOutbounds,
+		`[{"type":"field","domain":["example.com"],"outboundTag":"direct"}]`,
+		`[]`,
+	)
+	manual, _ := jsonTestPrepareManual(t, provider, jsonTestManualProxyRule)
+	if manual["balancerTag"] != "whoisthat-user-proxy" {
+		t.Fatalf("manual proxy target = %#v, want fallback", manual)
+	}
+}
+
+func TestJSONSingleProxyOutboundWinsOverCatchAll(t *testing.T) {
+	provider := jsonTestProvider(
+		jsonTestSingleProxyOutbounds,
+		`[{"type":"field","network":"tcp,udp","balancerTag":"Provider_Main"}]`,
+		`[{"tag":"Provider_Main","selector":["proxy-a"],"strategy":{"type":"leastPing"}}]`,
+	)
+	manual, routing := jsonTestPrepareManual(t, provider, jsonTestManualProxyRule)
+	if manual["outboundTag"] != "proxy-a" {
+		t.Fatalf("manual proxy target = %#v, want the single proxy outbound", manual)
+	}
+	if balancers, _ := routing["balancers"].([]interface{}); len(balancers) != 1 {
+		t.Fatalf("balancers = %d, want only the provider balancer", len(balancers))
+	}
+}
+
+func TestJSONLiteralProxyOutboundWins(t *testing.T) {
+	provider := jsonTestProvider(
+		jsonTestLiteralProxyOutbounds,
+		`[{"type":"field","network":"tcp,udp","balancerTag":"Provider_Main"}]`,
+		`[{"tag":"Provider_Main","selector":["proxy-b"],"strategy":{"type":"leastPing"}}]`,
+	)
+	manual, _ := jsonTestPrepareManual(t, provider, jsonTestManualProxyRule)
+	if manual["outboundTag"] != "proxy" {
+		t.Fatalf("manual proxy target = %#v, want literal proxy outbound", manual)
+	}
+}
+
+func TestJSONCatchAllNetworkForms(t *testing.T) {
+	cases := []struct {
+		name    string
+		network string
+		want    bool
+	}{
+		{"string tcp,udp", `"tcp,udp"`, true},
+		{"array tcp,udp", `["tcp","udp"]`, true},
+		{"string tcp", `"tcp"`, false},
+		{"array udp", `["udp"]`, false},
+		{"empty array", `[]`, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			provider := jsonTestProvider(
+				jsonTestProxyOutbounds,
+				fmt.Sprintf(`[{"type":"field","network":%s,"balancerTag":"Provider_Main"}]`, tc.network),
+				`[{"tag":"Provider_Main","selector":["proxy-"],"strategy":{"type":"leastPing"}}]`,
+			)
+			manual, _ := jsonTestPrepareManual(t, provider, jsonTestManualProxyRule)
+			got := manual["balancerTag"] == "Provider_Main"
+			if got != tc.want {
+				t.Fatalf("balancer target = %#v, want catch-all=%v", manual, tc.want)
+			}
+		})
+	}
+}
+
+func TestJSONCatchAllRejectsSelectorFields(t *testing.T) {
+	cases := []struct {
+		name     string
+		selector string
+	}{
+		{"sourceIP", `"sourceIP":["10.0.0.0/8"]`},
+		{"sourcePort", `"sourcePort":"1000-2000"`},
+		{"localIP", `"localIP":["127.0.0.1"]`},
+		{"localPort", `"localPort":"1234"`},
+		{"process", `"process":["curl"]`},
+		{"vlessRoute", `"vlessRoute":"1-10"`},
+		{"domains", `"domains":["example.com"]`},
+		{"webhook", `"webhook":{"url":"https://example.test"}`},
+		{"unknown", `"unknownField":"x"`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			provider := jsonTestProvider(
+				jsonTestProxyOutbounds,
+				fmt.Sprintf(`[{"type":"field",%s,"balancerTag":"Provider_Main"}]`, tc.selector),
+				`[{"tag":"Provider_Main","selector":["proxy-"],"strategy":{"type":"leastPing"}}]`,
+			)
+			manual, _ := jsonTestPrepareManual(t, provider, jsonTestManualProxyRule)
+			if manual["balancerTag"] != "whoisthat-user-proxy" {
+				t.Fatalf("selector %s must not be a catch-all: %#v", tc.name, manual)
+			}
+		})
+	}
+}
+
+func TestJSONCatchAllBalancerSelectorMatching(t *testing.T) {
+	cases := []struct {
+		name     string
+		selector string
+		want     bool
+	}{
+		{"prefix", `"proxy-"`, true},
+		{"service prefix", `"d"`, false},
+		{"empty", `""`, false},
+		{"no match", `"nope"`, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			provider := jsonTestProvider(
+				jsonTestProxyOutbounds,
+				`[{"type":"field","network":"tcp,udp","balancerTag":"Provider_Main"}]`,
+				fmt.Sprintf(`[{"tag":"Provider_Main","selector":[%s],"strategy":{"type":"leastPing"}}]`, tc.selector),
+			)
+			manual, _ := jsonTestPrepareManual(t, provider, jsonTestManualProxyRule)
+			got := manual["balancerTag"] == "Provider_Main"
+			if got != tc.want {
+				t.Fatalf("balancer target = %#v, want provider balancer=%v", manual, tc.want)
+			}
+		})
+	}
+}
+
+func TestJSONCatchAllOutboundWinsOverBalancer(t *testing.T) {
+	outbounds := `[
+	  {"tag":"proxy-main","protocol":"vless","settings":{"vnext":[{"address":"m.example","port":443}]}},
+	  {"tag":"proxy-b","protocol":"trojan","settings":{"servers":[{"address":"b.example","port":443}]}},
+	  {"tag":"direct","protocol":"freedom"},
+	  {"tag":"block","protocol":"blackhole"},
+	  {"tag":"dns-out","protocol":"dns"}
+	]`
+	provider := jsonTestProvider(
+		outbounds,
+		`[{"type":"field","network":"tcp,udp","outboundTag":"proxy-main","balancerTag":"Provider_Main"}]`,
+		`[{"tag":"Provider_Main","selector":["proxy-b"],"strategy":{"type":"leastPing"}}]`,
+	)
+	manual, _ := jsonTestPrepareManual(t, provider, jsonTestManualProxyRule)
+	if manual["outboundTag"] != "proxy-main" {
+		t.Fatalf("manual proxy target = %#v, want outboundTag precedence", manual)
+	}
+	if _, ok := manual["balancerTag"]; ok {
+		t.Fatalf("manual rule must not carry balancerTag: %#v", manual)
+	}
+}
+
+func TestJSONFallbackSkipsDialerProxyOutbounds(t *testing.T) {
+	outbounds := `[
+	  {"tag":"proxy-plain","protocol":"vless","settings":{"vnext":[{"address":"p.example","port":443}]}},
+	  {"tag":"proxy-chain","protocol":"vless","settings":{"vnext":[{"address":"c.example","port":443}]},
+	   "streamSettings":{"sockopt":{"dialerProxy":"proxy-plain"}}},
+	  {"tag":"direct","protocol":"freedom"},
+	  {"tag":"block","protocol":"blackhole"},
+	  {"tag":"dns-out","protocol":"dns"}
+	]`
+	provider := jsonTestProvider(outbounds, `[]`, `[]`)
+	_, routing := jsonTestPrepareManual(t, provider, jsonTestManualProxyRule)
+	balancer := jsonTestFindBalancer(routing, "whoisthat-user-proxy")
+	if balancer == nil {
+		t.Fatal("fallback balancer missing")
+	}
+	selector, _ := balancer["selector"].([]interface{})
+	if len(selector) != 1 || selector[0] != "proxy-plain" {
+		t.Fatalf("fallback selector = %#v, want [proxy-plain]", selector)
+	}
+}
+
+func TestJSONFallbackKeepsAllTagsWhenEveryOutboundIsChained(t *testing.T) {
+	outbounds := `[
+	  {"tag":"proxy-chain","protocol":"vless","settings":{"vnext":[{"address":"c.example","port":443}]},
+	   "streamSettings":{"sockopt":{"dialerProxy":"proxy-plain"}}},
+	  {"tag":"proxy-plain","protocol":"vless","settings":{"vnext":[{"address":"p.example","port":443}]},
+	   "streamSettings":{"sockopt":{"dialerProxy":"proxy-chain"}}},
+	  {"tag":"direct","protocol":"freedom"},
+	  {"tag":"block","protocol":"blackhole"},
+	  {"tag":"dns-out","protocol":"dns"}
+	]`
+	provider := jsonTestProvider(outbounds, `[]`, `[]`)
+	_, routing := jsonTestPrepareManual(t, provider, jsonTestManualProxyRule)
+	balancer := jsonTestFindBalancer(routing, "whoisthat-user-proxy")
+	if balancer == nil {
+		t.Fatal("fallback balancer missing")
+	}
+	selector, _ := balancer["selector"].([]interface{})
+	if len(selector) != 2 {
+		t.Fatalf("fallback selector = %#v, want all proxy tags", selector)
 	}
 }
