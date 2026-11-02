@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 BINDIR ?= /usr/bin
 
-.PHONY: all build core rust test test-go test-rust test-bump test-docs test-release lint version-check docs-check fmt integration docs install clean
+.PHONY: all build core rust test test-go test-race test-rust test-bump test-docs test-release lint version-check docs-check fmt integration docs install clean
 
 all: build
 
@@ -18,6 +18,10 @@ test: test-go test-rust test-bump test-docs test-release
 
 test-go:
 	cd core/core && go test ./...
+
+# Needs cgo/gcc, so it is kept out of `test` for minimal build images.
+test-race:
+	cd core/core && go test -race ./...
 
 test-rust:
 	cargo test

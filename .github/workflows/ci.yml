@@ -69,7 +69,7 @@ jobs:
         # (lib/happ) and TUN script builders (lib/proxy/tun) are covered by
         # unit tests that the previous partial list skipped.
         working-directory: core/core
-        run: go test ./...
+        run: go test -race ./...
       - name: Module tidiness
         working-directory: core/core
         run: go mod tidy -diff
