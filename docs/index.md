@@ -48,7 +48,7 @@ whoisthat core status
 │  ┌──────────────────────────────────────────────────┐  │
 │  │          whoisthat-core (Go Daemon)              │  │
 │  │  ⋅ Encrypted DB (AES-256-GCM)                    │  │
-│  │  ⋅ Subscription & HWID Engine                 │  │
+│  │  ⋅ Subscription & HWID Engine                    │  │
 │  │  ⋅ TUN & Route Orchestrator                      │  │
 │  │  ⋅ Pinned Xray-core Manager (v26.10.31)          │  │
 │  └─────────────────────────┬────────────────────────┘  │
