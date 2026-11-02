@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 BINDIR ?= /usr/bin
 
-.PHONY: all build core rust test test-go test-rust test-bump lint version-check fmt integration docs install clean
+.PHONY: all build core rust test test-go test-rust test-bump lint version-check docs-check fmt integration docs install clean
 
 all: build
 
@@ -31,11 +31,15 @@ test-bump:
 integration:
 	cd core/core && go test -tags=integration ./lib/proxy/tun/ -run 'TestNetns' -v
 
-lint: version-check
+lint: version-check docs-check
 	cargo fmt --all --check
 	cargo clippy --all-targets --no-deps
 	cd core/core && go vet ./...
 	gofmt -l core/core | (! grep .)
+
+# Docs must not drift from the code (IPC, config keys, CLI, links, versions).
+docs-check:
+	./scripts/check-docs.sh
 
 # Every version mirror must agree with its source of truth (Cargo.toml,
 # version.go, protocol.txt, PKGBUILD). Also gates release tags.
