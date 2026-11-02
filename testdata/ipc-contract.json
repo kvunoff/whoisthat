@@ -98,8 +98,8 @@
       "mode": "tun"
     },
     "xray_status": {
-      "version": "v26.10.29",
-      "target_version": "v26.10.29",
+      "version": "v26.10.31",
+      "target_version": "v26.10.31",
       "status": "ready",
       "progress": 100,
       "bytes_downloaded": 1,

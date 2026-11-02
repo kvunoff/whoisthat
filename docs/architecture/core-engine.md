@@ -27,7 +27,7 @@ When `whoisthat-core` starts, it executes a rigorous preparation sequence:
    │
    ├─► 8. Seed Latency Test Parameters
    │
-   ├─► 9. Initialize Xray Runtime Manager (Verify Pinned v26.10.29)
+   ├─► 9. Initialize Xray Runtime Manager (Verify Pinned v26.10.31)
    │
    ├─► 10. Initialize the TUN manager and run the missing-binary preflight
    │

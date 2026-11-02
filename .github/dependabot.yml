@@ -31,7 +31,7 @@ updates:
         patterns: ["*"]
         update-types: ["minor", "patch"]
     ignore:
-      # Must stay in step with xraymgr.PinnedVersion (v26.10.29).
+      # Must stay in step with xraymgr.PinnedVersion (v26.10.31).
       - dependency-name: github.com/xtls/xray-core
 
   - package-ecosystem: npm

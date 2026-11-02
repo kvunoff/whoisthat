@@ -13,7 +13,7 @@ use crate::core_spawn::find_core_binary;
 use crate::doctor::types::{CheckCategory, CheckItem, DoctorReport};
 
 /// Must match `xraymgr.PinnedVersion` in core/core/lib/xraymgr/version.go.
-const PINNED_XRAY_VERSION: &str = "26.10.29";
+const PINNED_XRAY_VERSION: &str = "26.10.31";
 
 pub async fn run_doctor(include_logs: bool) -> DoctorReport {
     let cfg = config::load_config();
