@@ -77,13 +77,15 @@ jobs:
             echo "core content unchanged, no commit"
           else
             git commit \
-                  -m "core: sync whoisthat@${SOURCE_SHA:0:12}" \
-                  -m "Source-SHA: ${SOURCE_SHA}" \
-                  -m "$SUBJECT"
+              -m "core: sync whoisthat@${SOURCE_SHA:0:12}" \
+              -m "Source-SHA: ${SOURCE_SHA}" \
+              -m "$SUBJECT"
             git push origin HEAD:main
           fi
 
           if [ "$REF_TYPE" = tag ]; then
+            # shortcut: a tag on an older commit would sync that content over
+            # main; release tags always point at HEAD, revisit if that changes.
             if git rev-parse -q --verify "refs/tags/${REF_NAME}" >/dev/null; then
               # Refuse to move an existing tag: it would rewrite published history.
               test "$(git rev-parse "refs/tags/${REF_NAME}^{commit}")" = "$(git rev-parse HEAD)" \
