@@ -76,10 +76,10 @@ The routing engine resolves this using formal domain strategies:
 #### DNS Loop & Leak Prevention
 DNS is handled before user rules so a query for a blocked domain cannot be routed by a rule that itself needs DNS:
 
-* **Happ DNS profiles:** DNS arriving on the TUN inbound (port 53, TCP/UDP) is captured by the `tun-in → dns-out` rule and answered by Xray's DNS module. The tagged `domestic-dns` server is reached via `direct`, and `remote-dns` via `proxy`.
-* **Manual routing / Happ without DNS:** the legacy DNAT rule rewrites port 53 to the configured `dns-servers`, which are queried through the physical gateway.
+* **Happ DNS profiles** capture port 53 on the TUN inbound and answer it with Xray's DNS module (`tun-in → dns-out`).
+* **Manual routing / Happ without DNS** uses the legacy DNAT to the configured `dns-servers` through the physical gateway.
 
-The first path keeps resolution inside Xray's routing logic; the legacy path deliberately uses the configured resolvers directly (and is disabled only for Happ DNS in split `include` mode).
+The full resolver flow, sink addresses and split-mode behaviour are in [DNS & FakeDNS](/networking/dns).
 
 ### 4. Rule Classification Engines
 
@@ -183,10 +183,7 @@ Press <kbd>g</kbd> on a group page to switch between the two. Switching to **Cus
 
 Editing a rule (add / edit / delete / toggle / preset) on a group page that still inherits Global automatically creates the custom override, seeded from the stored custom rules if present, otherwise from Global.
 
-The effective manual layer is resolved by `resolveRouting`:
-
-* `manual` mode and fallbacks in `auto` mode use the group's custom rules when `manual_routing_mode == "custom"`, otherwise the Global rules.
-* `subscription` mode never applies manual rules; it falls back to the LAN-only fail-safe instead.
+How the manual layer combines with Happ profiles, `auto`/`manual`/`subscription` and JSON subscriptions is in [Routing Precedence](/reference/routing-precedence#2-then-the-effective-routing-source).
 
 ---
 

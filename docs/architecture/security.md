@@ -70,6 +70,8 @@ In TUN mode, misconfigured DNS servers or local resolvers can lead to DNS leaks.
 * **Happ DNS mode**: queries are redirected to the sink addresses `198.18.0.53` / `fd00::53` and then resolved by Xray's tagged remote/domestic resolvers, so proxied domains are resolved through the VPN outbound.
 * Split `include` disables the Happ hijack; the legacy hijack remains active for non-excluded traffic.
 
+The full flow, FakeDNS rules and known limits are in [DNS & FakeDNS](/networking/dns).
+
 ### B. Independent Kill-Switch (`whoisthat_ks`)
 When the Kill-Switch setting is enabled:
 * A dedicated nftables table (`inet whoisthat_ks`) is installed.

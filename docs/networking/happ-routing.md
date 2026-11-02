@@ -287,137 +287,27 @@ To prevent parser panics when interacting with heterogeneous providers, the core
 
 ## Rule Compilation & Order of Precedence
 
-In Xray-core, routing rules are evaluated **in sequential order from top to bottom**; the first rule that matches a packet terminates evaluation.
+WhoisThat's compiler translates a `HappProfile` into a fixed order: LAN → block → direct → proxy, with the `GlobalProxy` catch-all last. The core prepends its structural API and DNS rules and appends manual rules where applicable, so the first matching rule always wins.
 
-WhoisThat's compiler (`ToRoutingConfig` & `injectRoutingConfig`) translates a `HappProfile` into an Xray routing table following a strict security hierarchy:
-
-```mermaid
-graph TD
-    Start["Incoming Traffic / DNS Sniffing"] --> R1["1. API dokodemo-door (gRPC stats) -> outbound: api"]
-    R1 --> R2["2. TUN DNS capture: tun-in port 53/tcp+udp -> outbound: dns-out"]
-    R2 --> R3["3. Domestic DNS queries -> outbound: direct"]
-    R3 --> R4["4. Remote DNS queries -> outbound: proxy"]
-    R4 --> R5["5. LAN RFC1918 & Loopback Subnets -> outbound: direct"]
-    R5 --> R6["6. BlockSites (Domain Rules) -> outbound: block"]
-    R6 --> R7["7. BlockIp (IP Rules) -> outbound: block"]
-    R7 --> R8["8. DirectSites (Domain Rules) -> outbound: direct"]
-    R8 --> R9["9. DirectIp (IP Rules) -> outbound: direct"]
-    R9 --> R10["10. ProxySites (Domain Rules) -> outbound: proxy"]
-    R10 --> R11["11. ProxyIp (IP Rules) -> outbound: proxy"]
-    R11 --> R12{"12. GlobalProxy Flag?"}
-    R12 -->|GlobalProxy == false| R13["Catch-All Rule: network: tcp,udp -> outbound: direct"]
-    R12 -->|GlobalProxy == true| R14["Default Outbound: First outbound (proxy)"]
-```
-
-Rules 2–4 are emitted only when the active Happ profile carries DNS settings. Manual routing and Happ profiles without DNS keep the legacy `port 53 UDP -> proxy` rule.
-
-### Detailed Stage Breakdown
-
-1. **Stats API Loopback**: Injects an internal routing rule for gRPC traffic destined for the Dokodemo-door API inbound. Ensures traffic stats collection never conflicts with user rules.
-2. **DNS Capture & Tagged Resolvers**: When TUN is active and the Happ profile has a DNS section, DNS arriving through `tun-in` on port 53 is sent to the `dns-out` outbound. Queries originated by the tagged `domestic-dns` and `remote-dns` servers are then routed to `direct` and `proxy` respectively. This replaces the legacy blanket `port 53 -> proxy` rule and prevents DNS queries from matching user domain rules.
-3. **Private LAN Bypass (Unconditional Priority)**: The private IP subnet rule is hardcoded ahead of all provider rules (after API and DNS capture):
-   ```
-   10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, ::1/128, fc00::/7, fe80::/10 -> direct
-   ```
-   Guarantees that local network printers, LAN shares, routers, and internal hypervisor interfaces remain reachable regardless of provider wildcard configurations.
-4. **Block Rules**: `BlockSites` and `BlockIp` are directed to the `blackhole` protocol outbound.
-5. **Direct Rules**: `DirectSites` and `DirectIp` are routed to the `freedom` outbound configured with `SO_MARK = 1` (Table 100), cleanly escaping TUN mode capture without causing routing loops.
-6. **Proxy Rules**: `ProxySites` and `ProxyIp` are directed to the encrypted upstream outbound (`proxy`).
-7. **Catch-All Default Route**:
-   * If `GlobalProxy == false`: A terminal rule matching `network: "tcp,udp"` sends all remaining traffic to `direct`. Only explicitly proxied domains/IPs traverse the VPN tunnel.
-   * If `GlobalProxy == true`: Omitted, causing Xray to fall through to the default outbound (the active proxy profile).
-8. **Sniffing Route Enforcement**: Sets `routeOnly: false` on inbounds so that SNI-sniffed domain names override raw IP destinations, enabling domain-level routing even when client applications resolve DNS locally.
+The exact order — including manual rules, JSON subscriptions and the `subscription` LAN-only fallback — is in [Routing Precedence](/reference/routing-precedence).
 
 ---
 
 ## DNS and FakeDNS
 
-When the active Happ profile supplies DNS fields, the core **replaces** the Xray `dns` section instead of layering it on top of the locally configured one.
+When the active Happ profile supplies DNS fields, the core **replaces** Xray's DNS section: `remote-dns` is reached through the proxy, `domestic-dns` directly, and `DnsHosts` plus the resolved VPN server addresses bootstrap the lookup. FakeDNS is applied only in TUN mode with `GlobalProxy=true` and split mode `off`/`exclude`.
 
-### Server selection
-
-* **`GlobalProxy = true`** — unmatched traffic is proxied:
-  * `domestic-dns` is emitted only when the profile has direct domains. It carries those domains and `skipFallback: true`, so direct sites resolve through the domestic resolver.
-  * `remote-dns` is the fallback and resolves everything else through the proxy.
-* **`GlobalProxy = false`** — unmatched traffic is direct:
-  * `domestic-dns` is the primary fallback resolver and has no `domains` filter.
-  * `remote-dns` is used only for the profile's proxy domains (`ProxySites`) and has `skipFallback: true`.
-* If the profile provides no usable resolvers, the configured `dns-servers` array is used as a fallback.
-
-### Bootstrap and static hosts
-
-`dns.hosts` is merged in this priority order (first value wins):
-
-1. `DnsHosts` from the profile;
-2. the DoH/DoU hostname mapped to `RemoteDNSIP`;
-3. the domestic DoH/DoU hostname mapped to `DomesticDNSIP`;
-4. the resolved IPs of the VPN server itself.
-
-The last entry is essential in TUN mode: the system resolver is already captured when Xray reconnects, so the server domain must be resolvable without asking the tunnel it is about to establish.
-
-### FakeDNS
-
-FakeDNS is enabled only when **all** of these are true:
-
-* TUN mode is active;
-* the active source is a Happ profile with a DNS section;
-* the profile sets `FakeDNS: "true"`;
-* `GlobalProxy == true`;
-* split mode is `off` or `exclude` (not `include`).
-
-In every other combination the flag is parsed and stored but has no effect.
-
-When active, WhoisThat:
-
-* adds two fake pools to Xray:
-
-  ```json
-  "fakedns": [
-    { "ipPool": "198.19.0.0/16", "poolSize": 32768 },
-    { "ipPool": "fc00::/18",     "poolSize": 32768 }
-  ]
-  ```
-
-* prepends a tagged `fakedns` server to `dns.servers`;
-* adds `fakedns` to `destOverride` on the `tun-in` inbound only;
-* keeps `routeOnly: false`, and forces `IPIfNonMatch` if the profile asked for `AsIs` (otherwise IP rules would see a fake address).
-
-The pools do not overlap the TUN address (`198.18.0.1`), the DNS sink (`198.18.0.53`), or their IPv6 counterparts.
-
-Limitations:
-
-* ICMP is not mapped back to the real host. The TUN stack may answer `ping <fake-ip>` locally (typically `ttl 64` and sub-millisecond latency), so a successful ping does **not** prove that the remote host is reachable. Use TCP/HTTP (`curl`, browser) for fake-IP checks.
-* QUIC/HTTP-3 is not added to `destOverride` (it conflicts with the screen-share latency fix), so HTTP/3 to a fake domain may bypass domain sniffing.
-* Fake allocations are per Xray process: a reload/reset invalidates old fake addresses.
+The resolver selection table, bootstrap order, fake pools and their limitations are documented in [DNS & FakeDNS](/networking/dns).
 
 ---
 
 ## Per-Group Routing Modes
 
-Happ routing profiles, Geo assets, and the routing mode are configured **independently for each subscription group**. Pressing <kbd>m</kbd> on the Routing tab cycles the active mode for the focused group:
+Happ routing profiles, Geo assets and the routing mode are configured **independently for each subscription group**. Pressing <kbd>m</kbd> on the Routing tab cycles `auto → manual → subscription`.
 
-```
-[auto] ──► [manual] ──► [subscription] ──► [auto]
-```
+Manual rules have two layers: **Global** (page 0, inherited by default) and **Custom** (a group page, toggled with <kbd>g</kbd>). Editing a rule on an inheriting group switches it to Custom, seeded from the stored override or from Global; switching back keeps the custom file on disk.
 
-Manual rules are arranged in two layers:
-
-* **Global** (the first page of the Routing tab) — a shared rule set used by every group that inherits it.
-* **Custom** (a group page, press <kbd>g</kbd> to switch) — a group-specific rule set that overrides Global for that group.
-
-The resolution algorithm (`resolveRouting`) determines what routing table is applied during connection startup or rule reloading:
-
-| Group Mode | Manual Source | Active Happ Profile Condition | Resulting Routing Source | Effective Behavior |
-| :--- | :--- | :--- | :--- | :--- |
-| **`auto`** *(Default)* | any | Active profile with rules and all referenced geo files present (the `state` string is not checked) | **`happ`** | Compiles and enforces the active Happ profile rules. |
-| **`auto`** | Global | No active Happ profile, or assets failed/downloading | **`manual` (global)** | **Transparent Fallback**: uses the Global manual rules and presets catalog. |
-| **`auto`** | Custom | No active Happ profile, or assets failed/downloading | **`manual` (custom)** | **Transparent Fallback**: uses this group's custom rules. |
-| **`manual`** | Global | Any condition | **`manual` (global)** | Strictly enforces the Global manual rules and presets. All Happ profiles are ignored. |
-| **`manual`** | Custom | Any condition | **`manual` (custom)** | Strictly enforces this group's custom rules. All Happ profiles are ignored. |
-| **`subscription`** | any | Active profile with rules and all referenced geo files present (the `state` string is not checked) | **`happ`** | Strictly compiles and enforces the provider Happ profile. |
-| **`subscription`** | any | Profile missing, inactive, or assets uncompiled | **`happ` (Safe LAN-only)** | **Fail-Safe Isolation**: Instead of exposing manual rules, installs a strict LAN-only bypass rule (`LAN -> direct`). Non-LAN traffic is contained to prevent leaks. |
-
-Editing a rule on a group page that still inherits Global automatically switches that group to a custom rule set (seeded from the stored override, if one exists, otherwise from Global). Switching back to Global with <kbd>g</kbd> keeps the custom rules on disk, so they can be restored later.
+The full fallback table — including what happens when the active profile is unusable and how JSON subscriptions differ — is in [Routing Precedence](/reference/routing-precedence#2-then-the-effective-routing-source).
 
 ---
 

@@ -66,6 +66,20 @@ Ensure you have the following installed on your machine:
 * **Git**, **curl**, and a C compiler (`gcc` or `clang`)
 * **iproute2** and either **nftables** or **iptables**
 
+Runtime requirements for the full feature set:
+
+| Requirement | Needed for |
+| :--- | :--- |
+| Linux with `/dev/net/tun` | TUN mode |
+| `nftables` (recommended) | Split tunneling, kill-switch, DNS hijack |
+| `iptables` | Legacy fallback for kill-switch and DNS hijack (split tunneling still needs `nftables`) |
+| cgroup v2 (`/sys/fs/cgroup/cgroup.controllers`) | Split tunneling (`whoisthat run`) |
+| systemd user manager | Split-tunnel scopes and the user service |
+| `libcap` (`setcap`/`getcap`) | Rootless TUN via file capabilities |
+| `x86_64` or `aarch64` | Prebuilt Xray runtime |
+
+Proxy mode only needs the binaries and a reachable server; TUN, split tunneling and the kill-switch require the kernel and firewall pieces above.
+
 ### Step-by-Step Compilation
 
 ```bash

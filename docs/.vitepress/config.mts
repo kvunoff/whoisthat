@@ -27,6 +27,7 @@ export default withMermaid(defineConfig({
   base: '/',
   cleanUrls: true,
   appearance: 'dark',
+  lastUpdated: true,
 
   sitemap: {
     hostname: 'https://docs.tuqise.com'
@@ -53,7 +54,7 @@ export default withMermaid(defineConfig({
     logo: '/logo.svg',
 
     nav: [
-      { text: 'Guide', link: '/' },
+      { text: 'Guide', link: '/guide/quick-start' },
       { text: 'Architecture', link: '/architecture/overview' },
       { text: 'Networking', link: '/networking/tun-mode' },
       { text: 'Integrations', link: '/integrations/cli' },
@@ -107,6 +108,7 @@ export default withMermaid(defineConfig({
         collapsed: false,
         items: [
           { text: 'TUN Mode & Capabilities', link: '/networking/tun-mode' },
+          { text: 'DNS & FakeDNS', link: '/networking/dns' },
           { text: 'Split Tunneling (cgroup v2)', link: '/networking/split-tunnel' },
           { text: 'Kill-Switch Firewall', link: '/networking/killswitch' },
           { text: 'Routing Rules & Presets', link: '/networking/routing-rules' },
@@ -133,6 +135,7 @@ export default withMermaid(defineConfig({
         items: [
           { text: 'TCP & IPC Wire Protocol', link: '/reference/protocol' },
           { text: 'Configuration Files', link: '/reference/configuration' },
+          { text: 'Routing Precedence', link: '/reference/routing-precedence' },
           { text: 'Doctor Diagnostics', link: '/reference/doctor' },
           { text: 'Troubleshooting & FAQ', link: '/reference/troubleshooting' },
           { text: 'Threat Model & Limitations', link: '/reference/threat-model' },
