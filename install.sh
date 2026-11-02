@@ -16,7 +16,7 @@
 #        - whoisthat        (Ratatui Rust TUI client)
 #   3. Isolated Xray-core runtime (v26.10.31: ~/.local/share/whoisthat/runtimes/xray/)
 #
-# --from-source additionally installs Go 1.26+ and Rust stable, then builds.
+# --from-source additionally installs Go 1.26.10+ and Rust stable, then builds.
 # =============================================================================
 # Ensure running under bash
 if [ -z "${BASH_VERSION:-}" ]; then
@@ -31,8 +31,8 @@ fi
 set -euo pipefail
 
 # --- version constants -------------------------------------------------------
-GO_MIN_VERSION="1.26.0"
-GO_INSTALL_VERSION="1.26.8"
+GO_MIN_VERSION="1.26.10"
+GO_INSTALL_VERSION="1.26.10"
 XRAY_VERSION="v26.10.31"
 
 # Canonical install location. /usr/local/bin is kept only as a legacy cleanup

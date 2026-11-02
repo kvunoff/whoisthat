@@ -109,7 +109,7 @@ when you switch between `whoisthat` and `whoisthat-bin`.
 
 Ensure you have the following installed on your machine:
 * **Rust**: `1.88` or newer with edition 2024 support ([rustup.rs](https://rustup.rs/))
-* **Go**: `1.26+` ([go.dev](https://go.dev/))
+* **Go**: `1.26.10+` ([go.dev](https://go.dev/))
 * **Git**, **curl**, and a C compiler (`gcc` or `clang`)
 * **iproute2** and either **nftables** or **iptables**
 
