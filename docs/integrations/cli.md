@@ -172,8 +172,11 @@ Notes:
 * Happ routing can shadow manual rules: in `auto` mode with an active Happ profile,
   and always in `subscription` mode. `route list` prints the effective source and a
   shadowing warning; edits are saved but do not affect traffic until the group is
-  switched to `manual` (or the Happ profile is turned off). `--json` adds
-  `effective` and `manual_shadowed` fields.
+  switched to `manual` (or the Happ profile is turned off). JSON subscription groups
+  are exempt: their manual rules always run on top of the provider's JSON baseline,
+  so `route list` reports `source = manual` and does not warn about shadowing.
+  `--json` adds `effective` (including `effective.json`) and `manual_shadowed`
+  fields.
 * Editing rules of an inheriting group implicitly switches it to `custom`; the CLI prints a note.
 * `inherit`/`custom` cannot be applied to global rules (group `0`).
 * Read-modify-write preserves the Happ DNS section.

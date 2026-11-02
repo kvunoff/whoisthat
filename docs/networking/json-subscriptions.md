@@ -63,7 +63,7 @@ manual rules (Routing tab)
 provider JSON rules
 ```
 
-So a user override always wins, while anything not overridden falls through to the provider's policy. Provider `domainStrategy` and balancers are preserved. Manual rules that target `proxy` are mapped to the provider's `proxy` outbound, its single proxy outbound, or a generated `whoisthat-user-proxy` balancer over all proxy outbounds.
+So a user override always wins, while anything not overridden falls through to the provider's policy. Provider `domainStrategy` and balancers are preserved. Manual rules that target `proxy` are mapped to the provider's `proxy` outbound, its single proxy outbound, or the target of the provider's first catch-all rule (usually the main balancer). A generated `whoisthat-user-proxy` balancer is used only as a fallback when the provider has no usable catch-all; it excludes chained outbounds that use `dialerProxy`.
 
 Happ profiles delivered by the same subscription are used for their geo assets only; their rules are not stacked on top of the JSON routing. Importing, activating or deleting Happ profiles and changing the routing mode is disabled for JSON groups.
 
