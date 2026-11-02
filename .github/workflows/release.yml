@@ -47,7 +47,7 @@ jobs:
           ref: ${{ env.SOURCE_REF }}
           persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@1.98.1
+      - uses: dtolnay/rust-toolchain@1.120.0
 
       - uses: Swatinem/rust-cache@v2
 
@@ -98,7 +98,7 @@ jobs:
       - name: Verify tag against version files
         run: ./scripts/check-versions.sh --tag "$TAG"
 
-      - uses: dtolnay/rust-toolchain@1.98.1
+      - uses: dtolnay/rust-toolchain@1.120.0
         with:
           targets: ${{ matrix.target }}
 
@@ -180,7 +180,7 @@ jobs:
         with:
           subject-path: dist/*
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: dist-${{ matrix.arch }}
           path: dist/*
@@ -197,7 +197,7 @@ jobs:
           ref: ${{ env.SOURCE_REF }}
           persist-credentials: false
 
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         with:
           pattern: dist-*
           merge-multiple: true
@@ -336,7 +336,7 @@ jobs:
           ref: ${{ env.SOURCE_REF }}
           persist-credentials: false
 
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         with:
           pattern: dist-*
           merge-multiple: true
