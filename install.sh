@@ -1041,6 +1041,22 @@ verify_installation() {
     local tui core
     tui=$(as_target "$BIN_DIR/whoisthat" --version 2>/dev/null | head -1 || true)
     core=$(as_target "$BIN_DIR/whoisthat-core" --version 2>/dev/null | head -1 || true)
+
+    if [ -z "$core" ]; then
+        # File capabilities make the binary impossible to exec when the
+        # container's bounding set lacks NET_ADMIN/NET_RAW. Probe an uncapped
+        # copy so the installer can still verify the binary itself.
+        local probe="$WORK_DIR/whoisthat-core.probe"
+        if cp "$BIN_DIR/whoisthat-core" "$probe" 2>/dev/null; then
+            chmod +x "$probe"
+            core=$(as_target "$probe" --version 2>/dev/null | head -1 || true)
+            if [ -n "$core" ]; then
+                warn "whoisthat-core cannot run with file capabilities in this environment."
+                warn "TUN mode needs NET_ADMIN and NET_RAW in the bounding set (containers need --cap-add)."
+            fi
+        fi
+    fi
+
     if [ -z "$tui" ] || [ -z "$core" ]; then
         err "Installed binaries did not run:"
         err "  whoisthat: ${tui:-<no output>}"
