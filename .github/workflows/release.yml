@@ -172,9 +172,12 @@ jobs:
           RPM_ARCH: ${{ matrix.rpm_arch }}
         run: |
           set -euo pipefail
-          docker run --rm -v "$PWD/dist:/dist:ro" debian:12 sh -c \
+          # File capabilities on whoisthat-core need these in the bounding set.
+          docker run --rm --cap-add=NET_ADMIN --cap-add=NET_RAW --cap-add=SETPCAP \
+            -v "$PWD/dist:/dist:ro" debian:12 sh -c \
             "export DEBIAN_FRONTEND=noninteractive; apt-get update -qq && apt-get install -y -qq /dist/whoisthat_*_${DEB_ARCH}.deb && whoisthat --version && whoisthat-core --version"
-          docker run --rm -v "$PWD/dist:/dist:ro" fedora:44 sh -c \
+          docker run --rm --cap-add=NET_ADMIN --cap-add=NET_RAW --cap-add=SETPCAP \
+            -v "$PWD/dist:/dist:ro" fedora:44 sh -c \
             "dnf install -y -q /dist/whoisthat-*.${RPM_ARCH}.rpm && whoisthat --version && whoisthat-core --version"
 
       - name: Attest build provenance
