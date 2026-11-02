@@ -27,7 +27,7 @@ last_group_id = 0
 last_profile_id = 0
 
 # Last seen core version from the IPC handshake (display fallback only)
-core_version = "0.4.4"
+core_version = "0.4.5"
 
 # Display public IP address in the header
 show_ip = true
@@ -96,7 +96,7 @@ Auto-generated and synchronized by the Go core daemon:
   "tun-name": "whoisthattun",
   "hwid-enabled": true,
   "hwid": "1fb1e0141ab3e35a",
-  "user-agent": "whoisthat/v0.4.4",
+  "user-agent": "whoisthat/v0.4.5",
   "kill-switch-enabled": false,
   "autoconnect-enabled": false,
   "autoconnect-group-id": 0,
