@@ -62,7 +62,7 @@ export default defineConfig({
         items: [
           { text: 'Changelog / Releases', link: 'https://github.com/kvunoff/whoisthat/releases' },
           { text: 'AUR Package', link: 'https://aur.archlinux.org/packages/whoisthat' },
-          { text: 'GNOME Extension', link: 'https://extensions.gnome.org/extension/10998/whoisthat-vpn-indicator/' }
+          { text: 'GNOME Extension', link: 'https://github.com/kvunoff/whoisthat-extension' }
         ]
       }
     ],

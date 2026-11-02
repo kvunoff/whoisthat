@@ -55,7 +55,7 @@ In modern Content Delivery Networks (CDNs) and Anycast architectures (Cloudflare
 **Domain Sniffing** solves this dilemma by inspecting the initial handshake payload of a connection:
 * **TLS Connections**: The engine peeks into the client's `ClientHello` packet and extracts the **Server Name Indication (SNI)** extension.
 * **HTTP Connections**: The engine reads the initial HTTP request line and extracts the `Host:` header.
-* **QUIC / HTTP/3**: Not inspected — `quic` is intentionally absent from the TUN sniffing `destOverride` list (see [Troubleshooting](/reference/troubleshooting#why-does-http-3-quic-sometimes-bypass-domain-routing)). HTTP/3 traffic is therefore routed by destination IP, not by domain.
+* **QUIC / HTTP/3**: Not inspected — `quic` is intentionally absent from the TUN sniffing `destOverride` list (see [Troubleshooting](/reference/troubleshooting#why-does-http3quic-sometimes-bypass-domain-routing)). HTTP/3 traffic is therefore routed by destination IP, not by domain.
 
 By configuring `sniffing.routeOnly = false`, the routing engine replaces the destination IP address with the extracted domain name in the connection context, allowing domain-level rules to evaluate accurately even when the operating system resolved the address locally.
 

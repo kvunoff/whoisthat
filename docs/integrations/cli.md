@@ -96,7 +96,7 @@ whoisthat profile rm 12:6 --yes
 whoisthat profile rename 12:6 "Frankfurt"
 whoisthat profile move 12:6 --to Personal
 whoisthat profile reorder Work 12:6 12:7 12:8
-whoisthat profile reorder Work --order 12:7,12:6,12:8
+whoisthat profile reorder Work --order 7,6,8   # profile ids, not group:id
 ```
 
 By default `profile list`/`show` omit the `uri` field; use `--reveal` when you really need it.
@@ -398,7 +398,8 @@ Old flags are hidden aliases and keep working:
 | `handle-url <url> [--group]` | `link handle <url> [--group]` |
 | `register-deeplink` | `link register` |
 | `status -s`, `-s` | `status --short` |
-| `status -w -j`, `-j` | `status --watch --json` |
+| `status -w -j` | `status --watch --json` |
+| `-j` | `status --json` (one-shot, not a stream) |
 | `-v`, `--version` | `version` |
 
 ---
@@ -433,7 +434,7 @@ whoisthat status --watch --json
 
 # Pick the fastest profile and connect
 whoisthat test group Work --wait --json \
-  | jq -r 'sort_by(.test_result) | .[0] | "\(.id)"' \
+  | jq -r 'map(select(.test_result > 0)) | sort_by(.test_result) | .[0].id' \
   | xargs -r whoisthat connect
 
 # Refresh every subscription from a timer

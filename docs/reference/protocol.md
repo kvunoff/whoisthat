@@ -31,7 +31,7 @@ without an id.
 | Direct command replies | `application-state`, `group-added`, `group-updated`, `profiles-added`, `subscription-updated`, `routing-updated`, `kill-switch-updated`, `split-tunnel-updated`, `tun-name-updated`, `hwid-updated`, `test-config-updated`, `is-root-answer` | yes |
 | Request-scoped warnings | `warn` with keys such as `connect-failed`, `update-subscription-failed`, `test-group-failed` | yes |
 | Background/broadcast events | `status-changed`, `tun-status-changed`, `traffic-stats`, `test-progress` (after the first frame), `profile-updated` (test results), `xray-progress`, `warn died` | no |
-| Commands without a reply | `die`, `cancel-tests` | — |
+| Commands without a reply | `die`, `cancel-tests`, `set-log-level` | — |
 
 Some commands emit **two** id-carrying frames. Wait for the terminal one, not the first:
 
@@ -65,6 +65,7 @@ The core replies with `{"msg":"hello-ok","data":{"protocol_version":4}}` or `{"m
 | :--- | :--- | :--- |
 | `hello` | `{"token": "string", "protocol_version": int}` | `hello-ok` / `hello-error` (TCP only, must be first) |
 | `get-application-state` | `{}` | `application-state` |
+| `set-log-level` | `{"level": "error" \| "warn" \| "info" \| "debug" \| "trace"}` | No reply (fire-and-forget); an invalid value emits `warn` with key `set-log-level-failed` |
 | `connect` | `{"profile": {"id": int, "group_id": int}}` | `status-changed` |
 | `disconnect` | `{}` | `status-changed` |
 | `add-profiles` | `{"uris": "string", "group_id": int}` | `profiles-added` |
@@ -72,7 +73,7 @@ The core replies with `{"msg":"hello-ok","data":{"protocol_version":4}}` or `{"m
 | `reorder-profiles` | `{"group_id": int, "profile_ids": [int, ...]}` | `profiles-reordered` |
 | `reorder-groups` | `{"group_ids": [int, ...]}` | `groups-reordered` |
 | `move-profile` | `{"profile_id": int, "from_group_id": int, "to_group_id": int}` | `profile-moved` |
-| `test-profile` | `{"profile": {"id": int, "group_id": int}, "method": "string"}` | `profile-updated` |
+| `test-profile` | `{"profile": {"id": int, "group_id": int}, "method": "string", "sample_count": int?}` | `profile-updated` |
 | `enable-tun` | `{}` | `tun-status-changed` |
 | `disable-tun` | `{}` | `tun-status-changed` |
 | `is-root` | `{}` | `is-root-answer` |
@@ -90,7 +91,7 @@ The core replies with `{"msg":"hello-ok","data":{"protocol_version":4}}` or `{"m
 | `set-kill-switch` | `{"enabled": bool}` | `kill-switch-updated` |
 | `set-split-tunnel` | `{"mode": "off" \| "exclude" \| "include"}` | `split-tunnel-updated` |
 | `set-autoconnect` | `{"enabled": bool, "group_id": int, "profile_id": int, "mode": "proxy" \| "tun"}` | `autoconnect-updated` |
-| `test-group` | `{"group_id": int, "method": "string"}` | `test-progress` & `profile-updated` |
+| `test-group` | `{"group_id": int, "method": "string", "sample_count": int?}` | `test-progress` & `profile-updated` |
 | `cancel-tests` | `{}` | Cancels all active and pending latency tests. |
 | `set-test-config` | `{"config": {"concurrency": int, "timeout_seconds": int, "samples_per_test": int, "test_endpoint": "str", "auto_test_on_subscribe": bool}}` | `test-config-updated` |
 | `import-happ-routing` | `{"group_id": int, "link": "string"}` | `subscription-updated` or `warn` |
@@ -161,8 +162,8 @@ The core replies with `{"msg":"hello-ok","data":{"protocol_version":4}}` or `{"m
   * `-1`: Latency test failed / host unreachable.
   * `-2`: UI-only marker used by the TUI while a test is in flight; the core never stores or sends `-2`.
 * **`tested_at`**: Unix epoch timestamp marking when the last successful test completed.
-* **`loss-pct`**: Percentage of failed requests during the multi-sample test batch ($0\%$ to $100\%$).
-* **`jitter-ms`**: Difference between the maximum and minimum recorded latency among successful samples ($\Delta t = t_{\max} - t_{\min}$).
+* **`loss-pct`**: Percentage of failed requests during the multi-sample test batch (0% to 100%).
+* **`jitter-ms`**: Difference between the maximum and minimum recorded latency among successful samples (max − min).
 
 ### Group Structure
 ```json
