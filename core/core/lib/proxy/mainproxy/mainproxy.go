@@ -29,6 +29,12 @@ type coreProc interface {
 	ExitedCh() chan error
 }
 
+// Test seam: Connect replaces the process unconditionally, so tests need a
+// way to inject a fake core.
+var newCore = func() coreProc {
+	return &xray.XrayCore{Exited: make(chan error, 1)}
+}
+
 type ProxyManager struct {
 	status            structs.ProxyStatus
 	mu                sync.Mutex
@@ -120,9 +126,7 @@ func (p *ProxyManager) Init() {
 	go p.listenForTests(test_channel)
 	p.testChannel = test_channel
 	p.TestResultChannel = make(chan TestResult, 256)
-	p.core = &xray.XrayCore{
-		Exited: make(chan error, 1),
-	}
+	p.core = newCore()
 	test_port_range := appconfig.GetConfig().TestPortRange
 	p.portPool = portpool.CreatePortPool(test_port_range.Start, test_port_range.End)
 }
@@ -364,7 +368,7 @@ func (p *ProxyManager) Connect(profile structs.Profile, tunName string, tunEnabl
 		return testErr
 	}
 
-	p.core = &xray.XrayCore{Exited: make(chan error, 1)}
+	p.core = newCore()
 	if err := p.core.Start(xray_config, selection.GeoDir); err != nil {
 		return err
 	}

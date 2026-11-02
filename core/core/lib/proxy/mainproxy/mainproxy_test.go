@@ -1,9 +1,12 @@
 package mainproxy
 
 import (
+	"encoding/json"
+	"sync"
 	"testing"
 	"time"
 
+	portpool "whoisthat-core/lib/PortPool"
 	"whoisthat-core/lib/proxy/xray"
 	"whoisthat-core/structs"
 )
@@ -225,5 +228,180 @@ func TestReloadRouting_Hysteria(t *testing.T) {
 	}
 	if p.status.Connection != "connected" {
 		t.Errorf("status = %v, want connected", p.status.Connection)
+	}
+}
+
+func TestStop_ClearsStatusAndStats(t *testing.T) {
+	p := newTestProxyManager()
+	p.status = structs.ProxyStatus{Connection: "connected"}
+
+	p.Stop()
+
+	if got := p.GetStatus().Connection; got != "disconnected" {
+		t.Fatalf("status = %q, want disconnected", got)
+	}
+	statuses := drainStatus(t, p.StatusChanged, 1, time.Second)
+	if len(statuses) != 1 || statuses[0].Connection != "disconnected" {
+		t.Fatalf("StatusChanged = %+v, want one disconnected update", statuses)
+	}
+	select {
+	case st := <-p.StatsChanged:
+		if st != (structs.TrafficStats{}) {
+			t.Fatalf("StatsChanged = %+v, want zero stats", st)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("StatsChanged got no zero update")
+	}
+}
+
+func TestSetTunMode_DisconnectedUpdatesConfig(t *testing.T) {
+	p := newTestProxyManager()
+	if err := p.SetTunMode("tun9", true); err != nil {
+		t.Fatalf("SetTunMode() = %v", err)
+	}
+	if p.tunName != "tun9" || !p.tunEnabled {
+		t.Fatalf("tunName=%q tunEnabled=%v", p.tunName, p.tunEnabled)
+	}
+}
+
+func TestUpdateMovedProfile_Connected(t *testing.T) {
+	p := newTestProxyManager()
+	p.status = structs.ProxyStatus{
+		Connection: "connected",
+		Profile:    structs.Profile{Id: 1, GroupId: 2, Name: "old"},
+	}
+
+	p.UpdateMovedProfile(
+		structs.ProfileID{Id: 1, GroupId: 2},
+		structs.Profile{Id: 1, GroupId: 2, Name: "new"},
+	)
+	if got := p.GetStatus().Profile.Name; got != "new" {
+		t.Fatalf("profile = %q, want new", got)
+	}
+
+	p.UpdateMovedProfile(
+		structs.ProfileID{Id: 9, GroupId: 2},
+		structs.Profile{Id: 9, GroupId: 2, Name: "wrong"},
+	)
+	if got := p.GetStatus().Profile.Name; got != "new" {
+		t.Fatalf("unrelated profile update changed the status: %q", got)
+	}
+}
+
+func TestCountOutbounds(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want int
+	}{
+		{"valid", `{"outbounds":[{"tag":"a"},{"tag":"b"}]}`, 2},
+		{"no outbounds", `{}`, 0},
+		{"invalid json", `{`, -1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := countOutbounds([]byte(tc.in)); got != tc.want {
+				t.Fatalf("countOutbounds() = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestBootstrapHosts(t *testing.T) {
+	if got := bootstrapHosts("1.2.3.4", []string{"1.2.3.4"}); got != nil {
+		t.Fatalf("IP address got hosts entry: %v", got)
+	}
+	if got := bootstrapHosts("", []string{"1.1.1.1"}); got != nil {
+		t.Fatalf("empty address got hosts entry: %v", got)
+	}
+	if got := bootstrapHosts("example.com", nil); got != nil {
+		t.Fatalf("no IPs got hosts entry: %v", got)
+	}
+	got := bootstrapHosts("example.com", []string{"1.1.1.1"})
+	if len(got["example.com"]) != 1 || got["example.com"][0] != "1.1.1.1" {
+		t.Fatalf("bootstrapHosts() = %v", got)
+	}
+}
+
+type fakeCore struct {
+	running   bool
+	stopped   bool
+	exited    chan error
+	config    []byte
+	closeOnce sync.Once
+}
+
+func (f *fakeCore) Start(cfg []byte, _ string) error {
+	f.config = append([]byte(nil), cfg...)
+	f.running = true
+	return nil
+}
+
+func (f *fakeCore) Stop() {
+	if !f.running {
+		return
+	}
+	f.running = false
+	f.stopped = true
+	f.closeOnce.Do(func() { close(f.exited) })
+}
+
+func (f *fakeCore) IsRunning() bool { return f.running }
+
+func (f *fakeCore) ExitedCh() chan error { return f.exited }
+
+func TestConnect_WithFakeCore(t *testing.T) {
+	// Keep exec.LookPath from finding a system xray; GetBinPath still
+	// probes the fixed /usr/local/bin and /usr/bin paths.
+	t.Setenv("PATH", t.TempDir())
+
+	p := newTestProxyManager()
+	p.portPool = portpool.CreatePortPool(30000, 30001)
+	fake := &fakeCore{exited: make(chan error, 1)}
+	old := newCore
+	newCore = func() coreProc { return fake }
+	t.Cleanup(func() { newCore = old })
+
+	profile := structs.Profile{
+		Name:     "test",
+		Protocol: "vless",
+		Address:  "127.0.0.1",
+		Uri:      "vless://uuid@127.0.0.1:443?test=1#Test",
+	}
+	if err := p.Connect(profile, "", false); err != nil {
+		t.Fatalf("Connect() = %v", err)
+	}
+	if !fake.running {
+		t.Fatal("core was not started")
+	}
+	if got := p.GetStatus().Connection; got != "connected" {
+		t.Fatalf("status = %q, want connected", got)
+	}
+	var cfg map[string]any
+	if err := json.Unmarshal(fake.config, &cfg); err != nil {
+		t.Fatalf("generated config is not JSON: %v", err)
+	}
+	if _, ok := cfg["outbounds"]; !ok {
+		t.Fatal("generated config has no outbounds")
+	}
+
+	p.Stop()
+	if fake.running || !fake.stopped {
+		t.Fatalf("core not stopped: running=%v stopped=%v", fake.running, fake.stopped)
+	}
+	if got := p.GetStatus().Connection; got != "disconnected" {
+		t.Fatalf("status after Stop = %q, want disconnected", got)
+	}
+}
+
+func TestConnect_InvalidURIReleasesPort(t *testing.T) {
+	p := newTestProxyManager()
+	p.portPool = portpool.CreatePortPool(30000, 30001)
+
+	if err := p.Connect(structs.Profile{Name: "bad", Uri: "not-a-uri"}, "", false); err == nil {
+		t.Fatal("Connect() = nil, want an error")
+	}
+	if _, err := p.portPool.GetPort(); err != nil {
+		t.Fatalf("api port leaked after a failed connect: %v", err)
 	}
 }
