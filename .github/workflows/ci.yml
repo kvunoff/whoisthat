@@ -11,7 +11,7 @@ jobs:
     name: Rust (fmt + clippy + test)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -27,8 +27,8 @@ jobs:
     name: Go (vet + test)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           # Single source of truth: core/core/go.mod. Keeps CI and local
           # builds on the same toolchain instead of relying on GOTOOLCHAIN
@@ -64,7 +64,7 @@ jobs:
     name: Shell scripts (shellcheck)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: shellcheck
         run: shellcheck -S warning install.sh scripts/install.test.sh scripts/check-versions.sh scripts/bump.sh scripts/bump.test.sh
       - name: install.sh tests
@@ -74,7 +74,7 @@ jobs:
     name: Bump script tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Test bump.sh
         run: ./scripts/bump.test.sh
 
@@ -82,7 +82,7 @@ jobs:
     name: Version consistency
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Check version mirrors
         run: ./scripts/check-versions.sh
 
@@ -90,8 +90,8 @@ jobs:
     name: Docs build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: npm
@@ -102,8 +102,8 @@ jobs:
     name: TUN/firewall integration (netns)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: core/core/go.mod
           cache-dependency-path: core/core/go.sum
