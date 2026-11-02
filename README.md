@@ -6,7 +6,8 @@
 
   <p>
     <a href="https://docs.tuqise.com/"><img src="https://img.shields.io/badge/Documentation-VitePress-black?style=for-the-badge&logo=vitepress" alt="Documentation" /></a>
-    <a href="https://aur.archlinux.org/packages/whoisthat"><img src="https://img.shields.io/aur/version/whoisthat?color=black&label=AUR&style=for-the-badge&logo=archlinux" alt="AUR" /></a>
+    <a href="https://aur.archlinux.org/packages/whoisthat-bin"><img src="https://img.shields.io/aur/version/whoisthat-bin?color=black&label=AUR%20bin&style=for-the-badge&logo=archlinux" alt="AUR whoisthat-bin" /></a>
+    <a href="https://aur.archlinux.org/packages/whoisthat"><img src="https://img.shields.io/aur/version/whoisthat?color=black&label=AUR%20src&style=for-the-badge&logo=archlinux" alt="AUR whoisthat" /></a>
     <a href="https://github.com/kvunoff/whoisthat-extension"><img src="https://img.shields.io/badge/GNOME-Extension-black?style=for-the-badge&logo=gnome" alt="GNOME Extension" /></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-black?style=for-the-badge" alt="License" /></a>
   </p>
@@ -55,9 +56,12 @@
 ```bash
 curl -fsSL https://raw.githubusercontent.com/kvunoff/whoisthat/main/install.sh | bash
 ```
-Downloads the prebuilt static binaries from the latest release and verifies
+Downloads the prebuilt static musl binaries from the latest release and verifies
 their SHA-256 checksums. Use `--release vX.Y.Z` to pin a version or
 `--from-source` to build locally.
+
+Pick **one** installation method: the script, a distribution package and an AUR
+package install the same files and conflict with each other.
 
 ### Distribution Packages
 Every release ships `.deb` and `.rpm` packages for `amd64` and `arm64`:
@@ -74,13 +78,16 @@ paru -S whoisthat-bin   # prebuilt binaries
 paru -S whoisthat       # build from source
 ```
 
+The two AUR packages conflict; pacman will prompt to remove the other when you
+switch.
+
 ### Build from Source
 ```bash
 # Build Go daemon
 cd core/core && go build -o whoisthat-core && cd ../..
 
 # Build Rust TUI
-cargo build --release
+cargo build --release --locked
 
 # Install & set capabilities
 sudo install -Dm755 target/release/whoisthat /usr/bin/whoisthat

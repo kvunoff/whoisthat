@@ -118,7 +118,7 @@ These screenshots were captured from an earlier release and show the legacy TUN 
 
 Get started exploring the documentation:
 
-* **[Installation Guide](/guide/installation)** — Install via quick curl script, Arch Linux AUR (`paru`/`yay`), or build from source.
+* **[Installation Guide](/guide/installation)** — Install via the curl script, `.deb`/`.rpm` packages, AUR (`whoisthat-bin` or source `whoisthat`), or build from source.
 * **[Quick Start Tutorial](/guide/quick-start)** — First launch, importing subscriptions, latency testing, and connecting.
 * **[Recipes & Common Setups](/guide/recipes)** — Headless server, proxy-only desktop, per-app bypass, Docker and multi-subscription routing.
 * **[Upgrading & Recovery](/guide/upgrading)** — Update, roll back or uninstall; restore settings and profiles after a failure.

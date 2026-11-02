@@ -37,12 +37,16 @@ Every time you run `go build`, Linux assigns a new filesystem **inode** to the o
 
 ```text
 whoisthat/
+├── .cargo/config.toml  ← static musl linker and rustflags for release builds
 ├── Cargo.toml          ← Rust project manifest (TUI & CLI dependencies)
 ├── README.md           ← Quick overview and reference guide
-├── install.sh          ← Universal installer / updater script
+├── install.sh          ← Release downloader / source installer / updater
 ├── pkg/
 │   ├── whoisthat.desktop ← Desktop launcher entry & x-scheme-handler/wit MIME association
-│   └── aur/              ← AUR packaging (PKGBUILD + .SRCINFO + whoisthat.install)
+│   ├── nfpm.yaml         ← deb/rpm package definition
+│   ├── package-postinstall.sh ← deb/rpm post-install setcap hook
+│   ├── aur/              ← source AUR package (PKGBUILD + .SRCINFO + whoisthat.install)
+│   └── aur-bin/          ← prebuilt AUR package (PKGBUILD + whoisthat-bin.install)
 ├── src/                ← Rust TUI & CLI source code
 │   ├── main.rs         ← Entry point: CLI routing, core daemon spawn/re-attach, terminal lifecycle
 │   ├── cli/            ← CLI: clap grammar, IPC session, selectors, output, command modules
@@ -105,8 +109,10 @@ whoisthat/
 │           ├── version/     ← CoreVersion and protocol.txt
 │           └── proxy/       ← mainproxy (connect/stop/status), xray wrapper, TUN manager + scripts, routing
 └── .github/workflows/
-    ├── ci.yml          ← Automated CI: Rust (fmt/clippy/test) + Go (vet/build/test)
-    ├── aur-publish.yml ← Tag-triggered CI: pushes updated PKGBUILD to AUR
+    ├── ci.yml          ← Automated CI: Rust, Go, shell, docs, versions and static musl build
+    ├── release.yml     ← Builds release assets, publishes drafts and whoisthat-bin
+    ├── aur-publish.yml ← Tag-triggered source-package publish to AUR
+    ├── core-sync.yml   ← Mirrors core/core into kvunoff/whoisthat-core
     └── deploy-docs.yml ← Automated documentation build and deploy to GitHub Pages
 ```
 
@@ -204,8 +210,9 @@ make install      # install both binaries and set capabilities
 ```
 
 The TUI needs **Rust 1.88 or newer** (`Cargo.toml` declares `rust-version`).
-`make build` and `install.sh` build with `--locked`, so `Cargo.lock` is the
-authoritative dependency set; update it deliberately with `cargo update`.
+Source builds (`make build`, `install.sh --from-source`) use `--locked`, so
+`Cargo.lock` is the authoritative dependency set; update it deliberately with
+`cargo update`.
 
 Release assets are static musl builds for `x86_64-unknown-linux-musl` and
 `aarch64-unknown-linux-musl`. Locally install `musl-tools`, add the Rust target,
@@ -310,8 +317,8 @@ Only after every asset is uploaded does CI publish `core-v*`, publish `v*`, set
 `v*` as GitHub Latest, and push `whoisthat-bin` to AUR. `install.sh` resolves
 `/releases/latest`, so users never see a release without binaries. The AUR
 source package (`whoisthat`) is published independently by `aur-publish.yml`
-from the tag. The `whoisthat-bin` repository must exist in AUR before the first
-release; the workflow can push to it but cannot create it.
+from the tag. The first push of `whoisthat-bin` creates the AUR package base;
+the workflow needs only the `AUR_SSH_KEY` secret.
 
 `release.yml` can also be dispatched manually with a tag. It builds the selected
 branch and refuses unless `check-versions.sh --tag <tag>` confirms that the
@@ -330,19 +337,22 @@ Continuous integration is handled via GitHub Actions in `.github/workflows/`:
   * Shell: `shellcheck -S warning install.sh scripts/install.test.sh scripts/check-versions.sh scripts/bump.sh scripts/bump.test.sh pkg/package-postinstall.sh`, then `./scripts/install.test.sh`.
   * Bump driver: `./scripts/bump.test.sh` (separate job).
   * Version consistency: `./scripts/check-versions.sh` (Cargo/package/PKGBUILD/aur-bin/.SRCINFO/docs/Xray pins).
-  * Static build: `cargo build --target x86_64-unknown-linux-musl` plus a `CGO_ENABLED=0` core build, asserting both binaries are static.
+  * Static build: `cargo build --target x86_64-unknown-linux-musl` plus a `CGO_ENABLED=0` core build, asserting neither binary has an `INTERP` segment.
   * Docs: `npm run docs:build` plus `./scripts/check-docs.sh` (IPC/config/CLI names, links, anchors, toolchain strings).
   * Integration: privileged netns suite (`-tags=integration`).
 * **`release.yml`**: Triggers on every `v*` tag push (or manually with `tag`):
-  1. Builds amd64/arm64 static musl binaries, verifies `ldd` reports both as static.
+  1. Builds amd64/arm64 static musl binaries and verifies neither ELF has an `INTERP` segment (static or static-pie).
   2. Creates the bundle tarballs, `.deb`/`.rpm` via `nfpm`, and smoke-tests the packages in Debian and Fedora containers.
   3. Uploads assets to the existing draft releases, publishes `core-v*` first and `v*` last, marks `v*` Latest.
   4. Publishes `whoisthat-bin` to AUR with the release checksums.
   5. Runs the real `install.sh` in Debian, Ubuntu, Fedora and Arch containers.
-* **`aur-publish.yml`**: Triggers on every `v*` tag push:
+* **`aur-publish.yml`**: Triggers on every `v*` tag push and publishes the
+  **source** AUR package (`whoisthat`):
   1. Parses version from tag and runs `./scripts/check-versions.sh --tag <tag>`.
   2. Clones the live AUR repo.
   3. Computes `pkgrel` (increments if `pkgver` matches latest AUR, resets to 1 for a new version, and reuses the repo `pkgrel` when rolling back to an older version).
   4. Regenerates `PKGBUILD` and `.SRCINFO` in CI.
   5. Pushes to AUR using the `AUR_SSH_KEY` secret.
+* **`core-sync.yml`**: Mirrors `core/core` into `kvunoff/whoisthat-core` on
+  `core/core/**` changes and `core-v*` tags.
 * **`deploy-docs.yml`**: Builds and deploys this VitePress documentation to GitHub Pages whenever changes are committed to `docs/**`.

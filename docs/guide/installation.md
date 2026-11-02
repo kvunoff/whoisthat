@@ -2,6 +2,12 @@
 
 WhoisThat can be installed via an automated installer script, a distribution package (`.deb` / `.rpm`), the Arch User Repository (AUR), or compiled manually from source.
 
+::: warning Pick one installation method
+The installer, the `.deb`/`.rpm` packages and the AUR packages all own the same
+files under `/usr/bin`. Mixing them causes conflicts and package-manager
+warnings. The AUR source and prebuilt packages also conflict with each other.
+:::
+
 ---
 
 ## 1. Quick Install (Any Linux Distribution)
@@ -56,7 +62,7 @@ sudo apt install ./whoisthat_<version>-1_amd64.deb
 sudo dnf install ./whoisthat-<version>-1.x86_64.rpm
 ```
 
-Both packages install `/usr/bin/whoisthat`, `/usr/bin/whoisthat-core`, the
+Both formats install `/usr/bin/whoisthat`, `/usr/bin/whoisthat-core`, the
 desktop entry and the license, and re-apply file capabilities in their
 post-install script. User configuration and the encrypted database are never
 touched by package upgrades or removal.
@@ -84,6 +90,9 @@ Both packages install the same files:
 * `/usr/bin/whoisthat` (client TUI / CLI)
 * `/usr/bin/whoisthat-core` (VPN daemon with capabilities pre-configured)
 * `/usr/share/applications/whoisthat.desktop` (desktop entry with `wit://` deep link handler)
+
+They conflict with each other, so pacman will prompt to remove the installed one
+when you switch between `whoisthat` and `whoisthat-bin`.
 
 ---
 
@@ -124,7 +133,7 @@ go build -o whoisthat-core
 cd ../..
 
 # 3. Build the TUI Client (Rust)
-cargo build --release
+cargo build --release --locked
 
 # 4. Install binaries
 sudo install -Dm755 target/release/whoisthat /usr/bin/whoisthat

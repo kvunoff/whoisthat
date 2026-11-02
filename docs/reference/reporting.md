@@ -52,7 +52,7 @@ systemctl --version | head -1
 
 Also state:
 
-- how WhoisThat was installed (installer, AUR, manual build) and the exact release/tag;
+- how WhoisThat was installed (installer, `.deb`/`.rpm`, AUR `whoisthat-bin` or source `whoisthat`, manual build) and the exact release/tag;
 - connection mode (proxy or TUN), split-tunnel mode and whether the kill-switch was armed;
 - firewall backend (nftables/iptables) and whether Docker/libvirt/other network managers are running;
 - steps to reproduce, expected result and actual result;

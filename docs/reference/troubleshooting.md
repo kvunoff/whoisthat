@@ -59,8 +59,16 @@ FakeDNS only runs in TUN mode with `GlobalProxy=true` and split mode `off` or `e
 systemctl --user stop whoisthat-core 2>/dev/null
 systemctl --user disable whoisthat-core 2>/dev/null
 
-# 2. Remove binaries (canonical + legacy install location)
-sudo rm -f /usr/bin/whoisthat /usr/bin/whoisthat-core
+# 2. Remove binaries
+# Package installs:
+sudo pacman -Rns whoisthat-bin      # or whoisthat
+# sudo apt remove whoisthat
+# sudo dnf remove whoisthat
+
+# Script install:
+curl -fsSL https://raw.githubusercontent.com/kvunoff/whoisthat/main/install.sh | bash -s -- --uninstall
+
+# Manual leftovers (legacy install location):
 sudo rm -f /usr/local/bin/whoisthat /usr/local/bin/whoisthat-core
 
 # 3. Remove configurations and database (WARNING: destroys saved profiles)

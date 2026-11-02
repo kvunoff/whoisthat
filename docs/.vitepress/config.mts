@@ -63,7 +63,8 @@ export default withMermaid(defineConfig({
         text: `v${clientVersion}`,
         items: [
           { text: 'Changelog / Releases', link: 'https://github.com/kvunoff/whoisthat/releases' },
-          { text: 'AUR Package', link: 'https://aur.archlinux.org/packages/whoisthat' },
+          { text: 'AUR (prebuilt)', link: 'https://aur.archlinux.org/packages/whoisthat-bin' },
+          { text: 'AUR (source)', link: 'https://aur.archlinux.org/packages/whoisthat' },
           { text: 'GNOME Extension', link: 'https://github.com/kvunoff/whoisthat-extension' }
         ]
       }
