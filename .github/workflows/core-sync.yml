@@ -61,6 +61,8 @@ jobs:
             "https://x-access-token:${CORE_SYNC_TOKEN}@github.com/kvunoff/whoisthat-core.git" \
             "$DST"
           cd "$DST"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
 
           # Keep the mirror's own service files; everything else is generated.
           rsync -a --delete \
@@ -74,9 +76,7 @@ jobs:
           if git diff --cached --quiet; then
             echo "core content unchanged, no commit"
           else
-            git -c user.name='github-actions[bot]' \
-                -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
-                commit \
+            git commit \
                   -m "core: sync whoisthat@${SOURCE_SHA:0:12}" \
                   -m "Source-SHA: ${SOURCE_SHA}" \
                   -m "$SUBJECT"
