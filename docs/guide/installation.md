@@ -44,6 +44,13 @@ The script is always fetched from `main`. To install a specific release, pass
 5. Grants `cap_net_admin,cap_net_raw,cap_setpcap=+ep` to `/usr/bin/whoisthat-core`.
 6. Installs `whoisthat.desktop` into `/usr/share/applications` and refreshes the desktop database. The `wit://` scheme handler is registered per-user by the TUI on launch (`xdg-mime`), not by the installer.
 
+Every release archive also carries a GitHub build-provenance attestation. To
+check a downloaded archive before installing:
+
+```bash
+gh attestation verify whoisthat-linux-amd64.tar.gz --repo kvunoff/whoisthat
+```
+
 If a distribution package owns the binaries, the installer refuses to overwrite
 them; upgrade through the package manager instead.
 

@@ -11,7 +11,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-DOCS="$ROOT/docs"
+DOCS="${DOCS_DIR:-$ROOT/docs}"
 PROTOCOL="$DOCS/reference/protocol.md"
 CONFIGURATION="$DOCS/reference/configuration.md"
 CLI_DOC="$DOCS/integrations/cli.md"
@@ -149,7 +149,7 @@ while IFS= read -r md; do
         fi
 
         [ -n "$anchor" ] || continue
-        anchors="$(anchors_of "$target_file")"
+        anchors="$(anchors_of "$target_file" || true)"
         grep -Fxq "$anchor" <<<"$anchors" ||
             broken "$md -> $link (anchor not found)"
     done < <(

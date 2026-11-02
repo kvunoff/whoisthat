@@ -57,8 +57,9 @@
 curl -fsSL https://raw.githubusercontent.com/kvunoff/whoisthat/main/install.sh | bash
 ```
 Downloads the prebuilt static musl binaries from the latest release and verifies
-their SHA-256 checksums. Use `--release vX.Y.Z` to pin a version or
-`--from-source` to build locally.
+their SHA-256 checksums. Every archive also carries a GitHub build-provenance
+attestation: `gh attestation verify <file> --repo kvunoff/whoisthat`. Use
+`--release vX.Y.Z` to pin a version or `--from-source` to build locally.
 
 Pick **one** installation method: the script, a distribution package and an AUR
 package install the same files and conflict with each other.

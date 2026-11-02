@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 BINDIR ?= /usr/bin
 
-.PHONY: all build core rust test test-go test-rust test-bump lint version-check docs-check fmt integration docs install clean
+.PHONY: all build core rust test test-go test-rust test-bump test-docs test-release lint version-check docs-check fmt integration docs install clean
 
 all: build
 
@@ -14,7 +14,7 @@ core:
 rust:
 	cargo build --release --locked
 
-test: test-go test-rust test-bump
+test: test-go test-rust test-bump test-docs test-release
 
 test-go:
 	cd core/core && go test ./...
@@ -26,14 +26,23 @@ test-rust:
 test-bump:
 	./scripts/bump.test.sh
 
+# Docs checker: the anchor check must report broken links, not abort.
+test-docs:
+	./scripts/check-docs.test.sh
+
+# Release upload policy: per-asset backfill and immutability of published releases.
+test-release:
+	./scripts/release-upload.test.sh
+
 # Privileged TUN/firewall scenarios in a throwaway network namespace.
 # Requires root (or CAP_NET_ADMIN) and is intentionally not part of `make test`.
+# The grep guard fails if no TestNetns* was discovered (renamed/removed tests).
 integration:
-	cd core/core && go test -tags=integration ./lib/proxy/tun/ -run 'TestNetns' -v
+	cd core/core && set -o pipefail && go test -tags=integration ./lib/proxy/tun/ -run '^TestNetns' -v | tee /tmp/whoisthat-netns.log && grep -Eq -- '--- (PASS|SKIP): TestNetns' /tmp/whoisthat-netns.log
 
 lint: version-check docs-check
 	cargo fmt --all --check
-	cargo clippy --all-targets --no-deps
+	cargo clippy --all-targets --no-deps -- -D warnings
 	cd core/core && go vet ./...
 	gofmt -l core/core | (! grep .)
 

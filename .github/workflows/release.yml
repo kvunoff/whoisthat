@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Existing release tag to attach assets to (builds the selected branch; version must match)'
+        description: 'Existing release tag vX.Y.Z to attach assets to (builds that tag, never the branch)'
         required: true
 
 permissions:
@@ -19,15 +19,55 @@ concurrency:
 
 env:
   TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
-  # A tag push builds its own tree. A manual dispatch builds the selected branch
-  # and uses --tag as a guard: check-versions fails unless the branch version
-  # matches the tag, which makes an intentional backfill of the latest release
-  # safe.
-  SOURCE_REF: ${{ github.event_name == 'workflow_dispatch' && github.ref || format('refs/tags/{0}', github.ref_name) }}
+  # Always build the tag itself. A dispatch must never attach binaries built
+  # from a branch to an existing tag. Do not reference env.TAG here: GitHub
+  # does not resolve one env entry from another in the same map.
+  SOURCE_REF: ${{ format('refs/tags/{0}', github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name) }}
 
 jobs:
+  verify:
+    name: Verify release commit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Validate dispatch tag
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          TARGET_TAG: ${{ inputs.tag }}
+        run: |
+          if ! printf '%s' "$TARGET_TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "inputs.tag must look like vX.Y.Z (got '${TARGET_TAG}')" >&2
+            exit 1
+          fi
+
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.SOURCE_REF }}
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@1.98.1
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: core/core/go.mod
+          cache-dependency-path: core/core/go.sum
+
+      - name: Rust tests
+        run: cargo test
+
+      - name: Go vet and tests
+        working-directory: core/core
+        run: |
+          go vet ./...
+          go test ./...
+
   build:
     name: Build ${{ matrix.arch }}
+    needs: verify
     strategy:
       fail-fast: false
       matrix:
@@ -43,15 +83,22 @@ jobs:
             deb_arch: arm64
             rpm_arch: aarch64
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      # Needed by actions/attest-build-provenance only.
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ env.SOURCE_REF }}
+          persist-credentials: false
 
       - name: Verify tag against version files
         run: ./scripts/check-versions.sh --tag "$TAG"
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.98.1
         with:
           targets: ${{ matrix.target }}
 
@@ -111,7 +158,7 @@ jobs:
           export PKGREL
           VERSION=$(sed -n 's/^version = "\([^"]*\)"$/\1/p' Cargo.toml | head -n1)
           PKGREL=$(sed -n 's/^pkgrel=//p' pkg/aur/PKGBUILD)
-          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.48.0
           gopath_bin="$(go env GOPATH)/bin"
           export PATH="$gopath_bin:$PATH"
           nfpm package --config pkg/nfpm.yaml --packager deb --target dist/
@@ -125,8 +172,13 @@ jobs:
           set -euo pipefail
           docker run --rm -v "$PWD/dist:/dist:ro" debian:12 sh -c \
             "export DEBIAN_FRONTEND=noninteractive; apt-get update -qq && apt-get install -y -qq /dist/whoisthat_*_${DEB_ARCH}.deb && whoisthat --version && whoisthat-core --version"
-          docker run --rm -v "$PWD/dist:/dist:ro" fedora:42 sh -c \
+          docker run --rm -v "$PWD/dist:/dist:ro" fedora:44 sh -c \
             "dnf install -y -q /dist/whoisthat-*.${RPM_ARCH}.rpm && whoisthat --version && whoisthat-core --version"
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v4.2.2
+        with:
+          subject-path: dist/*
 
       - uses: actions/upload-artifact@v5
         with:
@@ -138,10 +190,12 @@ jobs:
     name: Publish release assets
     needs: build
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ env.SOURCE_REF }}
+          persist-credentials: false
 
       - uses: actions/download-artifact@v5
         with:
@@ -173,11 +227,78 @@ jobs:
                 --title "$tag" --generate-notes
             fi
           }
+
+          # Drafts are replaceable. A published release is immutable: attach
+          # missing assets and never overwrite an existing one. Content is not
+          # hash-compared: tar/gzip and deb/rpm archives embed build timestamps,
+          # so a rebuilt archive never matches byte-for-byte.
+          # (tested by scripts/release-upload.test.sh)
+          upload_assets() {
+            local tag=$1 dir=$2
+            local published asset name
+
+            if [ "$(gh release view "$tag" --json isDraft -q .isDraft)" = "true" ]; then
+              gh release upload "$tag" "$dir"/* --clobber
+              return 0
+            fi
+
+            published=$(gh release view "$tag" --json assets -q '.assets[].name')
+
+            for asset in "$dir"/*; do
+              name=$(basename "$asset")
+              if printf '%s\n' "$published" | grep -Fxq "$name"; then
+                echo "asset ${name} already published; leaving it untouched"
+              else
+                echo "attaching missing asset ${name} to published release ${tag}"
+                gh release upload "$tag" "$asset"
+                ATTACHED=1
+              fi
+            done
+          }
+
+          # Rebuild SHA256SUMS from the assets that are actually in a
+          # published release (existing files + anything just attached). Only
+          # runs after a backfill; an unchanged file is not re-uploaded.
+          refresh_sums() {
+            local tag=$1 dir=$2 tmp released
+            tmp=$(mktemp -d)
+            gh release download "$tag" --dir "$tmp" >/dev/null
+            released="$tmp/SHA256SUMS"
+            ( cd "$tmp" && rm -f SHA256SUMS && sha256sum -- * ) > "$dir/SHA256SUMS"
+            if [ -f "$released" ] && cmp -s "$released" "$dir/SHA256SUMS"; then
+              echo "SHA256SUMS for ${tag} unchanged"
+            else
+              echo "refreshing SHA256SUMS for ${tag}"
+              gh release upload "$tag" "$dir/SHA256SUMS" --clobber
+            fi
+            rm -rf "$tmp"
+          }
+
           ensure_release "$CORE_TAG"
           ensure_release "$TAG"
 
-          gh release upload "$CORE_TAG" release/core/* --clobber
-          gh release upload "$TAG" release/bundle/* --clobber
+          # A TUI-only release reuses an already published core-v* release;
+          # upload_assets verifies it and skips it instead of overwriting.
+          ATTACHED=0
+          upload_assets "$CORE_TAG" release/core
+          upload_assets "$TAG" release/bundle
+
+          # A backfill into a published release needs a matching SHA256SUMS;
+          # otherwise install.sh refuses the newly attached file.
+          if [ "$ATTACHED" -eq 1 ]; then
+            for pair in "$CORE_TAG:release/core" "$TAG:release/bundle"; do
+              tag=${pair%%:*}
+              dir=${pair#*:}
+              if [ "$(gh release view "$tag" --json isDraft -q .isDraft)" = "false" ]; then
+                refresh_sums "$tag" "$dir"
+              fi
+            done
+          fi
+
+          # Verify provenance before publishing the drafts.
+          for f in dist/whoisthat-linux-*.tar.gz dist/whoisthat-core-linux-*.tar.gz; do
+            gh attestation verify "$f" --repo "$GITHUB_REPOSITORY"
+          done
 
           latest_v_tag() {
             gh release list --exclude-drafts --limit 100 --json tagName -q '.[].tagName' |
@@ -206,10 +327,14 @@ jobs:
     name: Publish whoisthat-bin to AUR
     needs: publish
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ env.SOURCE_REF }}
+          persist-credentials: false
 
       - uses: actions/download-artifact@v5
         with:
@@ -310,6 +435,9 @@ jobs:
     name: Installer smoke (${{ matrix.image }})
     needs: publish
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -318,7 +446,7 @@ jobs:
             prep: apt-get update -qq && apt-get install -y -qq curl ca-certificates
           - image: ubuntu:24.04
             prep: apt-get update -qq && apt-get install -y -qq curl ca-certificates
-          - image: fedora:42
+          - image: fedora:44
             prep: dnf install -y -q curl ca-certificates tar
           - image: archlinux:latest
             prep: pacman -Sy --noconfirm curl ca-certificates tar
@@ -336,7 +464,7 @@ jobs:
       - name: Install from the published release
         run: |
           set -euo pipefail
-          curl -fsSL "https://raw.githubusercontent.com/kvunoff/whoisthat/${GITHUB_REF_NAME}/install.sh" -o /tmp/install.sh
+          curl -fsSL "https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${TAG}/install.sh" -o /tmp/install.sh
           bash /tmp/install.sh --release "$TAG"
           whoisthat --version
           whoisthat-core --version

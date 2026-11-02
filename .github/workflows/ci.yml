@@ -6,28 +6,42 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   rust:
     name: Rust (fmt + clippy + test)
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
+        with:
+          persist-credentials: false
+      # Pinned: -D warnings makes CI depend on the exact clippy version.
+      - uses: dtolnay/rust-toolchain@1.98.1
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
       - name: rustfmt check
         run: cargo fmt --all --check
       - name: clippy
-        run: cargo clippy --all-targets --no-deps
+        run: cargo clippy --all-targets --no-deps -- -D warnings
       - name: Test
         run: cargo test
 
   go:
     name: Go (vet + test)
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@v7
         with:
           # Single source of truth: core/core/go.mod. Keeps CI and local
@@ -58,42 +72,62 @@ jobs:
         # Informational: transitive Xray/grpc advisories should not block a
         # release, but the report is visible in the job log.
         continue-on-error: true
-        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
 
   shell:
     name: Shell scripts (shellcheck)
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - name: shellcheck
-        run: shellcheck -S warning install.sh scripts/install.test.sh scripts/check-versions.sh scripts/check-docs.sh scripts/bump.sh scripts/bump.test.sh pkg/package-postinstall.sh
+        run: shellcheck -S warning install.sh scripts/install.test.sh scripts/check-versions.sh scripts/check-docs.sh scripts/check-docs.test.sh scripts/bump.sh scripts/bump.test.sh scripts/release-upload.test.sh pkg/package-postinstall.sh
       - name: install.sh tests
         run: ./scripts/install.test.sh
+      - name: check-docs.sh tests
+        run: ./scripts/check-docs.test.sh
+      - name: release upload policy tests
+        run: ./scripts/release-upload.test.sh
 
   bump:
     name: Bump script tests
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - name: Test bump.sh
         run: ./scripts/bump.test.sh
 
   versions:
     name: Version consistency
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - name: Check version mirrors
         run: ./scripts/check-versions.sh
 
   musl:
     name: Static musl build
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.98.1
         with:
           targets: x86_64-unknown-linux-musl
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: core/core/go.mod
+          cache-dependency-path: core/core/go.sum
       - name: Install musl toolchain
         run: |
           sudo apt-get update
@@ -114,11 +148,14 @@ jobs:
   docs:
     name: Docs build
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
       - run: npm ci
       - run: npm run docs:build
@@ -127,8 +164,11 @@ jobs:
   integration:
     name: TUN/firewall integration (netns)
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@v7
         with:
           go-version-file: core/core/go.mod
@@ -138,5 +178,10 @@ jobs:
       - name: Run netns tests
         working-directory: core/core
         # Root is required for CLONE_NEWNET + TUN. Tests skip themselves when
-        # the runner lacks /dev/net/tun or the needed privileges.
-        run: sudo -E env "PATH=$PATH" "HOME=$HOME" go test -tags=integration ./lib/proxy/tun/ -run 'TestNetns' -v
+        # the runner lacks /dev/net/tun or the needed privileges. The grep
+        # guard fails the job if no TestNetns* was discovered at all.
+        run: |
+          set -o pipefail
+          sudo -E env "PATH=$PATH" "HOME=$HOME" \
+            go test -tags=integration ./lib/proxy/tun/ -run '^TestNetns' -v | tee /tmp/netns.log
+          grep -Eq -- '--- (PASS|SKIP): TestNetns' /tmp/netns.log

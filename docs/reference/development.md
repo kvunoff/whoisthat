@@ -315,15 +315,20 @@ workflow then builds static musl binaries and publishes:
 
 Only after every asset is uploaded does CI publish `core-v*`, publish `v*`, set
 `v*` as GitHub Latest, and push `whoisthat-bin` to AUR. `install.sh` resolves
-`/releases/latest`, so users never see a release without binaries. The AUR
+`/releases/latest`, so users never see a release without binaries. Every archive
+also carries a GitHub build-provenance attestation (`gh attestation verify`).
+The AUR
 source package (`whoisthat`) is published independently by `aur-publish.yml`
 from the tag. The first push of `whoisthat-bin` creates the AUR package base;
 the workflow needs only the `AUR_SSH_KEY` secret.
 
-`release.yml` can also be dispatched manually with a tag. It builds the selected
-branch and refuses unless `check-versions.sh --tag <tag>` confirms that the
-branch version matches, so it is safe for backfilling assets of the current
-release but cannot attach binaries to an older version.
+`release.yml` can also be dispatched manually with a tag. It checks out that
+tag (never the branch) and refuses unless `check-versions.sh --tag <tag>`
+confirms the version files match. Published assets are immutable: a dispatch
+attaches only missing assets and never overwrites an existing one, then
+rebuilds `SHA256SUMS` from the release contents so `install.sh` still verifies.
+Archives are not byte-reproducible (tar/gzip and deb/rpm embed build
+timestamps), so content is not hash-compared.
 
 ---
 
@@ -332,20 +337,22 @@ release but cannot attach binaries to an older version.
 Continuous integration is handled via GitHub Actions in `.github/workflows/`:
 
 * **`ci.yml`**: Runs on push and PRs targeting `main`:
-  * Rust: `cargo fmt --all --check`, `cargo clippy --all-targets --no-deps`, `cargo test`.
+  * Rust: `cargo fmt --all --check`, `cargo clippy --all-targets --no-deps -- -D warnings`, `cargo test` on a pinned rustc.
   * Go: `go vet ./...`, `go build ./...`, `go test ./...`, `go mod tidy -diff`, `govulncheck`.
-  * Shell: `shellcheck -S warning install.sh scripts/install.test.sh scripts/check-versions.sh scripts/bump.sh scripts/bump.test.sh pkg/package-postinstall.sh`, then `./scripts/install.test.sh`.
+  * Shell: `shellcheck -S warning` over `install.sh` and `scripts/*.sh`, then `./scripts/install.test.sh`, `./scripts/check-docs.test.sh`, `./scripts/release-upload.test.sh`.
   * Bump driver: `./scripts/bump.test.sh` (separate job).
   * Version consistency: `./scripts/check-versions.sh` (Cargo/package/PKGBUILD/aur-bin/.SRCINFO/docs/Xray pins).
   * Static build: `cargo build --target x86_64-unknown-linux-musl` plus a `CGO_ENABLED=0` core build, asserting neither binary has an `INTERP` segment.
   * Docs: `npm run docs:build` plus `./scripts/check-docs.sh` (IPC/config/CLI names, links, anchors, toolchain strings).
-  * Integration: privileged netns suite (`-tags=integration`).
+  * Integration: privileged netns suite (`-tags=integration`), failing if no `TestNetns*` ran.
 * **`release.yml`**: Triggers on every `v*` tag push (or manually with `tag`):
-  1. Builds amd64/arm64 static musl binaries and verifies neither ELF has an `INTERP` segment (static or static-pie).
-  2. Creates the bundle tarballs, `.deb`/`.rpm` via `nfpm`, and smoke-tests the packages in Debian and Fedora containers.
-  3. Uploads assets to the existing draft releases, publishes `core-v*` first and `v*` last, marks `v*` Latest.
-  4. Publishes `whoisthat-bin` to AUR with the release checksums.
-  5. Runs the real `install.sh` in Debian, Ubuntu, Fedora and Arch containers.
+  1. `verify` checks out the tag, runs `cargo test`, `go vet` and `go test`; `build` depends on it.
+  2. Builds amd64/arm64 static musl binaries and verifies neither ELF has an `INTERP` segment (static or static-pie).
+  3. Creates the bundle tarballs, `.deb`/`.rpm` via `nfpm`, and smoke-tests the packages in Debian and Fedora containers.
+  4. Attests build provenance for `dist/*`.
+  5. Uploads assets to the existing releases (drafts replaceable, published assets never overwritten), verifies the attestations, publishes `core-v*` first and `v*` last, marks `v*` Latest.
+  6. Publishes `whoisthat-bin` to AUR with the release checksums.
+  7. Runs the real `install.sh` in Debian, Ubuntu, Fedora and Arch containers.
 * **`aur-publish.yml`**: Triggers on every `v*` tag push and publishes the
   **source** AUR package (`whoisthat`):
   1. Parses version from tag and runs `./scripts/check-versions.sh --tag <tag>`.
