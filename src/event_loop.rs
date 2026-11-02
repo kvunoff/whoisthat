@@ -17,7 +17,7 @@ pub(crate) enum AppEvent {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) async fn run_loop<B: Backend>(
+pub(crate) async fn run_loop<B: Backend<Error = std::io::Error>>(
     term: &mut ratatui::Terminal<B>,
     app: &mut App,
     client: &CoreClient,
