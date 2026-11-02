@@ -51,7 +51,7 @@ jobs:
 
   deploy:
     environment:
-      name: github-pages
+      name: docs
       url: ${{ steps.deployment.outputs.page_url }}
     needs: build
     runs-on: ubuntu-24.04
