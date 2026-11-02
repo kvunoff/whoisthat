@@ -1,4 +1,5 @@
 use ratatui::{
+    Frame,
     layout::{Alignment, Constraint, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
@@ -6,7 +7,6 @@ use ratatui::{
         Block, BorderType, Borders, Cell, List, ListItem, ListState, Paragraph, Row, Table,
         TableState,
     },
-    Frame,
 };
 
 use crate::core_client::protocol::*;
@@ -786,11 +786,7 @@ fn render_happ_profiles_popup(
     let mode = group
         .map(|g| {
             let m = g.group.routing_mode.as_str();
-            if m.is_empty() {
-                "auto"
-            } else {
-                m
-            }
+            if m.is_empty() { "auto" } else { m }
         })
         .unwrap_or("auto");
 

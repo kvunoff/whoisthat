@@ -174,11 +174,7 @@ impl LayoutGeometry {
 
         let traffic_cards_h = if traffic_layout_mode == TrafficLayoutMode::Stack3 {
             // 3 lines or compact stack
-            if main_area.height < 18 {
-                3
-            } else {
-                6
-            }
+            if main_area.height < 18 { 3 } else { 6 }
         } else {
             4
         };

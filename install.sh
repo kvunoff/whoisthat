@@ -559,14 +559,14 @@ install_rust() {
     local rust_ver
     if as_target sh -c 'command -v cargo >/dev/null 2>&1 && command -v rustc >/dev/null 2>&1'; then
         rust_ver=$(as_target rustc --version 2>/dev/null | awk '{print $2}' || true)
-        if ! version_ge "${rust_ver:-0}" "1.79"; then
+        if ! version_ge "${rust_ver:-0}" "1.88"; then
             if as_target sh -c 'command -v rustup >/dev/null 2>&1'; then
-                info "Rust ${rust_ver:-unknown} is older than 1.79, running 'rustup update stable'..."
+                info "Rust ${rust_ver:-unknown} is older than 1.88, running 'rustup update stable'..."
                 as_target rustup update stable
                 rust_ver=$(as_target rustc --version 2>/dev/null | awk '{print $2}' || true)
             fi
-            if ! version_ge "${rust_ver:-0}" "1.79"; then
-                err "Rust ${rust_ver:-unknown} is too old: whoisthat needs 1.79 or newer."
+            if ! version_ge "${rust_ver:-0}" "1.88"; then
+                err "Rust ${rust_ver:-unknown} is too old: whoisthat needs 1.88 or newer."
                 err "Update it with: rustup update stable"
                 exit 1
             fi

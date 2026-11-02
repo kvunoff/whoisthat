@@ -3,11 +3,11 @@ use std::io::{BufRead, BufReader, Seek, SeekFrom};
 use std::os::unix::fs::MetadataExt;
 
 use ratatui::{
+    Frame,
     layout::{Alignment, Constraint, Layout, Rect},
     style::Style,
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, List, ListItem, Paragraph},
-    Frame,
 };
 
 use super::theme::*;
@@ -97,15 +97,15 @@ fn line_level(line: &str) -> Option<Level> {
 }
 
 fn line_passes_filter(line: &str, filter: LogFilter, query: Option<&str>) -> bool {
-    if let Some(min) = filter.min_level() {
-        if !line_level(line).is_some_and(|level| level <= min) {
-            return false;
-        }
+    if let Some(min) = filter.min_level()
+        && !line_level(line).is_some_and(|level| level <= min)
+    {
+        return false;
     }
-    if let Some(query) = query {
-        if !line.to_lowercase().contains(query) {
-            return false;
-        }
+    if let Some(query) = query
+        && !line.to_lowercase().contains(query)
+    {
+        return false;
     }
     true
 }

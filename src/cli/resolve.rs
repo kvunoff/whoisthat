@@ -51,15 +51,15 @@ pub fn find_profile<'a>(
     group_filter: Option<&str>,
 ) -> Result<(&'a Group, &'a Profile), CliError> {
     // group:profile
-    if let Some((g, p)) = selector.split_once(':') {
-        if let (Ok(gid), Ok(pid)) = (g.parse::<i32>(), p.parse::<i32>()) {
-            if let Some(group) = groups.iter().find(|x| x.group.id == gid) {
-                if let Some(profile) = group.profiles.iter().find(|x| x.id == pid) {
-                    return Ok((&group.group, profile));
-                }
-            }
-            return Err(CliError::Usage(format!("profile {gid}:{pid} not found")));
+    if let Some((g, p)) = selector.split_once(':')
+        && let (Ok(gid), Ok(pid)) = (g.parse::<i32>(), p.parse::<i32>())
+    {
+        if let Some(group) = groups.iter().find(|x| x.group.id == gid)
+            && let Some(profile) = group.profiles.iter().find(|x| x.id == pid)
+        {
+            return Ok((&group.group, profile));
         }
+        return Err(CliError::Usage(format!("profile {gid}:{pid} not found")));
     }
 
     let scoped: Vec<&GroupWithProfiles> = match group_filter {

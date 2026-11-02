@@ -4,7 +4,7 @@ use crate::core_client::protocol::*;
 use super::super::args::{GlobalArgs, TestCmd, TestConfigArgs, TestMethodArgs, TestTargetArgs};
 use super::super::client::{Reply, Session};
 use super::super::error::CliError;
-use super::super::output::{print_table, Out};
+use super::super::output::{Out, print_table};
 use super::super::resolve;
 
 pub async fn dispatch(g: &GlobalArgs, cmd: TestCmd) -> Result<(), CliError> {

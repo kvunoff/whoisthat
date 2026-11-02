@@ -395,11 +395,10 @@ async fn check_ipc_and_daemon(cfg: &AppConfig) -> CheckCategory {
                     .await?;
                 let state = tokio::time::timeout(Duration::from_millis(2000), async {
                     while let Ok(msg) = read_half.recv().await {
-                        if msg.msg == "application-state" {
-                            if let Ok(state) = serde_json::from_value::<ApplicationState>(msg.data)
-                            {
-                                return Ok(state);
-                            }
+                        if msg.msg == "application-state"
+                            && let Ok(state) = serde_json::from_value::<ApplicationState>(msg.data)
+                        {
+                            return Ok(state);
                         }
                     }
                     Err(std::io::Error::new(
@@ -833,7 +832,10 @@ fn split_policy_route_item(tun_up: bool, split_mode: &str) -> CheckItem {
         CheckItem::fail(
             NAME,
             "split exclude is on, but the mark 1 → table 100 policy route is missing; excluded apps are tunnelled",
-            Some("Re-apply the mode: whoisthat settings set split-tunnel=exclude (or restart TUN)".into()),
+            Some(
+                "Re-apply the mode: whoisthat settings set split-tunnel=exclude (or restart TUN)"
+                    .into(),
+            ),
         )
     }
 }
@@ -966,15 +968,15 @@ fn fake_pool_overlap(ip_output: &str) -> Option<&'static str> {
                 continue;
             };
             if kind == "inet" {
-                if let Ok(ip) = Ipv4Addr::from_str(addr) {
-                    if ipv4_in_cidr(ip, pool4, 16) {
-                        return Some(FAKE_POOL4);
-                    }
+                if let Ok(ip) = Ipv4Addr::from_str(addr)
+                    && ipv4_in_cidr(ip, pool4, 16)
+                {
+                    return Some(FAKE_POOL4);
                 }
-            } else if let Ok(ip) = Ipv6Addr::from_str(addr) {
-                if ipv6_in_cidr(ip, pool6, 18) {
-                    return Some(FAKE_POOL6);
-                }
+            } else if let Ok(ip) = Ipv6Addr::from_str(addr)
+                && ipv6_in_cidr(ip, pool6, 18)
+            {
+                return Some(FAKE_POOL6);
             }
         }
     }
@@ -1352,12 +1354,12 @@ fn age(meta: &fs::Metadata) -> String {
 }
 
 fn find_binary(name: &str, candidates: &[&str]) -> Option<String> {
-    if let Ok(output) = Command::new("which").arg(name).output() {
-        if output.status.success() {
-            let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !s.is_empty() && Path::new(&s).exists() {
-                return Some(s);
-            }
+    if let Ok(output) = Command::new("which").arg(name).output()
+        && output.status.success()
+    {
+        let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !s.is_empty() && Path::new(&s).exists() {
+            return Some(s);
         }
     }
 
@@ -1377,15 +1379,15 @@ fn probe_xray() -> Option<(String, String)> {
     // Check managed runtime directories
     let data_dir = config::data_dir();
     let runtime_dir = data_dir.join("runtimes").join("xray");
-    if runtime_dir.exists() {
-        if let Ok(entries) = fs::read_dir(&runtime_dir) {
-            let mut dirs: Vec<_> = entries.flatten().map(|e| e.path()).collect();
-            dirs.sort_by(|a, b| b.cmp(a)); // newest-looking first; version match is checked per candidate
-            for dir in dirs {
-                let bin = dir.join("xray");
-                if bin.exists() {
-                    candidates.push(bin.to_string_lossy().to_string());
-                }
+    if runtime_dir.exists()
+        && let Ok(entries) = fs::read_dir(&runtime_dir)
+    {
+        let mut dirs: Vec<_> = entries.flatten().map(|e| e.path()).collect();
+        dirs.sort_by(|a, b| b.cmp(a)); // newest-looking first; version match is checked per candidate
+        for dir in dirs {
+            let bin = dir.join("xray");
+            if bin.exists() {
+                candidates.push(bin.to_string_lossy().to_string());
             }
         }
     }
@@ -1398,27 +1400,27 @@ fn probe_xray() -> Option<(String, String)> {
     let mut first_working = None;
 
     for bin in candidates {
-        if let Ok(output) = Command::new(&bin).arg("version").output() {
-            if output.status.success() {
-                let text = String::from_utf8_lossy(&output.stdout);
-                let mut found_ver = "version unknown".to_string();
-                for line in text.lines() {
-                    if line.starts_with("Xray ") {
-                        let parts: Vec<&str> = line.split_whitespace().collect();
-                        if parts.len() >= 2 {
-                            found_ver = parts[1].to_string();
-                            break;
-                        }
+        if let Ok(output) = Command::new(&bin).arg("version").output()
+            && output.status.success()
+        {
+            let text = String::from_utf8_lossy(&output.stdout);
+            let mut found_ver = "version unknown".to_string();
+            for line in text.lines() {
+                if line.starts_with("Xray ") {
+                    let parts: Vec<&str> = line.split_whitespace().collect();
+                    if parts.len() >= 2 {
+                        found_ver = parts[1].to_string();
+                        break;
                     }
                 }
+            }
 
-                if found_ver.contains(PINNED_XRAY_VERSION) {
-                    return Some((bin, found_ver));
-                }
+            if found_ver.contains(PINNED_XRAY_VERSION) {
+                return Some((bin, found_ver));
+            }
 
-                if first_working.is_none() {
-                    first_working = Some((bin, found_ver));
-                }
+            if first_working.is_none() {
+                first_working = Some((bin, found_ver));
             }
         }
     }

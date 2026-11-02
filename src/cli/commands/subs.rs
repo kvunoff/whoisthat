@@ -6,7 +6,7 @@ use super::super::args::GlobalArgs;
 use super::super::client::{Reply, Session};
 use super::super::error::CliError;
 use super::super::output::{
-    format_bytes, format_epoch, format_interval, print_table, redact_url, Out,
+    Out, format_bytes, format_epoch, format_interval, print_table, redact_url,
 };
 use super::super::resolve;
 

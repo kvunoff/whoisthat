@@ -1,8 +1,8 @@
+use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders, Paragraph};
-use ratatui::Frame;
 
 use crate::core_client::protocol::*;
 
@@ -245,10 +245,10 @@ impl App {
             rows.push(kv_row("Routing", "Provider JSON (read-only)"));
         }
 
-        if let Some(g) = self.current_group() {
-            if !g.group.subscription_url.is_empty() {
-                rows.push(kv_row("Sub", redact_url(&g.group.subscription_url)));
-            }
+        if let Some(g) = self.current_group()
+            && !g.group.subscription_url.is_empty()
+        {
+            rows.push(kv_row("Sub", redact_url(&g.group.subscription_url)));
         }
 
         rows.push(Line::from(""));
@@ -307,10 +307,10 @@ impl App {
             if p.managed {
                 left_rows.push(kv_row("Routing", "Provider JSON (read-only)"));
             }
-            if let Some(g) = self.current_group() {
-                if !g.group.subscription_url.is_empty() {
-                    left_rows.push(kv_row("Sub", redact_url(&g.group.subscription_url)));
-                }
+            if let Some(g) = self.current_group()
+                && !g.group.subscription_url.is_empty()
+            {
+                left_rows.push(kv_row("Sub", redact_url(&g.group.subscription_url)));
             }
             left_rows.push(Line::from(""));
             left_rows.push(section_header("Connection"));

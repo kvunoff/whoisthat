@@ -1,11 +1,11 @@
 use std::collections::VecDeque;
 
+use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::symbols::Marker;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Axis, Block, BorderType, Borders, Chart, Dataset, GraphType, Paragraph};
-use ratatui::Frame;
 
 use crate::core_client::protocol::TrafficStats;
 use crate::ui::app::format_bytes;
@@ -142,11 +142,7 @@ pub fn render_traffic_tab(
     let is_compact = area.width < 85;
 
     let cards_h = if is_compact {
-        if area.height < 18 {
-            3
-        } else {
-            5
-        }
+        if area.height < 18 { 3 } else { 5 }
     } else {
         4
     };

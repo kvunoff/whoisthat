@@ -1,9 +1,9 @@
 use ratatui::{
+    Frame,
     layout::{Alignment, Constraint, Layout, Rect},
     style::Style,
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, List, ListItem, ListState, Paragraph},
-    Frame,
 };
 
 use crate::core_client::protocol::HwidData;

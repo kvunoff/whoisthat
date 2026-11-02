@@ -2,9 +2,9 @@ use log::warn;
 use std::time::Duration;
 use tokio::sync::mpsc;
 
+use super::CoreClient;
 use super::connection::{CoreConnection, CoreReadHalf, Endpoint};
 use super::protocol::*;
-use super::CoreClient;
 
 use crate::core_spawn::spawn_core;
 
@@ -63,7 +63,7 @@ pub enum CoreEvent {
 }
 
 macro_rules! try_dispatch {
-    ($msg:expr, $name:expr, $ty:ty, |$d:ident| $map:expr) => {
+    ($msg:expr_2021, $name:expr_2021, $ty:ty, |$d:ident| $map:expr_2021) => {
         serde_json::from_value::<$ty>(($msg).data)
             .map(|$d| $map)
             .unwrap_or_else(|e| {
@@ -71,7 +71,7 @@ macro_rules! try_dispatch {
                 CoreEvent::Error(concat!("Invalid ", $name).into())
             })
     };
-    ($msg:expr, $name:expr, $ty:ty, $var:ident) => {
+    ($msg:expr_2021, $name:expr_2021, $ty:ty, $var:ident) => {
         try_dispatch!($msg, $name, $ty, |d| CoreEvent::$var(d))
     };
 }

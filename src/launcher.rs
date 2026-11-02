@@ -22,13 +22,13 @@ pub fn run_in_split_slice(args: &[String]) -> i32 {
     let mut detach = false;
     let mut target_args = args;
 
-    if let Some(first) = target_args.first() {
-        if matches!(first.as_str(), "-d" | "--detach" | "-b" | "--background") {
-            detach = true;
+    if let Some(first) = target_args.first()
+        && matches!(first.as_str(), "-d" | "--detach" | "-b" | "--background")
+    {
+        detach = true;
+        target_args = &target_args[1..];
+        if target_args.first().map(String::as_str) == Some("--") {
             target_args = &target_args[1..];
-            if target_args.first().map(String::as_str) == Some("--") {
-                target_args = &target_args[1..];
-            }
         }
     }
 

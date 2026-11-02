@@ -260,10 +260,11 @@ impl App {
 
     pub fn active_routing_config(&self) -> &RoutingConfig {
         let gid = self.routing_page_group_id();
-        if gid != 0 && self.routing_source() == "custom" {
-            if let Some(view) = self.group_routing.get(&gid) {
-                return &view.effective;
-            }
+        if gid != 0
+            && self.routing_source() == "custom"
+            && let Some(view) = self.group_routing.get(&gid)
+        {
+            return &view.effective;
         }
         &self.routing
     }
@@ -377,10 +378,10 @@ impl App {
     }
 
     pub fn sync_routing_group_to_connected(&mut self) {
-        if let Some(ref p) = self.connection_status.profile {
-            if let Some(idx) = self.groups.iter().position(|g| g.group.id == p.group_id) {
-                self.routing_group_index = idx + 1;
-            }
+        if let Some(ref p) = self.connection_status.profile
+            && let Some(idx) = self.groups.iter().position(|g| g.group.id == p.group_id)
+        {
+            self.routing_group_index = idx + 1;
         }
     }
 
@@ -560,12 +561,12 @@ impl App {
                 if p.uri.starts_with("ss://") && crate::ui::uri::parse_ss_method(&p.uri).is_some() {
                     n += 1;
                 }
-                if self.is_connected() {
-                    if let Some((gid, pid)) = self.connected_id() {
-                        if gid == p.group_id && pid == p.id {
-                            n += 1;
-                        }
-                    }
+                if self.is_connected()
+                    && let Some((gid, pid)) = self.connected_id()
+                    && gid == p.group_id
+                    && pid == p.id
+                {
+                    n += 1;
                 }
                 if p.test_result > 0 {
                     n += 1;
@@ -593,10 +594,11 @@ impl App {
 
     pub fn cached_uri_params(&self, p: &Profile) -> ParsedUri {
         let mut cache = self.uri_cache.borrow_mut();
-        if let Some((gid, pid, ref params)) = *cache {
-            if gid == p.group_id && pid == p.id {
-                return params.clone();
-            }
+        if let Some((gid, pid, ref params)) = *cache
+            && gid == p.group_id
+            && pid == p.id
+        {
+            return params.clone();
         }
         let params = uri::parse_uri(&p.uri);
         *cache = Some((p.group_id, p.id, params.clone()));
@@ -708,10 +710,9 @@ impl App {
             .groups
             .iter_mut()
             .find(|g| g.group.id == fresh.group_id)
+            && let Some(existing) = g.profiles.iter_mut().find(|pr| pr.id == fresh.id)
         {
-            if let Some(existing) = g.profiles.iter_mut().find(|pr| pr.id == fresh.id) {
-                *existing = fresh;
-            }
+            *existing = fresh;
         }
     }
 
@@ -719,10 +720,10 @@ impl App {
     /// `…` instead of the stale last-known value. Cleared when the real
     /// `profile-updated` arrives via `apply_profile_updated`.
     pub fn mark_pending(&mut self, group_id: i32, profile_id: i32) {
-        if let Some(g) = self.groups.iter_mut().find(|g| g.group.id == group_id) {
-            if let Some(p) = g.profiles.iter_mut().find(|pr| pr.id == profile_id) {
-                p.test_result = -2;
-            }
+        if let Some(g) = self.groups.iter_mut().find(|g| g.group.id == group_id)
+            && let Some(p) = g.profiles.iter_mut().find(|pr| pr.id == profile_id)
+        {
+            p.test_result = -2;
         }
     }
 
@@ -815,13 +816,13 @@ impl App {
             pos += 1;
             let collapsed = self.collapsed_groups.contains(&g.group.id);
             if !collapsed {
-                if let TreeNode::Profile(tgi, tpi) = target {
-                    if tgi == gi {
-                        if tpi < g.profiles.len() {
-                            return Some(pos + tpi);
-                        } else {
-                            return None;
-                        }
+                if let TreeNode::Profile(tgi, tpi) = target
+                    && tgi == gi
+                {
+                    if tpi < g.profiles.len() {
+                        return Some(pos + tpi);
+                    } else {
+                        return None;
                     }
                 }
                 pos += g.profiles.len();
@@ -961,10 +962,11 @@ impl App {
         {
             g.profiles.push(new_p.clone());
         }
-        if let Some(ref mut cur_p) = self.connection_status.profile {
-            if cur_p.group_id == old.group_id && cur_p.id == old.id {
-                *cur_p = new_p.clone();
-            }
+        if let Some(ref mut cur_p) = self.connection_status.profile
+            && cur_p.group_id == old.group_id
+            && cur_p.id == old.id
+        {
+            *cur_p = new_p.clone();
         }
         self.clamp_cursor();
     }

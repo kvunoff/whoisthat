@@ -6,7 +6,7 @@ use crate::ui::routing::ROUTING_PRESETS;
 use super::super::args::*;
 use super::super::client::{Reply, Session};
 use super::super::error::CliError;
-use super::super::output::{print_table, Out};
+use super::super::output::{Out, print_table};
 use super::super::resolve;
 
 pub async fn dispatch(g: &GlobalArgs, cmd: RouteCmd) -> Result<(), CliError> {
@@ -260,14 +260,12 @@ async fn add(g: &GlobalArgs, args: RouteAddArgs) -> Result<(), CliError> {
     let mut session = Session::open_or_spawn(g).await?;
     let state = session.state().await?;
     let group_id = group_id_for(&state, args.group.as_deref())?;
-    if group_id != 0 {
-        if let Some(group) = state.groups.iter().find(|g| g.group.id == group_id) {
-            if group.group.manual_routing_mode.is_empty()
-                || group.group.manual_routing_mode == "inherit"
-            {
-                out.note("note: editing rules switches this group from inherit to custom");
-            }
-        }
+    if group_id != 0
+        && let Some(group) = state.groups.iter().find(|g| g.group.id == group_id)
+        && (group.group.manual_routing_mode.is_empty()
+            || group.group.manual_routing_mode == "inherit")
+    {
+        out.note("note: editing rules switches this group from inherit to custom");
     }
     if let Some(warning) = shadow_warning(&state.groups, group_id) {
         out.note(warning);
@@ -292,7 +290,7 @@ async fn add(g: &GlobalArgs, args: RouteAddArgs) -> Result<(), CliError> {
         _ => {
             return Err(CliError::Usage(
                 "type must be domain|ip|protocol|port|geoip|geosite".into(),
-            ))
+            ));
         }
     }
 
@@ -435,7 +433,7 @@ async fn set_mode(g: &GlobalArgs, args: RouteModeArgs) -> Result<(), CliError> {
         _ => {
             return Err(CliError::Usage(
                 "mode must be inherit|custom|auto|manual|subscription".into(),
-            ))
+            ));
         }
     }
     out.ok(
@@ -722,10 +720,10 @@ pub fn profile_group_id_for(
     if let Some(sel) = group {
         return Ok(resolve::find_group(&state.groups, sel)?.id);
     }
-    if state.connection_status.connection == "connected" {
-        if let Some(p) = &state.connection_status.profile {
-            return Ok(p.group_id);
-        }
+    if state.connection_status.connection == "connected"
+        && let Some(p) = &state.connection_status.profile
+    {
+        return Ok(p.group_id);
     }
     state
         .groups

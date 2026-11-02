@@ -6,7 +6,7 @@ use crate::core_client::connection::CoreConnection;
 use crate::systemd;
 
 use super::super::args::{CoreCmd, GlobalArgs};
-use super::super::client::{endpoint, Reply, Session};
+use super::super::client::{Reply, Session, endpoint};
 use super::super::error::CliError;
 use super::super::output::Out;
 

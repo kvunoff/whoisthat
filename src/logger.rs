@@ -2,8 +2,8 @@ use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::{Duration, SystemTime};
 
 use chrono::Local;
@@ -72,13 +72,13 @@ impl FileLogger {
     /// the next write does not immediately rotate an empty file.
     pub(crate) fn clear(&self) -> std::io::Result<u64> {
         let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
-        if inner.degraded {
-            if let Ok(file) = open_log(&inner.path) {
-                let len = file.metadata().map(|m| m.len()).unwrap_or(0);
-                inner.file = file;
-                inner.written = len;
-                inner.degraded = false;
-            }
+        if inner.degraded
+            && let Ok(file) = open_log(&inner.path)
+        {
+            let len = file.metadata().map(|m| m.len()).unwrap_or(0);
+            inner.file = file;
+            inner.written = len;
+            inner.degraded = false;
         }
         let size = inner
             .file
@@ -95,13 +95,13 @@ impl FileLogger {
         // A previous rotation renamed the file but could not create the new
         // one. Keep appending to the old fd (now tui.log.1) and retry reopen
         // on each write; no records are lost.
-        if inner.degraded {
-            if let Ok(file) = open_log(&inner.path) {
-                let len = file.metadata().map(|m| m.len()).unwrap_or(0);
-                inner.file = file;
-                inner.written = len;
-                inner.degraded = false;
-            }
+        if inner.degraded
+            && let Ok(file) = open_log(&inner.path)
+        {
+            let len = file.metadata().map(|m| m.len()).unwrap_or(0);
+            inner.file = file;
+            inner.written = len;
+            inner.degraded = false;
         }
 
         let ts = Local::now().format("%Y/%m/%d %H:%M:%S");
@@ -292,10 +292,10 @@ fn cleanup(path: &Path) {
 
     // Pre-v2 fallback lived in a predictable shared /tmp path.
     let legacy = std::env::temp_dir().join("whoisthat-tui.log");
-    if let Ok(meta) = fs::metadata(&legacy) {
-        if meta.uid() == config::uid() {
-            let _ = fs::remove_file(&legacy);
-        }
+    if let Ok(meta) = fs::metadata(&legacy)
+        && meta.uid() == config::uid()
+    {
+        let _ = fs::remove_file(&legacy);
     }
 }
 
@@ -468,9 +468,11 @@ mod tests {
         assert!(path.exists(), "a fresh log must be created");
         // The record that crossed the cap stays in the backup; the next one
         // goes to the fresh file. Nothing is lost.
-        assert!(std::fs::read_to_string(&backup)
-            .unwrap()
-            .contains("after cap"));
+        assert!(
+            std::fs::read_to_string(&backup)
+                .unwrap()
+                .contains("after cap")
+        );
         logger.log_always(Level::Info, format_args!("new file"));
         assert!(std::fs::read_to_string(&path).unwrap().contains("new file"));
         assert_eq!(

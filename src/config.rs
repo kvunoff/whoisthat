@@ -143,10 +143,10 @@ pub fn ipc_token_path() -> String {
 /// user, not root.
 pub(crate) fn uid() -> u32 {
     for key in ["SUDO_UID", "PKEXEC_UID"] {
-        if let Ok(value) = std::env::var(key) {
-            if let Ok(uid) = value.trim().parse::<u32>() {
-                return uid;
-            }
+        if let Ok(value) = std::env::var(key)
+            && let Ok(uid) = value.trim().parse::<u32>()
+        {
+            return uid;
         }
     }
     unsafe { libc_getuid() }
@@ -181,7 +181,7 @@ pub fn first_existing(paths: &[PathBuf]) -> PathBuf {
 }
 
 // Minimal getuid without pulling in the libc crate — matches Go's os.Getuid().
-extern "C" {
+unsafe extern "C" {
     #[link_name = "getuid"]
     fn libc_getuid() -> u32;
 }

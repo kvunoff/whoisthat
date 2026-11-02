@@ -161,16 +161,16 @@ pub(crate) async fn handle_core_event(
                     refresh_public_ip(ip_tx.clone(), Duration::from_secs(1));
                 }
             }
-            if app.is_connected() {
-                if let Some(ref p) = app.connection_status.profile {
-                    cfg.last_group_id = p.group_id;
-                    cfg.last_profile_id = p.id;
-                    config::save_config(cfg);
-                    if app.autoconnect_enabled {
-                        let _ = client
-                            .set_autoconnect(true, p.group_id, p.id, &app.autostart_mode)
-                            .await;
-                    }
+            if app.is_connected()
+                && let Some(ref p) = app.connection_status.profile
+            {
+                cfg.last_group_id = p.group_id;
+                cfg.last_profile_id = p.id;
+                config::save_config(cfg);
+                if app.autoconnect_enabled {
+                    let _ = client
+                        .set_autoconnect(true, p.group_id, p.id, &app.autostart_mode)
+                        .await;
                 }
             }
         }
