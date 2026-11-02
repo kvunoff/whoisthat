@@ -13,24 +13,28 @@ When `whoisthat-core` starts, it executes a rigorous preparation sequence:
    │
    ├─► 1. Raise Ambient Capabilities (capset / prctl)
    │
-   ├─► 2. Load Configuration (~/.config/whoisthat/config.json)
+   ├─► 2. Acquire the single-instance lock and verify no live core owns the IPC socket
    │
-   ├─► 3. Self-Heal: Reconcile Orphaned Firewall & Routing Rules
+   ├─► 3. Load Configuration (~/.config/whoisthat/config.json)
    │
-   ├─► 4. Verify & Ensure Geo Assets (geoip.dat & geosite.dat)
+   ├─► 4. Self-Heal: Reconcile Orphaned Firewall & Routing Rules
    │
-   ├─► 5. Initialize Encrypted Database & Load Master Key
+   ├─► 5. Verify & Ensure Geo Assets (geoip.dat & geosite.dat)
    │
-   ├─► 6. Initialize Proxy Manager & Dynamic PortPool
+   ├─► 6. Initialize Encrypted Database & Load Master Key
    │
-   ├─► 7. Seed Latency Test Parameters
+   ├─► 7. Initialize Proxy Manager & Dynamic PortPool
    │
-   ├─► 8. Initialize Xray Runtime Manager (Verify Pinned v26.10.29)
+   ├─► 8. Seed Latency Test Parameters
    │
-   ├─► 9. Open IPC Listeners (Unix Domain Socket & Optional TCP)
-   ├─► 10. Start Boot Autoconnect
+   ├─► 9. Initialize Xray Runtime Manager (Verify Pinned v26.10.29)
    │
-   └─► 11. Enter Main Event Loop & Wait for Client Connections
+   ├─► 10. Initialize the TUN manager and run the missing-binary preflight
+   │
+   ├─► 11. Open IPC Listeners (Unix Domain Socket & Optional TCP)
+   ├─► 12. Start Boot Autoconnect
+   │
+   └─► 13. Enter Main Event Loop & Wait for Client Connections
 ```
 
 Once autoconnect settles, the daemon starts a subscription auto-update loop. It probes groups with an unknown interval, then refreshes subscriptions whose provider or manual interval has elapsed. Background refreshes never run latency tests or reload a live DNS/routing/TUN session.
@@ -80,3 +84,5 @@ The daemon listens for OS termination signals (`SIGINT`, `SIGTERM`):
 3. Tears down virtual TUN interfaces (`whoisthattun`).
 4. Flushes nftables tables (`inet whoisthat_split`, `inet whoisthat_ks`).
 5. Removes Table 100 / Table 200 ip rules and exits cleanly.
+
+Cleanup is bounded to 10 seconds; if it does not finish, the daemon exits anyway and the next startup reconcile removes any leftover rules.

@@ -61,7 +61,7 @@ The AUR package automatically installs:
 ### Prerequisites
 
 Ensure you have the following installed on your machine:
-* **Rust**: recent stable toolchain (edition 2021, [rustup.rs](https://rustup.rs/))
+* **Rust**: `1.88` or newer with edition 2024 support ([rustup.rs](https://rustup.rs/))
 * **Go**: `1.26+` ([go.dev](https://go.dev/))
 * **Git**, **curl**, and a C compiler (`gcc` or `clang`)
 * **iproute2** and either **nftables** or **iptables**

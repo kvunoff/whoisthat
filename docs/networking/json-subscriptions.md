@@ -40,7 +40,7 @@ A single configuration object is accepted too, but per-server routing is the int
 
 On every refresh (`u`) WhoisThat probes `<subscription-url>/json` first:
 
-- if it returns a usable array of Xray configs, that body is imported and the group is marked `format: json`;
+- if it returns a usable array of Xray configs, that body is imported and the group is marked `subscription_format: json`;
 - otherwise the normal share-link list is fetched, so providers without the JSON endpoint keep working;
 - a URL that already ends in `/json` is fetched directly.
 

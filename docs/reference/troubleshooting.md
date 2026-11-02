@@ -31,7 +31,7 @@ whoisthat logs --level error
 whoisthat logs --source tui --follow
 whoisthat logs --since 1h --grep error
 ```
-The core forwards exact dial errors, DNS lookup failures, and firewall command exit codes directly to `core.log`. Xray's own stderr is inlined as a single `[ERRO]` line when it exits unexpectedly. A daemon panic lands in `~/.local/share/whoisthat/core-crash.log` (or journald when run as a service). If the logs grow too large, `whoisthat logs clear --yes` truncates them and removes rotated backups.
+The core forwards exact dial errors, DNS lookup failures, and firewall command exit codes directly to `core.log`. Xray's own stderr is inlined as a single `[ERRO]` line when it exits unexpectedly. A daemon panic lands in `~/.local/share/whoisthat/core-crash.log`; journald only receives stdout/stderr when the core runs as a user service. If the logs grow too large, `whoisthat logs clear --yes` truncates them and removes rotated backups.
 :::
 
 ---

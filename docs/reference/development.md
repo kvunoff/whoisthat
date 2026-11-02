@@ -93,6 +93,10 @@ whoisthat/
 │           ├── PortPool/    ← Dynamic port allocator for test/profile instances
 │           ├── crypto/      ← AES-256-GCM encrypt/decrypt for DB files
 │           ├── geo/         ← Auto-download + verify geoip.dat / geosite.dat from v2fly
+│           ├── happ/        ← Happ routing: link parsing, payload decoder, geo sandbox
+│           ├── happdns/     ← Happ DNS / FakeDNS compilation
+│           ├── xrayjson/    ← Xray JSON assembly: routing, DNS, JSON subscriptions
+│           ├── version/     ← CoreVersion and protocol.txt
 │           └── proxy/       ← mainproxy (connect/stop/status), xray wrapper, TUN manager + scripts, routing
 └── .github/workflows/
     ├── ci.yml          ← Automated CI: Rust (fmt/clippy/test) + Go (vet/build/test)
@@ -174,7 +178,7 @@ A root `Makefile` wraps the common workflows:
 
 ```bash
 make build        # whoisthat-core + release TUI
-make test         # cargo test + go test ./...
+make test         # cargo test + go test ./... + scripts/bump.test.sh
 make lint         # rustfmt --check, clippy, go vet, gofmt
 make integration  # privileged netns suite
 make docs         # VitePress build
@@ -278,7 +282,8 @@ Continuous integration is handled via GitHub Actions in `.github/workflows/`:
 * **`ci.yml`**: Runs on push and PRs targeting `main`:
   * Rust: `cargo fmt --all --check`, `cargo clippy --all-targets --no-deps`, `cargo test`.
   * Go: `go vet ./...`, `go build ./...`, `go test ./...`, `go mod tidy -diff`, `govulncheck`.
-  * Shell: `shellcheck -S error install.sh scripts/check-versions.sh`.
+  * Shell: `shellcheck -S warning install.sh scripts/install.test.sh scripts/check-versions.sh scripts/bump.sh scripts/bump.test.sh`, then `./scripts/install.test.sh`.
+  * Bump driver: `./scripts/bump.test.sh` (separate job).
   * Version consistency: `./scripts/check-versions.sh` (Cargo/package/PKGBUILD/.SRCINFO/docs/Xray pins).
   * Integration: privileged netns suite (`-tags=integration`).
 * **`aur-publish.yml`**: Triggers on every `v*` tag push:

@@ -69,8 +69,10 @@ The diagnostic engine performs comprehensive, non-destructive system inspections
 * **DNS sink address**: Verifies that `198.18.0.53` / `fd00::53` are **not** assigned to any interface. If they are, kernel local delivery bypasses the TUN inbound and DNS hijack stops working.
 * **FakeDNS pools**: Checks the TUN interface addresses against `198.19.0.0/16` and `fc00::/18`; an overlap means real traffic could collide with fake addresses.
 * **DNS hijack rules**: Inspects the `ip whoisthat` / `ip6 whoisthat` nftables tables (or the iptables `WHOISTHAT_DNS_*` chains) and reports the active mode: Happ sink, legacy resolver, disabled in `include`, or TUN inactive.
+* **DNS hijack mode / IPv6 DNS hijack**: In Happ mode, warns when the sink table still contains `masquerade` (legacy leftovers) or when the `ip6 whoisthat` table is missing.
 * **DNS safety returns**: In Happ mode, verifies that the `mark 1` and sink return rules are present. Missing returns can loop Xray's direct DNS or capture split-excluded apps.
 * **systemd-resolved**: If `resolvectl` is installed, verifies that the TUN interface points at the Happ sink. A missing or inactive systemd-resolved is informational, not a warning or failure — kernel DNAT still works.
+* **Split-tunnel routing**: In `exclude` mode with TUN up, checks that `ip rule` still has `fwmark 1 -> table 100` and that Table 100 has a default route. A dropped route silently sends split apps through the tunnel.
 * **Kill-switch DNS allowlist**: When the kill-switch is armed, checks that its nftables table still allows the TUN interface, the DNS sink, and `mark 1`.
 
 ::: tip Root permissions

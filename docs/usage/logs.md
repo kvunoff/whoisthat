@@ -23,7 +23,7 @@ whoisthat logs clear --yes
 * **Live Auto-Scroll**: as new lines arrive the viewer tails the file; auto-scroll pauses when you scroll up and resumes at the bottom.
 * **Scroll Pausing & Navigation**: <kbd>j</kbd>/<kbd>k</kbd> or <kbd>↑</kbd>/<kbd>↓</kbd> scroll line by line, <kbd>Ctrl+U</kbd>/<kbd>Ctrl+D</kbd> by half a page, <kbd>g</kbd> jumps to the top, <kbd>G</kbd> to the bottom.
 * **Level Filtering (<kbd>f</kbd>)**: cycles
-  $$\text{ALL} \longrightarrow \text{ERROR+} \longrightarrow \text{WARN+} \longrightarrow \text{INFO+} \longrightarrow \text{DEBUG+} \longrightarrow \text{TRACE+} \longrightarrow \text{ALL}$$
+  `ALL → ERROR+ → WARN+ → INFO+ → DEBUG+ → TRACE+ → ALL`.
 * **Visual Syntax Highlighting**:
   * <span style="color: #f43f5e; font-weight: bold;">[ERRO] / [FATA]</span>: red — failures that stop an operation or the daemon.
   * <span style="color: #fbbf24; font-weight: bold;">[WARN]</span>: yellow — degraded paths, failed probes, kill-switch not armed.
@@ -98,7 +98,7 @@ For a one-off session, `RUST_LOG=debug whoisthat` or `WHOISTHAT_LOG_LEVEL=debug 
 
 ## Inspecting Logs via Journald
 
-When running WhoisThat Core as a systemd user service, stdout/stderr and the Go crash output are captured by `systemd-journald`:
+When running WhoisThat Core as a systemd user service, stdout/stderr are captured by `systemd-journald`. Go crash reports do **not** go to journald: `debug.SetCrashOutput` writes them to `core-crash.log` (when that file can be opened).
 
 ```bash
 journalctl --user -u whoisthat-core -f

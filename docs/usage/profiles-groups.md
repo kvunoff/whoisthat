@@ -93,7 +93,7 @@ Latency tests are not simple ICMP pings (which many VPN firewalls block or prior
 2. **Multi-Sample Precision**:
    Configurable in Settings (default: 3 samples). The median latency is displayed in the tree:
    * **Median Latency (ms)**: Real round-trip time, resilient to network spikes.
-   * **Jitter (ms)**: Difference between maximum and minimum sample latency ($\Delta t = t_{\max} - t_{\min}$).
+   * **Jitter (ms)**: Difference between maximum and minimum sample latency (max − min).
    * **Packet Loss (%)**: Percentage of failed sample requests.
 3. **Progress Broadcasting & Visual Feedback**:
    * Pending profiles show `…` immediately when added to the test queue.
