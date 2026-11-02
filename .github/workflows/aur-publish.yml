@@ -5,6 +5,9 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: read
+
 jobs:
   aur-publish:
     runs-on: ubuntu-24.04
@@ -66,7 +69,11 @@ jobs:
           # Verify the key looks like a private key
           head -1 ~/.ssh/aur_key
 
-          ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts
+          # Pin the official AUR Ed25519 host key instead of trusting keyscan.
+          # Fingerprint: SHA256:RFzBCUItH9LZS0cKB5UE6ceAYhBD5C8GeOBip8Z11+4
+          printf '%s\n' \
+            'aur.archlinux.org ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEuBKrPzbawxA/k2g6NcyV5jmqwJ2s+zpgZGZ7tpLIcN' \
+            > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
           cat > ~/.ssh/config <<'EOF'
@@ -86,7 +93,7 @@ jobs:
         id: pkgrel
         run: |
           TMP=$(mktemp -d)
-          GIT_SSH_COMMAND="ssh -i ~/.ssh/aur_key -o StrictHostKeyChecking=accept-new" \
+          GIT_SSH_COMMAND="ssh -i ~/.ssh/aur_key -o StrictHostKeyChecking=yes" \
             git clone ssh://aur@aur.archlinux.org/whoisthat.git "$TMP"
 
           AUR_VER=$(grep '^pkgver=' "$TMP/PKGBUILD" | cut -d= -f2)
@@ -175,7 +182,7 @@ jobs:
           PKGREL="${{ steps.pkgrel.outputs.pkgrel }}"
 
           TMP=$(mktemp -d)
-          GIT_SSH_COMMAND="ssh -i ~/.ssh/aur_key -o StrictHostKeyChecking=accept-new" \
+          GIT_SSH_COMMAND="ssh -i ~/.ssh/aur_key -o StrictHostKeyChecking=yes" \
             git clone ssh://aur@aur.archlinux.org/whoisthat.git "$TMP"
           cp pkg/aur/PKGBUILD          "$TMP/"
           cp pkg/aur/.SRCINFO          "$TMP/"
