@@ -192,6 +192,7 @@ func mergeDNS(value interface{}, opts Options) map[string]interface{} {
 }
 
 func mergeRouting(routing map[string]interface{}, outbounds []interface{}, proxyTags []string, opts Options) map[string]interface{} {
+	balancers := asSlice(routing["balancers"])
 	providerRules := asSlice(routing["rules"])
 
 	var structural []interface{}
@@ -212,7 +213,11 @@ func mergeRouting(routing map[string]interface{}, outbounds []interface{}, proxy
 		})
 	}
 
-	userRules, extraBalancer := buildUserRules(opts.UserRules, opts.GlobalGeoExt, outbounds, asSlice(routing["balancers"]), proxyTags)
+	defaultTarget, hasDefault := defaultProxyTarget(providerRules, outbounds, balancers, proxyTags)
+	userRules, extraBalancer := buildUserRules(
+		opts.UserRules, opts.GlobalGeoExt, outbounds, balancers, proxyTags,
+		defaultTarget, hasDefault,
+	)
 
 	rules := make([]interface{}, 0, len(structural)+len(userRules)+len(providerRules))
 	rules = append(rules, structural...)
@@ -221,7 +226,6 @@ func mergeRouting(routing map[string]interface{}, outbounds []interface{}, proxy
 	routing["rules"] = rules
 
 	if extraBalancer != nil {
-		balancers := asSlice(routing["balancers"])
 		balancers = append(balancers, extraBalancer)
 		routing["balancers"] = balancers
 	}
@@ -235,22 +239,212 @@ func mergeRouting(routing map[string]interface{}, outbounds []interface{}, proxy
 	return routing
 }
 
+// proxyTarget is the provider outbound or balancer that manual "proxy" rules
+// should use.
+type proxyTarget struct {
+	tag      string
+	balancer bool
+}
+
+// defaultProxyTarget returns the target of the provider's first catch-all rule.
+// Xray evaluates rules in order, so later catch-alls are unreachable. A
+// catch-all that does not lead to a proxy outbound means the provider has no
+// usable default proxy target.
+func defaultProxyTarget(providerRules, outbounds, balancers []interface{}, proxyTags []string) (proxyTarget, bool) {
+	for _, raw := range providerRules {
+		rule, ok := raw.(map[string]interface{})
+		if !ok || !isCatchAll(rule) {
+			continue
+		}
+		// Xray prefers outboundTag when both target fields are present.
+		if tag, _ := rule["outboundTag"].(string); tag != "" {
+			if contains(proxyTags, tag) {
+				return proxyTarget{tag: tag}, true
+			}
+			return proxyTarget{}, false
+		}
+		if tag, _ := rule["balancerTag"].(string); tag != "" {
+			if balancerSelectsOnlyProxy(balancers, outbounds, tag, proxyTags) {
+				return proxyTarget{tag: tag, balancer: true}, true
+			}
+			return proxyTarget{}, false
+		}
+		return proxyTarget{}, false
+	}
+	return proxyTarget{}, false
+}
+
+// isCatchAll reports whether a rule matches every request. The whitelist is
+// deliberate: any unknown field may be a selector added by a future Xray
+// release, so it fails safe and does not treat the rule as a catch-all.
+func isCatchAll(rule map[string]interface{}) bool {
+	for key, value := range rule {
+		switch key {
+		case "type", "ruleTag", "outboundTag", "balancerTag":
+			// No match constraint.
+		case "network":
+			if !isFullNetwork(value) {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// isFullNetwork accepts the string and array forms of Xray's network field.
+func isFullNetwork(value interface{}) bool {
+	set := map[string]bool{}
+	add := func(raw string) {
+		if part := strings.ToLower(strings.TrimSpace(raw)); part != "" {
+			set[part] = true
+		}
+	}
+	switch v := value.(type) {
+	case string:
+		for _, part := range strings.Split(v, ",") {
+			add(part)
+		}
+	case []string:
+		for _, part := range v {
+			add(part)
+		}
+	case []interface{}:
+		for _, raw := range v {
+			part, ok := raw.(string)
+			if !ok {
+				return false
+			}
+			add(part)
+		}
+	default:
+		return false
+	}
+	return len(set) == 2 && set["tcp"] && set["udp"]
+}
+
+// balancerSelectsOnlyProxy mirrors Xray's prefix matching for balancer
+// selectors and rejects selectors that can pick a service outbound.
+func balancerSelectsOnlyProxy(balancers, outbounds []interface{}, tag string, proxyTags []string) bool {
+	var balancer map[string]interface{}
+	for _, raw := range balancers {
+		m, ok := raw.(map[string]interface{})
+		if ok && m["tag"] == tag {
+			balancer = m
+			break
+		}
+	}
+	if balancer == nil {
+		return false
+	}
+	selectors := asStringSlice(balancer["selector"])
+	if len(selectors) == 0 {
+		return false
+	}
+
+	matched := 0
+	for _, raw := range outbounds {
+		ob, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		obTag, _ := ob["tag"].(string)
+		if obTag == "" {
+			continue
+		}
+		for _, selector := range selectors {
+			if selector == "" {
+				return false
+			}
+			if strings.HasPrefix(obTag, selector) {
+				if !contains(proxyTags, obTag) {
+					return false
+				}
+				matched++
+				break
+			}
+		}
+	}
+	return matched > 0
+}
+
+func asStringSlice(value interface{}) []string {
+	switch v := value.(type) {
+	case []string:
+		return v
+	case []interface{}:
+		out := make([]string, 0, len(v))
+		for _, raw := range v {
+			part, ok := raw.(string)
+			if !ok {
+				return nil
+			}
+			out = append(out, part)
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+// proxyTagsWithoutDialerProxy drops chained outbounds from the fallback
+// selector: their socket is dialed through another outbound, so picking them
+// directly is not equivalent to picking a normal proxy node.
+func proxyTagsWithoutDialerProxy(outbounds []interface{}, proxyTags []string) []string {
+	kept := make([]string, 0, len(proxyTags))
+	for _, tag := range proxyTags {
+		if !outboundHasDialerProxy(outbounds, tag) {
+			kept = append(kept, tag)
+		}
+	}
+	return kept
+}
+
+func outboundHasDialerProxy(outbounds []interface{}, tag string) bool {
+	for _, raw := range outbounds {
+		ob, ok := raw.(map[string]interface{})
+		if !ok || ob["tag"] != tag {
+			continue
+		}
+		stream := asMap(ob["streamSettings"])
+		sockopt := asMap(stream["sockopt"])
+		proxy, _ := sockopt["dialerProxy"].(string)
+		return proxy != ""
+	}
+	return false
+}
+
 // buildUserRules translates manual rules into the provider's outbound tags.
-// Manual rules only know proxy/direct/block; provider configs often have no
-// outbound literally tagged "proxy", so a user balancer is added when needed.
-func buildUserRules(configured []structs.RoutingRule, globalGeoExt bool, outbounds, balancers []interface{}, proxyTags []string) ([]interface{}, map[string]interface{}) {
+// Manual rules only know proxy/direct/block. For "proxy" we prefer the
+// provider's own default target (tag "proxy", the only proxy outbound, or the
+// first catch-all balancer/outbound) and generate a user balancer only as a
+// last resort.
+func buildUserRules(configured []structs.RoutingRule, globalGeoExt bool, outbounds, balancers []interface{}, proxyTags []string, defaultTarget proxyTarget, hasDefault bool) ([]interface{}, map[string]interface{}) {
 	if len(configured) == 0 {
 		return nil, nil
 	}
 
 	proxyOutbound := ""
 	proxyBalancer := ""
-	if contains(proxyTags, "proxy") {
+	var fallbackTags []string
+	switch {
+	case contains(proxyTags, "proxy"):
 		proxyOutbound = "proxy"
-	} else if len(proxyTags) == 1 {
+	case len(proxyTags) == 1:
 		proxyOutbound = proxyTags[0]
-	} else {
+	case hasDefault && defaultTarget.balancer:
+		proxyBalancer = defaultTarget.tag
+	case hasDefault:
+		proxyOutbound = defaultTarget.tag
+	default:
+		// shortcut: fallback stays random over non-chained proxy outbounds;
+		// upgrade when a provider without a catch-all shows the same symptom.
 		proxyBalancer = uniqueBalancerTag(balancers, outbounds)
+		fallbackTags = proxyTagsWithoutDialerProxy(outbounds, proxyTags)
+		if len(fallbackTags) == 0 {
+			fallbackTags = proxyTags
+		}
 	}
 
 	var rules []interface{}
@@ -290,12 +484,12 @@ func buildUserRules(configured []structs.RoutingRule, globalGeoExt bool, outboun
 		rules = append(rules, rule)
 	}
 
-	if proxyBalancer == "" {
+	if proxyBalancer == "" || fallbackTags == nil {
 		return rules, nil
 	}
 	return rules, map[string]interface{}{
 		"tag":      proxyBalancer,
-		"selector": proxyTags,
+		"selector": fallbackTags,
 		"strategy": map[string]interface{}{"type": "random"},
 	}
 }
