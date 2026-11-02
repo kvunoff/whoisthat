@@ -171,6 +171,12 @@ jobs:
             for dep in "${optdepends[@]}"; do
               echo -e "\toptdepends = ${dep}"
             done
+            for dep in "${provides[@]:-}"; do
+              echo -e "\tprovides = ${dep}"
+            done
+            for dep in "${conflicts[@]:-}"; do
+              echo -e "\tconflicts = ${dep}"
+            done
             for opt in "${options[@]}"; do
               echo -e "\toptions = ${opt}"
             done
