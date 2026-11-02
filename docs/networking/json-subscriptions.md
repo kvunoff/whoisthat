@@ -65,6 +65,8 @@ provider JSON rules
 
 So a user override always wins, while anything not overridden falls through to the provider's policy. Provider `domainStrategy` and balancers are preserved. Manual rules that target `proxy` are mapped to the provider's `proxy` outbound, its single proxy outbound, or the target of the provider's first catch-all rule (usually the main balancer). A generated `whoisthat-user-proxy` balancer is used only as a fallback when the provider has no usable catch-all; it excludes chained outbounds that use `dialerProxy`.
 
+The canonical order across share-link, Happ and JSON groups is in [Routing Precedence](/reference/routing-precedence#4-json-subscription-groups).
+
 Happ profiles delivered by the same subscription are used for their geo assets only; their rules are not stacked on top of the JSON routing. Importing, activating or deleting Happ profiles and changing the routing mode is disabled for JSON groups.
 
 ## Runtime adaptations
@@ -74,7 +76,7 @@ Only the structural pieces are changed:
 - provider socks/http inbounds are moved to the ports from `config.json`; the native TUN inbound is added when TUN is active;
 - `freedom` outbounds get `sockopt.mark = 1` so direct traffic bypasses the tunnel;
 - `stats`, the StatsService API inbound and the api rule are injected (provider `policy` levels are kept);
-- a `port 53 -> dns-out` rule is added in TUN mode, and DNS hijack uses the tunnel sink like a Happ profile;
+- a `port 53 -> dns-out` rule is added in TUN mode, and DNS hijack uses the tunnel sink like a Happ profile (see [DNS & FakeDNS](/networking/dns));
 - when the provider brings custom geo assets, the global `geoip.dat`/`geosite.dat` are exposed alongside them as `geoip-global.dat`/`geosite-global.dat`; manual `geoip:`/`geosite:` rules are compiled to Xray's `ext-ip:`/`ext-domain:` references so both datasets resolve in one Xray process;
 - every outbound server address is resolved before TUN starts, added to `dns.hosts` and to the kill-switch allow-list — one JSON profile may contain several servers and balancers;
 - traffic counters are summed across all proxy outbounds.
