@@ -41,7 +41,7 @@ The diagnostic engine performs comprehensive, non-destructive system inspections
 ### 1. Binaries & Runtimes
 * **`whoisthat` (Client)**: Resolves the active binary path (`std::env::current_exe()`) and confirms it matches the compiled crate version (`CARGO_PKG_VERSION`).
 * **`whoisthat-core` (Daemon)**: Searches `PATH`, `./whoisthat-core`, `./core/core/whoisthat-core`, `./bin/whoisthat-core`, `/usr/bin`, and the legacy `/usr/local/bin` (in that order) for the daemon binary.
-* **`xray-core` (Proxy Runtime)**: Probes for available Xray-core runtimes in `~/.local/share/whoisthat/runtimes/xray/` and system `PATH`. Checks if version matches the pinned **v26.10.29** release.
+* **`xray-core` (Proxy Runtime)**: Probes for available Xray-core runtimes in `~/.local/share/whoisthat/runtimes/xray/` and system `PATH`. Checks if version matches the pinned **v26.10.31** release.
 * **System CLI Tools**: Validates the presence of essential Linux networking utilities: `ip` (`iproute2`), `getcap` & `setcap` (`libcap`), and `pkexec` (`polkit`).
 
 ### 2. Linux Capabilities & Kernel
@@ -121,7 +121,7 @@ When running `whoisthat doctor --json`:
         {
           "name": "xray-core",
           "status": "pass",
-          "message": "~/.local/share/whoisthat/runtimes/xray/v26.10.29/xray (v26.10.29)"
+          "message": "~/.local/share/whoisthat/runtimes/xray/v26.10.31/xray (v26.10.31)"
         }
       ]
     },

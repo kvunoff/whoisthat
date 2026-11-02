@@ -138,8 +138,8 @@ func ipcContractFixtures() map[string]any {
 		AutoTestOnSub:  true,
 	}
 	xrayStatus := XrayStatusInfo{
-		Version:         "v26.10.29",
-		TargetVersion:   "v26.10.29",
+		Version:         "v26.10.31",
+		TargetVersion:   "v26.10.31",
 		Status:          "ready",
 		Progress:        100,
 		BytesDownloaded: 1,
