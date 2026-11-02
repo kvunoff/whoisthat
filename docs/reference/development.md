@@ -154,7 +154,18 @@ go test ./...
 * **PortPool Allocator** (`lib/PortPool`): Concurrent ephemeral port lease and release without race conditions.
 * **Startup Reconcile & Split** (`lib/proxy/tun`): Idempotency of nftables teardown scripts and routing table rule restoration.
 
-### 3. Privileged network-namespace tests
+### 3. IPC contract snapshots
+
+`testdata/ipc-contract.json` is generated from the Go structs and parsed back by the Rust types. The Go test fails when the structs change, and the Rust test fails when the client can no longer round-trip the same payloads — so a field rename cannot silently drift across the language boundary.
+
+After an intentional IPC change:
+
+```bash
+cd core/core && go test ./structs -update-contract
+cd ../.. && cargo test ipc_contract_matches_go_snapshots
+```
+
+### 4. Privileged network-namespace tests
 
 `go test ./...` only checks the *text* of the ip/nftables scripts. The
 `integration` build tag adds tests that actually execute them inside a

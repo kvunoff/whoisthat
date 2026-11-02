@@ -1,0 +1,92 @@
+name: Bug report
+description: Report a reproducible problem with WhoisThat
+title: "[bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. **Do not paste** `db.key`, raw subscription URLs, profile URIs, tokens or HWID values.
+        Redact anything sensitive before submitting.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the problem and its impact.
+      placeholder: "TUN mode connects, but DNS resolution stops after a few minutes..."
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps that trigger the problem.
+      placeholder: |
+        1. whoisthat mode tun
+        2. whoisthat connect "Vienna"
+        3. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: WhoisThat version
+      description: Output of `whoisthat version`.
+      placeholder: "whoisthat 0.17.3 / whoisthat-core 0.4.3"
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: Installation method
+      options:
+        - install.sh
+        - AUR
+        - Manual build
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: System
+      description: Distribution, kernel, desktop/session and firewall backend.
+      placeholder: "Arch Linux, 6.12.0, GNOME 47 Wayland, nftables"
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Connection mode
+      options:
+        - Proxy
+        - TUN
+        - TUN + split exclude
+        - TUN + split include
+        - Not connected
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Doctor output
+      description: Run `whoisthat doctor --json` and paste the redacted output.
+      render: json
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Output of `whoisthat logs --level error --lines 200` (any extra context).
+      render: shell
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I am running the latest release.
+          required: true
+        - label: I removed credentials, tokens and raw profile URIs from the pasted output.
+          required: true

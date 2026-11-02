@@ -77,8 +77,8 @@ A minimal, redacted copy is more useful than a complete dump with live credentia
 
 ## 5. Where to File
 
-- Bugs and feature requests: [github.com/kvunoff/whoisthat/issues](https://github.com/kvunoff/whoisthat/issues)
+- Bugs and feature requests: [github.com/kvunoff/whoisthat/issues](https://github.com/kvunoff/whoisthat/issues) (issue forms ask for the doctor output).
 - Documentation problems: same tracker, with the page URL and what is wrong.
-- Sensitive reports (credentials, privilege escalation, firewall bypass): do not open a public issue with the details. Use GitHub's private vulnerability reporting for the repository if it is available, or open a minimal public issue asking for a private channel.
+- Sensitive reports (credentials, privilege escalation, firewall bypass): follow [SECURITY.md](https://github.com/kvunoff/whoisthat/security/policy) and use GitHub's private vulnerability reporting. Do not open a public issue with the details.
 
 Attach the redacted `whoisthat-doctor.json`, the relevant log excerpt, and the environment block above.

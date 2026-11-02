@@ -633,7 +633,7 @@ pub struct DeleteRoutingProfileData {
 
 #[cfg(test)]
 mod tests {
-    use super::{Group, RoutingProfileInfo, UpdateGroupData};
+    use super::*;
 
     #[test]
     fn routing_profile_info_decodes_dns_fields() {
@@ -700,5 +700,37 @@ mod tests {
             shared,
             "Rust and Go protocol versions drifted; update core/core/lib/version/protocol.txt"
         );
+    }
+
+    fn assert_ipc_roundtrip<T>(fixtures: &serde_json::Value, name: &str)
+    where
+        T: serde::de::DeserializeOwned + serde::Serialize,
+    {
+        let expected = fixtures
+            .get(name)
+            .unwrap_or_else(|| panic!("missing IPC fixture {name}"))
+            .clone();
+        let typed: T = serde_json::from_value(expected.clone())
+            .unwrap_or_else(|e| panic!("decode {name}: {e}"));
+        let actual = serde_json::to_value(&typed).expect("encode IPC fixture");
+        assert_eq!(actual, expected, "IPC contract drift for {name}");
+    }
+
+    #[test]
+    fn ipc_contract_matches_go_snapshots() {
+        let fixtures: serde_json::Value =
+            serde_json::from_str(include_str!("../../testdata/ipc-contract.json"))
+                .expect("parse testdata/ipc-contract.json");
+
+        assert_ipc_roundtrip::<ApplicationState>(&fixtures, "application_state");
+        assert_ipc_roundtrip::<ProfileUpdated>(&fixtures, "profile_updated");
+        assert_ipc_roundtrip::<SubscriptionUpdated>(&fixtures, "subscription_updated");
+        assert_ipc_roundtrip::<RoutingUpdated>(&fixtures, "routing_updated");
+        assert_ipc_roundtrip::<ProxyStatus>(&fixtures, "status_changed");
+        assert_ipc_roundtrip::<ConnectData>(&fixtures, "connect_request");
+        assert_ipc_roundtrip::<UpdateGroupData>(&fixtures, "update_group_request");
+        assert_ipc_roundtrip::<SetTestConfigData>(&fixtures, "set_test_config_request");
+        assert_ipc_roundtrip::<SetAutoconnectData>(&fixtures, "set_autoconnect_request");
+        assert_ipc_roundtrip::<TestConfigUpdated>(&fixtures, "test_config_updated");
     }
 }

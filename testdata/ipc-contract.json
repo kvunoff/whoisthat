@@ -1,0 +1,324 @@
+{
+  "application_state": {
+    "groups": [
+      {
+        "group": {
+          "id": 3,
+          "subscription_url": "https://provider.test/sub/token",
+          "name": "Premium",
+          "last_id": 7,
+          "sub_last_updated": 1712345678,
+          "sub_expires": 1720000000,
+          "sub_upload": 1048576,
+          "sub_download": 52428800,
+          "sub_total": 107374182400,
+          "sub_update_interval": 21600,
+          "sub_update_interval_override": 43200,
+          "sub_auto_update_disabled": true,
+          "profile_order": [
+            7
+          ],
+          "routing_mode": "auto",
+          "manual_routing_mode": "custom",
+          "active_routing_profile_id": "rp-1",
+          "pending_active_routing_profile_id": "rp-2",
+          "subscription_format": "json"
+        },
+        "profiles": [
+          {
+            "id": 7,
+            "group_id": 3,
+            "name": "Frankfurt VLESS",
+            "protocol": "vless",
+            "uri": "vless://uuid@vpn.example.test:443?security=reality#Frankfurt",
+            "address": "198.51.100.7",
+            "host": "vpn.example.test",
+            "test-result": 42,
+            "tested_at": 1712345678,
+            "loss-pct": 1,
+            "jitter-ms": 3,
+            "port": 443,
+            "managed": true,
+            "provider_key": "provider-key-1"
+          }
+        ],
+        "routing_profiles": [
+          {
+            "id": "rp-1",
+            "name": "Provider Full Bypass",
+            "state": "ready",
+            "last_error": "none",
+            "active": true,
+            "rules_count": 42,
+            "global_proxy": true,
+            "domain_strategy": "IPIfNonMatch",
+            "fake_dns_enabled": true,
+            "remote_dns": "DoH cloudflare-dns.com",
+            "domestic_dns": "DoU 8.8.8.8",
+            "last_updated": 1712345678,
+            "geo_updated_at": 1712345678
+          }
+        ]
+      }
+    ],
+    "connection-status": {
+      "connection": "connected",
+      "profile": {
+        "id": 7,
+        "group_id": 3,
+        "name": "Frankfurt VLESS",
+        "protocol": "vless",
+        "uri": "vless://uuid@vpn.example.test:443?security=reality#Frankfurt",
+        "address": "198.51.100.7",
+        "host": "vpn.example.test",
+        "test-result": 42,
+        "tested_at": 1712345678,
+        "loss-pct": 1,
+        "jitter-ms": 3,
+        "port": 443,
+        "managed": true,
+        "provider_key": "provider-key-1"
+      },
+      "connected_at": 1712345678,
+      "reason": "none"
+    },
+    "tun-status": true,
+    "hwid_info": {
+      "enabled": true,
+      "hwid": "1fb1e0141ab3e35a",
+      "user_agent": "whoisthat/v0.4.3",
+      "platform": "linux",
+      "kernel": "6.12.0-arch1-1",
+      "model": "Arch Linux"
+    },
+    "kill_switch": true,
+    "split_tunnel": "exclude",
+    "autoconnect": {
+      "enabled": true,
+      "mode": "tun"
+    },
+    "xray_status": {
+      "version": "v26.10.29",
+      "target_version": "v26.10.29",
+      "status": "ready",
+      "progress": 100,
+      "bytes_downloaded": 1,
+      "total_bytes": 2,
+      "error": "none"
+    },
+    "core_version": "0.4.3",
+    "protocol_version": 4,
+    "tun_name": "whoisthattun",
+    "test_config": {
+      "concurrency": 16,
+      "timeout_seconds": 5,
+      "samples_per_test": 3,
+      "test_endpoint": "https://cp.cloudflare.com/generate_204",
+      "auto_test_on_subscribe": true
+    },
+    "config_status": {
+      "state": "ok",
+      "error": "none"
+    },
+    "db_status": {
+      "state": "ok",
+      "error": "none",
+      "snapshot_at": "20261102"
+    }
+  },
+  "connect_request": {
+    "profile": {
+      "id": 7,
+      "group_id": 3
+    }
+  },
+  "profile_updated": {
+    "profile": {
+      "id": 7,
+      "group_id": 3,
+      "name": "Frankfurt VLESS",
+      "protocol": "vless",
+      "uri": "vless://uuid@vpn.example.test:443?security=reality#Frankfurt",
+      "address": "198.51.100.7",
+      "host": "vpn.example.test",
+      "test-result": 42,
+      "tested_at": 1712345678,
+      "loss-pct": 1,
+      "jitter-ms": 3,
+      "port": 443,
+      "managed": true,
+      "provider_key": "provider-key-1"
+    }
+  },
+  "routing_updated": {
+    "group_id": 3,
+    "config": {
+      "domain_strategy": "IPIfNonMatch",
+      "rules": [
+        {
+          "type": "field",
+          "domain": "example.test",
+          "ip": "192.0.2.0/24",
+          "protocol": "tls",
+          "port": "443",
+          "network": "tcp,udp",
+          "outbound_tag": "proxy",
+          "enabled": true
+        }
+      ],
+      "dns": {
+        "fake_dns_enabled": true,
+        "remote_dns_type": "DoH",
+        "remote_dns_domain": "https://cloudflare-dns.com/dns-query",
+        "remote_dns_ip": "1.1.1.1",
+        "domestic_dns_type": "DoU",
+        "domestic_dns_domain": "dns.example.test",
+        "domestic_dns_ip": "8.8.8.8",
+        "hosts": {
+          "vpn.example.test": "203.0.113.7"
+        }
+      }
+    },
+    "source": "happ",
+    "custom": {
+      "domain_strategy": "IPIfNonMatch",
+      "rules": [
+        {
+          "type": "field",
+          "domain": "example.test",
+          "ip": "192.0.2.0/24",
+          "protocol": "tls",
+          "port": "443",
+          "network": "tcp,udp",
+          "outbound_tag": "proxy",
+          "enabled": true
+        }
+      ],
+      "dns": {
+        "fake_dns_enabled": true,
+        "remote_dns_type": "DoH",
+        "remote_dns_domain": "https://cloudflare-dns.com/dns-query",
+        "remote_dns_ip": "1.1.1.1",
+        "domestic_dns_type": "DoU",
+        "domestic_dns_domain": "dns.example.test",
+        "domestic_dns_ip": "8.8.8.8",
+        "hosts": {
+          "vpn.example.test": "203.0.113.7"
+        }
+      }
+    }
+  },
+  "set_autoconnect_request": {
+    "enabled": true,
+    "group_id": 3,
+    "profile_id": 7,
+    "mode": "tun"
+  },
+  "set_test_config_request": {
+    "config": {
+      "concurrency": 16,
+      "timeout_seconds": 5,
+      "samples_per_test": 3,
+      "test_endpoint": "https://cp.cloudflare.com/generate_204",
+      "auto_test_on_subscribe": true
+    }
+  },
+  "status_changed": {
+    "connection": "connected",
+    "profile": {
+      "id": 7,
+      "group_id": 3,
+      "name": "Frankfurt VLESS",
+      "protocol": "vless",
+      "uri": "vless://uuid@vpn.example.test:443?security=reality#Frankfurt",
+      "address": "198.51.100.7",
+      "host": "vpn.example.test",
+      "test-result": 42,
+      "tested_at": 1712345678,
+      "loss-pct": 1,
+      "jitter-ms": 3,
+      "port": 443,
+      "managed": true,
+      "provider_key": "provider-key-1"
+    },
+    "connected_at": 1712345678,
+    "reason": "none"
+  },
+  "subscription_updated": {
+    "group_id": 3,
+    "group": {
+      "id": 3,
+      "subscription_url": "https://provider.test/sub/token",
+      "name": "Premium",
+      "last_id": 7,
+      "sub_last_updated": 1712345678,
+      "sub_expires": 1720000000,
+      "sub_upload": 1048576,
+      "sub_download": 52428800,
+      "sub_total": 107374182400,
+      "sub_update_interval": 21600,
+      "sub_update_interval_override": 43200,
+      "sub_auto_update_disabled": true,
+      "profile_order": [
+        7
+      ],
+      "routing_mode": "auto",
+      "manual_routing_mode": "custom",
+      "active_routing_profile_id": "rp-1",
+      "pending_active_routing_profile_id": "rp-2",
+      "subscription_format": "json"
+    },
+    "profiles": [
+      {
+        "id": 7,
+        "group_id": 3,
+        "name": "Frankfurt VLESS",
+        "protocol": "vless",
+        "uri": "vless://uuid@vpn.example.test:443?security=reality#Frankfurt",
+        "address": "198.51.100.7",
+        "host": "vpn.example.test",
+        "test-result": 42,
+        "tested_at": 1712345678,
+        "loss-pct": 1,
+        "jitter-ms": 3,
+        "port": 443,
+        "managed": true,
+        "provider_key": "provider-key-1"
+      }
+    ],
+    "routing_profiles": [
+      {
+        "id": "rp-1",
+        "name": "Provider Full Bypass",
+        "state": "ready",
+        "last_error": "none",
+        "active": true,
+        "rules_count": 42,
+        "global_proxy": true,
+        "domain_strategy": "IPIfNonMatch",
+        "fake_dns_enabled": true,
+        "remote_dns": "DoH cloudflare-dns.com",
+        "domestic_dns": "DoU 8.8.8.8",
+        "last_updated": 1712345678,
+        "geo_updated_at": 1712345678
+      }
+    ],
+    "auto": true
+  },
+  "test_config_updated": {
+    "config": {
+      "concurrency": 16,
+      "timeout_seconds": 5,
+      "samples_per_test": 3,
+      "test_endpoint": "https://cp.cloudflare.com/generate_204",
+      "auto_test_on_subscribe": true
+    }
+  },
+  "update_group_request": {
+    "id": 3,
+    "name": "Premium",
+    "subscription_url": "https://provider.test/sub/token",
+    "auto_update": true,
+    "update_interval": 21600
+  }
+}

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation
+    url: https://docs.tuqise.com
+    about: Installation, configuration, CLI reference and troubleshooting.
+  - name: Security policy
+    url: https://github.com/kvunoff/whoisthat/security/policy
+    about: Report a vulnerability privately instead of opening a public issue.
