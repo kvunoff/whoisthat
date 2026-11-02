@@ -4,6 +4,11 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version without the leading v (e.g. 0.17.4)'
+        required: true
 
 permissions:
   contents: read
@@ -14,25 +19,31 @@ jobs:
 
     steps:
       # --- 1. Checkout the source repository --------------------------------
+      # A manual run publishes the tag named by the input, so an already
+      # published tag can be re-checked without moving it.
       - name: Checkout source
         uses: actions/checkout@v7
         with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/v{0}', inputs.version) || github.ref }}
           fetch-depth: 0
 
       # --- 2. Parse version from the tag ------------------------------------
       - name: Parse version from tag
         id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          RAW="${{ github.ref_name }}"
+          RAW="${INPUT_VERSION:-$REF_NAME}"
           VERSION="${RAW#v}"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "Tag: ${RAW}  ->  Version: ${VERSION}"
+          echo "Tag: v${VERSION}  ->  Version: ${VERSION}"
 
       # --- 2a. Verify the tag against the version files ---------------------
       # A tag must never publish a package whose Cargo.toml / PKGBUILD / docs
       # disagree with it. The script also checks core/protocol/Xray pins.
       - name: Verify version files match the tag
-        run: ./scripts/check-versions.sh --tag "${GITHUB_REF_NAME}"
+        run: ./scripts/check-versions.sh --tag "v${{ steps.version.outputs.version }}"
 
       # --- 2b. Compute source checksum --------------------------------------
       # AUR packages must not use sha256sums=('SKIP'): pin the actual archive
