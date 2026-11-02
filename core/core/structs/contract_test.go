@@ -15,7 +15,7 @@ import (
 // without the other fails CI.
 var updateIPCContract = flag.Bool("update-contract", false, "rewrite testdata/ipc-contract.json")
 
-const ipcContractPath = "../../../testdata/ipc-contract.json"
+const ipcContractPath = "../testdata/ipc-contract.json"
 
 func TestIPCContractSnapshots(t *testing.T) {
 	fixtures := ipcContractFixtures()

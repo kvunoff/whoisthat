@@ -156,7 +156,7 @@ go test ./...
 
 ### 3. IPC contract snapshots
 
-`testdata/ipc-contract.json` is generated from the Go structs and parsed back by the Rust types. The Go test fails when the structs change, and the Rust test fails when the client can no longer round-trip the same payloads — so a field rename cannot silently drift across the language boundary.
+`core/core/testdata/ipc-contract.json` is generated from the Go structs and parsed back by the Rust types. The Go test fails when the structs change, and the Rust test fails when the client can no longer round-trip the same payloads — so a field rename cannot silently drift across the language boundary.
 
 After an intentional IPC change:
 

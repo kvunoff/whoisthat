@@ -719,7 +719,7 @@ mod tests {
     #[test]
     fn ipc_contract_matches_go_snapshots() {
         let fixtures: serde_json::Value =
-            serde_json::from_str(include_str!("../../testdata/ipc-contract.json"))
+            serde_json::from_str(include_str!("../../core/core/testdata/ipc-contract.json"))
                 .expect("parse testdata/ipc-contract.json");
 
         assert_ipc_roundtrip::<ApplicationState>(&fixtures, "application_state");

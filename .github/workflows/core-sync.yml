@@ -1,0 +1,96 @@
+name: Sync core to whoisthat-core
+
+# Mirrors the contents of core/core into the root of kvunoff/whoisthat-core.
+# Source of truth is always this repository; the mirror is one-way.
+#
+# Path filters are not evaluated for tag pushes, so core-v* always syncs.
+
+on:
+  push:
+    branches: [main]
+    tags: ['core-v*']
+    paths:
+      - 'core/core/**'
+      - 'LICENSE'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Serialize runs so two quick pushes cannot interleave commits.
+concurrency:
+  group: core-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Stage core/core at the repository root
+        run: |
+          set -euo pipefail
+          STAGE="$RUNNER_TEMP/stage"
+          rm -rf "$STAGE"
+          mkdir -p "$STAGE"
+
+          # archive the tree, not the directory: the mirror has no core/core prefix
+          git archive HEAD:core/core | tar -x -C "$STAGE"
+          if [ -f LICENSE ]; then cp LICENSE "$STAGE/LICENSE"; fi
+
+          find "$STAGE" -type f | wc -l | xargs echo "staged files:"
+
+      - name: Mirror into whoisthat-core
+        env:
+          CORE_SYNC_TOKEN: ${{ secrets.CORE_SYNC_TOKEN }}
+          SOURCE_SHA: ${{ github.sha }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          STAGE="$RUNNER_TEMP/stage"
+          DST="$RUNNER_TEMP/whoisthat-core"
+          SUBJECT=$(git log -1 --format=%s)
+
+          rm -rf "$DST"
+          git clone --depth 1 \
+            "https://x-access-token:${CORE_SYNC_TOKEN}@github.com/kvunoff/whoisthat-core.git" \
+            "$DST"
+          cd "$DST"
+
+          # Keep the mirror's own service files; everything else is generated.
+          rsync -a --delete \
+            --exclude .git \
+            --exclude .github \
+            --exclude README.md \
+            --exclude .gitignore \
+            "$STAGE"/ ./
+
+          git add -A
+          if git diff --cached --quiet; then
+            echo "core content unchanged, no commit"
+          else
+            git -c user.name='github-actions[bot]' \
+                -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+                commit \
+                  -m "core: sync whoisthat@${SOURCE_SHA:0:12}" \
+                  -m "Source-SHA: ${SOURCE_SHA}" \
+                  -m "$SUBJECT"
+            git push origin HEAD:main
+          fi
+
+          if [ "$REF_TYPE" = tag ]; then
+            if git rev-parse -q --verify "refs/tags/${REF_NAME}" >/dev/null; then
+              # Refuse to move an existing tag: it would rewrite published history.
+              test "$(git rev-parse "refs/tags/${REF_NAME}^{commit}")" = "$(git rev-parse HEAD)" \
+                || { echo "tag ${REF_NAME} already exists on another commit" >&2; exit 1; }
+              echo "tag ${REF_NAME} already up to date"
+            else
+              git tag -a "${REF_NAME}" -m "Synced from whoisthat@${SOURCE_SHA}"
+              git push origin "refs/tags/${REF_NAME}"
+            fi
+          fi
