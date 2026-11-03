@@ -190,21 +190,28 @@ func unzipArchive(zipPath, destDir string) error {
 		return fmt.Errorf("failed to create target dir %s: %w", destDir, err)
 	}
 
+	// Every operation goes through the root, so no entry can escape destDir
+	// (including via a symlink inside it).
+	root, err := os.OpenRoot(destDir)
+	if err != nil {
+		return fmt.Errorf("failed to open target dir %s: %w", destDir, err)
+	}
+	defer root.Close()
+
 	for _, f := range r.File {
-		cleanName := filepath.Clean(f.Name)
-		if strings.HasPrefix(cleanName, "..") || filepath.IsAbs(cleanName) {
+		name := filepath.Clean(f.Name)
+		if !filepath.IsLocal(name) {
 			continue // Prevent path traversal
 		}
 
-		targetPath := filepath.Join(destDir, cleanName)
 		if f.FileInfo().IsDir() {
-			if err := os.MkdirAll(targetPath, 0755); err != nil {
+			if err := root.MkdirAll(name, 0755); err != nil {
 				return err
 			}
 			continue
 		}
 
-		if err := os.MkdirAll(filepath.Dir(targetPath), 0755); err != nil {
+		if err := root.MkdirAll(filepath.Dir(name), 0755); err != nil {
 			return err
 		}
 
@@ -214,14 +221,14 @@ func unzipArchive(zipPath, destDir string) error {
 		}
 
 		mode := f.Mode()
-		if filepath.Base(targetPath) == "xray" {
+		if filepath.Base(name) == "xray" {
 			mode = 0755
 		}
 
-		out, err := os.OpenFile(targetPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode)
+		out, err := root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode)
 		if err != nil {
 			rc.Close()
-			return fmt.Errorf("failed to open target file %s: %w", targetPath, err)
+			return fmt.Errorf("failed to open target file %s: %w", name, err)
 		}
 
 		_, err = io.Copy(out, rc)
@@ -231,8 +238,10 @@ func unzipArchive(zipPath, destDir string) error {
 			return fmt.Errorf("failed to extract file %s: %w", f.Name, err)
 		}
 
-		if filepath.Base(targetPath) == "xray" {
-			_ = os.Chmod(targetPath, 0755)
+		if filepath.Base(name) == "xray" {
+			if err := root.Chmod(name, 0755); err != nil {
+				return fmt.Errorf("failed to make %s executable: %w", name, err)
+			}
 		}
 	}
 

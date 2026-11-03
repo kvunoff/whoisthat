@@ -199,6 +199,44 @@ func TestUnzipArchive_RejectsPathTraversal(t *testing.T) {
 	}
 }
 
+func TestUnzipArchive_RejectsEscapingSymlink(t *testing.T) {
+	zipPath := filepath.Join(t.TempDir(), "evil.zip")
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	w, err := zw.Create("link/evil")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.Write([]byte("pwned")); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(zipPath, buf.Bytes(), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	base := t.TempDir()
+	dest := filepath.Join(base, "dest")
+	outside := filepath.Join(base, "outside")
+	for _, dir := range []string{dest, outside} {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink(outside, filepath.Join(dest, "link")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+
+	if err := unzipArchive(zipPath, dest); err == nil {
+		t.Fatal("unzipArchive accepted an entry that escapes through a symlink")
+	}
+	if _, err := os.Stat(filepath.Join(outside, "evil")); !os.IsNotExist(err) {
+		t.Fatalf("archive wrote outside the destination: %v", err)
+	}
+}
+
 func TestEnsureRuntimeAsync_SingleFlight(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	zipData := fakeXrayZip(t, PinnedVersion)
