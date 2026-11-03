@@ -27,9 +27,9 @@
 **WhoisThat** brings ergonomic terminal interaction to modern proxy circumvention and system-wide VPN networking. It eliminates the need for bulky Electron apps while delivering full rootless TUN routing, application-level split tunneling via cgroup v2, real-time Braille bandwidth graphs, and comprehensive provider subscription management.
 
 <div align="center">
-  <img src="screen1.png" alt="WhoisThat Profiles & Details" width="100%" />
+  <img src="docs/public/screen1.png" alt="WhoisThat Profiles & Details" width="100%" />
   <br/><br/>
-  <img src="screen2.png" alt="WhoisThat Real-Time Traffic Monitoring" width="100%" />
+  <img src="docs/public/screen2.png" alt="WhoisThat Real-Time Traffic Monitoring" width="100%" />
 </div>
 
 ---
@@ -176,6 +176,28 @@ Full, comprehensive documentation with technical deep-dives, configuration guide
 - **[GNOME Shell Extension](https://github.com/kvunoff/whoisthat-extension)** — Top-bar status badge, real-time speed monitor, and quick controls.
 - **[Deep Links (`wit://`)](https://docs.tuqise.com/integrations/deeplinks)** — One-click profile and subscription imports directly from web browsers.
 - **[whoisthat-core](https://github.com/kvunoff/whoisthat-core)** — Standalone mirror of the Go daemon (`core/core`), rebuilt on every core change and `core-v*` tag.
+
+---
+
+## Support the Project
+
+WhoisThat is built and maintained in spare time. If it saves you from a
+bulky desktop client, donations are appreciated.
+
+| Network | Address |
+| :--- | :--- |
+| **Bitcoin (BTC)** | `bc1qutg32qasdyuuc03l9rtm3uxwncfjafqnhpnnec` |
+| **Ethereum (ETH / ERC-20)** | `0x7C643C5b704ADD1888a0F68457cf6b0c5c3508C6` |
+| **Tron (TRX / TRC-20)** | `TWSvpXfJsYcDVB9PEwVAgCUXT5RSdtxaYL` |
+| **TON (GRAM / jettons)** | `UQAablx88aAbnjXTnU2t6LYoEHIEQeCv6wMqYZaqeoNjSb_x` |
+| **Solana (SOL / SPL)** | `DckqFaa2PUikF3eQCt79vzGrg1xCM1j3uYyUNDSsswoX` |
+
+Each address accepts the network's native coin and, where the network supports
+them, stablecoins (USDT/USDC): ERC-20 on Ethereum, TRC-20 on Tron, SPL on
+Solana, jettons on TON. The Bitcoin address accepts BTC only.
+
+The native coin of TON is **Gram (GRAM)** — formerly Toncoin (TON). The
+blockchain is still called TON, and the address is unchanged.
 
 ---
 

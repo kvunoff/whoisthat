@@ -97,7 +97,7 @@ All subscription tokens, server configs, and routing rules are saved locally und
 ## Visual Preview
 
 ::: info
-These screenshots were captured from an earlier release and show the legacy TUN name `tun0`; the current default is `whoisthattun` and the layout has evolved.
+The TUN interface is named `whoisthattun` by default. The name is configurable in Settings — the screenshots above use a custom `tun0`.
 :::
 
 <div style="display: flex; flex-direction: column; gap: 1.5rem; margin: 1.5rem 0;">
@@ -129,3 +129,21 @@ Get started exploring the documentation:
 * **[Split Tunneling](/networking/split-tunnel)** — Complete manual on running apps inside cgroup v2 transient slices.
 * **[CLI & Desktop Widgets](/integrations/cli)** — Command-line flags, Waybar, Polybar, and the GNOME Shell extension.
 * **[Wire Protocol Reference](/reference/protocol)** — Complete specification of IPC commands and streaming notifications.
+
+---
+
+## Support the Project
+
+WhoisThat is built and maintained in spare time. If it saves you from a bulky desktop client, donations are appreciated.
+
+| Network | Address |
+| :--- | :--- |
+| **Bitcoin (BTC)** | `bc1qutg32qasdyuuc03l9rtm3uxwncfjafqnhpnnec` |
+| **Ethereum (ETH / ERC-20)** | `0x7C643C5b704ADD1888a0F68457cf6b0c5c3508C6` |
+| **Tron (TRX / TRC-20)** | `TWSvpXfJsYcDVB9PEwVAgCUXT5RSdtxaYL` |
+| **TON (GRAM / jettons)** | `UQAablx88aAbnjXTnU2t6LYoEHIEQeCv6wMqYZaqeoNjSb_x` |
+| **Solana (SOL / SPL)** | `DckqFaa2PUikF3eQCt79vzGrg1xCM1j3uYyUNDSsswoX` |
+
+Each address accepts the network's native coin and, where the network supports them, stablecoins (USDT/USDC): ERC-20 on Ethereum, TRC-20 on Tron, SPL on Solana, jettons on TON. The Bitcoin address accepts BTC only.
+
+The native coin of TON is **Gram (GRAM)** — formerly Toncoin (TON). The blockchain is still called TON, and the address is unchanged.
