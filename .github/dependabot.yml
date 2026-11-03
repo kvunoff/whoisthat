@@ -7,6 +7,10 @@ updates:
     groups:
       actions:
         patterns: ["*"]
+    ignore:
+      # The action ref is a Rust version, not semver; Dependabot would propose
+      # nonexistent releases (1.120.0). The pin is bumped manually.
+      - dependency-name: dtolnay/rust-toolchain
 
   - package-ecosystem: cargo
     directory: /
