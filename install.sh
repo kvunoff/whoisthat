@@ -347,6 +347,21 @@ package_owns() {
     return 1
 }
 
+# Fail before downloading or building: a package-managed install must be
+# upgraded or removed through the package manager, never overwritten here.
+assert_not_package_installed() {
+    local dir bin
+    for dir in "$BIN_DIR" "$LEGACY_BIN_DIR"; do
+        for bin in whoisthat whoisthat-core; do
+            if package_owns "$dir/$bin"; then
+                err "WhoisThat is installed by a package manager."
+                err "Upgrade or remove the package first, then run this installer."
+                exit 1
+            fi
+        done
+    done
+}
+
 # --- argument parsing --------------------------------------------------------
 parse_args() {
     [ "${ASSUME_YES:-0}" = "1" ] && ASSUME_YES=true
@@ -1197,6 +1212,8 @@ main() {
     if [ "$UNINSTALL_MODE" = "true" ]; then
         uninstall_whoisthat
     fi
+
+    assert_not_package_installed
 
     if command -v whoisthat &>/dev/null || [ -f "$BIN_DIR/whoisthat" ] || [ -f "$LEGACY_BIN_DIR/whoisthat" ]; then
         MODE="Upgrade"

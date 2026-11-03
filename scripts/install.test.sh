@@ -134,6 +134,13 @@ esac
 echo "== package ownership and cleanup"
 assert_eq "$(package_owns "$(command -v env)" && echo yes || echo no)" "yes" "detects distro-owned file"
 assert_eq "$(package_owns /tmp/definitely-not-a-package-file 2>/dev/null && echo yes || echo no)" "no" "rejects unowned path"
+
+echo "== package conflict guard"
+out=$( (package_owns() { return 0; }; assert_not_package_installed) 2>&1; printf 'rc=%s' "$?" )
+assert_contains "$out" "package manager" "package-managed install is refused"
+assert_contains "$out" "rc=1" "package-managed install exits 1"
+out=$( (package_owns() { return 1; }; assert_not_package_installed) 2>&1; printf 'rc=%s' "$?" )
+assert_contains "$out" "rc=0" "unmanaged binaries are allowed"
 tmp_marker=$(mktemp -d)
 # shellcheck disable=SC2034  # read by cleanup
 WORK_DIR="$tmp_marker"

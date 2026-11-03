@@ -6,6 +6,9 @@ WhoisThat can be installed via an automated installer script, a distribution pac
 The installer, the `.deb`/`.rpm` packages and the AUR packages all own the same
 files under `/usr/bin`. Mixing them causes conflicts and package-manager
 warnings. The AUR source and prebuilt packages also conflict with each other.
+The installer refuses to overwrite package-managed binaries, and the AUR
+packages refuse to install over a binary that pacman does not own (an
+`install.sh` or manual install). Remove the other installation first.
 :::
 
 ---
@@ -103,6 +106,13 @@ Both packages install the same files:
 
 They conflict with each other, so pacman will prompt to remove the installed one
 when you switch between `whoisthat` and `whoisthat-bin`.
+
+If WhoisThat was installed with `install.sh`, the package aborts before touching
+any files. Remove the script install first:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/kvunoff/whoisthat/main/install.sh | sudo bash -s -- --uninstall
+```
 
 ---
 

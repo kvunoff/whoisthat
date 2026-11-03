@@ -61,6 +61,10 @@ yay -Syu whoisthat-bin
 To build from source instead, use `whoisthat`. The two packages conflict, so
 pacman will prompt to remove the other when you switch.
 
+If `whoisthat` was installed with `install.sh`, AUR packages refuse to install
+over the files pacman does not own. Remove the script install first with
+`install.sh --uninstall`, then install from the AUR.
+
 If you installed WhoisThat as a `.deb` or `.rpm`, upgrade it with the package
 manager (`apt upgrade`, `dnf upgrade`) rather than the installer.
 
