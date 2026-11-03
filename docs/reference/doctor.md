@@ -22,7 +22,7 @@ whoisthat doctor --logs
 
 ## The Diagnostic Categories
 
-The diagnostic engine performs comprehensive, non-destructive system inspections divided into six categories implemented in `src/doctor/checks.rs`. `--logs` appends a seventh, `Logs`:
+The diagnostic engine performs comprehensive, non-destructive system inspections divided into six categories implemented in `src/doctor/checks/`. `--logs` appends a seventh, `Logs`:
 
 ```
 ┌────────────────────────────────────────────────────────┐

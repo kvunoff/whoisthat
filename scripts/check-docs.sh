@@ -19,7 +19,7 @@ DOCTOR_DOC="$DOCS/reference/doctor.md"
 TCPSERVER="$ROOT/core/core/lib/TCPServer/TCPServer.go"
 APPCONFIG="$ROOT/core/core/lib/AppConfig/app-config.go"
 ARGS="$ROOT/src/cli/args.rs"
-CHECKS="$ROOT/src/doctor/checks.rs"
+CHECKS="$ROOT/src/doctor/checks"
 
 fail=0
 missing() {
@@ -97,7 +97,7 @@ while IFS= read -r category; do
     [ -n "$category" ] || continue
     grep -qF "$category" "$DOCTOR_DOC" || missing "$DOCTOR_DOC: category \`$category\`"
 done < <(
-    grep -oE 'CheckCategory::new\("[^"]+"' "$CHECKS" |
+    grep -rhoE 'CheckCategory::new\("[^"]+"' "$CHECKS" |
         sed -E 's/.*"//' |
         sort -u
 )

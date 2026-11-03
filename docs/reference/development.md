@@ -58,7 +58,7 @@ whoisthat/
 │   ├── doctor/         ← System & capability diagnostics (`whoisthat doctor`)
 │   │   ├── mod.rs      ← Module entry point
 │   │   ├── types.rs    ← Diagnostic models, pass/warn/fail statuses, reports
-│   │   └── checks.rs   ← Diagnostic checks: binaries, capabilities, polkit, IPC, config/storage
+│   │   └── checks/     ← Diagnostic checks: binaries, capabilities, polkit, IPC, DNS, config/storage, logs
 │   ├── event_loop.rs   ← AppEvent enum + run_loop (tokio::select! core_rx ↔ input_rx ↔ ticks)
 │   ├── core_events.rs  ← handle_core_event — dispatches all CoreEvent broadcasts
 │   ├── input.rs        ← handle_input + handle_normal_input — keyboard & mouse dispatch by tab/focus
