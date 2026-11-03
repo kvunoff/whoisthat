@@ -6,7 +6,7 @@ WhoisThat registers the custom desktop URL scheme `wit://`. This enables web das
 
 ## Protocol Registration
 
-When you launch the WhoisThat TUI, it verifies and re-registers the desktop scheme handler in the background (idempotent, not just on first run).
+When you launch the WhoisThat TUI, it verifies and re-registers the desktop launcher, icon and scheme handler in the background (idempotent, not just on first run).
 
 To register or refresh the handler manually from the CLI:
 
@@ -16,9 +16,14 @@ whoisthat link register
 whoisthat register-deeplink
 ```
 
-This writes the desktop launcher to `~/.local/share/applications/whoisthat.desktop` and binds the scheme via:
+This writes two entries to `~/.local/share/applications/` and the icon to `~/.local/share/icons/hicolor/scalable/apps/whoisthat.svg`:
+
+* `whoisthat.desktop` — the application menu launcher; opens the TUI in the terminal configured by `terminal` in `config.toml` (or auto-detected).
+* `whoisthat-url.desktop` — the deep link handler (`Terminal=false`, `NoDisplay=true`), so it stays out of the application list.
+
+The scheme is bound to the hidden handler:
 ```bash
-xdg-mime default whoisthat.desktop x-scheme-handler/wit
+xdg-mime default whoisthat-url.desktop x-scheme-handler/wit
 ```
 
 ---

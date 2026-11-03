@@ -286,6 +286,8 @@ download_release_artifacts() {
     extract_tarball "$dl/$bundle" "$ARTIFACT_DIR"
 
     local f
+    # The URL handler and icon were added after 0.17.7; older archives install
+    # without them and the TUI writes the current entries on first launch.
     for f in whoisthat whoisthat-core whoisthat.desktop; do
         [ -f "$ARTIFACT_DIR/$f" ] || { err "Release archive is missing ${f}."; exit 1; }
     done
@@ -449,20 +451,39 @@ uninstall_whoisthat() {
         info "Removed $wants"
     fi
 
-    local user_desktop="$TARGET_HOME/.local/share/applications/whoisthat.desktop"
-    if [ -f "$user_desktop" ]; then
-        rm -f "$user_desktop"
-        info "Removed $user_desktop"
+    local entry user_desktop system_desktop
+    for entry in whoisthat.desktop whoisthat-url.desktop; do
+        user_desktop="$TARGET_HOME/.local/share/applications/$entry"
+        if [ -f "$user_desktop" ]; then
+            rm -f "$user_desktop"
+            info "Removed $user_desktop"
+        fi
+        system_desktop="/usr/share/applications/$entry"
+        if [ -f "$system_desktop" ] && ! package_owns "$system_desktop"; then
+            $SUDO rm -f "$system_desktop"
+            info "Removed $system_desktop"
+        elif [ -f "$system_desktop" ]; then
+            info "Leaving package-owned $system_desktop in place"
+        fi
+    done
+
+    local user_icon="$TARGET_HOME/.local/share/icons/hicolor/scalable/apps/whoisthat.svg"
+    if [ -f "$user_icon" ]; then
+        rm -f "$user_icon"
+        info "Removed $user_icon"
     fi
-    local system_desktop="/usr/share/applications/whoisthat.desktop"
-    if [ -f "$system_desktop" ] && ! package_owns "$system_desktop"; then
-        $SUDO rm -f "$system_desktop"
-        info "Removed $system_desktop"
-    elif [ -f "$system_desktop" ]; then
-        info "Leaving package-owned $system_desktop in place"
+    local system_icon="/usr/share/icons/hicolor/scalable/apps/whoisthat.svg"
+    if [ -f "$system_icon" ] && ! package_owns "$system_icon"; then
+        $SUDO rm -f "$system_icon"
+        info "Removed $system_icon"
+    elif [ -f "$system_icon" ]; then
+        info "Leaving package-owned $system_icon in place"
     fi
+
     update-desktop-database "$TARGET_HOME/.local/share/applications" >/dev/null 2>&1 || true
     update-desktop-database /usr/share/applications >/dev/null 2>&1 || true
+    gtk-update-icon-cache -qtf "$TARGET_HOME/.local/share/icons/hicolor" >/dev/null 2>&1 || true
+    $SUDO gtk-update-icon-cache -qtf /usr/share/icons/hicolor >/dev/null 2>&1 || true
 
     local removed=0 dir bin
     for dir in "$BIN_DIR" "$LEGACY_BIN_DIR"; do
@@ -823,6 +844,8 @@ build_whoisthat() {
     cp "$src_dir/target/release/whoisthat" "$ARTIFACT_DIR/whoisthat"
     cp "$src_dir/core/core/whoisthat-core" "$ARTIFACT_DIR/whoisthat-core"
     cp "$src_dir/pkg/whoisthat.desktop" "$ARTIFACT_DIR/whoisthat.desktop"
+    cp "$src_dir/pkg/whoisthat-url.desktop" "$ARTIFACT_DIR/whoisthat-url.desktop"
+    cp "$src_dir/docs/public/logo.svg" "$ARTIFACT_DIR/whoisthat.svg"
     [ -f "$src_dir/LICENSE" ] && cp "$src_dir/LICENSE" "$ARTIFACT_DIR/LICENSE"
     info "All WhoisThat components built successfully."
 }
@@ -866,16 +889,27 @@ install_binaries() {
         fi
     done
 
-    if [ -f "$ARTIFACT_DIR/whoisthat.desktop" ]; then
-        local desktop="/usr/share/applications/whoisthat.desktop"
+    local entry desktop
+    for entry in whoisthat.desktop whoisthat-url.desktop; do
+        [ -f "$ARTIFACT_DIR/$entry" ] || continue
+        desktop="/usr/share/applications/$entry"
         if package_owns "$desktop"; then
             info "Leaving package-owned ${desktop} in place"
         else
-            $SUDO install -Dm644 "$ARTIFACT_DIR/whoisthat.desktop" "$desktop"
-            if command -v update-desktop-database >/dev/null 2>&1; then
-                $SUDO update-desktop-database /usr/share/applications 2>/dev/null || true
-            fi
+            $SUDO install -Dm644 "$ARTIFACT_DIR/$entry" "$desktop"
         fi
+    done
+
+    if [ -f "$ARTIFACT_DIR/whoisthat.svg" ]; then
+        $SUDO install -Dm644 "$ARTIFACT_DIR/whoisthat.svg" \
+            /usr/share/icons/hicolor/scalable/apps/whoisthat.svg
+    fi
+
+    if command -v update-desktop-database >/dev/null 2>&1; then
+        $SUDO update-desktop-database /usr/share/applications 2>/dev/null || true
+    fi
+    if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+        $SUDO gtk-update-icon-cache -qtf /usr/share/icons/hicolor 2>/dev/null || true
     fi
 
 }

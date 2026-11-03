@@ -124,8 +124,9 @@ The daemon checks subscriptions every 10 minutes; background refreshes do not ru
 ```bash
 whoisthat status --short             # Polybar/style scripts
 whoisthat status --watch --json      # Waybar custom module
-whoisthat link register              # wit:// handler
+whoisthat link register              # wit:// handler + app-menu launcher
 whoisthat link handle 'wit://toggle'
+whoisthat settings set terminal=alacritty   # terminal for the app-menu launcher
 ```
 
 Widgets and deep-link syntax are covered in [Desktop Widgets](/integrations/desktop-widgets) and [Deep Links](/integrations/deeplinks).

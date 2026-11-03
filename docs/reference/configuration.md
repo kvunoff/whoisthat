@@ -45,6 +45,13 @@ log_enabled = false
 # RUST_LOG / WHOISTHAT_LOG_LEVEL override both log settings for one session.
 log_level = "warn"
 
+# Terminal emulator used when the desktop launcher starts the TUI.
+# Empty = auto-detect: $TERMINAL, then common emulators (alacritty, ghostty,
+# kitty, foot, wezterm, konsole, ...), then the system default
+# (xdg-terminal-exec / x-terminal-emulator).
+# Include flags if the emulator needs them: terminal = "wezterm start --"
+terminal = ""
+
 # Latency test method: tcp, http-get, http-head
 test_method = "http-get"
 
@@ -140,13 +147,22 @@ IPC; local keys are written to `config.toml`.
 | `tun-name` | core (`config.json`) | applies on the next reconnect |
 | `hwid-enabled`, `user-agent` | core (`config.json`) | subscription headers |
 | `test.concurrency`, `test.timeout`, `test.samples`, `test.endpoint`, `test.auto-on-subscribe` | core (`config.json` → `test-config`) | sanitized by the daemon; the CLI re-reads state afterwards |
-| `theme`, `show-ip`, `log-enabled`, `log-level`, `test-method` | TUI (`config.toml`) | |
+| `theme`, `show-ip`, `log-enabled`, `log-level`, `terminal`, `test-method` | TUI (`config.toml`) | |
 | `core.host`, `core.port`, `core.use-tcp`, `core.socket` | TUI (`config.toml`) | affects the next CLI/TUI connection |
 
 ```bash
 whoisthat settings list --json
 whoisthat settings set split-tunnel=exclude kill-switch=true
 whoisthat settings set theme=tokyo-night log-level=debug
+```
+
+Pick the terminal the desktop launcher opens (`terminal`). An empty value restores
+auto-detection; emulators that need flags can be given as a command prefix:
+
+```bash
+whoisthat settings set terminal=alacritty
+whoisthat settings set 'terminal=wezterm start --'
+whoisthat settings set terminal=
 ```
 
 ---

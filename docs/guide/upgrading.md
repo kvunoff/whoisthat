@@ -46,7 +46,7 @@ Useful flags:
 | `--branch vX.Y.Z` | Build a specific tag/branch (implies `--from-source`) |
 | `--local` | Build from the current checkout (implies `--from-source`) |
 | `--insecure-skip-verify` | Skip release and Xray checksums (dangerous, not recommended) |
-| `--uninstall` | Remove unowned binaries, unit, desktop entry (data is kept) |
+| `--uninstall` | Remove unowned binaries, unit, desktop entries and icon (data is kept) |
 
 ### Arch Linux (AUR)
 
@@ -128,7 +128,7 @@ sudo dnf remove whoisthat           # Fedora / RHEL
 ```
 
 The script installer stops the user service and removes unowned binaries, the
-systemd unit, and the desktop entry. It deliberately leaves files owned by
+systemd unit, and the desktop entries. It deliberately leaves files owned by
 dpkg/rpm in place. Package removal only deletes package-owned files; stop the
 user service first if it is running. **Configuration and data are preserved**
 either way:

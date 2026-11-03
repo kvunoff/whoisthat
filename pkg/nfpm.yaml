@@ -21,6 +21,12 @@ contents:
   - src: ${ARTIFACT_DIR}/whoisthat.desktop
     dst: /usr/share/applications/whoisthat.desktop
     expand: true
+  - src: ${ARTIFACT_DIR}/whoisthat-url.desktop
+    dst: /usr/share/applications/whoisthat-url.desktop
+    expand: true
+  - src: ${ARTIFACT_DIR}/whoisthat.svg
+    dst: /usr/share/icons/hicolor/scalable/apps/whoisthat.svg
+    expand: true
   - src: ${ARTIFACT_DIR}/LICENSE
     dst: /usr/share/licenses/whoisthat/LICENSE
     expand: true

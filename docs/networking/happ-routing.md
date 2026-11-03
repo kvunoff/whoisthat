@@ -16,7 +16,7 @@ flowchart TD
         A1["Subscription HTTP Header\n(routing: happ://routing/...)"] --> B["happ.ExtractLinks\n(Headers & Body)"]
         A2["Subscription Body\n(Plaintext / Base64)"] --> B
         A3["TUI Clipboard Import\n(Press 'i' in Routing tab)"] --> C["IPC: import-happ-routing"]
-        A4["CLI / Browser Deep Link\n(whoisthat handle-url / wit://)"] --> C
+        A4["CLI / Browser Deep Link\n(whoisthat link handle / wit://)"] --> C
         A5["QR Code Scanning\n(Mobile / Desktop Readers)"] --> C
     end
 
@@ -76,7 +76,7 @@ graph LR
         W2["happ.ExtractLinks\n(Plaintext & Base64 scanner)"]
         W3["TUI Clipboard\n(Press 'i' in Tab 2)"]
         W4["XDG Desktop Scheme Handler\n(~/.local/share/applications)"]
-        W5["Headless CLI\nwhoisthat handle-url"]
+        W5["Headless CLI\nwhoisthat link handle"]
     end
 
     S1 --> W1
@@ -116,7 +116,7 @@ vless://70cc43c5-b2f4-34ac-a092-d806984a6b8c@1.13.7.91:443?encryption=none&secur
 Copy a `happ://routing/...` link from a website, Telegram channel or email and press <kbd>i</kbd> on Tab 2 (*Routing*). The client reads the system clipboard, parses the link and dispatches `import-happ-routing` for the focused group.
 
 #### Channel D: Desktop Deep Links (`wit://`)
-Only `wit://` is registered with `xdg-mime` (the TUI writes `~/.local/share/applications/whoisthat.desktop` and registers `x-scheme-handler/wit` on launch). A bare `happ://` link in a browser will not launch WhoisThat; use the wrapper or the CLI:
+Only `wit://` is registered with `xdg-mime` (the TUI writes `~/.local/share/applications/whoisthat-url.desktop` and registers `x-scheme-handler/wit` on launch). A bare `happ://` link in a browser will not launch WhoisThat; use the wrapper or the CLI:
 
 ```
 wit://happ://routing/add/<BASE64>
@@ -132,7 +132,7 @@ whoisthat link handle "happ://routing/add/<BASE64>" --group "Premium"
 whoisthat link handle "happ://routing/onadd/<BASE64>" --group 2
 
 # Legacy alias
-whoisthat handle-url "happ://routing/add/<BASE64>" --group "Premium"
+whoisthat link handle "happ://routing/add/<BASE64>" --group "Premium"
 ```
 
 ---

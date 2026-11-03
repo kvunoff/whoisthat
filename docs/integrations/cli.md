@@ -243,6 +243,7 @@ Local keys (`config.toml`):
 | `show-ip` | `true`/`false` |
 | `log-enabled` | `true`/`false` |
 | `log-level` | `error`/`warn`/`info`/`debug`/`trace` |
+| `terminal` | terminal command for the desktop launcher (empty = auto) |
 | `test-method` | `tcp`/`http-get`/`http-head` |
 | `core.host` | host |
 | `core.port` | `1..65535` |

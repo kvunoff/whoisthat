@@ -9,3 +9,9 @@ if command -v setcap >/dev/null 2>&1; then
 else
     echo "warning: setcap not found; TUN mode needs libcap" >&2
 fi
+
+# Refresh the caches so the menu entry and icon appear without a re-login.
+command -v update-desktop-database >/dev/null 2>&1 &&
+    update-desktop-database /usr/share/applications >/dev/null 2>&1 || true
+command -v gtk-update-icon-cache >/dev/null 2>&1 &&
+    gtk-update-icon-cache -qtf /usr/share/icons/hicolor >/dev/null 2>&1 || true

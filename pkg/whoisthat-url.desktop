@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=WhoisThat URL Handler
+Comment=Handle wit:// deep links for WhoisThat
+Exec=whoisthat link handle %u
+Icon=whoisthat
+Terminal=false
+NoDisplay=true
+Type=Application
+MimeType=x-scheme-handler/wit;

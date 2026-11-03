@@ -82,7 +82,7 @@ pub fn run_in_split_slice(args: &[String]) -> i32 {
 
 /// Minimal PATH lookup so we can give a clear error instead of a cryptic
 /// spawn failure when systemd-run is absent.
-fn which(bin: &str) -> Option<String> {
+pub(crate) fn which(bin: &str) -> Option<String> {
     let path = std::env::var_os("PATH")?;
     for dir in std::env::split_paths(&path) {
         let candidate = dir.join(bin);

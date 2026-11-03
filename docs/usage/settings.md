@@ -8,7 +8,11 @@ The same values are available from the terminal:
 whoisthat settings list
 whoisthat settings set split-tunnel=exclude kill-switch=true
 whoisthat settings set theme=tokyo-night log-level=debug
+whoisthat settings set terminal=alacritty     # app-menu launcher only
 ```
+
+`terminal` controls which emulator the desktop launcher opens; it is not exposed
+in the interactive Settings tab (set it from the CLI or `config.toml`).
 
 ---
 

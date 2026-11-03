@@ -40,4 +40,6 @@ package() {
     install -Dm755 target/release/whoisthat "${pkgdir}/usr/bin/whoisthat"
     install -Dm755 core/core/whoisthat-core  "${pkgdir}/usr/bin/whoisthat-core"
     install -Dm644 pkg/whoisthat.desktop     "${pkgdir}/usr/share/applications/whoisthat.desktop"
+    install -Dm644 pkg/whoisthat-url.desktop "${pkgdir}/usr/share/applications/whoisthat-url.desktop"
+    install -Dm644 docs/public/logo.svg      "${pkgdir}/usr/share/icons/hicolor/scalable/apps/whoisthat.svg"
 }

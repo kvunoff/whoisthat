@@ -27,6 +27,11 @@ pub struct AppConfig {
     pub log_enabled: bool,
     #[serde(default = "default_log_level")]
     pub log_level: String,
+    /// Terminal emulator used when the desktop launcher starts the TUI without
+    /// a tty. Empty = auto-detect ($TERMINAL, then known emulators, then the
+    /// system default launcher).
+    #[serde(default)]
+    pub terminal: String,
     #[serde(default = "default_test_method")]
     pub test_method: String,
     #[serde(default = "default_tun_name")]
@@ -103,6 +108,7 @@ impl Default for AppConfig {
             theme: default_theme(),
             log_enabled: false,
             log_level: default_log_level(),
+            terminal: String::new(),
             test_method: default_test_method(),
             tun_name: default_tun_name(),
             kill_switch_enabled: false,

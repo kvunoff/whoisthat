@@ -30,6 +30,7 @@ const LOCAL_KEYS: &[&str] = &[
     "show-ip",
     "log-enabled",
     "log-level",
+    "terminal",
     "test-method",
     "core.host",
     "core.port",
@@ -438,6 +439,7 @@ fn apply_local(cfg: &mut config::AppConfig, key: &str, value: &str) -> Result<()
             }
             cfg.log_level = value.to_string();
         }
+        "terminal" => cfg.terminal = value.trim().to_string(),
         "test-method" => {
             if !matches!(value, "tcp" | "http-get" | "http-head") {
                 return Err(CliError::Usage(format!("invalid test method '{value}'")));
@@ -527,7 +529,7 @@ fn validate(key: &str, value: &str) -> Result<(), CliError> {
             }
         }
         "core.port" => validate_int(value, 1, 65535, key)?,
-        "autoconnect-profile" | "user-agent" | "core.host" | "core.socket" => {}
+        "autoconnect-profile" | "user-agent" | "core.host" | "core.socket" | "terminal" => {}
         _ => return Err(CliError::Usage(format!("unknown setting '{key}'"))),
     }
     Ok(())
@@ -594,6 +596,7 @@ fn local_value(cfg: &config::AppConfig, key: &str) -> Option<Value> {
         "show-ip" => json!(cfg.show_ip),
         "log-enabled" => json!(cfg.log_enabled),
         "log-level" => json!(cfg.log_level),
+        "terminal" => json!(cfg.terminal),
         "test-method" => json!(cfg.test_method),
         "core.host" => json!(cfg.core_host),
         "core.port" => json!(cfg.core_tcp_port),

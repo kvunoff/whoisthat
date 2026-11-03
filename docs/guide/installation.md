@@ -42,7 +42,7 @@ The script is always fetched from `main`. To install a specific release, pass
 3. Installs or adopts precompiled **Xray-core (pinned v26.10.31)** with the same checksum policy.
 4. Installs binaries into `/usr/bin/` and removes legacy copies from `/usr/local/bin/`.
 5. Grants `cap_net_admin,cap_net_raw,cap_setpcap=+ep` to `/usr/bin/whoisthat-core`.
-6. Installs `whoisthat.desktop` into `/usr/share/applications` and refreshes the desktop database. The `wit://` scheme handler is registered per-user by the TUI on launch (`xdg-mime`), not by the installer.
+6. Installs `whoisthat.desktop` (application menu launcher) and `whoisthat-url.desktop` (hidden `wit://` handler) into `/usr/share/applications`, plus `whoisthat.svg` into the icon theme, and refreshes the desktop and icon caches. The `wit://` scheme handler is registered per-user by the TUI on launch (`xdg-mime`), not by the installer.
 
 Every release archive also carries a GitHub build-provenance attestation. To
 check a downloaded archive before installing:
@@ -69,8 +69,9 @@ sudo apt install ./whoisthat_<version>-1_amd64.deb
 sudo dnf install ./whoisthat-<version>-1.x86_64.rpm
 ```
 
-Both formats install `/usr/bin/whoisthat`, `/usr/bin/whoisthat-core`, the
-desktop entry and the license, and re-apply file capabilities in their
+Both formats install `/usr/bin/whoisthat`, `/usr/bin/whoisthat-core`, the two
+desktop entries (`whoisthat.desktop`, `whoisthat-url.desktop`), the icon and the
+license, and re-apply file capabilities plus desktop/icon cache refresh in their
 post-install script. User configuration and the encrypted database are never
 touched by package upgrades or removal.
 
@@ -96,7 +97,9 @@ yay -S whoisthat-bin
 Both packages install the same files:
 * `/usr/bin/whoisthat` (client TUI / CLI)
 * `/usr/bin/whoisthat-core` (VPN daemon with capabilities pre-configured)
-* `/usr/share/applications/whoisthat.desktop` (desktop entry with `wit://` deep link handler)
+* `/usr/share/applications/whoisthat.desktop` (application menu launcher, opens the TUI)
+* `/usr/share/applications/whoisthat-url.desktop` (hidden `wit://` deep link handler)
+* `/usr/share/icons/hicolor/scalable/apps/whoisthat.svg`
 
 They conflict with each other, so pacman will prompt to remove the installed one
 when you switch between `whoisthat` and `whoisthat-bin`.
@@ -149,9 +152,12 @@ sudo install -Dm755 core/core/whoisthat-core /usr/bin/whoisthat-core
 # 5. Grant network capabilities to the core daemon
 sudo setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep /usr/bin/whoisthat-core
 
-# 6. Install desktop launcher and register wit:// deep link handler (optional)
-cp pkg/whoisthat.desktop ~/.local/share/applications/
-xdg-mime default whoisthat.desktop x-scheme-handler/wit
+# 6. Install desktop launcher, icon and register wit:// deep link handler (optional)
+install -Dm644 pkg/whoisthat.desktop ~/.local/share/applications/whoisthat.desktop
+install -Dm644 pkg/whoisthat-url.desktop ~/.local/share/applications/whoisthat-url.desktop
+install -Dm644 docs/public/logo.svg ~/.local/share/icons/hicolor/scalable/apps/whoisthat.svg
+update-desktop-database ~/.local/share/applications
+xdg-mime default whoisthat-url.desktop x-scheme-handler/wit
 ```
 
 ---

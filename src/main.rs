@@ -15,6 +15,7 @@ mod logger;
 mod net_info;
 mod popups;
 mod systemd;
+mod terminal;
 mod testing;
 mod text_edit;
 mod ui;
@@ -67,6 +68,10 @@ async fn main() -> io::Result<()> {
     install_panic_hook(logger);
 
     let mut cfg = config::load_config();
+    // Desktop entries start the TUI without a tty: re-exec it inside a terminal.
+    if !io::stdin().is_terminal() && !io::stdout().is_terminal() {
+        terminal::relaunch(&cfg.terminal);
+    }
     // A deliberate env override turns file logging on for this session and is
     // not written back, so it also drives the core spawn/IPC level below.
     let env_override = env_log_level();

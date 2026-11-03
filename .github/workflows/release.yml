@@ -124,6 +124,8 @@ jobs:
           cargo build --release --locked --target "$TARGET"
           cp "target/$TARGET/release/whoisthat" dist/whoisthat
           cp pkg/whoisthat.desktop dist/
+          cp pkg/whoisthat-url.desktop dist/
+          cp docs/public/logo.svg dist/whoisthat.svg
           cp LICENSE dist/
 
           check_static() {
@@ -141,10 +143,11 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p stage/bundle stage/core
-          cp dist/whoisthat dist/whoisthat-core dist/whoisthat.desktop dist/LICENSE stage/bundle/
+          cp dist/whoisthat dist/whoisthat-core dist/whoisthat.desktop \
+            dist/whoisthat-url.desktop dist/whoisthat.svg dist/LICENSE stage/bundle/
           cp dist/whoisthat-core dist/LICENSE stage/core/
           tar -czf "dist/whoisthat-linux-${ARCH}.tar.gz" -C stage/bundle \
-            whoisthat whoisthat-core whoisthat.desktop LICENSE
+            whoisthat whoisthat-core whoisthat.desktop whoisthat-url.desktop whoisthat.svg LICENSE
           tar -czf "dist/whoisthat-core-linux-${ARCH}.tar.gz" -C stage/core \
             whoisthat-core LICENSE
 

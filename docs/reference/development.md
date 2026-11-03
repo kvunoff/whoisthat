@@ -42,9 +42,10 @@ whoisthat/
 ├── README.md           ← Quick overview and reference guide
 ├── install.sh          ← Release downloader / source installer / updater
 ├── pkg/
-│   ├── whoisthat.desktop ← Desktop launcher entry & x-scheme-handler/wit MIME association
-│   ├── nfpm.yaml         ← deb/rpm package definition
-│   ├── package-postinstall.sh ← deb/rpm post-install setcap hook
+│   ├── whoisthat.desktop ← Desktop launcher entry (opens the TUI in a terminal)
+│   ├── whoisthat-url.desktop ← Hidden x-scheme-handler/wit deep link handler
+│   ├── nfpm.yaml         ← deb/rpm package definition (binaries, entries, icon)
+│   ├── package-postinstall.sh ← deb/rpm post-install: setcap + desktop/icon caches
 │   ├── aur/              ← source AUR package (PKGBUILD + .SRCINFO + whoisthat.install)
 │   └── aur-bin/          ← prebuilt AUR package (PKGBUILD + whoisthat-bin.install)
 ├── src/                ← Rust TUI & CLI source code
@@ -69,8 +70,9 @@ whoisthat/
 │   ├── core_spawn.rs   ← spawn_core, find_core_binary, ensure_core_caps (pkexec fallback)
 │   ├── systemd.rs      ← Unit-file generation, linger, enable/disable service
 │   ├── net_info.rs     ← fetch_public_ip / fetch_public_ipv6 (HTTPS via ureq to ipify)
-│   ├── deeplink.rs     ← Deep link routing (wit:// scheme parser, subscription & profile import)
+│   ├── deeplink.rs     ← wit:// parser, imports, and desktop entry/icon registration
 │   ├── launcher.rs     ← `whoisthat run <app>` — launch into split-tunnel slice (foreground/background)
+│   ├── terminal.rs     ← Re-exec the TUI in a terminal when launched without a tty
 │   ├── config.rs       ← Config loader (~/.config/whoisthat/config.toml)
 │   ├── core_client/    ← IPC client for the Go core (Unix domain socket / TCP)
 │   │   ├── protocol.rs ← All serde types mirroring Go structs
@@ -149,7 +151,8 @@ cargo test
 * **Global & Per-Group Routing State** (`src/ui/app/state/`): Page navigation including the Global page, inheritance fallback, custom-rule seeding, cached overrides, and page clamping after group deletion.
 * **Text Editing & Cyrillic** (`src/text_edit.rs`): UTF-8 character insertion, boundary backspace, cursor positioning, Home/End boundaries.
 * **Traffic History Ring Buffer** (`src/ui/traffic.rs`): 60-sample rolling buffer push, dynamic max-Y scale calculations.
-* **Deep Links** (`src/deeplink.rs`): Scheme parser validation for `wit://sub`, `wit://import`, `wit://toggle`, and raw proxy URIs.
+* **Deep Links** (`src/deeplink.rs`): Scheme parser validation for `wit://sub`, `wit://import`, `wit://toggle`, and raw proxy URIs, plus desktop entry/icon generation.
+* **Terminal Launch** (`src/terminal.rs`): Terminal detection order, per-emulator flags, explicit `terminal`/`$TERMINAL` prefixes, and system-default fallbacks.
 * **CLI** (`src/cli/`): clap definition consistency, legacy alias normalization, selector resolution, settings validation, log parsing, secret masking, and fake-core request-id correlation.
 
 ### 2. Go Core Test Suite
@@ -309,8 +312,8 @@ Safety rules enforced by the script:
 `bump.sh --push` creates `core-v*` and `v*` as drafts. The `release.yml`
 workflow then builds static musl binaries and publishes:
 
-* `v*`: `whoisthat-linux-<arch>.tar.gz` (both binaries, desktop entry and
-  license), `.deb`, `.rpm`, and `SHA256SUMS`;
+* `v*`: `whoisthat-linux-<arch>.tar.gz` (both binaries, both desktop entries,
+  icon and license), `.deb`, `.rpm`, and `SHA256SUMS`;
 * `core-v*`: `whoisthat-core-linux-<arch>.tar.gz` and `SHA256SUMS`.
 
 Only after every asset is uploaded does CI publish `core-v*`, publish `v*`, set
