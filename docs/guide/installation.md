@@ -42,7 +42,7 @@ The script is always fetched from `main`. To install a specific release, pass
 3. Installs or adopts precompiled **Xray-core (pinned v26.10.31)** with the same checksum policy.
 4. Installs binaries into `/usr/bin/` and removes legacy copies from `/usr/local/bin/`.
 5. Grants `cap_net_admin,cap_net_raw,cap_setpcap=+ep` to `/usr/bin/whoisthat-core`.
-6. Installs `whoisthat.desktop` (application menu launcher) and `whoisthat-url.desktop` (hidden `wit://` handler) into `/usr/share/applications`, plus `whoisthat.svg` into the icon theme, and refreshes the desktop and icon caches. The `wit://` scheme handler is registered per-user by the TUI on launch (`xdg-mime`), not by the installer.
+6. Installs `whoisthat.desktop` (application menu launcher) and `whoisthat-url.desktop` (hidden `wit://` handler) into `/usr/share/applications`, plus `whoisthat.svg` into the icon theme, and refreshes the desktop and icon caches. It then runs `whoisthat link register` as the invoking user: this refreshes the per-user entries left by older versions and binds `wit://` with `xdg-mime`. The TUI re-verifies the registration on every launch.
 
 Every release archive also carries a GitHub build-provenance attestation. To
 check a downloaded archive before installing:

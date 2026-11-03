@@ -291,6 +291,10 @@ download_release_artifacts() {
     for f in whoisthat whoisthat-core whoisthat.desktop; do
         [ -f "$ARTIFACT_DIR/$f" ] || { err "Release archive is missing ${f}."; exit 1; }
     done
+    if [ ! -f "$ARTIFACT_DIR/whoisthat-url.desktop" ] || [ ! -f "$ARTIFACT_DIR/whoisthat.svg" ]; then
+        warn "Release archive has no separate URL handler/icon (expected for old releases)."
+        warn "Per-user desktop entries will be refreshed after installation."
+    fi
     chmod +x "$ARTIFACT_DIR/whoisthat" "$ARTIFACT_DIR/whoisthat-core"
     info "Downloaded and verified ${tag}."
 }
@@ -480,10 +484,15 @@ uninstall_whoisthat() {
         info "Leaving package-owned $system_icon in place"
     fi
 
-    update-desktop-database "$TARGET_HOME/.local/share/applications" >/dev/null 2>&1 || true
-    update-desktop-database /usr/share/applications >/dev/null 2>&1 || true
-    gtk-update-icon-cache -qtf "$TARGET_HOME/.local/share/icons/hicolor" >/dev/null 2>&1 || true
-    $SUDO gtk-update-icon-cache -qtf /usr/share/icons/hicolor >/dev/null 2>&1 || true
+    # User-owned caches must be refreshed as the target user, never as root.
+    if command -v update-desktop-database >/dev/null 2>&1; then
+        as_target update-desktop-database "$TARGET_HOME/.local/share/applications" >/dev/null 2>&1 || true
+        $SUDO update-desktop-database /usr/share/applications >/dev/null 2>&1 || true
+    fi
+    if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+        as_target gtk-update-icon-cache -qtf "$TARGET_HOME/.local/share/icons/hicolor" >/dev/null 2>&1 || true
+        $SUDO gtk-update-icon-cache -qtf /usr/share/icons/hicolor >/dev/null 2>&1 || true
+    fi
 
     local removed=0 dir bin
     for dir in "$BIN_DIR" "$LEGACY_BIN_DIR"; do
@@ -844,8 +853,11 @@ build_whoisthat() {
     cp "$src_dir/target/release/whoisthat" "$ARTIFACT_DIR/whoisthat"
     cp "$src_dir/core/core/whoisthat-core" "$ARTIFACT_DIR/whoisthat-core"
     cp "$src_dir/pkg/whoisthat.desktop" "$ARTIFACT_DIR/whoisthat.desktop"
-    cp "$src_dir/pkg/whoisthat-url.desktop" "$ARTIFACT_DIR/whoisthat-url.desktop"
-    cp "$src_dir/docs/public/logo.svg" "$ARTIFACT_DIR/whoisthat.svg"
+    # Tags released before the two-entry desktop integration lack these files.
+    [ -f "$src_dir/pkg/whoisthat-url.desktop" ] &&
+        cp "$src_dir/pkg/whoisthat-url.desktop" "$ARTIFACT_DIR/whoisthat-url.desktop"
+    [ -f "$src_dir/docs/public/logo.svg" ] &&
+        cp "$src_dir/docs/public/logo.svg" "$ARTIFACT_DIR/whoisthat.svg"
     [ -f "$src_dir/LICENSE" ] && cp "$src_dir/LICENSE" "$ARTIFACT_DIR/LICENSE"
     info "All WhoisThat components built successfully."
 }
@@ -901,8 +913,12 @@ install_binaries() {
     done
 
     if [ -f "$ARTIFACT_DIR/whoisthat.svg" ]; then
-        $SUDO install -Dm644 "$ARTIFACT_DIR/whoisthat.svg" \
-            /usr/share/icons/hicolor/scalable/apps/whoisthat.svg
+        local icon="/usr/share/icons/hicolor/scalable/apps/whoisthat.svg"
+        if package_owns "$icon"; then
+            info "Leaving package-owned ${icon} in place"
+        else
+            $SUDO install -Dm644 "$ARTIFACT_DIR/whoisthat.svg" "$icon"
+        fi
     fi
 
     if command -v update-desktop-database >/dev/null 2>&1; then
@@ -910,6 +926,13 @@ install_binaries() {
     fi
     if command -v gtk-update-icon-cache >/dev/null 2>&1; then
         $SUDO gtk-update-icon-cache -qtf /usr/share/icons/hicolor 2>/dev/null || true
+    fi
+
+    # Older versions wrote a per-user handler that shadows this launcher and
+    # does nothing without a URL. Rewrite it now and register wit:// eagerly.
+    ensure_user_dir "$TARGET_HOME/.config"
+    if ! as_target "$BIN_DIR/whoisthat" link register >/dev/null 2>&1; then
+        warn "Could not refresh per-user desktop entries; run 'whoisthat link register'."
     fi
 
 }
@@ -1121,7 +1144,7 @@ print_final_message() {
         echo
     fi
     echo -e "  Launch:"
-    echo -e "    ${BOLD}whoisthat${NC}"
+    echo -e "    ${BOLD}whoisthat${NC}  (or the WhoisThat app-menu entry)"
     echo
     case ":$PATH:" in
         *":$BIN_DIR:"*) ;;

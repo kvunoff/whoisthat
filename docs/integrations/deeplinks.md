@@ -6,7 +6,7 @@ WhoisThat registers the custom desktop URL scheme `wit://`. This enables web das
 
 ## Protocol Registration
 
-When you launch the WhoisThat TUI, it verifies and re-registers the desktop launcher, icon and scheme handler in the background (idempotent, not just on first run).
+`install.sh` runs the registration once as the installing user, and every TUI launch verifies and re-registers the desktop launcher, icon and scheme handler in the background (idempotent, not just on first run).
 
 To register or refresh the handler manually from the CLI:
 
