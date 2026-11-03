@@ -382,7 +382,9 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core_client::protocol::TestConfig;
+    use crate::core_client::protocol::{
+        Group, GroupWithProfiles, Profile, ProfileDetails, RoutingProfileInfo, TestConfig,
+    };
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
 
@@ -415,6 +417,133 @@ mod tests {
             .map(|c| c.symbol().to_string())
             .collect::<Vec<_>>()
             .join("")
+    }
+
+    fn app_with_profile(uri: &str) -> App {
+        let mut app = test_app();
+        app.groups = vec![GroupWithProfiles {
+            group: Group {
+                id: 1,
+                name: "Test Group".to_string(),
+                ..Default::default()
+            },
+            profiles: vec![Profile {
+                id: 7,
+                group_id: 1,
+                name: "Vienna".to_string(),
+                protocol: "vless".to_string(),
+                address: "example.com".to_string(),
+                port: 443,
+                uri: uri.to_string(),
+                ..Default::default()
+            }],
+            routing_profiles: Vec::new(),
+        }];
+        app.cursor = 1;
+        app
+    }
+
+    #[test]
+    fn details_show_protocol_specific_fields() {
+        let uri = "vless://uuid@example.com:443?security=reality&sni=example.com&fp=chrome&pbk=publickey&sid=1a2b&alpn=h2%2Chttp%2F1.1&flow=xtls-rprx-vision&path=%2Fws#Vienna";
+        let mut app = app_with_profile(uri);
+        let text = render_text(&mut app, 160, 40);
+        assert!(text.contains("Public key"), "details: {text}");
+        assert!(text.contains("Short ID"), "details: {text}");
+        assert!(text.contains("Fingerprint"), "details: {text}");
+        assert!(text.contains("ALPN"), "details: {text}");
+    }
+
+    #[test]
+    fn details_use_core_metadata_for_managed_profiles() {
+        let mut app = app_with_profile("");
+        let profile = &mut app.groups[0].profiles[0];
+        profile.managed = true;
+        profile.protocol = "vless".to_string();
+        app.profile_details.insert(
+            (1, 7),
+            ProfileDetails {
+                group_id: 1,
+                id: 7,
+                transport: "xhttp".to_string(),
+                security: "reality".to_string(),
+                sni: "sni.example.com".to_string(),
+                flow: "xtls-rprx-vision".to_string(),
+                alpn: "h2".to_string(),
+                path: "/x".to_string(),
+                host: "cdn.example.com".to_string(),
+                public_key: "pub-key".to_string(),
+                short_id: "1a2b".to_string(),
+                ..Default::default()
+            },
+        );
+        let text = render_text(&mut app, 160, 40);
+        assert!(text.contains("xhttp"), "details: {text}");
+        assert!(text.contains("reality"), "details: {text}");
+        assert!(text.contains("sni.example.com"), "details: {text}");
+        assert!(text.contains("cdn.example.com"), "details: {text}");
+        assert!(text.contains("pub-key"), "details: {text}");
+    }
+
+    #[test]
+    fn details_show_group_routing_context() {
+        let mut app = test_app();
+        app.groups = vec![GroupWithProfiles {
+            group: Group {
+                id: 1,
+                name: "Test Group".to_string(),
+                subscription_url: "https://example.com/sub?token=secret".to_string(),
+                routing_mode: "auto".to_string(),
+                active_routing_profile_id: "r1".to_string(),
+                ..Default::default()
+            },
+            profiles: Vec::new(),
+            routing_profiles: vec![RoutingProfileInfo {
+                id: "r1".to_string(),
+                name: "Happ Foo".to_string(),
+                state: "ok".to_string(),
+                rules_count: 3,
+                ..Default::default()
+            }],
+        }];
+        let text = render_text(&mut app, 160, 40);
+        assert!(text.contains("Routing"), "details: {text}");
+        assert!(text.contains("Active"), "details: {text}");
+        assert!(text.contains("Happ Foo"), "details: {text}");
+        assert!(!text.contains("secret"), "token leaked: {text}");
+    }
+
+    #[test]
+    fn details_parse_vmess_and_never_show_credentials() {
+        use base64::Engine;
+        let json = r#"{"add":"example.com","port":"443","id":"secret-id","net":"ws","tls":"tls","path":"/ws","host":"cdn.example.com","sni":"sni.example.com"}"#;
+        let payload = base64::engine::general_purpose::STANDARD.encode(json);
+        let uri = format!("vmess://{payload}#Vienna");
+        let mut app = app_with_profile(&uri);
+        let text = render_text(&mut app, 100, 30);
+        assert!(text.contains("example.com"), "details: {text}");
+        assert!(text.contains("443"), "details: {text}");
+        assert!(!text.contains(&payload), "base64 payload leaked: {text}");
+        assert!(!text.contains("secret-id"), "credential leaked: {text}");
+    }
+
+    #[test]
+    fn details_do_not_render_password_secrets() {
+        let uri =
+            "hysteria2://user:pass@example.com:443?obfs=salamander&obfs-password=topsecret#Vienna";
+        let mut app = app_with_profile(uri);
+        let text = render_text(&mut app, 160, 40);
+        assert!(!text.contains("topsecret"), "secret leaked: {text}");
+    }
+
+    #[test]
+    fn details_render_in_compact_single_panel() {
+        let uri = "vless://uuid@example.com:443?security=tls&sni=example.com#Vienna";
+        let mut app = app_with_profile(uri);
+        app.focus = Focus::RightPanel;
+        let text = render_text(&mut app, 70, 20);
+        assert!(text.contains("Profile"), "details: {text}");
+        assert!(text.contains("Endpoint"), "details: {text}");
     }
 
     #[test]

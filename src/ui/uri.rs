@@ -10,9 +10,30 @@ pub struct ParsedUri {
     pub flow: String,
     pub name: String,
     pub protocol: String,
+    /// Decoded query parameters in their original order. Values are not
+    /// filtered here: secrets must be excluded by the consumer.
+    pub params: Vec<(String, String)>,
+}
+
+impl ParsedUri {
+    /// First non-empty value for any of the given keys.
+    pub fn param(&self, keys: &[&str]) -> Option<&str> {
+        for key in keys {
+            if let Some((_, value)) = self.params.iter().find(|(k, _)| k == key)
+                && !value.is_empty()
+            {
+                return Some(value);
+            }
+        }
+        None
+    }
 }
 
 pub fn parse_uri(uri: &str) -> ParsedUri {
+    if let Some(vmess) = parse_vmess(uri) {
+        return vmess;
+    }
+
     let mut params = ParsedUri::default();
 
     let without_scheme = uri.strip_prefix("vless://").unwrap_or(uri);
@@ -50,6 +71,15 @@ pub fn parse_uri(uri: &str) -> ParsedUri {
         .split('&')
         .filter(|s| !s.is_empty())
         .filter_map(|pair| pair.split_once('='))
+        .collect();
+
+    let query_params: Vec<(String, String)> = query_str
+        .split('&')
+        .filter(|s| !s.is_empty())
+        .map(|pair| {
+            let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
+            (urlencoding(key), urlencoding(value))
+        })
         .collect();
 
     params.sni = query.get("sni").map(|s| s.to_string()).unwrap_or_default();
@@ -97,7 +127,72 @@ pub fn parse_uri(uri: &str) -> ParsedUri {
         params.host = authority;
     }
 
+    params.params = query_params;
     params
+}
+
+/// VMess links carry a base64-encoded JSON object instead of URI query
+/// parameters. Decode it so Details can show the real endpoint; the `id`
+/// (credential) is deliberately not copied anywhere.
+fn parse_vmess(uri: &str) -> Option<ParsedUri> {
+    let payload = uri.strip_prefix("vmess://")?;
+    let (raw, fragment) = match payload.rsplit_once('#') {
+        Some((raw, fragment)) => (raw, fragment),
+        None => (payload, ""),
+    };
+    let raw = raw.split('?').next().unwrap_or(raw);
+    let bytes = decode_base64(raw.trim())?;
+    let json: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+    let obj = json.as_object()?;
+
+    let get = |key: &str| {
+        obj.get(key).and_then(|value| match value {
+            serde_json::Value::String(s) => Some(s.clone()),
+            serde_json::Value::Number(n) => Some(n.to_string()),
+            _ => None,
+        })
+    };
+
+    let mut parsed = ParsedUri {
+        protocol: "vmess".into(),
+        name: urlencoding(fragment),
+        ..Default::default()
+    };
+    if let Some(add) = get("add") {
+        parsed.host = add;
+    }
+    if let Some(port) = get("port") {
+        parsed.port = port;
+    }
+    parsed.sni = get("sni")
+        .filter(|s| !s.is_empty())
+        .or_else(|| get("host"))
+        .unwrap_or_default();
+    if let Some(net) = get("net") {
+        parsed.transport = net;
+    }
+    if let Some(tls) = get("tls") {
+        parsed.security = tls;
+    }
+    for key in [
+        "path", "host", "alpn", "fp", "type", "scy", "pbk", "sid", "spx",
+    ] {
+        if let Some(value) = get(key)
+            && !value.is_empty()
+        {
+            parsed.params.push((key.to_string(), value));
+        }
+    }
+
+    Some(parsed)
+}
+
+fn decode_base64(input: &str) -> Option<Vec<u8>> {
+    use base64::Engine;
+    use base64::engine::general_purpose::{STANDARD, STANDARD_NO_PAD, URL_SAFE, URL_SAFE_NO_PAD};
+    [&STANDARD, &URL_SAFE, &STANDARD_NO_PAD, &URL_SAFE_NO_PAD]
+        .iter()
+        .find_map(|engine| engine.decode(input).ok())
 }
 
 /// Extract the cipher method from an ss:// URI (SIP002 format).
@@ -175,6 +270,36 @@ mod tests {
 
         let decoded_spaces = urlencoding("Hello+World%20%21");
         assert_eq!(decoded_spaces, "Hello World !");
+    }
+
+    #[test]
+    fn test_parse_vless_exposes_technical_params() {
+        let uri = "vless://uuid@example.com:443?security=reality&sni=example.com&fp=chrome&pbk=abc&sid=1a2b&spx=%2F&alpn=h2%2Chttp%2F1.1&flow=xtls-rprx-vision#Node";
+        let parsed = parse_uri(uri);
+        assert_eq!(parsed.param(&["pbk"]), Some("abc"));
+        assert_eq!(parsed.param(&["sid"]), Some("1a2b"));
+        assert_eq!(parsed.param(&["spx"]), Some("/"));
+        assert_eq!(parsed.param(&["alpn"]), Some("h2,http/1.1"));
+        assert_eq!(parsed.param(&["missing"]), None);
+    }
+
+    #[test]
+    fn test_parse_vmess_json() {
+        use base64::Engine;
+        let json = r#"{"add":"example.com","port":"443","id":"secret-id","net":"ws","tls":"tls","path":"/ws","host":"cdn.example.com","sni":"sni.example.com","alpn":"h2","fp":"chrome","scy":"auto"}"#;
+        let payload = base64::engine::general_purpose::STANDARD.encode(json);
+        let parsed = parse_uri(&format!("vmess://{payload}#Node"));
+        assert_eq!(parsed.protocol, "vmess");
+        assert_eq!(parsed.host, "example.com");
+        assert_eq!(parsed.port, "443");
+        assert_eq!(parsed.transport, "ws");
+        assert_eq!(parsed.security, "tls");
+        assert_eq!(parsed.sni, "sni.example.com");
+        assert_eq!(parsed.param(&["path"]), Some("/ws"));
+        assert_eq!(parsed.param(&["host"]), Some("cdn.example.com"));
+        // The credential stays out of the display payload.
+        assert!(parsed.params.iter().all(|(k, _)| k != "id"));
+        assert!(parsed.params.iter().all(|(_, v)| v != "secret-id"));
     }
 
     #[test]

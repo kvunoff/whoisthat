@@ -61,6 +61,8 @@ pub struct App {
     pub traffic_stats: TrafficStats,
     pub traffic_history: TrafficHistory,
     pub routing: RoutingConfig,
+    pub profile_details: HashMap<(i32, i32), ProfileDetails>,
+    pub profile_details_pending: HashSet<(i32, i32)>,
     pub group_routing: HashMap<i32, GroupRoutingView>,
     pub routing_cursor: usize,
     pub routing_group_index: usize,
@@ -128,6 +130,8 @@ impl App {
             traffic_stats: TrafficStats::default(),
             traffic_history: TrafficHistory::new(),
             routing: RoutingConfig::default(),
+            profile_details: HashMap::new(),
+            profile_details_pending: HashSet::new(),
             group_routing: HashMap::new(),
             routing_cursor: 0,
             routing_group_index: 0,
@@ -286,7 +290,7 @@ impl App {
         if self.tab == ActiveTab::Profiles {
             self.focus = match self.focus {
                 Focus::LeftPanel => {
-                    if self.selected_profile().is_some() {
+                    if self.tree_node_at(self.cursor).is_some() {
                         Focus::RightPanel
                     } else {
                         Focus::LeftPanel
@@ -307,14 +311,6 @@ impl App {
             .profile
             .as_ref()
             .map(|p| (p.group_id, p.id))
-    }
-
-    pub fn connected_group_name(&self) -> Option<&str> {
-        let (gid, _) = self.connected_id()?;
-        self.groups
-            .iter()
-            .find(|g| g.group.id == gid)
-            .map(|g| g.group.name.as_str())
     }
 
     pub fn connected_profile_name(&self) -> Option<&str> {

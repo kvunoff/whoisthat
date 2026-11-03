@@ -3,6 +3,7 @@ package xrayjson
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 
 	"whoisthat-core/structs"
@@ -583,5 +584,32 @@ func TestJSONFallbackKeepsAllTagsWhenEveryOutboundIsChained(t *testing.T) {
 	selector, _ := balancer["selector"].([]interface{})
 	if len(selector) != 2 {
 		t.Fatalf("fallback selector = %#v, want all proxy tags", selector)
+	}
+}
+
+func TestStreamDetailsAreSanitized(t *testing.T) {
+	raw := json.RawMessage(`{"outbounds":[{"tag":"proxy","protocol":"vless","settings":{"vnext":[{"address":"x.example","port":443,"users":[{"id":"secret-uuid","flow":"xtls-rprx-vision"}]}]},"streamSettings":{"network":"xhttp","security":"reality","realitySettings":{"serverName":"sni.example","fingerprint":"chrome","publicKey":"pub-key","shortId":"1a2b","spiderX":"/"},"xhttpSettings":{"path":"/x","host":"cdn.example","mode":"auto"},"tlsSettings":{"alpn":["h2","http/1.1"],"allowInsecure":true}}}]}`)
+
+	details := StreamDetails(raw)
+	if details.Transport != "xhttp" || details.Security != "reality" {
+		t.Fatalf("transport/security = %q/%q", details.Transport, details.Security)
+	}
+	if details.SNI != "sni.example" || details.Fingerprint != "chrome" {
+		t.Fatalf("sni/fingerprint = %q/%q", details.SNI, details.Fingerprint)
+	}
+	if details.PublicKey != "pub-key" || details.ShortId != "1a2b" || details.SpiderX != "/" {
+		t.Fatalf("reality fields = %+v", details)
+	}
+	if details.Path != "/x" || details.Host != "cdn.example" || details.Mode != "auto" {
+		t.Fatalf("xhttp fields = %+v", details)
+	}
+	if details.ALPN != "h2,http/1.1" || !details.AllowInsecure {
+		t.Fatalf("tls fields = %+v", details)
+	}
+	if details.Flow != "xtls-rprx-vision" {
+		t.Fatalf("flow = %q", details.Flow)
+	}
+	if strings.Contains(fmt.Sprintf("%+v", details), "secret-uuid") {
+		t.Fatal("credential leaked into profile details")
 	}
 }

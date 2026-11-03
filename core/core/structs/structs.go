@@ -338,6 +338,29 @@ type ProfileID struct {
 	GroupId int `json:"group_id"`
 }
 
+// ProfileDetails is the sanitized connection metadata for a managed JSON
+// profile. It never contains UUIDs, passwords, auth tokens, or private keys.
+type ProfileDetails struct {
+	GroupId       int    `json:"group_id"`
+	Id            int    `json:"id"`
+	Transport     string `json:"transport,omitzero"`
+	Security      string `json:"security,omitzero"`
+	SNI           string `json:"sni,omitzero"`
+	Flow          string `json:"flow,omitzero"`
+	ALPN          string `json:"alpn,omitzero"`
+	Path          string `json:"path,omitzero"`
+	Host          string `json:"host,omitzero"`
+	ServiceName   string `json:"service_name,omitzero"`
+	Mode          string `json:"mode,omitzero"`
+	Fingerprint   string `json:"fingerprint,omitzero"`
+	PublicKey     string `json:"public_key,omitzero"`
+	ShortId       string `json:"short_id,omitzero"`
+	SpiderX       string `json:"spider_x,omitzero"`
+	Obfs          string `json:"obfs,omitzero"`
+	Cipher        string `json:"cipher,omitzero"`
+	AllowInsecure bool   `json:"allow_insecure,omitzero"`
+}
+
 type TCPMessage struct {
 	Msg  string          `json:"msg"`
 	Data json.RawMessage `json:"data"`

@@ -177,12 +177,14 @@ pub(crate) async fn handle_core_event(
 
         CoreEvent::ProfilesAdded(p) => {
             app.apply_profiles_added(p);
+            app.clear_profile_details();
             app.popup = None;
             app.msg("Ok");
         }
 
         CoreEvent::ProfilesDeleted(d) => {
             app.apply_profiles_deleted(&d);
+            app.clear_profile_details();
             app.popup = None;
             app.msg("Ok");
         }
@@ -192,6 +194,10 @@ pub(crate) async fn handle_core_event(
                 app.clear_msg();
             }
             app.apply_profile_updated(&p);
+        }
+
+        CoreEvent::ProfileDetails(details) => {
+            app.apply_profile_details(details);
         }
 
         CoreEvent::TunStatusChanged(e) => {
@@ -233,6 +239,7 @@ pub(crate) async fn handle_core_event(
 
         CoreEvent::Reconnected => {
             log::info!("Core reconnected; re-syncing state");
+            app.clear_profile_details();
             app.msg("Core reconnected. Re-syncing state...");
             // A respawned core starts with the level from WHOISTHAT_LOG_LEVEL;
             // re-apply the current setting so a runtime change survives.
@@ -247,6 +254,7 @@ pub(crate) async fn handle_core_event(
             auto,
         } => {
             app.apply_subscription_updated(group, profiles, routing_profiles);
+            app.clear_profile_details();
             if !auto {
                 app.msg("Subscription updated");
             }
@@ -258,6 +266,7 @@ pub(crate) async fn handle_core_event(
 
         CoreEvent::GroupDeleted(id) => {
             app.apply_group_deleted(id);
+            app.clear_profile_details();
             app.popup = None;
             app.msg("Group deleted");
         }
@@ -283,6 +292,7 @@ pub(crate) async fn handle_core_event(
             new_profile,
         } => {
             app.apply_profile_moved(old_profile, new_profile);
+            app.clear_profile_details();
             app.popup = None;
         }
 

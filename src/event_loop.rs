@@ -30,6 +30,7 @@ pub(crate) async fn run_loop<B: Backend<Error = std::io::Error>>(
 ) -> std::io::Result<()> {
     let mut first_state = true;
     loop {
+        request_selected_profile_details(app, client).await;
         term.draw(|f| app.render(f))?;
 
         tokio::select! {
@@ -47,4 +48,17 @@ pub(crate) async fn run_loop<B: Backend<Error = std::io::Error>>(
         }
     }
     Ok(())
+}
+
+/// Managed JSON profiles carry their stream settings in a separate core-side
+/// config. Fetch safe display metadata once per selected profile.
+async fn request_selected_profile_details(app: &mut App, client: &CoreClient) {
+    if let Some((group_id, profile_id)) = app.profile_details_request()
+        && client
+            .get_profile_details(group_id, profile_id)
+            .await
+            .is_ok()
+    {
+        app.mark_profile_details_pending((group_id, profile_id));
+    }
 }

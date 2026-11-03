@@ -28,7 +28,7 @@ without an id.
 
 | Kind | Examples | Has `id` |
 | :--- | :--- | :---: |
-| Direct command replies | `application-state`, `group-added`, `group-updated`, `profiles-added`, `subscription-updated`, `routing-updated`, `kill-switch-updated`, `split-tunnel-updated`, `tun-name-updated`, `hwid-updated`, `test-config-updated`, `is-root-answer` | yes |
+| Direct command replies | `application-state`, `profile-details`, `group-added`, `group-updated`, `profiles-added`, `subscription-updated`, `routing-updated`, `kill-switch-updated`, `split-tunnel-updated`, `tun-name-updated`, `hwid-updated`, `test-config-updated`, `is-root-answer` | yes |
 | Request-scoped warnings | `warn` with keys such as `connect-failed`, `update-subscription-failed`, `test-group-failed` | yes |
 | Background/broadcast events | `status-changed`, `tun-status-changed`, `traffic-stats`, `test-progress` (after the first frame), `profile-updated` (test results), `xray-progress`, `warn died` | no |
 | Commands without a reply | `die`, `cancel-tests`, `set-log-level` | — |
@@ -65,6 +65,7 @@ The core replies with `{"msg":"hello-ok","data":{"protocol_version":4}}` or `{"m
 | :--- | :--- | :--- |
 | `hello` | `{"token": "string", "protocol_version": int}` | `hello-ok` / `hello-error` (TCP only, must be first) |
 | `get-application-state` | `{}` | `application-state` |
+| `get-profile-details` | `{"id": int, "group_id": int}` | `profile-details` (sanitized stream metadata for a managed JSON profile) |
 | `set-log-level` | `{"level": "error" \| "warn" \| "info" \| "debug" \| "trace"}` | No reply (fire-and-forget); an invalid value emits `warn` with key `set-log-level-failed` |
 | `connect` | `{"profile": {"id": int, "group_id": int}}` | `status-changed` |
 | `disconnect` | `{}` | `status-changed` |
@@ -108,6 +109,7 @@ The core replies with `{"msg":"hello-ok","data":{"protocol_version":4}}` or `{"m
 | Notification (`msg`) | `data` Object Payload | Description |
 | :--- | :--- | :--- |
 | `application-state` | Complete system state | Response to `get-application-state` (the TUI requests it on connect). Includes groups, profiles, active connection, TUN status, `tun_name`, `test_config`, and configurations. `tun_name`/`test_config` are authoritative: the TUI mirrors them into `config.toml` instead of the other way around. `config_status` (`ok`/`missing`/`corrupt`/`repaired`) and `db_status` (`ok`/`read-only` plus `snapshot_at`) report unreadable files so the TUI can offer a one-click restore. |
+| `profile-details` | `{"group_id": int, "id": int, "transport": "str"?, "security": "str"?, "sni": "str"?, "flow": "str"?, "alpn": "str"?, "path": "str"?, "host": "str"?, "service_name": "str"?, "mode": "str"?, "fingerprint": "str"?, "public_key": "str"?, "short_id": "str"?, "spider_x": "str"?, "obfs": "str"?, "cipher": "str"?, "allow_insecure": bool?}` | Response to `get-profile-details` for a managed JSON profile. Contains display-only stream metadata extracted from the provider config; credentials are never included. Empty fields mean the provider config does not specify them. |
 | `status-changed` | `{"connection": "connected" \| "disconnected", "profile": { ... }, "connected_at": int, "reason": "string"?}` | Fired when VPN connects or disconnects. `reason` is present when the connection dropped unexpectedly. |
 | `profiles-added` | `{"profiles": [ ... ]}` | Fired when new server profiles are imported. |
 | `profiles-deleted` | `{"deleted-profiles": [ ... ]}` | Fired when profiles are deleted. |

@@ -9,13 +9,13 @@ pub fn section_header(title: &str) -> Line<'static> {
 
 pub fn kv_row(key: &str, val: impl Into<String>) -> Line<'static> {
     Line::from(vec![
-        Span::styled(format!("{:>10}  ", key), s_faint()),
+        Span::styled(format!("{:>11}  ", key), s_faint()),
         Span::styled(val.into(), s_text()),
     ])
 }
 
 pub fn kv_row_span<'a>(key: &str, val: Span<'a>) -> Line<'a> {
-    Line::from(vec![Span::styled(format!("{:>10}  ", key), s_faint()), val])
+    Line::from(vec![Span::styled(format!("{:>11}  ", key), s_faint()), val])
 }
 
 pub fn format_bytes(bytes: i64) -> String {

@@ -480,6 +480,14 @@ func (s *Server) handleConnection(cc *clientConn, clientID string, requireAuth b
 			}
 			handler.GetApplicationState(data, s.proxy_manager, s.tun_manager)
 
+		case "get-profile-details":
+			var data structs.ProfileID
+			if err := json.Unmarshal(raw_tcp_message.Data, &data); err != nil {
+				logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
+				return
+			}
+			handler.GetProfileDetails(data)
+
 		case "repair-config":
 			handler.RepairConfig(s.proxy_manager, s.tun_manager)
 

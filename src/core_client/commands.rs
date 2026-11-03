@@ -33,6 +33,23 @@ impl CoreClient {
             .await
     }
 
+    /// Ask for sanitized stream metadata of a managed JSON profile. Older cores
+    /// do not know the command and simply do not reply; the TUI keeps its
+    /// URI-based fallback.
+    pub async fn get_profile_details(&self, group_id: i32, profile_id: i32) -> std::io::Result<()> {
+        self.writer
+            .lock()
+            .await
+            .send(
+                "get-profile-details",
+                &ProfileID {
+                    id: profile_id,
+                    group_id,
+                },
+            )
+            .await
+    }
+
     pub async fn connect(&self, group_id: i32, profile_id: i32) -> std::io::Result<()> {
         self.writer
             .lock()

@@ -15,6 +15,7 @@ pub enum CoreEvent {
     ProfilesAdded(Vec<Profile>),
     ProfilesDeleted(Vec<ProfileID>),
     ProfileUpdated(Profile),
+    ProfileDetails(ProfileDetails),
     GroupAdded(Group),
     GroupDeleted(i32),
     GroupUpdated(Group),
@@ -194,6 +195,9 @@ pub(crate) fn dispatch(msg: TcpMessage) -> CoreEvent {
         "profile-updated" => try_dispatch!(msg, "profile-updated", ProfileUpdated, |d| {
             CoreEvent::ProfileUpdated(d.profile)
         }),
+        "profile-details" => {
+            try_dispatch!(msg, "profile-details", ProfileDetails, ProfileDetails)
+        }
         "group-added" => try_dispatch!(msg, "group-added", GroupAdded, |d| CoreEvent::GroupAdded(
             Group {
                 id: d.id,
@@ -791,6 +795,31 @@ mod tests {
             assert_eq!(group_ids, vec![2, 1, 3]);
         } else {
             panic!("expected GroupsReordered");
+        }
+    }
+
+    #[test]
+    fn test_dispatch_profile_details() {
+        let event = dispatch(make_msg(
+            "profile-details",
+            json!({
+                "group_id": 1,
+                "id": 9,
+                "transport": "ws",
+                "security": "tls",
+                "sni": "example.com",
+                "path": "/ws"
+            }),
+        ));
+        if let CoreEvent::ProfileDetails(details) = event {
+            assert_eq!(details.group_id, 1);
+            assert_eq!(details.id, 9);
+            assert_eq!(details.transport, "ws");
+            assert_eq!(details.security, "tls");
+            assert_eq!(details.sni, "example.com");
+            assert_eq!(details.path, "/ws");
+        } else {
+            panic!("expected ProfileDetails");
         }
     }
 

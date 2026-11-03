@@ -35,6 +35,17 @@ fn make_app_with_profile() -> App {
 }
 
 #[test]
+fn test_toggle_focus_reaches_group_details() {
+    let mut app = make_app_with_profile();
+    app.cursor = 0;
+    assert!(app.on_group());
+    app.toggle_focus();
+    assert_eq!(app.focus, Focus::RightPanel);
+    app.toggle_focus();
+    assert_eq!(app.focus, Focus::LeftPanel);
+}
+
+#[test]
 fn test_mark_pending_flips_test_result_to_negative_two() {
     let mut app = make_app_with_profile();
     assert_eq!(app.groups[0].profiles[0].test_result, 100);

@@ -59,11 +59,11 @@ whoisthat test group Work --wait
 | <kbd>J</kbd> / <kbd>Alt+↓</kbd> / <kbd>Shift+↓</kbd> | Profile / Group | **Move Down**: Reorder profile or group downwards (instant & persistent) |
 | <kbd>K</kbd> / <kbd>Alt+↑</kbd> / <kbd>Shift+↑</kbd> | Profile / Group | **Move Up**: Reorder profile or group upwards (instant & persistent) |
 | <kbd>A</kbd> / <kbd>n</kbd> | Profiles Tab | **Add Group**: Create a new group from a subscription URL (name comes from the provider or URL host) |
-| <kbd>u</kbd> / <kbd>r</kbd> | Group Header | **Update Subscription**: Fetch fresh profiles from subscription URL |
+| <kbd>u</kbd> / <kbd>r</kbd> | Group (tree or Details) | **Update Subscription**: Fetch fresh profiles from subscription URL |
 | <kbd>a</kbd> | Profiles Tab | **Import Profile**: Paste proxy URI (`vless://`, `hysteria2://`, `trojan://`, etc.) |
-| <kbd>e</kbd> | Profile / Group | **Edit / Rename**: Modify group URL/name or rename selected profile |
-| <kbd>x</kbd> | Profile Item | **Delete Profile**: Delete selected server profile |
-| <kbd>X</kbd> | Group Header | **Delete Group**: Delete entire subscription group and all its profiles |
+| <kbd>e</kbd> | Profile / Group (tree or Details) | **Edit / Rename**: Modify group URL/name or rename selected profile |
+| <kbd>x</kbd> | Profile (tree or Details) | **Delete Profile**: Delete selected server profile |
+| <kbd>X</kbd> | Group (tree or Details) | **Delete Group**: Delete entire subscription group and all its profiles |
 | <kbd>y</kbd> | Profile Item | **Copy URI**: Copy raw proxy URI to system clipboard |
 | <kbd>Ctrl+V</kbd> | Input Popups | Paste text from system clipboard |
 

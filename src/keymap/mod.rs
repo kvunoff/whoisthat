@@ -127,6 +127,10 @@ fn resolve_profiles_details(key: &KeyEvent) -> AppAction {
         KeyCode::Char('t') => AppAction::TestFocused,
         KeyCode::Char('T') => AppAction::TestAll,
         KeyCode::Char('y') => AppAction::CopyUri,
+        KeyCode::Char('u') | KeyCode::Char('r') => AppAction::UpdateSubscription,
+        KeyCode::Char('e') => AppAction::EditItem,
+        KeyCode::Char('x') | KeyCode::Delete => AppAction::DeleteItem,
+        KeyCode::Char('X') => AppAction::DeleteGroup,
         _ => AppAction::None,
     }
 }
@@ -612,6 +616,26 @@ mod tests {
         assert_eq!(
             resolve_action(KeyContext::ProfilesTree, &key(KeyCode::Char('r'))),
             AppAction::UpdateSubscription
+        );
+    }
+
+    #[test]
+    fn test_details_context_management_keys() {
+        assert_eq!(
+            resolve_action(KeyContext::ProfilesDetails, &key(KeyCode::Char('u'))),
+            AppAction::UpdateSubscription
+        );
+        assert_eq!(
+            resolve_action(KeyContext::ProfilesDetails, &key(KeyCode::Char('e'))),
+            AppAction::EditItem
+        );
+        assert_eq!(
+            resolve_action(KeyContext::ProfilesDetails, &key(KeyCode::Char('x'))),
+            AppAction::DeleteItem
+        );
+        assert_eq!(
+            resolve_action(KeyContext::ProfilesDetails, &key(KeyCode::Char('X'))),
+            AppAction::DeleteGroup
         );
     }
 }

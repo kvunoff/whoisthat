@@ -48,6 +48,46 @@ pub struct ProfileID {
     pub group_id: i32,
 }
 
+/// Sanitized stream metadata for a managed JSON profile. The core never sends
+/// credentials here, only display fields.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProfileDetails {
+    pub group_id: i32,
+    pub id: i32,
+    #[serde(default)]
+    pub transport: String,
+    #[serde(default)]
+    pub security: String,
+    #[serde(default)]
+    pub sni: String,
+    #[serde(default)]
+    pub flow: String,
+    #[serde(default)]
+    pub alpn: String,
+    #[serde(default)]
+    pub path: String,
+    #[serde(default)]
+    pub host: String,
+    #[serde(rename = "service_name", default)]
+    pub service_name: String,
+    #[serde(default)]
+    pub mode: String,
+    #[serde(default)]
+    pub fingerprint: String,
+    #[serde(rename = "public_key", default)]
+    pub public_key: String,
+    #[serde(rename = "short_id", default)]
+    pub short_id: String,
+    #[serde(rename = "spider_x", default)]
+    pub spider_x: String,
+    #[serde(default)]
+    pub obfs: String,
+    #[serde(default)]
+    pub cipher: String,
+    #[serde(rename = "allow_insecure", default)]
+    pub allow_insecure: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct RoutingProfileInfo {
     #[serde(default)]
