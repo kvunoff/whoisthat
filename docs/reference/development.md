@@ -82,7 +82,7 @@ whoisthat/
 │       ├── layout.rs   ← Responsive layout geometry engine (width/height tiers, adaptive splits)
 │       ├── theme.rs    ← Curated color palettes (4 themes: Graphite Dark, Graphite Light, Tokyo Night, Dracula)
 │       ├── settings.rs ← Settings screen
-│       ├── routing.rs  ← Routing rules tab + presets catalog + popups
+│       ├── routing/    ← Routing tab, presets catalog, rule form & popup rendering
 │       ├── traffic.rs  ← Real-time traffic monitoring tab (Braille charts + live transfer stats)
 │       ├── logs.rs     ← Log viewer (live tail + auto-scroll + level filter)
 │       └── uri.rs      ← URI detail parser (VLESS/VMess/Trojan/SS/SOCKS/Hysteria2)
@@ -145,7 +145,7 @@ cargo test
 **Areas Covered:**
 * **Protocol Framing & Dispatch** (`src/core_client/`): Tests handling of all core notification types, deserialization resilience, profile moving, and reordering.
 * **Responsive Layout Tiers** (`src/ui/layout.rs`, `src/ui/app/helpers.rs`): Tests width tiers (Compact, Medium, Wide, UltraWide), height tiers (Tiny, Short, Normal, Tall), adaptive panel collapsing, and safety threshold (<45x8).
-* **Routing Logic & Presets** (`src/ui/routing.rs`): Form-to-rule and rule-to-form round trips for all 6 match types, preset idempotency, live rule toggling, and Global / inherited / custom page rendering.
+* **Routing Logic & Presets** (`src/ui/routing/`): Form-to-rule and rule-to-form round trips for all 6 match types, preset idempotency, live rule toggling, and Global / inherited / custom page rendering.
 * **Global & Per-Group Routing State** (`src/ui/app/state.rs`): Page navigation including the Global page, inheritance fallback, custom-rule seeding, cached overrides, and page clamping after group deletion.
 * **Text Editing & Cyrillic** (`src/text_edit.rs`): UTF-8 character insertion, boundary backspace, cursor positioning, Home/End boundaries.
 * **Traffic History Ring Buffer** (`src/ui/traffic.rs`): 60-sample rolling buffer push, dynamic max-Y scale calculations.
