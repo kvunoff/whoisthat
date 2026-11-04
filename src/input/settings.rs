@@ -13,6 +13,18 @@ use crate::testing::persist_and_sync_test_config;
 use crate::ui::App;
 use crate::ui::app::{Focus, Popup};
 use crate::ui::settings::next_split_tunnel_mode;
+
+/// Persist `cfg` and tell the user when it could not be written.
+fn save(app: &mut App, cfg: &config::AppConfig) -> bool {
+    match config::try_save_config(cfg) {
+        Ok(()) => true,
+        Err(e) => {
+            app.msg(format!("Config not saved: {e}"));
+            false
+        }
+    }
+}
+
 pub(super) async fn handle(
     action: AppAction,
     app: &mut App,
@@ -26,8 +38,9 @@ pub(super) async fn handle(
             if app.settings_state.cursor() == 3 {
                 let prev_theme = crate::ui::theme::cycle_theme_prev();
                 cfg.theme = prev_theme.to_string();
-                config::save_config(cfg);
-                app.msg(format!("Theme: {}", crate::ui::theme::current_theme().name));
+                if save(app, cfg) {
+                    app.msg(format!("Theme: {}", crate::ui::theme::current_theme().name));
+                }
             }
             false
         }
@@ -35,8 +48,9 @@ pub(super) async fn handle(
             if app.settings_state.cursor() == 3 {
                 let next_theme = crate::ui::theme::cycle_theme();
                 cfg.theme = next_theme.to_string();
-                config::save_config(cfg);
-                app.msg(format!("Theme: {}", crate::ui::theme::current_theme().name));
+                if save(app, cfg) {
+                    app.msg(format!("Theme: {}", crate::ui::theme::current_theme().name));
+                }
             }
             false
         }
@@ -101,8 +115,9 @@ pub(super) async fn handle(
                 3 => {
                     let next_theme = crate::ui::theme::cycle_theme();
                     cfg.theme = next_theme.to_string();
-                    config::save_config(cfg);
-                    app.msg(format!("Theme: {}", crate::ui::theme::current_theme().name));
+                    if save(app, cfg) {
+                        app.msg(format!("Theme: {}", crate::ui::theme::current_theme().name));
+                    }
                 }
                 4 => {
                     app.show_ip = !app.show_ip;
@@ -115,18 +130,19 @@ pub(super) async fn handle(
                         // startup; fetch once immediately after enabling it.
                         refresh_public_ip(ip_tx.clone(), std::time::Duration::ZERO);
                     }
-                    config::save_config(cfg);
+                    save(app, cfg);
                 }
                 5 => {
                     app.log_enabled = !app.log_enabled;
                     cfg.log_enabled = app.log_enabled;
-                    config::save_config(cfg);
                     configure_logger(logger, cfg.log_enabled, &cfg.log_level);
-                    app.msg(if app.log_enabled {
-                        "Verbose TUI logging enabled"
-                    } else {
-                        "TUI logging: warnings and errors only"
-                    });
+                    if save(app, cfg) {
+                        app.msg(if app.log_enabled {
+                            "Verbose TUI logging enabled"
+                        } else {
+                            "TUI logging: warnings and errors only"
+                        });
+                    }
                 }
                 6 => {
                     let levels = ["error", "warn", "info", "debug", "trace"];
@@ -137,12 +153,14 @@ pub(super) async fn handle(
                     let next = (current + 1) % levels.len();
                     app.log_level = levels[next].to_string();
                     cfg.log_level = app.log_level.clone();
-                    config::save_config(cfg);
+                    let saved = save(app, cfg);
                     configure_logger(logger, cfg.log_enabled, &cfg.log_level);
                     if let Err(e) = client.set_log_level(&app.log_level).await {
                         log::warn!("failed to set core log level: {e}");
-                        app.msg(format!("Core log level not applied: {e}"));
-                    } else {
+                        if saved {
+                            app.msg(format!("Core log level not applied: {e}"));
+                        }
+                    } else if saved {
                         app.msg(format!("Log level: {}", app.log_level));
                     }
                 }
@@ -176,7 +194,7 @@ pub(super) async fn handle(
                     let next = (current + 1) % methods.len();
                     app.test_method = methods[next].to_string();
                     cfg.test_method = app.test_method.clone();
-                    config::save_config(cfg);
+                    save(app, cfg);
                 }
                 11 => {
                     let opts = [1, 3, 5, 10];

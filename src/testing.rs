@@ -76,7 +76,7 @@ pub(crate) async fn run_test_batch(app: &mut ui::App, client: &CoreClient, list:
 }
 
 pub(crate) async fn persist_and_sync_test_config(
-    app: &ui::App,
+    app: &mut ui::App,
     cfg: &mut config::AppConfig,
     client: &CoreClient,
 ) {
@@ -85,6 +85,8 @@ pub(crate) async fn persist_and_sync_test_config(
     cfg.test_samples = app.test_config.samples_per_test;
     cfg.test_endpoint = app.test_config.test_endpoint.clone();
     cfg.auto_test_on_subscribe = app.test_config.auto_test_on_subscribe;
-    config::save_config(cfg);
+    if let Err(e) = config::try_save_config(cfg) {
+        app.msg(format!("Config not saved: {e}"));
+    }
     let _ = client.set_test_config(&app.test_config).await;
 }

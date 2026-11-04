@@ -262,14 +262,21 @@ pub fn load_config() -> AppConfig {
     default
 }
 
+/// Serialize and atomically write the config to `path`.
+fn save_config_at(path: &std::path::Path, cfg: &AppConfig) -> std::io::Result<()> {
+    let content = toml::to_string_pretty(cfg).map_err(std::io::Error::other)?;
+    write_atomic(path, content.as_bytes())
+}
+
 pub fn save_config(cfg: &AppConfig) {
-    let Ok(content) = toml::to_string_pretty(cfg) else {
-        return;
-    };
-    // shortcut: save failures are logged, not propagated; UI callers are sync.
-    if let Err(e) = write_atomic(&config_path(), content.as_bytes()) {
+    if let Err(e) = try_save_config(cfg) {
         log::warn!("failed to save config: {e}");
     }
+}
+
+/// Like [`save_config`], but surfaces the failure so callers can tell the user.
+pub fn try_save_config(cfg: &AppConfig) -> std::io::Result<()> {
+    save_config_at(&config_path(), cfg)
 }
 
 /// Write via a temp file in the same directory and rename it into place, so a
@@ -353,6 +360,29 @@ mod tests {
             r#"{"autoconnect-enabled": false, "autoconnect-mode": "tun"}"#
         ));
         assert!(!parse_autoconnect_tun("not json"));
+    }
+
+    #[test]
+    fn save_config_at_reports_write_failures() {
+        let dir = tmp_dir("save-error");
+        let blocker = dir.join("blocker");
+        std::fs::write(&blocker, b"not a directory").unwrap();
+
+        assert!(save_config_at(&blocker.join("config.toml"), &AppConfig::default()).is_err());
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn save_config_at_writes_the_config() {
+        let dir = tmp_dir("save-ok");
+        let path = dir.join("config.toml");
+
+        save_config_at(&path, &AppConfig::default()).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.contains(&format!("theme = \"{}\"", default_theme())));
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

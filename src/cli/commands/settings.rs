@@ -187,7 +187,7 @@ async fn set_values(g: &GlobalArgs, assignments: &[String]) -> Result<(), CliErr
         for (key, value) in &local_jobs {
             apply_local(&mut cfg, key, value)?;
         }
-        config::save_config(&cfg);
+        config::try_save_config(&cfg)?;
         if !g.json {
             for (key, value) in local_jobs {
                 out.line(format!("{key}={value}"));
