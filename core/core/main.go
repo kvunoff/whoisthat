@@ -192,7 +192,11 @@ func main() {
 		// next launch will tear down any leftover rules.
 		done := make(chan struct{})
 		go func() {
-			tunmode.RemoveKillSwitchBlock()
+			// The kill-switch table is global: in test mode it may belong to
+			// the user's live session, so only the real daemon tears it down.
+			if !testMode() {
+				tunmode.RemoveKillSwitchBlock()
+			}
 			proxy_manager.Stop()
 			tun_manager.Stop()
 			os.Remove(appconfig.SocketPath())
