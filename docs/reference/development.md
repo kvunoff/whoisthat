@@ -62,15 +62,15 @@ whoisthat/
 │   │   └── checks/     ← Diagnostic checks: binaries, capabilities, polkit, IPC, DNS, config/storage, logs
 │   ├── event_loop.rs   ← AppEvent enum + run_loop (tokio::select! core_rx ↔ input_rx ↔ ticks)
 │   ├── core_events.rs  ← handle_core_event — dispatches all CoreEvent broadcasts
-│   ├── input.rs        ← handle_input + handle_normal_input — keyboard & mouse dispatch by tab/focus
-│   ├── popups.rs       ← Modal dialogs & routing popup key handlers, two-field forms
+│   ├── input/          ← Keyboard & mouse dispatch (mod.rs + navigation, profiles, routing, settings, mouse)
+│   ├── popups/         ← Modal dialogs & routing popup key handlers (general, editors, routing)
 │   ├── testing.rs      ← build_test_list, run_test_batch, persist_and_sync_test_config
 │   ├── text_edit.rs    ← edit_text_field line editor + clipboard paste + UTF-8/Cyrillic support
 │   ├── logger.rs       ← FileLogger (custom) + init/configure logger
 │   ├── core_spawn.rs   ← spawn_core, find_core_binary, ensure_core_caps (pkexec fallback)
 │   ├── systemd.rs      ← Unit-file generation, linger, enable/disable service
 │   ├── net_info.rs     ← fetch_public_ip / fetch_public_ipv6 (HTTPS via ureq to ipify)
-│   ├── deeplink.rs     ← wit:// parser, imports, and desktop entry/icon registration
+│   ├── deeplink/       ← wit:// parser, imports, and desktop entry/icon registration (parse, actions, desktop)
 │   ├── launcher.rs     ← `whoisthat run <app>` — launch into split-tunnel slice (foreground/background)
 │   ├── terminal.rs     ← Re-exec the TUI in a terminal when launched without a tty
 │   ├── config.rs       ← Config loader (~/.config/whoisthat/config.toml)
@@ -100,8 +100,8 @@ whoisthat/
 │           ├── parser/      ← Native in-memory URI parser & Xray JSON config generator
 │           ├── xraymgr/     ← Pinned Xray-core runtime manager (v26.10.31 download & checksum verification)
 │           ├── logger/      ← Level-filtered log wrapper (rotation configured in main.go)
-│           ├── TCPServer/   ← IPC server + dispatcher (Unix socket / TCP, length-prefixed JSON)
-│           ├── AppConfig/   ← Core configuration, defaults, HWID gen
+│           ├── TCPServer/   ← IPC server + dispatcher (server, framing, auth, command dispatch)
+│           ├── AppConfig/   ← Core configuration, defaults, HWID gen (config, storage, platform, apply)
 │           ├── PortPool/    ← Dynamic port allocator for test/profile instances
 │           ├── crypto/      ← AES-256-GCM encrypt/decrypt for DB files
 │           ├── geo/         ← Auto-download + verify geoip.dat / geosite.dat from v2fly
@@ -109,7 +109,7 @@ whoisthat/
 │           ├── happdns/     ← Happ DNS / FakeDNS compilation
 │           ├── xrayjson/    ← Xray JSON assembly: routing, DNS, JSON subscriptions
 │           ├── version/     ← CoreVersion and protocol.txt
-│           └── proxy/       ← mainproxy (connect/stop/status), xray wrapper, TUN manager + scripts, routing
+│           └── proxy/       ← mainproxy (connect/stop/status, routing+DNS, tester+probes), xray wrapper, TUN manager + scripts
 └── .github/workflows/
     ├── ci.yml          ← Automated CI: Rust, Go, shell, docs, versions and static musl build
     ├── release.yml     ← Builds release assets, publishes drafts and whoisthat-bin
@@ -151,7 +151,7 @@ cargo test
 * **Global & Per-Group Routing State** (`src/ui/app/state/`): Page navigation including the Global page, inheritance fallback, custom-rule seeding, cached overrides, and page clamping after group deletion.
 * **Text Editing & Cyrillic** (`src/text_edit.rs`): UTF-8 character insertion, boundary backspace, cursor positioning, Home/End boundaries.
 * **Traffic History Ring Buffer** (`src/ui/traffic.rs`): 60-sample rolling buffer push, dynamic max-Y scale calculations.
-* **Deep Links** (`src/deeplink.rs`): Scheme parser validation for `wit://sub`, `wit://import`, `wit://toggle`, and raw proxy URIs, plus desktop entry/icon generation.
+* **Deep Links** (`src/deeplink/`): Scheme parser validation for `wit://sub`, `wit://import`, `wit://toggle`, and raw proxy URIs, plus desktop entry/icon generation.
 * **Terminal Launch** (`src/terminal.rs`): Terminal detection order, per-emulator flags, explicit `terminal`/`$TERMINAL` prefixes, and system-default fallbacks.
 * **CLI** (`src/cli/`): clap definition consistency, legacy alias normalization, selector resolution, settings validation, log parsing, secret masking, and fake-core request-id correlation.
 
