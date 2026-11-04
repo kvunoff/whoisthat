@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 BINDIR ?= /usr/bin
 
-.PHONY: all build core rust test test-go test-race test-rust test-bump test-docs test-release lint version-check docs-check fmt integration docs install clean
+.PHONY: all build core rust test test-go test-race test-rust test-bump test-docs test-release lint version-check docs-check fmt integration docs install clean coverage
 
 all: build
 
@@ -37,6 +37,12 @@ test-docs:
 # Release upload policy: per-asset backfill and immutability of published releases.
 test-release:
 	./scripts/release-upload.test.sh
+
+# Coverage report (no gate): lcov for Rust, coverprofile for Go.
+# Requires: rustup component add llvm-tools-preview && cargo install cargo-llvm-cov
+coverage:
+	cargo llvm-cov --lcov --output-path lcov.info
+	cd core/core && go test -coverprofile=cover.out ./... && go tool cover -func=cover.out | tail -1
 
 # Privileged TUN/firewall scenarios in a throwaway network namespace.
 # Requires root (or CAP_NET_ADMIN) and is intentionally not part of `make test`.

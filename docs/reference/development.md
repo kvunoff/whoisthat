@@ -207,6 +207,7 @@ make build        # whoisthat-core + release TUI
 make test         # cargo test + go test ./... + scripts/bump.test.sh
 make lint         # rustfmt --check, clippy, go vet, gofmt
 make integration  # privileged netns suite
+make coverage     # Rust lcov + Go coverprofile (report only, no gate)
 make docs         # VitePress build
 make docs-check   # docs names/links/versions vs the code
 make install      # install both binaries and set capabilities
@@ -349,6 +350,7 @@ Continuous integration is handled via GitHub Actions in `.github/workflows/`:
   * Static build: `cargo build --target x86_64-unknown-linux-musl` plus a `CGO_ENABLED=0` core build, asserting neither binary has an `INTERP` segment.
   * Docs: `npm run docs:build` plus `./scripts/check-docs.sh` (IPC/config/CLI names, links, anchors, toolchain strings).
   * Integration: privileged netns suite (`-tags=integration`), failing if no `TestNetns*` ran.
+  * Coverage: `cargo llvm-cov` (lcov) and `go test -coverprofile` artifacts; report only, no `--fail-under` gate.
 * **`release.yml`**: Triggers on every `v*` tag push (or manually with `tag`):
   1. `verify` checks out the tag, runs `cargo test`, `go vet` and `go test`; `build` depends on it.
   2. Builds amd64/arm64 static musl binaries and verifies neither ELF has an `INTERP` segment (static or static-pie).

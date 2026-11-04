@@ -1,4 +1,6 @@
 target/
+lcov.info
+cover.out
 .claude/
 .vscode/
 .opencode/
