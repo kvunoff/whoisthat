@@ -52,6 +52,10 @@ func handleArgs(args []string) (code int, done bool) {
 	}
 }
 
+// testMode keeps the daemon away from the network and the global firewall so
+// the IPC smoke test can run it in a sandbox (see scripts/ipc-e2e.test.sh).
+func testMode() bool { return os.Getenv("WHOISTHAT_TEST_MODE") == "1" }
+
 func main() {
 	if code, done := handleArgs(os.Args[1:]); done {
 		os.Exit(code)
@@ -105,7 +109,7 @@ func main() {
 	// firewall/routing rules from a previous core that exited without cleaning
 	// up (hard quit, crash, power loss mid-TUN). Guarded on the IPC endpoint
 	// being free so we never nuke a live core's rules.
-	if !coreAlreadyRunning() {
+	if !testMode() && !coreAlreadyRunning() {
 		if err := tunmode.ReconcileOrphanedRules(appconfig.GetConfig().TunName); err != nil {
 			logger.Warnf("startup reconcile: %v", err)
 		} else {
@@ -113,9 +117,11 @@ func main() {
 		}
 	}
 
-	geoDir := filepath.Join(configDir, "geo")
-	if _, err := geo.EnsureAssets(geoDir); err != nil {
-		logger.Warnf("main: geo assets not available: %v", err)
+	if !testMode() {
+		geoDir := filepath.Join(configDir, "geo")
+		if _, err := geo.EnsureAssets(geoDir); err != nil {
+			logger.Warnf("main: geo assets not available: %v", err)
+		}
 	}
 	database := db.DB{}
 	database.Initialize()
@@ -142,7 +148,7 @@ func main() {
 	if err := xm.Init(); err != nil {
 		logger.Warnf("main: xraymgr init: %v", err)
 	}
-	if xm.GetStatus().Status != "ready" {
+	if !testMode() && xm.GetStatus().Status != "ready" {
 		logger.Infof("main: xray status is %s, ensuring runtime in background", xm.GetStatus().Status)
 		xm.EnsureRuntimeAsync()
 	}
@@ -158,13 +164,15 @@ func main() {
 	server := TCPServer.NewServer(&database, &proxy_manager, &tun_manager, stop_sig, missing)
 	server.Start()
 
-	go func() {
-		// Auto-update first probes all unknown intervals. Waiting for
-		// autoconnect means the VPN is up before any subscription traffic.
-		bootAutoconnect(&database, &proxy_manager, &tun_manager, server)
-		autoCmd := cmd.Cmd{DB: &database, Broadcast: server.Broadcast, TunManager: &tun_manager}
-		autoCmd.AutoUpdateLoop(&proxy_manager)
-	}()
+	if !testMode() {
+		go func() {
+			// Auto-update first probes all unknown intervals. Waiting for
+			// autoconnect means the VPN is up before any subscription traffic.
+			bootAutoconnect(&database, &proxy_manager, &tun_manager, server)
+			autoCmd := cmd.Cmd{DB: &database, Broadcast: server.Broadcast, TunManager: &tun_manager}
+			autoCmd.AutoUpdateLoop(&proxy_manager)
+		}()
+	}
 
 	go func() {
 		sigs := make(chan os.Signal, 1)

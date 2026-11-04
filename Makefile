@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 BINDIR ?= /usr/bin
 
-.PHONY: all build core rust test test-go test-race test-rust test-bump test-docs test-release lint version-check docs-check fmt integration docs install clean coverage
+.PHONY: all build core rust test test-go test-race test-rust test-bump test-docs test-release test-e2e lint version-check docs-check fmt integration docs install clean coverage
 
 all: build
 
@@ -37,6 +37,11 @@ test-docs:
 # Release upload policy: per-asset backfill and immutability of published releases.
 test-release:
 	./scripts/release-upload.test.sh
+
+# IPC smoke test: a real core in a temp XDG sandbox, read back through the CLI.
+# Needs both binaries built (`make core` and `cargo build`).
+test-e2e:
+	./scripts/ipc-e2e.test.sh
 
 # Coverage report (no gate): lcov for Rust, coverprofile for Go.
 # Requires: rustup component add llvm-tools-preview && cargo install cargo-llvm-cov

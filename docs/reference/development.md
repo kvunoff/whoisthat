@@ -198,6 +198,26 @@ when `/dev/net/tun` is unavailable. CI runs them on every push.
 
 ---
 
+### 5. End-to-end IPC smoke test
+
+The contract snapshot above checks the payload types, not the transport or the
+daemon startup. `scripts/ipc-e2e.test.sh` starts a real `whoisthat-core` in a
+throwaway XDG sandbox and reads its state back through
+`whoisthat core status --json`.
+
+`WHOISTHAT_TEST_MODE=1` skips the geo/Xray downloads, the startup firewall
+reconcile and subscription updates, so the test needs neither root nor network
+and leaves the user's config and nftables alone.
+
+```bash
+make core && cargo build   # both binaries are required
+make test-e2e
+```
+
+It refuses to run as root.
+
+---
+
 ## Unified build commands
 
 A root `Makefile` wraps the common workflows:
@@ -207,6 +227,7 @@ make build        # whoisthat-core + release TUI
 make test         # cargo test + go test ./... + scripts/bump.test.sh
 make lint         # rustfmt --check, clippy, go vet, gofmt
 make integration  # privileged netns suite
+make test-e2e     # real core in a temp XDG sandbox, read back through the CLI
 make coverage     # Rust lcov + Go coverprofile (report only, no gate)
 make docs         # VitePress build
 make docs-check   # docs names/links/versions vs the code
@@ -350,6 +371,7 @@ Continuous integration is handled via GitHub Actions in `.github/workflows/`:
   * Static build: `cargo build --target x86_64-unknown-linux-musl` plus a `CGO_ENABLED=0` core build, asserting neither binary has an `INTERP` segment.
   * Docs: `npm run docs:build` plus `./scripts/check-docs.sh` (IPC/config/CLI names, links, anchors, toolchain strings).
   * Integration: privileged netns suite (`-tags=integration`), failing if no `TestNetns*` ran.
+  * IPC smoke: builds both binaries and reads a sandboxed core through `whoisthat core status --json` (`make test-e2e`).
   * Coverage: `cargo llvm-cov` (lcov) and `go test -coverprofile` artifacts; report only, no `--fail-under` gate.
 * **`release.yml`**: Triggers on every `v*` tag push (or manually with `tag`):
   1. `verify` checks out the tag, runs `cargo test`, `go vet` and `go test`; `build` depends on it.

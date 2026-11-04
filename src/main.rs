@@ -43,6 +43,11 @@ use net_info::check_sudo_env;
 use systemd::systemd_is_enabled;
 use ui::App;
 
+/// A running core can be reused only when its wire contract matches ours.
+fn core_protocol_matches(protocol_version: u32) -> bool {
+    protocol_version == EXPECTED_CORE_PROTOCOL_VERSION && protocol_version != 0
+}
+
 #[tokio::main]
 async fn main() -> io::Result<()> {
     let argv: Vec<String> = std::env::args().collect();
@@ -110,9 +115,7 @@ async fn main() -> io::Result<()> {
     let mut core_alive = false;
     match query_core_state(&endpoint).await {
         Some(state) => {
-            if state.protocol_version == EXPECTED_CORE_PROTOCOL_VERSION
-                && state.protocol_version != 0
-            {
+            if core_protocol_matches(state.protocol_version) {
                 log::info!(
                     "Reattaching to core v{} (protocol {}), tui v{}",
                     state.core_version,
@@ -314,4 +317,18 @@ async fn query_core_state(
         .await
         .ok()?;
     serde_json::from_value(msg.data).ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reattaches_only_on_a_matching_protocol() {
+        assert!(core_protocol_matches(EXPECTED_CORE_PROTOCOL_VERSION));
+        assert!(!core_protocol_matches(EXPECTED_CORE_PROTOCOL_VERSION + 1));
+        assert!(!core_protocol_matches(EXPECTED_CORE_PROTOCOL_VERSION - 1));
+        // An old core that predates the field reports 0 and must be replaced.
+        assert!(!core_protocol_matches(0));
+    }
 }
