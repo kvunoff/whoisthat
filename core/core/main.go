@@ -27,12 +27,34 @@ import (
 	"whoisthat-core/utils"
 )
 
+const usage = "Usage: whoisthat-core\n\nRuns in the foreground and serves the TUI/CLI over IPC.\n"
+
+// versionLine is a stable contract: install.sh and release.yml parse it.
+func versionLine() string {
+	return fmt.Sprintf("whoisthat-core v%s (protocol %d)\n", version.CoreVersion, version.ProtocolVersion)
+}
+
+// handleArgs reports whether the process should exit before starting the daemon.
+func handleArgs(args []string) (code int, done bool) {
+	if len(args) == 0 {
+		return 0, false
+	}
+	switch args[0] {
+	case "--version", "-v", "version":
+		fmt.Print(versionLine())
+		return 0, true
+	case "--help", "-h":
+		fmt.Print(usage)
+		return 0, true
+	default:
+		fmt.Fprintf(os.Stderr, "whoisthat-core: unknown argument %q (run with --help)\n", args[0])
+		return 2, true
+	}
+}
+
 func main() {
-	for _, arg := range os.Args[1:] {
-		if arg == "--version" || arg == "-v" || arg == "version" || arg == "--help" || arg == "-h" {
-			fmt.Printf("whoisthat-core v%s (protocol %d)\n", version.CoreVersion, version.ProtocolVersion)
-			return
-		}
+	if code, done := handleArgs(os.Args[1:]); done {
+		os.Exit(code)
 	}
 	configDir := utils.ConfigDir()
 	logPath := coreLogPath(configDir)
