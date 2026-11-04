@@ -341,6 +341,7 @@ Continuous integration is handled via GitHub Actions in `.github/workflows/`:
 
 * **`ci.yml`**: Runs on push and PRs targeting `main`:
   * Rust: `cargo fmt --all --check`, `cargo clippy --all-targets --no-deps -- -D warnings`, `cargo test` on a pinned rustc.
+  * MSRV: `cargo check --all-targets --locked` on the `rust-version` declared in `Cargo.toml`.
   * Go: `go vet ./...`, `go build ./...`, `go test ./...`, `go mod tidy -diff`, `govulncheck`.
   * Shell: `shellcheck -S warning` over `install.sh` and `scripts/*.sh`, then `./scripts/install.test.sh`, `./scripts/check-docs.test.sh`, `./scripts/release-upload.test.sh`.
   * Bump driver: `./scripts/bump.test.sh` (separate job).

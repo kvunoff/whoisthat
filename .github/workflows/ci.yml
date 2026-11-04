@@ -40,6 +40,21 @@ jobs:
             | tar xz -C /tmp
           /tmp/cargo-audit-x86_64-unknown-linux-musl-v0.22.2/cargo-audit audit
 
+  msrv:
+    name: Rust (MSRV)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      # The lowest toolchain we claim to support (Cargo.toml rust-version).
+      # --all-targets is required: plain `check` skips tests and dev-deps.
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - uses: Swatinem/rust-cache@v2
+      - name: Check on the declared minimum
+        run: cargo check --all-targets --locked
+
   go:
     name: Go (vet + test)
     runs-on: ubuntu-24.04
