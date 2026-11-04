@@ -16,8 +16,8 @@ PROTOCOL="$DOCS/reference/protocol.md"
 CONFIGURATION="$DOCS/reference/configuration.md"
 CLI_DOC="$DOCS/integrations/cli.md"
 DOCTOR_DOC="$DOCS/reference/doctor.md"
-TCPSERVER="$ROOT/core/core/lib/TCPServer/TCPServer.go"
-APPCONFIG="$ROOT/core/core/lib/AppConfig/app-config.go"
+TCPSERVER="$ROOT/core/core/lib/TCPServer/dispatch.go"
+APPCONFIG="$ROOT/core/core/lib/AppConfig/config.go"
 ARGS="$ROOT/src/cli/args.rs"
 CHECKS="$ROOT/src/doctor/checks"
 
@@ -43,7 +43,7 @@ while IFS= read -r command; do
     [ -n "$command" ] || continue
     grep -qF "\`$command\`" "$PROTOCOL" || missing "$PROTOCOL: command \`$command\`"
 done < <(
-    sed -nE 's/^\t\tcase "([a-z0-9-]+)".*/\1/p' "$TCPSERVER" |
+    sed -nE 's/^\tcase "([a-z0-9-]+)".*/\1/p' "$TCPSERVER" |
         sort -u
 )
 
