@@ -21,6 +21,71 @@ struct CoreRuntimeConfig {
     tun_name: String,
 }
 
+enum KillSwitchProbe {
+    Present(String),
+    Absent,
+    PermissionDenied,
+    Unavailable,
+    Failed(String),
+}
+
+/// Inspect both backends: a host that switched between nftables and iptables
+/// can carry rules in either one, and the old nft-only check silently skipped
+/// the proxy mode most users run.
+fn probe_kill_switch() -> KillSwitchProbe {
+    let mut saw_backend = false;
+    let mut failures = Vec::new();
+
+    match Command::new("nft")
+        .args(["list", "table", "inet", "whoisthat_ks"])
+        .output()
+    {
+        Ok(out) => {
+            saw_backend = true;
+            if out.status.success() {
+                return KillSwitchProbe::Present(String::from_utf8_lossy(&out.stdout).into_owned());
+            }
+            if permission_denied(&out.stderr) {
+                return KillSwitchProbe::PermissionDenied;
+            }
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            if !stderr.contains("No such file or directory") {
+                failures.push(format!("nft: {}", stderr.trim()));
+            }
+        }
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+        Err(err) => failures.push(format!("nft: {err}")),
+    }
+
+    let mut text = String::new();
+    for bin in ["iptables", "ip6tables"] {
+        match Command::new(bin).args(["-S", "WHOISTHAT_KS"]).output() {
+            Ok(out) => {
+                saw_backend = true;
+                if out.status.success() {
+                    text.push_str(&String::from_utf8_lossy(&out.stdout));
+                } else if permission_denied(&out.stderr) {
+                    return KillSwitchProbe::PermissionDenied;
+                }
+                // "No chain/target/match by that name" means the chain is absent.
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+            Err(err) => failures.push(format!("{bin}: {err}")),
+        }
+    }
+
+    if !text.is_empty() {
+        return KillSwitchProbe::Present(text);
+    }
+    if !failures.is_empty() {
+        return KillSwitchProbe::Failed(failures.join("; "));
+    }
+    if !saw_backend {
+        return KillSwitchProbe::Unavailable;
+    }
+    KillSwitchProbe::Absent
+}
+
 enum DnsRules {
     Happ { text: String, ipv6: bool },
     Legacy,
@@ -238,56 +303,75 @@ pub(super) fn check_dns_and_routing(cfg: &AppConfig) -> CheckCategory {
         }
     }
 
-    if !core_cfg.kill_switch {
-        items.push(CheckItem::info(
-            "kill-switch DNS allowlist",
-            "kill-switch is disabled",
-        ));
-    } else if !tun_up {
-        items.push(CheckItem::info(
-            "kill-switch DNS allowlist",
-            "kill-switch is enabled, TUN is inactive",
-        ));
-    } else {
-        match Command::new("nft")
-            .args(["list", "table", "inet", "whoisthat_ks"])
-            .output()
-        {
-            Ok(out) if out.status.success() => {
-                let text = String::from_utf8_lossy(&out.stdout);
+    match probe_kill_switch() {
+        KillSwitchProbe::Absent => {
+            if core_cfg.kill_switch {
+                items.push(CheckItem::warn(
+                    "Kill-switch firewall",
+                    "kill-switch is enabled but no rules are installed",
+                    Some(
+                        "check core.log; re-enable the kill-switch or use \
+                         `settings set kill-switch=false --force`"
+                            .into(),
+                    ),
+                ));
+            } else {
+                items.push(CheckItem::info(
+                    "Kill-switch firewall",
+                    "kill-switch is disabled",
+                ));
+            }
+        }
+        KillSwitchProbe::Present(text) => {
+            if !core_cfg.kill_switch {
+                items.push(CheckItem::warn(
+                    "Kill-switch firewall",
+                    "kill-switch is disabled but firewall rules are still installed",
+                    Some("remove them: sudo nft delete table inet whoisthat_ks".into()),
+                ));
+            } else {
                 let mut missing = Vec::new();
-                if !text.contains(&tun_name) {
+                if !text.contains(tun_name.as_str()) {
                     missing.push("TUN interface");
                 }
                 if !text.contains(DNS_SINK4) {
                     missing.push("DNS sink");
                 }
-                if !text.contains("mark 0x00000001") && !text.contains("mark 1") {
+                if !(text.contains("mark 0x00000001")
+                    || text.contains("mark 1")
+                    || text.contains("--mark 0x1"))
+                {
                     missing.push("mark 1");
                 }
                 if missing.is_empty() {
                     items.push(CheckItem::pass(
-                        "kill-switch DNS allowlist",
+                        "Kill-switch firewall",
                         "TUN, DNS sink, and mark 1 are allowed",
                     ));
                 } else {
                     items.push(CheckItem::warn(
-                        "kill-switch DNS allowlist",
+                        "Kill-switch firewall",
                         format!("missing allows: {}", missing.join(", ")),
                         Some("Re-apply the kill-switch so the whitelist is regenerated".into()),
                     ));
                 }
             }
-            Ok(out) if permission_denied(&out.stderr) => items.push(CheckItem::info(
-                "kill-switch DNS allowlist",
-                "cannot inspect the kill-switch table without root (try: sudo nft list table inet whoisthat_ks)",
-            )),
-            _ => items.push(CheckItem::warn(
-                "kill-switch DNS allowlist",
-                "kill-switch is enabled but its nftables table was not found",
-                Some("Restart the kill-switch or check core.log".into()),
-            )),
         }
+        KillSwitchProbe::PermissionDenied => items.push(CheckItem::info(
+            "Kill-switch firewall",
+            "cannot inspect the kill-switch rules without root \
+             (try: sudo nft list table inet whoisthat_ks)",
+        )),
+        KillSwitchProbe::Unavailable => items.push(CheckItem::warn(
+            "Kill-switch firewall",
+            "neither nftables nor iptables found; the kill-switch cannot be inspected",
+            Some("install nftables (recommended) or iptables".into()),
+        )),
+        KillSwitchProbe::Failed(err) => items.push(CheckItem::warn(
+            "Kill-switch firewall",
+            format!("cannot inspect the kill-switch rules: {err}"),
+            Some("check core.log".into()),
+        )),
     }
 
     CheckCategory::new("DNS & Routing", items)
