@@ -252,13 +252,13 @@ async fn main() -> io::Result<()> {
     // Check for a newer release in the background. A cached version is shown
     // on every launch; the network is queried at most once a day.
     let now = update_check::now_unix();
-    let due = update_check::should_check_cheap(
-        cfg.check_updates,
-        now,
-        cfg.last_update_check,
-        std::env::var("WHOISTHAT_NO_UPDATE_CHECK").as_deref() == Ok("1"),
-        std::env::var("WHOISTHAT_TEST_MODE").as_deref() == Ok("1"),
-    ) && !update_check::is_dev_build(&std::env::current_exe().unwrap_or_default());
+    let exe = std::env::current_exe().unwrap_or_default();
+    let dev_build = update_check::is_dev_build(&exe);
+    let no_check_env = std::env::var("WHOISTHAT_NO_UPDATE_CHECK").as_deref() == Ok("1");
+    let test_mode_env = std::env::var("WHOISTHAT_TEST_MODE").as_deref() == Ok("1");
+    let allowed = cfg.check_updates && !dev_build && !no_check_env && !test_mode_env;
+    let due =
+        allowed && update_check::should_check_cheap(true, now, cfg.last_update_check, false, false);
     if due {
         cfg.last_update_check = now;
         // Persist before the request so a crash cannot trigger a check storm.
@@ -271,7 +271,8 @@ async fn main() -> io::Result<()> {
             cfg.skipped_version.clone(),
             input_tx.clone(),
         );
-    } else if !cfg.latest_version.is_empty()
+    } else if allowed
+        && !cfg.latest_version.is_empty()
         && update_check::should_prompt(&cfg.latest_version, &tui_version, &cfg.skipped_version)
     {
         update_check::spawn(

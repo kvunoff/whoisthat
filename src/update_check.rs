@@ -307,14 +307,20 @@ pub fn spawn(
         let result = tokio::task::spawn_blocking(move || {
             let source = detect_install_source();
             if matches!(source, InstallSource::DevBuild) {
+                log::debug!("update check: development build, skipped");
                 return None;
             }
             let latest = if fetch {
-                fetch_latest_tag().or_else(|| valid_cached(&cached_latest))
+                let fetched = fetch_latest_tag();
+                if fetched.is_none() {
+                    log::debug!("update check: GitHub request failed, using cached version");
+                }
+                fetched.or_else(|| valid_cached(&cached_latest))
             } else {
                 valid_cached(&cached_latest)
             }?;
             let current = env!("CARGO_PKG_VERSION").to_string();
+            log::debug!("update check: current {current}, latest {latest}, source {source:?}");
             if !should_prompt(&latest, &current, &skipped) {
                 return None;
             }
