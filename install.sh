@@ -458,6 +458,20 @@ uninstall_whoisthat() {
         pkill -TERM -u "$TARGET_USER" -x whoisthat-core >/dev/null 2>&1 || true
     fi
 
+    # A graceful stop deliberately leaves the kill-switch armed. Removing the
+    # package must not leave the machine offline, so clear the rules here.
+    if command -v nft >/dev/null 2>&1; then
+        $SUDO nft delete table inet whoisthat_ks >/dev/null 2>&1 || true
+    fi
+    for ipt in iptables ip6tables; do
+        command -v "$ipt" >/dev/null 2>&1 || continue
+        while $SUDO "$ipt" -C OUTPUT -j WHOISTHAT_KS >/dev/null 2>&1; do
+            $SUDO "$ipt" -D OUTPUT -j WHOISTHAT_KS >/dev/null 2>&1 || break
+        done
+        $SUDO "$ipt" -F WHOISTHAT_KS >/dev/null 2>&1 || true
+        $SUDO "$ipt" -X WHOISTHAT_KS >/dev/null 2>&1 || true
+    done
+
     local unit="$TARGET_HOME/.config/systemd/user/whoisthat-core.service"
     if [ -f "$unit" ]; then
         rm -f "$unit"

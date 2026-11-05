@@ -137,7 +137,19 @@ async fn stop(g: &GlobalArgs) -> Result<(), CliError> {
             return Ok(());
         }
     };
+    let kill_switch_enabled = session
+        .state()
+        .await
+        .map(|state| state.kill_switch)
+        .unwrap_or(false);
     session.send("die", &serde_json::json!({})).await?;
+    if kill_switch_enabled {
+        out.note(
+            "Kill-switch rules stay armed while the core is stopped. \
+             Remove them with `sudo nft delete table inet whoisthat_ks`, \
+             or start the core and disable the kill-switch.",
+        );
+    }
     drop(session);
     out.note("Waiting for whoisthat-core to exit...");
     let cfg = config::load_config();
