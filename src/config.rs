@@ -59,6 +59,18 @@ pub struct AppConfig {
     pub test_endpoint: String,
     #[serde(default = "default_true")]
     pub auto_test_on_subscribe: bool,
+    /// Check GitHub for a newer stable TUI release at startup.
+    #[serde(default = "default_true")]
+    pub check_updates: bool,
+    /// Version the user asked not to be reminded about (without the `v`).
+    #[serde(default)]
+    pub skipped_version: String,
+    /// Unix time of the last network check; cached so it runs at most daily.
+    #[serde(default)]
+    pub last_update_check: i64,
+    /// Last release seen on GitHub (without the `v`), shown from cache offline.
+    #[serde(default)]
+    pub latest_version: String,
 }
 
 fn default_core_tcp_port() -> u16 {
@@ -120,6 +132,10 @@ impl Default for AppConfig {
             test_samples: default_test_samples(),
             test_endpoint: default_test_endpoint(),
             auto_test_on_subscribe: true,
+            check_updates: true,
+            skipped_version: String::new(),
+            last_update_check: 0,
+            latest_version: String::new(),
         }
     }
 }

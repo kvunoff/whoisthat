@@ -19,6 +19,7 @@ mod terminal;
 mod testing;
 mod text_edit;
 mod ui;
+mod update_check;
 
 use std::io::{self, IsTerminal};
 use std::time::Duration;
@@ -246,6 +247,39 @@ async fn main() -> io::Result<()> {
             }
         })
     };
+
+    // Check for a newer release in the background. A cached version is shown
+    // on every launch; the network is queried at most once a day.
+    let now = update_check::now_unix();
+    let due = update_check::should_check_cheap(
+        cfg.check_updates,
+        now,
+        cfg.last_update_check,
+        std::env::var("WHOISTHAT_NO_UPDATE_CHECK").as_deref() == Ok("1"),
+        std::env::var("WHOISTHAT_TEST_MODE").as_deref() == Ok("1"),
+    ) && !update_check::is_dev_build(&std::env::current_exe().unwrap_or_default());
+    if due {
+        cfg.last_update_check = now;
+        // Persist before the request so a crash cannot trigger a check storm.
+        if let Err(e) = config::try_save_config(&cfg) {
+            log::warn!("failed to save update check time: {e}");
+        }
+        update_check::spawn(
+            true,
+            cfg.latest_version.clone(),
+            cfg.skipped_version.clone(),
+            input_tx.clone(),
+        );
+    } else if !cfg.latest_version.is_empty()
+        && update_check::should_prompt(&cfg.latest_version, &tui_version, &cfg.skipped_version)
+    {
+        update_check::spawn(
+            false,
+            cfg.latest_version.clone(),
+            cfg.skipped_version.clone(),
+            input_tx.clone(),
+        );
+    }
 
     if cfg.show_ip {
         let ip_tx = input_tx.clone();

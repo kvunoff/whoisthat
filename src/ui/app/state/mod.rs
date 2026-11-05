@@ -53,6 +53,8 @@ pub struct App {
     pub details_scroll: usize,
     pub popup: Option<Popup>,
     pub help_scroll: usize,
+    /// A newer release that arrived while another modal was open.
+    pub pending_update: Option<crate::update_check::UpdateInfo>,
     /// Set once the "settings/database need repair" popup was offered, so it
     /// does not reappear after the user dismisses it.
     pub recovery_prompted: bool,
@@ -126,6 +128,7 @@ impl App {
             details_scroll: 0,
             popup: None,
             help_scroll: 0,
+            pending_update: None,
             recovery_prompted: false,
             settings_state: SettingsState::new(),
             logs_state: LogsState::new(),

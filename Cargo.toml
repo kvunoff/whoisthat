@@ -17,4 +17,4 @@ directories = "6"
 log = "0.4"
 chrono = "0.4"
 base64 = "0.23"
-ureq = { version = "2", default-features = false, features = ["tls"] }
+ureq = { version = "2", default-features = false, features = ["tls", "proxy-from-env"] }

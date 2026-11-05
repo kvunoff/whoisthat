@@ -44,6 +44,15 @@ pub(crate) async fn handle_input(
                 app.public_ipv6 = ip;
             }
         }
+        AppEvent::UpdateAvailable(info) => {
+            if cfg.latest_version != info.latest {
+                cfg.latest_version = info.latest.clone();
+                if let Err(e) = config::try_save_config(cfg) {
+                    log::warn!("failed to save latest version: {e}");
+                }
+            }
+            app.pending_update = Some(info);
+        }
         AppEvent::Input(input) => match input {
             Event::Key(key) => {
                 if key.kind == KeyEventKind::Release {

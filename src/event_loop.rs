@@ -14,6 +14,7 @@ pub(crate) enum AppEvent {
     Tick,
     PublicIp(String),
     PublicIpv6(String),
+    UpdateAvailable(crate::update_check::UpdateInfo),
 }
 
 #[allow(clippy::too_many_arguments)]
