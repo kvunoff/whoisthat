@@ -150,7 +150,7 @@ printf 'Format: 3.0 (quilt)\n' > "$parent/${pkg}_${ver}.dsc"
     printf 'Maintainer: test <test@example.com>\n'
     printf 'Files:\n'
     printf ' abc 1 net optional %s_%s.tar.gz\n' "$pkg" "${ver%%-*}"
-} > "$parent/${pkg}_${ver}.changes"
+} > "$parent/${pkg}_${ver}_source.changes"
 EOF
 
 cat > "$BIN/dpkg-source" <<'EOF'
@@ -237,7 +237,7 @@ for series in noble resolute; do
     changelog="$PPA_WORK/ppa/$series/whoisthat-$VERSION/debian/changelog"
     grep -q "$debver" "$changelog" &&
         ok "$series changelog" || bad "$series changelog"
-    [ -f "$PPA_WORK/ppa/$series/whoisthat_${debver}.changes" ] &&
+    [ -f "$PPA_WORK/ppa/$series/whoisthat_${debver}_source.changes" ] &&
         ok "$series changes" || bad "$series changes missing"
 done
 

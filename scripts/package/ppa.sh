@@ -121,7 +121,8 @@ build() {
             dpkg-buildpackage -S -us -uc -d
         )
 
-        changes="$WORKDIR/ppa/$series/whoisthat_${debver}.changes"
+        # dpkg-buildpackage -S names a source-only upload *_source.changes.
+        changes="$WORKDIR/ppa/$series/whoisthat_${debver}_source.changes"
         [ -f "$changes" ] || die "expected $changes"
 
         if [ "$PUBLISH" = 1 ]; then
@@ -146,7 +147,7 @@ publish() {
 verify() {
     local changes dsc
     for changes in "${CHANGES_FILES[@]}"; do
-        dsc="${changes%.changes}.dsc"
+        dsc="${changes%_source.changes}.dsc"
         [ -f "$changes" ] || die "missing $changes"
         [ -f "$dsc" ] || die "missing $dsc"
         grep -q '^Files:' "$changes" || die "$changes has no Files field"
