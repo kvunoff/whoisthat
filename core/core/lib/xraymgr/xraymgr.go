@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 	"whoisthat-core/lib/logger"
+	"whoisthat-core/lib/netmark"
 	"whoisthat-core/structs"
 	"whoisthat-core/utils"
 )
@@ -45,7 +46,8 @@ func NewManager() *Manager {
 			Progress:      0,
 		},
 		httpClient: &http.Client{
-			Timeout: 120 * time.Second,
+			Timeout:   120 * time.Second,
+			Transport: netmark.Transport(),
 		},
 	}
 }

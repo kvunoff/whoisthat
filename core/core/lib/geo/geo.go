@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 	"whoisthat-core/lib/logger"
+	"whoisthat-core/lib/netmark"
 	"whoisthat-core/lib/xraymgr"
 	"whoisthat-core/utils"
 )
@@ -228,7 +229,7 @@ func downloadWithRetry(urls []string, dest string, minSize int64) error {
 }
 
 func download(url, dest string, minSize int64) error {
-	client := &http.Client{Timeout: downloadTimeout}
+	client := &http.Client{Timeout: downloadTimeout, Transport: netmark.Transport()}
 	resp, err := client.Get(url)
 	if err != nil {
 		return fmt.Errorf("http get: %w", err)

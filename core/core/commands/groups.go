@@ -18,6 +18,7 @@ import (
 	appconfig "whoisthat-core/lib/AppConfig"
 	"whoisthat-core/lib/happ"
 	"whoisthat-core/lib/logger"
+	"whoisthat-core/lib/netmark"
 	proxy "whoisthat-core/lib/proxy/mainproxy"
 	"whoisthat-core/lib/xrayjson"
 	"whoisthat-core/structs"
@@ -255,7 +256,7 @@ const maxSubBytes = 16 * 1024 * 1024
 
 // subClient is a dedicated HTTP client with a sane timeout so a hung or
 // slow subscription server can't leak a goroutine forever.
-var subClient = &http.Client{Timeout: 30 * time.Second}
+var subClient = &http.Client{Timeout: 30 * time.Second, Transport: netmark.Transport()}
 
 // fetchSubscription prefers the provider's JSON form (<url>/json) so each
 // server keeps its own provider-owned routing. When that endpoint is missing or
