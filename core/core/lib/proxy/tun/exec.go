@@ -75,3 +75,16 @@ func runScriptWithSh(script string) (string, error) {
 	}
 	return string(output), nil
 }
+
+// runCommandWithCaps runs a privileged inspection command and returns its
+// combined output, even on failure. Callers that need to tell "not there" from
+// "could not look" parse the output/exit code themselves.
+func runCommandWithCaps(name string, args ...string) (string, error) {
+	cmd := exec.Command(name, args...)
+	cmd.Env = append(os.Environ(), "LC_ALL=C")
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		AmbientCaps: []uintptr{unix.CAP_NET_ADMIN, unix.CAP_NET_RAW},
+	}
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}

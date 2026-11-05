@@ -1,8 +1,10 @@
 package tunmode
 
 import (
+	"errors"
 	"fmt"
 	"net"
+	"os/exec"
 	"regexp"
 	"strings"
 
@@ -81,23 +83,111 @@ func SetupKillSwitchBlock(proxyIPs []string, tunName string, dnsServers []string
 }
 
 // RemoveKillSwitchBlock tears the chain down. Idempotent.
+//
+// Both backends are attempted: an nft-only host may still carry legacy
+// iptables chains from an older build (and vice versa). The call reports an
+// error unless the rules are verifiably gone, so callers never claim "off"
+// while traffic is still being dropped.
 func RemoveKillSwitchBlock() error {
-	switch probeFirewall() {
-	case firewallNftables:
-		_, err := runScriptWithSh("nft delete table inet whoisthat_ks 2>/dev/null || true")
-		return err
-	default:
-		script := `
-iptables -D OUTPUT -j WHOISTHAT_KS 2>/dev/null || true
-iptables -F WHOISTHAT_KS 2>/dev/null || true
-iptables -X WHOISTHAT_KS 2>/dev/null || true
-ip6tables -D OUTPUT -j WHOISTHAT_KS 2>/dev/null || true
-ip6tables -F WHOISTHAT_KS 2>/dev/null || true
-ip6tables -X WHOISTHAT_KS 2>/dev/null || true
-`
-		_, err := runScriptWithSh(script)
-		return err
+	nftErr := removeNftKillSwitch()
+	iptErr := removeIptablesKillSwitch()
+
+	armed, probeErr := KillSwitchArmed()
+	if probeErr != nil {
+		return fmt.Errorf("cannot verify kill-switch removal: %w", probeErr)
 	}
+	if armed {
+		return fmt.Errorf("kill-switch rules are still installed (nft: %v, iptables: %v)", nftErr, iptErr)
+	}
+	return nil
+}
+
+func removeNftKillSwitch() error {
+	_, err := killSwitchRunScript("nft delete table inet whoisthat_ks 2>/dev/null || true")
+	return err
+}
+
+func removeIptablesKillSwitch() error {
+	_, err := killSwitchRunScript(buildKillSwitchIptablesTeardownScript())
+	return err
+}
+
+// buildKillSwitchIptablesTeardownScript removes every jump (older builds could
+// leave more than one), flushes and deletes the chain for both families.
+func buildKillSwitchIptablesTeardownScript() string {
+	return `
+for IPT in iptables ip6tables; do
+    while "$IPT" -C OUTPUT -j WHOISTHAT_KS 2>/dev/null; do
+        "$IPT" -D OUTPUT -j WHOISTHAT_KS
+    done
+    "$IPT" -F WHOISTHAT_KS 2>/dev/null || true
+    "$IPT" -X WHOISTHAT_KS 2>/dev/null || true
+done
+`
+}
+
+// KillSwitchArmed reports whether the block is actually present. It checks
+// both nftables and the legacy iptables chains: a mixed or partially migrated
+// host must not be reported as disarmed.
+//
+// A missing binary means that backend is not in use (not an error). An
+// inspection that fails for another reason (permissions, broken binary) is
+// returned as an error: callers must not treat it as "not armed".
+func KillSwitchArmed() (bool, error) {
+	nftArmed, nftErr := nftKillSwitchArmed()
+	v4Armed, v4Err := iptablesKillSwitchArmed("iptables")
+	v6Armed, v6Err := iptablesKillSwitchArmed("ip6tables")
+
+	if nftArmed || v4Armed || v6Armed {
+		return true, nil
+	}
+	for _, err := range []error{nftErr, v4Err, v6Err} {
+		if err != nil {
+			return false, err
+		}
+	}
+	return false, nil
+}
+
+// Test seams: the probes are what turns "the firewall lies" into a testable
+// error, so let unit tests simulate exit codes without real capabilities.
+var (
+	killSwitchLookPath  = exec.LookPath
+	killSwitchRun       = runCommandWithCaps
+	killSwitchRunScript = runScriptWithSh
+)
+
+func nftKillSwitchArmed() (bool, error) {
+	if _, err := killSwitchLookPath("nft"); err != nil {
+		return false, nil
+	}
+	out, err := killSwitchRun("nft", "list", "chain", "inet", "whoisthat_ks", "output")
+	if err == nil {
+		return true, nil
+	}
+	// nft uses strerror; runCommandWithCaps pins LC_ALL=C for this string.
+	if strings.Contains(out, "No such file or directory") {
+		return false, nil
+	}
+	return false, fmt.Errorf("cannot inspect nftables kill-switch table: %w: %s", err, strings.TrimSpace(out))
+}
+
+func iptablesKillSwitchArmed(bin string) (bool, error) {
+	if _, err := killSwitchLookPath(bin); err != nil {
+		return false, nil
+	}
+	out, err := killSwitchRun(bin, "-C", "OUTPUT", "-j", "WHOISTHAT_KS")
+	if err == nil {
+		return true, nil
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		// iptables -C: 1 = rule missing, 2 = chain missing; both mean "not armed".
+		if code := exitErr.ExitCode(); code == 1 || code == 2 {
+			return false, nil
+		}
+	}
+	return false, fmt.Errorf("%s -C OUTPUT -j WHOISTHAT_KS failed: %w: %s", bin, err, strings.TrimSpace(out))
 }
 
 // sanitizeTunName returns name when it is a safe interface name, otherwise "".
