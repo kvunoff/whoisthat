@@ -131,7 +131,7 @@ type ApplicationState struct {
 	TunStatus        bool                `json:"tun-status"`
 	HwidInfo         HwidData            `json:"hwid_info"`
 	KillSwitch       bool                `json:"kill_switch"`
-	KillSwitchArmed  bool                `json:"kill_switch_armed"`
+	KillSwitchArmed  bool                `json:"kill_switch_armed,omitzero"`
 	SplitTunnel      string              `json:"split_tunnel"`
 	Autoconnect      AutoconnectInfo     `json:"autoconnect"`
 	XrayStatus       XrayStatusInfo      `json:"xray_status"`
@@ -224,9 +224,9 @@ type SetKillSwitchData struct {
 	Enabled bool `json:"enabled"`
 	// Force is only meaningful for disabling: skip verification and remove
 	// best-effort when the firewall cannot be inspected.
-	Force bool `json:"force,omitempty"`
+	Force bool `json:"force,omitzero"`
 	// Armed is the actual kernel state in replies; requests leave it false.
-	Armed bool `json:"armed,omitempty"`
+	Armed bool `json:"armed,omitzero"`
 }
 
 type SetSplitTunnelData struct {

@@ -92,7 +92,6 @@
       "model": "Arch Linux"
     },
     "kill_switch": true,
-    "kill_switch_armed": false,
     "split_tunnel": "exclude",
     "autoconnect": {
       "enabled": true,

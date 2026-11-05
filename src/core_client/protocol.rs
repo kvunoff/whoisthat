@@ -194,7 +194,11 @@ pub struct ApplicationState {
     pub hwid_info: Option<HwidData>,
     #[serde(rename = "kill_switch", default)]
     pub kill_switch: bool,
-    #[serde(rename = "kill_switch_armed", default)]
+    #[serde(
+        rename = "kill_switch_armed",
+        default,
+        skip_serializing_if = "is_false"
+    )]
     pub kill_switch_armed: bool,
     #[serde(rename = "split_tunnel", default)]
     pub split_tunnel: String,
@@ -621,11 +625,15 @@ pub struct SetManualRoutingSourceData {
 pub struct SetKillSwitchData {
     pub enabled: bool,
     /// Only meaningful when disabling: skip verification and remove best-effort.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub force: bool,
     /// Actual kernel state in replies; requests leave it false.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub armed: bool,
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 /// Split-tunnel mode: "off", "exclude" (split apps bypass tunnel), or
