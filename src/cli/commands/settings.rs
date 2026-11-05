@@ -42,13 +42,16 @@ const LOCAL_KEYS: &[&str] = &[
 ];
 
 pub async fn dispatch(g: &GlobalArgs, args: SettingsArgs) -> Result<(), CliError> {
-    let SettingsArgs { cmd, set } = args;
+    let SettingsArgs { cmd, set, force } = args;
     match cmd {
         Some(SettingsCmd::List) => list(g).await,
         None if set.is_empty() => list(g).await,
-        None => set_values(g, &set).await,
+        None => set_values(g, &set, force).await,
         Some(SettingsCmd::Get { key }) => get(g, &key).await,
-        Some(SettingsCmd::Set { assignments }) => set_values(g, &assignments).await,
+        Some(SettingsCmd::Set {
+            assignments,
+            force,
+        }) => set_values(g, &assignments, force).await,
         Some(SettingsCmd::Toggle { key }) => toggle(g, &key).await,
     }
 }
@@ -159,13 +162,18 @@ async fn toggle(g: &GlobalArgs, key: &str) -> Result<(), CliError> {
             .unwrap_or(false)
     };
     let assignment = format!("{key}={}", !current);
-    set_values(g, &[assignment]).await
+    set_values(g, &[assignment], false).await
 }
 
-async fn set_values(g: &GlobalArgs, assignments: &[String]) -> Result<(), CliError> {
+async fn set_values(g: &GlobalArgs, assignments: &[String], force: bool) -> Result<(), CliError> {
     if assignments.is_empty() {
         return Err(CliError::Usage(
             "expected KEY=VALUE (see `whoisthat settings list`)".into(),
+        ));
+    }
+    if force && assignments.len() != 1 {
+        return Err(CliError::Usage(
+            "--force only applies to a single `kill-switch=false` assignment".into(),
         ));
     }
 
@@ -182,6 +190,12 @@ async fn set_values(g: &GlobalArgs, assignments: &[String]) -> Result<(), CliErr
         parsed.push((key, value.to_string()));
     }
 
+    if force && (parsed.len() != 1 || parsed[0].0 != "kill-switch" || parsed[0].1 != "false") {
+        return Err(CliError::Usage(
+            "--force only applies to `kill-switch=false`".into(),
+        ));
+    }
+
     let out = Out::new(g);
     let core_jobs: Vec<&(String, String)> = parsed.iter().filter(|(k, _)| is_core_key(k)).collect();
     let local_jobs: Vec<&(String, String)> =
@@ -190,7 +204,7 @@ async fn set_values(g: &GlobalArgs, assignments: &[String]) -> Result<(), CliErr
     if !core_jobs.is_empty() {
         let mut session = Session::open_or_spawn(g).await?;
         for (key, value) in core_jobs {
-            apply_core(&mut session, &out, key, value).await?;
+            apply_core(&mut session, &out, key, value, force).await?;
         }
         session.flush_warnings(&out);
     }
@@ -224,16 +238,22 @@ async fn apply_core(
     out: &Out,
     key: &str,
     value: &str,
+    force: bool,
 ) -> Result<(), CliError> {
     match key {
         "kill-switch" => {
             let want = parse_bool(value)?;
+            if force && want {
+                return Err(CliError::Usage(
+                    "--force only applies to `kill-switch=false`".into(),
+                ));
+            }
             let reply: SetKillSwitchData = session
                 .request(
                     "set-kill-switch",
                     &SetKillSwitchData {
                         enabled: want,
-                        force: false,
+                        force,
                         armed: false,
                     },
                     Reply::Id {

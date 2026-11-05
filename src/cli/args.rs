@@ -509,14 +509,26 @@ pub struct SettingsArgs {
     /// Set one or more key=value pairs (alternative to `settings set`)
     #[arg(long = "set", value_name = "KEY=VALUE", num_args = 1..)]
     pub set: Vec<String>,
+    /// Remove the kill-switch rules even when their state cannot be verified
+    #[arg(long)]
+    pub force: bool,
 }
 
 #[derive(Debug, Subcommand)]
 pub enum SettingsCmd {
     List,
-    Get { key: String },
-    Set { assignments: Vec<String> },
-    Toggle { key: String },
+    Get {
+        key: String,
+    },
+    Set {
+        assignments: Vec<String>,
+        /// Remove the kill-switch rules even when their state cannot be verified
+        #[arg(long)]
+        force: bool,
+    },
+    Toggle {
+        key: String,
+    },
 }
 
 #[derive(Debug, Args)]
