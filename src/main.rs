@@ -217,6 +217,7 @@ async fn main() -> io::Result<()> {
         },
     );
     app.systemd_enabled = systemd_is_enabled();
+    app.check_updates = cfg.check_updates;
 
     if let Some(warning) = check_sudo_env() {
         app.msg(warning);

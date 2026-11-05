@@ -115,6 +115,11 @@ pub fn settings_layout() -> Vec<SettingsRow> {
             label: "User-Agent",
             kind: SettingsKind::Editable,
         },
+        SettingsRow::Header("Updates"),
+        SettingsRow::Item {
+            label: "Check for updates",
+            kind: SettingsKind::Toggle,
+        },
     ]
 }
 
@@ -162,6 +167,7 @@ pub struct SettingsValues<'a> {
     pub kill_switch_armed: bool,
     pub split_tunnel: &'a str,
     pub hwid: Option<&'a HwidData>,
+    pub check_updates: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -240,7 +246,7 @@ pub fn render_settings(
     let hwid_val = values.hwid.map(|h| h.hwid.as_str()).unwrap_or("");
     let hwid_ua = values.hwid.map(|h| h.user_agent.as_str()).unwrap_or("");
 
-    let item_values: [String; 20] = [
+    let item_values: [String; 21] = [
         if values.autoconnect {
             "● on".into()
         } else {
@@ -293,6 +299,11 @@ pub fn render_settings(
         hwid_val.to_string(),
         "⏎".into(),
         hwid_ua.to_string(),
+        if values.check_updates {
+            "● on".into()
+        } else {
+            "○ off".into()
+        },
     ];
 
     let layout = settings_layout();
@@ -393,7 +404,7 @@ mod tests {
 
     #[test]
     fn test_settings_layout_item_count() {
-        assert_eq!(item_count(), 20);
+        assert_eq!(item_count(), 21);
     }
 
     #[test]
@@ -408,7 +419,14 @@ mod tests {
             .collect();
         assert_eq!(
             headers,
-            vec!["Startup", "Display", "Network", "Diagnostics", "Hardware"]
+            vec![
+                "Startup",
+                "Display",
+                "Network",
+                "Diagnostics",
+                "Hardware",
+                "Updates"
+            ]
         );
     }
 

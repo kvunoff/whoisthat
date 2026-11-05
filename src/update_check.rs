@@ -222,7 +222,12 @@ fn release_url(latest: &str) -> String {
     format!("{RELEASES_URL}/tag/v{latest}")
 }
 
-fn update_command(source: &InstallSource, latest: &str, arch: &str, tools: &Tools) -> Option<String> {
+fn update_command(
+    source: &InstallSource,
+    latest: &str,
+    arch: &str,
+    tools: &Tools,
+) -> Option<String> {
     let deb_arch = match arch {
         "x86_64" => "amd64",
         "aarch64" => "arm64",
@@ -315,12 +320,7 @@ pub fn spawn(
             }
             Some(UpdateInfo {
                 release_url: release_url(&latest),
-                command: update_command(
-                    &source,
-                    &latest,
-                    std::env::consts::ARCH,
-                    &detect_tools(),
-                ),
+                command: update_command(&source, &latest, std::env::consts::ARCH, &detect_tools()),
                 current,
                 latest,
                 source,
@@ -399,8 +399,20 @@ mod tests {
     fn gates_checks_on_setting_time_and_env() {
         let now = 1_000_000i64;
         assert!(should_check_cheap(true, now, 0, false, false));
-        assert!(should_check_cheap(true, now, now - CHECK_INTERVAL_SECS, false, false));
-        assert!(!should_check_cheap(true, now, now - CHECK_INTERVAL_SECS + 1, false, false));
+        assert!(should_check_cheap(
+            true,
+            now,
+            now - CHECK_INTERVAL_SECS,
+            false,
+            false
+        ));
+        assert!(!should_check_cheap(
+            true,
+            now,
+            now - CHECK_INTERVAL_SECS + 1,
+            false,
+            false
+        ));
         assert!(should_check_cheap(true, now, now + 10, false, false)); // clock moved back
         assert!(!should_check_cheap(false, now, 0, false, false));
         assert!(!should_check_cheap(true, now, 0, true, false));
@@ -425,16 +437,31 @@ mod tests {
     #[test]
     fn classifies_install_sources() {
         assert_eq!(
-            classify(Path::new("/usr/bin/whoisthat"), Some((PkgManager::Pacman, "whoisthat-bin".into()))),
-            InstallSource::Pacman { package: "whoisthat-bin".into() }
+            classify(
+                Path::new("/usr/bin/whoisthat"),
+                Some((PkgManager::Pacman, "whoisthat-bin".into()))
+            ),
+            InstallSource::Pacman {
+                package: "whoisthat-bin".into()
+            }
         );
         assert_eq!(
-            classify(Path::new("/usr/bin/whoisthat"), Some((PkgManager::Dpkg, "whoisthat".into()))),
-            InstallSource::Dpkg { package: "whoisthat".into() }
+            classify(
+                Path::new("/usr/bin/whoisthat"),
+                Some((PkgManager::Dpkg, "whoisthat".into()))
+            ),
+            InstallSource::Dpkg {
+                package: "whoisthat".into()
+            }
         );
         assert_eq!(
-            classify(Path::new("/usr/bin/whoisthat"), Some((PkgManager::Rpm, "whoisthat".into()))),
-            InstallSource::Rpm { package: "whoisthat".into() }
+            classify(
+                Path::new("/usr/bin/whoisthat"),
+                Some((PkgManager::Rpm, "whoisthat".into()))
+            ),
+            InstallSource::Rpm {
+                package: "whoisthat".into()
+            }
         );
         assert_eq!(
             classify(Path::new("/usr/bin/whoisthat"), None),
@@ -466,20 +493,37 @@ mod tests {
             package: "whoisthat-bin".into(),
         };
         assert_eq!(
-            update_command(&pacman, "0.18.2", "x86_64", &tools(true, false, false, false, false)),
+            update_command(
+                &pacman,
+                "0.18.2",
+                "x86_64",
+                &tools(true, false, false, false, false)
+            ),
             Some("paru -S whoisthat-bin".into())
         );
         assert_eq!(
-            update_command(&pacman, "0.18.2", "x86_64", &tools(false, true, false, false, false)),
+            update_command(
+                &pacman,
+                "0.18.2",
+                "x86_64",
+                &tools(false, true, false, false, false)
+            ),
             Some("yay -S whoisthat-bin".into())
         );
         assert_eq!(
-            update_command(&pacman, "0.18.2", "x86_64", &tools(false, false, false, false, false)),
+            update_command(
+                &pacman,
+                "0.18.2",
+                "x86_64",
+                &tools(false, false, false, false, false)
+            ),
             None
         );
 
         let deb = update_command(
-            &InstallSource::Dpkg { package: "whoisthat".into() },
+            &InstallSource::Dpkg {
+                package: "whoisthat".into(),
+            },
             "0.18.2",
             "x86_64",
             &tools(false, false, false, false, false),
@@ -490,7 +534,9 @@ mod tests {
         assert!(deb.contains("sudo apt install ./whoisthat_0.18.2-1_amd64.deb"));
 
         let rpm = update_command(
-            &InstallSource::Rpm { package: "whoisthat".into() },
+            &InstallSource::Rpm {
+                package: "whoisthat".into(),
+            },
             "0.18.2",
             "aarch64",
             &tools(false, false, true, false, false),
@@ -500,7 +546,9 @@ mod tests {
         assert!(rpm.contains("sudo dnf install ./whoisthat-0.18.2-1.aarch64.rpm"));
 
         let zypper = update_command(
-            &InstallSource::Rpm { package: "whoisthat".into() },
+            &InstallSource::Rpm {
+                package: "whoisthat".into(),
+            },
             "0.18.2",
             "x86_64",
             &tools(false, false, false, true, false),
@@ -509,7 +557,9 @@ mod tests {
         assert!(zypper.contains("sudo zypper --non-interactive install"));
 
         let raw_rpm = update_command(
-            &InstallSource::Rpm { package: "whoisthat".into() },
+            &InstallSource::Rpm {
+                package: "whoisthat".into(),
+            },
             "0.18.2",
             "x86_64",
             &tools(false, false, false, false, true),
@@ -521,15 +571,32 @@ mod tests {
     #[test]
     fn skips_commands_for_unknown_or_unsupported_targets() {
         assert_eq!(
-            update_command(&InstallSource::Other, "0.18.2", "x86_64", &tools(true, true, true, true, true)),
+            update_command(
+                &InstallSource::Other,
+                "0.18.2",
+                "x86_64",
+                &tools(true, true, true, true, true)
+            ),
             None
         );
         assert_eq!(
-            update_command(&InstallSource::Dpkg { package: "whoisthat".into() }, "0.18.2", "i686", &tools(false, false, false, false, false)),
+            update_command(
+                &InstallSource::Dpkg {
+                    package: "whoisthat".into()
+                },
+                "0.18.2",
+                "i686",
+                &tools(false, false, false, false, false)
+            ),
             None
         );
         assert_eq!(
-            update_command(&InstallSource::InstallScript, "0.18.2", "x86_64", &tools(false, false, false, false, false)),
+            update_command(
+                &InstallSource::InstallScript,
+                "0.18.2",
+                "x86_64",
+                &tools(false, false, false, false, false)
+            ),
             Some(format!("curl -fsSL {INSTALL_URL} | bash"))
         );
     }

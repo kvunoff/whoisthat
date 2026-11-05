@@ -278,6 +278,17 @@ pub(super) async fn handle(
                         app.focus = Focus::Popup;
                     }
                 }
+                20 => {
+                    app.check_updates = !app.check_updates;
+                    cfg.check_updates = app.check_updates;
+                    if save(app, cfg) {
+                        app.msg(if app.check_updates {
+                            "Update check enabled"
+                        } else {
+                            "Update check disabled"
+                        });
+                    }
+                }
                 _ => {}
             }
             false

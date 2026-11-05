@@ -35,6 +35,7 @@ const LOCAL_KEYS: &[&str] = &[
     "log-level",
     "terminal",
     "test-method",
+    "check-updates",
     "core.host",
     "core.port",
     "core.use-tcp",
@@ -478,6 +479,7 @@ fn apply_local(cfg: &mut config::AppConfig, key: &str, value: &str) -> Result<()
             cfg.log_level = value.to_string();
         }
         "terminal" => cfg.terminal = value.trim().to_string(),
+        "check-updates" => cfg.check_updates = parse_bool(value)?,
         "test-method" => {
             if !matches!(value, "tcp" | "http-get" | "http-head") {
                 return Err(CliError::Usage(format!("invalid test method '{value}'")));
@@ -505,6 +507,7 @@ fn validate(key: &str, value: &str) -> Result<(), CliError> {
         | "test.auto-on-subscribe"
         | "show-ip"
         | "log-enabled"
+        | "check-updates"
         | "core.use-tcp" => {
             parse_bool(value)?;
         }
@@ -624,6 +627,7 @@ fn is_bool_key(key: &str) -> bool {
             | "test.auto-on-subscribe"
             | "show-ip"
             | "log-enabled"
+            | "check-updates"
             | "core.use-tcp"
     )
 }
@@ -636,6 +640,7 @@ fn local_value(cfg: &config::AppConfig, key: &str) -> Option<Value> {
         "log-level" => json!(cfg.log_level),
         "terminal" => json!(cfg.terminal),
         "test-method" => json!(cfg.test_method),
+        "check-updates" => json!(cfg.check_updates),
         "core.host" => json!(cfg.core_host),
         "core.port" => json!(cfg.core_tcp_port),
         "core.use-tcp" => json!(cfg.use_tcp),
