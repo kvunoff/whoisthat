@@ -110,21 +110,12 @@ func (s *Server) Start() {
 	go s.handleStatsChange()
 	s.handleXrayStatus()
 
-	// If the proxy subprocess dies on its own, the TUN device and firewall
-	// state must not be left half-configured: clear TUN and, when enabled,
-	// re-arm the kill-switch (fail closed) before the UI reconnects.
+	// If the proxy subprocess dies on its own, the TUN device must not be left
+	// half-configured. The kill-switch (when enabled) is already armed and is
+	// deliberately left in place: a crash is exactly when it must keep holding.
 	s.proxy_manager.SetUnexpectedExitHandler(func(reason string) {
 		if s.tun_manager.IsEnabledLocked() {
 			s.tun_manager.Stop()
-		}
-		cfg := appconfig.GetConfig()
-		if cfg.KillSwitchEnabled {
-			proxyIPs := s.proxy_manager.GetProxyIPs()
-			if err := tunmode.SetupKillSwitchBlock(proxyIPs, cfg.TunName, cfg.DnsServers); err != nil {
-				logger.Warn("kill-switch: failed to re-arm after proxy exit:", err)
-			} else {
-				logger.Infof("kill-switch: re-armed after proxy exit, whitelisted IPs: %v", proxyIPs)
-			}
 		}
 		s.Broadcast(lib.CreateJsonNotification("warn", structs.Warning{
 			Key:     "proxy-exited",

@@ -35,31 +35,31 @@ func (cmd *Cmd) SetKillSwitch(data structs.SetKillSwitchData, proxy_manager *pro
 		return
 	}
 
-	// Nothing to arm while disconnected: the block is installed on connect.
-	if proxy_manager == nil || proxy_manager.GetStatus().Connection != "connected" {
+	// Enabled is the user's intent. Keep it even when arming fails: the actual
+	// state is reported separately as kill_switch_armed, so the UI can show
+	// "ON (not armed)" instead of silently claiming protection.
+	cfg := appconfig.GetConfig()
+	ips := []string{}
+	if proxy_manager != nil && proxy_manager.GetStatus().Connection == "connected" {
+		ips = proxy_manager.GetProxyIPs()
+		if len(ips) == 0 {
+			logger.Warn("kill-switch: server IP unknown, block not armed")
+			cmd.warn("set-kill-switch-failed", "kill-switch not armed: server IP unknown")
+			appconfig.SetKillSwitch(true)
+			cmd.send("kill-switch-updated", data)
+			return
+		}
+	}
+
+	if err := tunmode.SetupKillSwitchBlock(ips, cfg.TunName, cfg.DnsServers); err != nil {
+		logger.Warn("kill-switch: failed to apply block:", err)
+		cmd.warn("set-kill-switch-failed", "failed to arm kill-switch")
 		appconfig.SetKillSwitch(true)
 		cmd.send("kill-switch-updated", data)
 		return
 	}
 
-	// Enabling the kill-switch while connected must arm the firewall
-	// immediately; otherwise the UI reports "ON" while traffic is still
-	// unprotected until the next reconnect.
-	proxyIPs := proxy_manager.GetProxyIPs()
-	if len(proxyIPs) == 0 {
-		logger.Warn("kill-switch: server IP unknown, block not armed")
-		cmd.failKillSwitch(false, "kill-switch not armed: server IP unknown")
-		return
-	}
-
-	cfg := appconfig.GetConfig()
-	if err := tunmode.SetupKillSwitchBlock(proxyIPs, cfg.TunName, cfg.DnsServers); err != nil {
-		logger.Warn("kill-switch: failed to apply block:", err)
-		cmd.failKillSwitch(false, "failed to arm kill-switch")
-		return
-	}
-
-	logger.Infof("kill-switch: block applied, whitelisted IPs: %v", proxyIPs)
+	logger.Infof("kill-switch: block applied, whitelisted IPs: %v", ips)
 	appconfig.SetKillSwitch(true)
 	cmd.send("kill-switch-updated", data)
 }

@@ -14,22 +14,11 @@ func (cmd *Cmd) Disconnect(data structs.DisconnectData, proxy_manager *proxy.Pro
 	ConnectionMutex.Lock()
 	defer ConnectionMutex.Unlock()
 
-	killSwitchEnabled := proxy_manager.KillSwitchEnabled()
-	proxyIPs := proxy_manager.GetProxyIPs()
-
 	proxy_manager.Stop()
 	tun_manager.Stop()
-
-	// Fail closed: with no connection the machine must not leak, so the block is
-	// armed even when the server IP list is empty (LAN/DNS/TUN stay allowed).
-	if killSwitchEnabled {
-		cfg := appconfig.GetConfig()
-		if err := tunmode.SetupKillSwitchBlock(proxyIPs, cfg.TunName, cfg.DnsServers); err != nil {
-			logger.Warn("kill-switch: failed to apply block on disconnect:", err)
-		} else {
-			logger.Info("kill-switch: block applied after disconnect")
-		}
-	}
+	// The kill-switch block (when enabled) is deliberately left in place: with
+	// no connection the machine must not leak, and removing the TUN device
+	// already disables its allowlist rule.
 }
 
 func (cmd *Cmd) Connect(data structs.ConnectData, proxy_manager *proxy.ProxyManager, tun_manager *tunmode.TunModeManager) {
@@ -53,56 +42,23 @@ func (cmd *Cmd) Connect(data structs.ConnectData, proxy_manager *proxy.ProxyMana
 		tun_manager.Stop()
 	}
 
-	killSwitchEnabled := appconfig.GetConfig().KillSwitchEnabled
 	tunName := appconfig.GetConfig().TunName
-
-	if killSwitchEnabled {
-		if err := tunmode.RemoveKillSwitchBlock(); err != nil {
-			logger.Warn("kill-switch: failed to remove old block:", err)
-		}
-	}
 
 	// Connect the new profile in base proxy mode first (tunEnabled = false).
 	// If TUN was previously active, cmd.enableTun below will create the TUN device
 	// and routing rules first, then reload the proxy with TUN inbound. This guarantees
 	// Xray doesn't race against tun_manager.Start over creating/opening /dev/net/tun.
+	//
+	// The kill-switch is not touched here: it stays armed across the switch and
+	// the pre-start hook (main.go) installs the new server's allowlist right
+	// before Xray starts.
 	if err := proxy_manager.Connect(profile, tunName, false); err != nil {
 		logger.Warn("connect failed:", err)
 		cmd.warn("connect-failed", err.Error())
 		if errors.Is(err, proxy.ErrKillSwitchNotArmed) {
 			cmd.warn("set-kill-switch-failed", "kill-switch is enabled but could not be armed; connect aborted")
 		}
-
-		// The old connection was already stopped and the kill-switch block was
-		// removed above. Re-arm it with the last known server IPs so a failed
-		// switch does not silently leave the machine unprotected. With no known
-		// IPs the block is still fail-closed (only loopback/LAN/DNS allowed).
-		if killSwitchEnabled {
-			proxyIPs := proxy_manager.GetProxyIPs()
-			if ksErr := tunmode.SetupKillSwitchBlock(proxyIPs, tunName, appconfig.GetConfig().DnsServers); ksErr != nil {
-				logger.Warn("kill-switch: failed to re-arm after connect failure:", ksErr)
-			} else {
-				logger.Infof("kill-switch: re-armed after connect failure, whitelisted IPs: %v", proxyIPs)
-			}
-		}
 		return
-	}
-
-	if killSwitchEnabled {
-		proxyIPs := proxy_manager.GetProxyIPs()
-		if len(proxyIPs) > 0 {
-			if err := tunmode.SetupKillSwitchBlock(proxyIPs, tunName, appconfig.GetConfig().DnsServers); err != nil {
-				logger.Warn("kill-switch: failed to apply block:", err)
-			} else {
-				logger.Info("kill-switch: block applied, whitelisted IPs:", proxyIPs)
-			}
-		} else {
-			// Do NOT arm a fail-closed block here: the connection is alive, but
-			// the server IP is unknown, so the block would drop the tunnel the
-			// user just established.
-			logger.Warn("kill-switch: server IP unknown, block not armed (traffic is not covered)")
-			cmd.warn("set-kill-switch-failed", "kill-switch not armed: server IP unknown")
-		}
 	}
 
 	if was_tun_enabled {

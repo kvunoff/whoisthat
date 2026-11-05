@@ -115,6 +115,16 @@ func main() {
 		} else {
 			logger.Info("startup reconcile: orphaned rules cleared")
 		}
+		// Reconcile removes the kill-switch table; if the user asked for it,
+		// re-arm immediately so a restart never silently exposes the machine.
+		if appconfig.GetConfig().KillSwitchEnabled {
+			cfg := appconfig.GetConfig()
+			if err := tunmode.SetupKillSwitchBlock(nil, cfg.TunName, cfg.DnsServers); err != nil {
+				logger.Warnf("kill-switch: failed to re-arm on startup: %v", err)
+			} else {
+				logger.Info("kill-switch: block re-armed on startup")
+			}
+		}
 	}
 
 	if !testMode() {
@@ -209,11 +219,9 @@ func main() {
 		// next launch will tear down any leftover rules.
 		done := make(chan struct{})
 		go func() {
-			// The kill-switch table is global: in test mode it may belong to
-			// the user's live session, so only the real daemon tears it down.
-			if !testMode() {
-				tunmode.RemoveKillSwitchBlock()
-			}
+			// The kill-switch block is deliberately not removed here: when it
+			// is enabled it must survive a stopped daemon. It is removed only
+			// by an explicit kill-switch=false or the startup reconcile.
 			proxy_manager.Stop()
 			tun_manager.Stop()
 			os.Remove(appconfig.SocketPath())
