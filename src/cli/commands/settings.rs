@@ -48,10 +48,7 @@ pub async fn dispatch(g: &GlobalArgs, args: SettingsArgs) -> Result<(), CliError
         None if set.is_empty() => list(g).await,
         None => set_values(g, &set, force).await,
         Some(SettingsCmd::Get { key }) => get(g, &key).await,
-        Some(SettingsCmd::Set {
-            assignments,
-            force,
-        }) => set_values(g, &assignments, force).await,
+        Some(SettingsCmd::Set { assignments, force }) => set_values(g, &assignments, force).await,
         Some(SettingsCmd::Toggle { key }) => toggle(g, &key).await,
     }
 }
@@ -274,7 +271,10 @@ async fn apply_core(
             cfg.kill_switch_enabled = reply.enabled;
             config::save_config(&cfg);
             session.cfg = cfg;
-            out.line(format!("kill-switch={} armed={}", reply.enabled, reply.armed));
+            out.line(format!(
+                "kill-switch={} armed={}",
+                reply.enabled, reply.armed
+            ));
         }
         "split-tunnel" => {
             let reply: SetSplitTunnelData = session

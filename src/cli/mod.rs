@@ -259,12 +259,24 @@ mod tests {
             Cli::try_parse_from(["whoisthat", "settings", "--set", "kill-switch=true"]).is_ok()
         );
         assert!(
-            Cli::try_parse_from(["whoisthat", "settings", "set", "kill-switch=false", "--force"])
-                .is_ok()
+            Cli::try_parse_from([
+                "whoisthat",
+                "settings",
+                "set",
+                "kill-switch=false",
+                "--force"
+            ])
+            .is_ok()
         );
         assert!(
-            Cli::try_parse_from(["whoisthat", "settings", "--set", "kill-switch=false", "--force"])
-                .is_ok()
+            Cli::try_parse_from([
+                "whoisthat",
+                "settings",
+                "--set",
+                "kill-switch=false",
+                "--force"
+            ])
+            .is_ok()
         );
         // Global --timeout and `test config --timeout` must not share an id.
         let parsed = Cli::try_parse_from(["whoisthat", "test", "config", "--test-timeout", "5"])

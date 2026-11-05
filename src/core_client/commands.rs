@@ -385,7 +385,14 @@ impl CoreClient {
         self.writer
             .lock()
             .await
-            .send("set-kill-switch", &SetKillSwitchData { enabled, force: false, armed: false })
+            .send(
+                "set-kill-switch",
+                &SetKillSwitchData {
+                    enabled,
+                    force: false,
+                    armed: false,
+                },
+            )
             .await
     }
 
