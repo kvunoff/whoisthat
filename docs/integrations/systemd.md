@@ -66,6 +66,9 @@ systemctl --user start whoisthat-core
 # Stop the daemon
 systemctl --user stop whoisthat-core
 
+# The kill-switch (when enabled) stays armed after a stop; disable it first or
+# remove the table: sudo nft delete table inet whoisthat_ks
+
 # Restart the daemon (e.g. after recompiling whoisthat-core)
 systemctl --user restart whoisthat-core
 

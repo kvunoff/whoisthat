@@ -6,10 +6,15 @@ The **Kill-Switch** prevents accidental data and IP leaks by automatically block
 
 ## How It Works
 
-When Kill-Switch is active, WhoisThat installs dedicated kernel firewall tables:
+When Kill-Switch is active, WhoisThat installs dedicated kernel firewall rules:
 
 * **nftables backend**: a single `inet whoisthat_ks` table covering IPv4 and IPv6.
 * **iptables fallback**: `WHOISTHAT_KS` chains in the `ip` and `ip6` `filter` tables, inserted at the top of `OUTPUT`.
+
+The allowlist is rebuilt in one transaction right before Xray starts, using the
+exact server IPs that Xray is about to use. The block itself is never removed
+for the duration of a connect, so there is no unprotected window while a
+profile is (re)established.
 
 ```
                     Outbound Packet
@@ -21,7 +26,8 @@ When Kill-Switch is active, WhoisThat installs dedicated kernel firewall tables:
                           ├─► YES: Allow
             Configured DNS servers / TUN DNS sink?
                           ├─► YES: Allow (resolution, tunnel DNS)
-            Socket carries fwmark 1 (direct outbound, split-exclude)?
+            Socket carries fwmark 1 (direct outbound, split-exclude,
+            daemon-owned downloads)?
                           ├─► YES: Allow
             Leaving through the TUN adapter?
                           ├─► YES: Allow
@@ -31,6 +37,29 @@ When Kill-Switch is active, WhoisThat installs dedicated kernel firewall tables:
                           ▼
                 Drop Packet (Unconditionally Blocked)
 ```
+
+### Lifecycle: enabled vs armed
+
+`kill-switch-enabled` is the user's **intent**. The daemon keeps the block
+installed while it is alive, and reports the actual kernel state separately:
+
+* `kill_switch_armed: true` — the rules are installed and verified.
+* `kill_switch_armed: false` — the switch is requested but the rules could not
+  be installed (or could not be inspected). The TUI shows
+  `Kill switch: ▲ on (not armed)` and `whoisthat doctor` reports it.
+
+The block is installed at startup (after the orphaned-rule reconcile), when
+the switch is enabled while disconnected, and refreshed before every Xray
+start. It survives disconnect, an Xray crash and an explicit `core stop`; it is
+removed only by `kill-switch=false`.
+
+### Daemon-owned downloads
+
+Runtime (Xray), geo databases and subscription updates use a dedicated HTTP
+transport whose sockets carry `SO_MARK=1` (the same direct mark as
+split-exclude). They keep working while the block is armed without opening
+anything for user traffic. The TUI's "show public IP" check is not marked and
+does not work while the block is armed.
 
 ### Incompatibility with include-mode split tunneling
 
@@ -76,13 +105,34 @@ whoisthat -kt                       # legacy alias
 whoisthat settings set kill-switch=true
 whoisthat settings set kill-switch=false
 
+# Force-disable when the firewall state cannot be verified
+# (broken nft, lost capabilities): removes the rules best-effort
+whoisthat settings set kill-switch=false --force
+
+# Read the persisted intent and the actual kernel state
+whoisthat settings get kill-switch
+whoisthat settings get kill-switch-armed
+
 # Legacy aliases
 whoisthat --killswitch-on
 whoisthat --killswitch-off
 ```
 
 `settings set` validates the value before contacting the daemon and reports the value the daemon
-actually ended up with.
+actually ended up with. The daemon replies with both `enabled` and `armed`;
+`kill-switch=true armed=false` means the intent is stored but traffic is not
+currently protected (see `core.log` and `whoisthat doctor`).
+
+### Stopping the daemon
+
+The rules deliberately survive `whoisthat core stop` and a systemd unit stop:
+stopping the client must not silently expose the machine. Use
+`whoisthat settings set kill-switch=false` before stopping, or remove the table
+manually (see below). The uninstaller removes it as part of `install.sh --uninstall`.
+
+**Not covered:** only locally-generated traffic (`OUTPUT`) is filtered. Forwarded
+traffic — Docker containers, virtual machines, NAT on this host — is not
+blocked by the kill-switch.
 
 ---
 
@@ -91,7 +141,7 @@ actually ended up with.
 If your machine experiences a sudden power loss, kernel panic, or hard reboot while the Kill-Switch is active, the firewall block would normally persist, leaving your internet disconnected.
 
 WhoisThat handles this automatically:
-* **On Every Startup**: The daemon inspects whether another core process is running. If not, it runs `tunmode.ReconcileOrphanedRules()` to cleanly tear down lingering `whoisthat_ks` tables.
+* **On Every Startup**: the daemon inspects whether another core process is running. If not, it runs `tunmode.ReconcileOrphanedRules()` to tear down lingering `whoisthat_*` tables, and then **re-arms the kill-switch** if `kill-switch-enabled` is still true.
 * **Manual Recovery (if ever needed)**:
   ```bash
   sudo nft delete table inet whoisthat_ks 2>/dev/null

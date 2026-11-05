@@ -143,6 +143,7 @@ IPC; local keys are written to `config.toml`.
 | CLI key | File / backend | Notes |
 | :--- | :--- | :--- |
 | `kill-switch`, `split-tunnel`, `autoconnect`, `autoconnect-mode` | core (`config.json`) | applied live; the daemon is authoritative |
+| `kill-switch-armed` | core (`application-state`) | read-only; actual kernel state (`kill-switch-enabled` is the intent) |
 | `autoconnect-profile` | core + `config.json` | target is stored as `autoconnect-group-id` / `autoconnect-profile-id` |
 | `tun-name` | core (`config.json`) | applies on the next reconnect |
 | `hwid-enabled`, `user-agent` | core (`config.json`) | subscription headers |
@@ -154,7 +155,13 @@ IPC; local keys are written to `config.toml`.
 whoisthat settings list --json
 whoisthat settings set split-tunnel=exclude kill-switch=true
 whoisthat settings set theme=tokyo-night log-level=debug
+whoisthat settings set kill-switch=false --force   # unverifiable firewall: remove best-effort
 ```
+
+`kill-switch-enabled` in `config.json` is the user's intent. The actual state is
+reported as `kill_switch_armed` in `application-state`; if they disagree, the
+rules could not be installed or inspected (see `core.log` and
+`whoisthat doctor`).
 
 Pick the terminal the desktop launcher opens (`terminal`). An empty value restores
 auto-detection; emulators that need flags can be given as a command prefix:

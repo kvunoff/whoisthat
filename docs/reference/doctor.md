@@ -73,7 +73,7 @@ The diagnostic engine performs comprehensive, non-destructive system inspections
 * **DNS safety returns**: In Happ mode, verifies that the `mark 1` and sink return rules are present. Missing returns can loop Xray's direct DNS or capture split-excluded apps.
 * **systemd-resolved**: If `resolvectl` is installed, verifies that the TUN interface points at the Happ sink. A missing or inactive systemd-resolved is informational, not a warning or failure — kernel DNAT still works.
 * **Split-tunnel routing**: In `exclude` mode with TUN up, checks that `ip rule` still has `fwmark 1 -> table 100` and that Table 100 has a default route. A dropped route silently sends split apps through the tunnel.
-* **Kill-switch DNS allowlist**: When the kill-switch is armed, checks that its nftables table still allows the TUN interface, the DNS sink, and `mark 1`.
+* **Kill-switch firewall**: In any connection mode, checks that the rules are present when the switch is enabled, absent when it is disabled, and that the allowlist still contains the TUN interface, the DNS sink, and `mark 1`. Inspects both nftables and the legacy iptables chains.
 
 ::: tip Root permissions
 Reading nftables/iptables state usually requires root. When `whoisthat doctor` runs unprivileged, firewall items are reported as `info` with the exact inspection command (`sudo nft list table ip whoisthat`) instead of failing.

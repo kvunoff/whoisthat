@@ -42,7 +42,8 @@ Some commands emit **two** id-carrying frames. Wait for the terminal one, not th
 
 `set-kill-switch` and `set-split-tunnel` are special: the reply is authoritative and may be followed
 (or preceded) by a `*-failed` warning. Compare the requested value with the reply; do not treat
-warnings alone as failure.
+warnings alone as failure. For the kill-switch the reply carries two fields: `enabled` is the
+persisted intent, `armed` is the actual kernel state.
 * **Socket Endpoints**:
   * **Unix Domain Socket (Default)**: `$XDG_RUNTIME_DIR/whoisthat/core.sock` (mode `0600`, owned by the invoking user).
   * **Loopback TCP (Opt-in)**: `127.0.0.1:4897` / `[::1]:4897` (when `tcp-enabled: true` in `config.json`).
@@ -89,7 +90,7 @@ The core replies with `{"msg":"hello-ok","data":{"protocol_version":4}}` or `{"m
 | `update-routing` | `{"group_id": int, "config": { ... }}` | `routing-updated` (+ `group-updated` when an inheriting group becomes custom) |
 | `set-manual-routing-source` | `{"group_id": int, "source": "inherit" \| "custom"}` | `group-updated` & `routing-updated` |
 | `die` | `{}` | Terminates the core daemon cleanly. |
-| `set-kill-switch` | `{"enabled": bool}` | `kill-switch-updated` |
+| `set-kill-switch` | `{"enabled": bool, "force": bool?}` | `kill-switch-updated` (`{"enabled": bool, "armed": bool}`) |
 | `set-split-tunnel` | `{"mode": "off" \| "exclude" \| "include"}` | `split-tunnel-updated` |
 | `set-autoconnect` | `{"enabled": bool, "group_id": int, "profile_id": int, "mode": "proxy" \| "tun"}` | `autoconnect-updated` |
 | `test-group` | `{"group_id": int, "method": "string", "sample_count": int?}` | `test-progress` & `profile-updated` |
@@ -128,7 +129,7 @@ The core replies with `{"msg":"hello-ok","data":{"protocol_version":4}}` or `{"m
 | `traffic-stats` | `{"proxy_up": int, "proxy_down": int, "direct_up": int, "direct_down": int}` | Broadcast every 1 second while a proxy connection is active. |
 | `routing-updated` | `{"group_id": int, "config": { ... }, "source": "global" \| "custom", "custom": { ... }?}` | Fired when routing rules, the manual rule source, or active Happ profiles change. `custom` carries the stored per-group override when one exists. |
 | `warn` | `{"key": "string", "content": "string"}` | Warning or actionable hint (e.g. missing binary, invalid routing link, capability failure). |
-| `kill-switch-updated` | `{"enabled": bool}` | Fired when Kill-Switch state changes. |
+| `kill-switch-updated` | `{"enabled": bool, "armed": bool}` | Fired when Kill-Switch state changes. `enabled` is the persisted intent; `armed` is whether the kernel rules are installed. |
 | `split-tunnel-updated` | `{"mode": "off" \| "exclude" \| "include"}` | Fired when split-tunnel mode changes. |
 | `autoconnect-updated` | `{"enabled": bool, "mode": "proxy" \| "tun"}` | Fired when autoconnect parameters change. |
 | `test-progress` | `{"group_id": int, "tested": int, "total": int}` | Broadcast during batch latency scans. |

@@ -212,10 +212,17 @@ CLI reply timeout and is not the same setting.
 whoisthat settings list
 whoisthat settings list --json
 whoisthat settings get kill-switch
+whoisthat settings get kill-switch-armed
 whoisthat settings set split-tunnel=exclude kill-switch=true
+whoisthat settings set kill-switch=false --force
 whoisthat settings --set theme=tokyo-night show-ip=off log-level=debug
 whoisthat settings toggle kill-switch
 ```
+
+`kill-switch-armed` is read-only: it reports whether the kernel rules are
+actually installed. `--force` is only valid for `kill-switch=false` and removes
+the rules best-effort when the firewall state cannot be inspected (broken
+`nft`, lost capabilities).
 
 Core-authoritative keys:
 

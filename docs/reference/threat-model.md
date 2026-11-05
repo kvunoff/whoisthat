@@ -54,7 +54,7 @@ Both the core and the TUI redact userinfo and query strings before logging. **A 
 - `exclude` split apps are allowed through the kill-switch by design (`fwmark 1`).
 - QUIC/HTTP-3 is not in the TUN sniffing list, so it can be routed by IP rather than by domain.
 - FakeDNS does not map ICMP; a reply to `ping <fake-ip>` does not prove reachability.
-- The kill-switch is an outbound firewall policy, not a guarantee against every leak (e.g. traffic before it is armed, or traffic explicitly allowed by the whitelist).
+- The kill-switch is an outbound firewall policy, not a guarantee against every leak (e.g. traffic explicitly allowed by the whitelist). It filters locally-generated traffic only: forwarded traffic (Docker, VMs, NAT on this host) is not covered. `kill-switch-enabled` stores the intent; `kill_switch_armed` reports whether the rules are actually installed, and a failed arm is surfaced in the TUI and `whoisthat doctor`.
 
 ### Capabilities are broad
 

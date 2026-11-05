@@ -79,7 +79,7 @@ Re-add subscriptions afterwards. Never delete `db.key` while copying the databas
 
 ## 6. Leftover Firewall / Routing Rules
 
-If the daemon crashed or the machine lost power during TUN or kill-switch operation, rules can be left behind. The next core start runs `ReconcileOrphanedRules()` when no other core is live, so restarting is usually enough:
+If the daemon crashed or the machine lost power during TUN or kill-switch operation, rules can be left behind. The next core start runs `ReconcileOrphanedRules()` when no other core is live and then re-arms the kill-switch if `kill-switch-enabled` is still true, so restarting is usually enough:
 
 ```bash
 whoisthat core restart
