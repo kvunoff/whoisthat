@@ -36,6 +36,7 @@ func newTestCmd(t *testing.T) (*Cmd, *mainproxy.ProxyManager, chan []byte) {
 		DB:        testDB,
 		Broadcast: broadcast,
 	}
+	t.Cleanup(cmd.waitBackground)
 
 	return cmd, pm, msgChan
 }

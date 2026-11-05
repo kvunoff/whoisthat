@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"strings"
+	"sync"
 	"whoisthat-core/db"
 	"whoisthat-core/lib"
 	"whoisthat-core/lib/logger"
@@ -18,6 +19,24 @@ type Cmd struct {
 	// RequestID is echoed on notifications produced by the current request.
 	// Empty for UDS/TUI traffic that does not opt into correlation.
 	RequestID string
+
+	// background tracks subscription refreshes started by AddGroup/UpdateGroup.
+	// It is a pointer because Cmd is copied per request; tests wait on it so a
+	// goroutine cannot keep reading the global config after the test reset it.
+	background *sync.WaitGroup
+}
+
+func (cmd *Cmd) ensureBackground() *sync.WaitGroup {
+	if cmd.background == nil {
+		cmd.background = &sync.WaitGroup{}
+	}
+	return cmd.background
+}
+
+func (cmd *Cmd) waitBackground() {
+	if cmd.background != nil {
+		cmd.background.Wait()
+	}
 }
 
 func (cmd *Cmd) DeleteGroup(data structs.DeleteGroupData) {
@@ -43,7 +62,12 @@ func (cmd *Cmd) AddGroup(data structs.AddGroupData, proxy_manager *mainproxy.Pro
 	cmd.send("group-added", group_added)
 
 	if strings.TrimSpace(data.SubscriptionUrl) != "" && proxy_manager != nil {
-		go cmd.UpdateSubscription(structs.UpdateSubscriptionData{GroupId: group_added.Id}, proxy_manager)
+		wg := cmd.ensureBackground()
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			cmd.UpdateSubscription(structs.UpdateSubscriptionData{GroupId: group_added.Id}, proxy_manager)
+		}()
 	}
 }
 
@@ -81,7 +105,12 @@ func (cmd *Cmd) UpdateGroup(data structs.UpdateGroupData, proxy_manager *mainpro
 
 	trimmedSub := strings.TrimSpace(data.SubscriptionUrl)
 	if trimmedSub != "" && trimmedSub != strings.TrimSpace(oldGroup.SubscriptionUrl) && proxy_manager != nil {
-		go cmd.UpdateSubscription(structs.UpdateSubscriptionData{GroupId: data.Id}, proxy_manager)
+		wg := cmd.ensureBackground()
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			cmd.UpdateSubscription(structs.UpdateSubscriptionData{GroupId: data.Id}, proxy_manager)
+		}()
 	}
 }
 
