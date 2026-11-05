@@ -139,9 +139,10 @@ func (cmd *Cmd) refreshDnsHijackFor(profile structs.Profile) {
 func (cmd *Cmd) enableTun(profile structs.Profile, proxy_manager *proxy.ProxyManager, tun_manager *tunmode.TunModeManager) {
 	var resolved *utils.ResolvedIPs
 	var err error
-	if profile.Managed && proxy_manager != nil {
-		// A JSON profile may contain several servers/balancers; every one of
-		// them needs a route outside the tunnel and a kill-switch allowance.
+	if proxy_manager != nil && len(proxy_manager.GetProxyIPs()) > 0 {
+		// Reuse the exact IPs Connect resolved and the kill-switch allowlist
+		// was built from: re-resolving here could produce a different address
+		// under round-robin, leaving the TUN route or the allowlist stale.
 		resolved = &utils.ResolvedIPs{}
 		for _, raw := range proxy_manager.GetProxyIPs() {
 			ip := net.ParseIP(raw)
