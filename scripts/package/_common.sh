@@ -220,6 +220,19 @@ allow_unsigned_uploads = 0
 EOF
     chmod 600 "$home/.dput.cf"
 
+    # Old dput shells out to ssh for its sftp transport, so a user config is
+    # ignored. Put a wrapper first in PATH that forces our private config.
+    require_cmd ssh
+    local ssh_bin
+    ssh_bin=$(command -v ssh)
+    mkdir -p "$WORKDIR/bin"
+    cat > "$WORKDIR/bin/ssh" <<EOF
+#!/bin/sh
+exec "$ssh_bin" -F "$sshdir/config" "\$@"
+EOF
+    chmod 755 "$WORKDIR/bin/ssh"
+    export PATH="$WORKDIR/bin:$PATH"
+
     export HOME="$home"
     export GIT_SSH_COMMAND="ssh -F $sshdir/config"
 }
