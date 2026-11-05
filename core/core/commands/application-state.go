@@ -51,7 +51,7 @@ func killSwitchArmed(proxy_manager *proxy.ProxyManager) bool {
 	if proxy_manager == nil || !proxy_manager.KillSwitchEnabled() {
 		return false
 	}
-	armed, err := tunmode.KillSwitchArmed()
+	armed, err := probeKillSwitchArmed()
 	if err != nil {
 		logger.Warn("kill-switch: cannot inspect state:", err)
 		return false

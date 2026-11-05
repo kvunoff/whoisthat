@@ -3,12 +3,26 @@ package cmd
 import (
 	appconfig "whoisthat-core/lib/AppConfig"
 	"whoisthat-core/lib/logger"
-	proxy "whoisthat-core/lib/proxy/mainproxy"
 	tunmode "whoisthat-core/lib/proxy/tun"
 	"whoisthat-core/structs"
 )
 
-func (cmd *Cmd) SetKillSwitch(data structs.SetKillSwitchData, proxy_manager *proxy.ProxyManager) {
+// killSwitchProxy is the slice of ProxyManager the kill-switch needs; keeping
+// it an interface lets the command logic be tested without a real core.
+type killSwitchProxy interface {
+	GetStatus() structs.ProxyStatus
+	GetProxyIPs() []string
+}
+
+// Test seams: the command layer decides *when* to arm, so its tests must not
+// touch the real firewall.
+var (
+	setupKillSwitchBlock  = tunmode.SetupKillSwitchBlock
+	removeKillSwitchBlock = tunmode.RemoveKillSwitchBlock
+	probeKillSwitchArmed  = tunmode.KillSwitchArmed
+)
+
+func (cmd *Cmd) SetKillSwitch(data structs.SetKillSwitchData, proxy_manager killSwitchProxy) {
 	// Serialise with Connect/Disconnect: arming mid-connect with the previous
 	// profile's IPs would drop the connection being established.
 	ConnectionMutex.Lock()
@@ -24,14 +38,14 @@ func (cmd *Cmd) SetKillSwitch(data structs.SetKillSwitchData, proxy_manager *pro
 		if data.Force {
 			// Explicit escape hatch for a broken firewall: remove best-effort
 			// and report off even though the state could not be verified.
-			_ = tunmode.RemoveKillSwitchBlock()
+			_ = removeKillSwitchBlock()
 			appconfig.SetKillSwitch(false)
 			logger.Warn("kill-switch: force-disabled; firewall state was not verified")
 			cmd.warn("set-kill-switch-failed", "kill-switch force-disabled; rules were removed best-effort")
 			cmd.send("kill-switch-updated", structs.SetKillSwitchData{Enabled: false, Armed: false})
 			return
 		}
-		if err := tunmode.RemoveKillSwitchBlock(); err != nil {
+		if err := removeKillSwitchBlock(); err != nil {
 			logger.Warn("kill-switch: failed to remove block:", err)
 			// The rules may still be dropping traffic. Reporting "off" while the
 			// block is armed would be a lie, so keep the switch on and let the
@@ -63,7 +77,7 @@ func (cmd *Cmd) SetKillSwitch(data structs.SetKillSwitchData, proxy_manager *pro
 		return
 	}
 
-	if err := tunmode.SetupKillSwitchBlock(ips, cfg.TunName, cfg.DnsServers); err != nil {
+	if err := setupKillSwitchBlock(ips, cfg.TunName, cfg.DnsServers); err != nil {
 		logger.Warn("kill-switch: failed to apply block:", err)
 		cmd.warn("set-kill-switch-failed", "failed to arm kill-switch")
 		appconfig.SetKillSwitch(true)
@@ -82,7 +96,7 @@ func (cmd *Cmd) killSwitchState() structs.SetKillSwitchData {
 	armed := false
 	if enabled {
 		var err error
-		armed, err = tunmode.KillSwitchArmed()
+		armed, err = probeKillSwitchArmed()
 		if err != nil {
 			logger.Warn("kill-switch: cannot inspect state:", err)
 			armed = false

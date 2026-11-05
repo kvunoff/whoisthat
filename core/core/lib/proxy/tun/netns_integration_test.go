@@ -134,3 +134,76 @@ func TestNetnsRpFilterRestored(t *testing.T) {
 		t.Errorf("rp_filter restored to %q, want %q", strings.TrimSpace(string(restored)), original)
 	}
 }
+
+func countDropRules(t *testing.T, rules string) int {
+	t.Helper()
+	count := 0
+	for _, line := range strings.Split(rules, "\n") {
+		if strings.TrimSpace(line) == "drop" {
+			count++
+		}
+	}
+	return count
+}
+
+func TestNetnsKillSwitchArmTwiceIsIdempotent(t *testing.T) {
+	enterTestNetns(t)
+
+	for i := 0; i < 2; i++ {
+		if err := SetupKillSwitchBlock([]string{"192.0.2.10"}, "wittest0", []string{"1.1.1.1"}); err != nil {
+			t.Fatalf("SetupKillSwitchBlock (attempt %d): %v", i+1, err)
+		}
+	}
+
+	out, err := runScriptWithSh("nft list chain inet whoisthat_ks output")
+	if err != nil {
+		t.Fatalf("listing the chain: %v", err)
+	}
+	if got := countDropRules(t, out); got != 1 {
+		t.Errorf("drop rules = %d, want 1:\n%s", got, out)
+	}
+	if got := strings.Count(out, "192.0.2.10"); got != 1 {
+		t.Errorf("proxy IP appears %d times, want 1:\n%s", got, out)
+	}
+}
+
+// An interrupted install could leave a table without its chain; the bootstrap
+// must repair it instead of skipping and failing to flush a missing chain.
+func TestNetnsKillSwitchRepairsTableWithoutChain(t *testing.T) {
+	enterTestNetns(t)
+
+	if _, err := runScriptWithSh("nft add table inet whoisthat_ks"); err != nil {
+		t.Fatalf("seed empty table: %v", err)
+	}
+	if err := SetupKillSwitchBlock(nil, "wittest0", []string{"1.1.1.1"}); err != nil {
+		t.Fatalf("SetupKillSwitchBlock over a chain-less table: %v", err)
+	}
+
+	out, err := runScriptWithSh("nft list chain inet whoisthat_ks output")
+	if err != nil {
+		t.Fatalf("listing the chain: %v", err)
+	}
+	if got := countDropRules(t, out); got != 1 {
+		t.Errorf("drop rules = %d, want 1:\n%s", got, out)
+	}
+}
+
+func TestNetnsKillSwitchArmedProbeAndRemove(t *testing.T) {
+	enterTestNetns(t)
+
+	if armed, err := KillSwitchArmed(); armed || err != nil {
+		t.Fatalf("KillSwitchArmed() before arming = %v, %v; want false, nil", armed, err)
+	}
+	if err := SetupKillSwitchBlock([]string{"192.0.2.10"}, "wittest0", []string{"1.1.1.1"}); err != nil {
+		t.Fatalf("SetupKillSwitchBlock: %v", err)
+	}
+	if armed, err := KillSwitchArmed(); !armed || err != nil {
+		t.Fatalf("KillSwitchArmed() after arming = %v, %v; want true, nil", armed, err)
+	}
+	if err := RemoveKillSwitchBlock(); err != nil {
+		t.Fatalf("RemoveKillSwitchBlock: %v", err)
+	}
+	if armed, err := KillSwitchArmed(); armed || err != nil {
+		t.Fatalf("KillSwitchArmed() after removal = %v, %v; want false, nil", armed, err)
+	}
+}
