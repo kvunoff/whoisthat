@@ -54,7 +54,7 @@ func handleArgs(args []string) (code int, done bool) {
 
 // testMode keeps the daemon away from the network and the global firewall so
 // the IPC smoke test can run it in a sandbox (see scripts/ipc-e2e.test.sh).
-func testMode() bool { return os.Getenv("WHOISTHAT_TEST_MODE") == "1" }
+func testMode() bool { return utils.TestMode() }
 
 func main() {
 	if code, done := handleArgs(os.Args[1:]); done {

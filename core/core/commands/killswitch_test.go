@@ -209,3 +209,19 @@ func TestSetKillSwitchRejectsIncludeSplitMode(t *testing.T) {
 		t.Fatalf("event = %+v, want the unchanged disabled state", event)
 	}
 }
+
+func TestSetKillSwitchTestModeDoesNotTouchFirewall(t *testing.T) {
+	resetKillSwitchConfig(t)
+	t.Setenv("WHOISTHAT_TEST_MODE", "1")
+	st := stubKillSwitch(t, nil, nil, true)
+	cmd, ch := newKillSwitchCmd()
+
+	cmd.SetKillSwitch(structs.SetKillSwitchData{Enabled: true}, nil)
+
+	if st.setupCalls != 0 || st.removeCalls != 0 {
+		t.Fatalf("test mode touched the firewall (setup=%d remove=%d)", st.setupCalls, st.removeCalls)
+	}
+	if event := lastKillSwitchEvent(t, ch); !event.Enabled || event.Armed {
+		t.Fatalf("event = %+v, want enabled=true armed=false", event)
+	}
+}

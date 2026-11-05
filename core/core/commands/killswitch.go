@@ -5,6 +5,7 @@ import (
 	"whoisthat-core/lib/logger"
 	tunmode "whoisthat-core/lib/proxy/tun"
 	"whoisthat-core/structs"
+	"whoisthat-core/utils"
 )
 
 // killSwitchProxy is the slice of ProxyManager the kill-switch needs; keeping
@@ -27,6 +28,12 @@ func (cmd *Cmd) SetKillSwitch(data structs.SetKillSwitchData, proxy_manager kill
 	// profile's IPs would drop the connection being established.
 	ConnectionMutex.Lock()
 	defer ConnectionMutex.Unlock()
+
+	if utils.TestMode() {
+		appconfig.SetKillSwitch(data.Enabled)
+		cmd.send("kill-switch-updated", structs.SetKillSwitchData{Enabled: data.Enabled, Armed: false})
+		return
+	}
 
 	if data.Enabled && appconfig.GetConfig().SplitTunnel.Mode == "include" {
 		cmd.warn("set-kill-switch-failed", "kill-switch is incompatible with split-tunnel include mode; switch to exclude/off first")

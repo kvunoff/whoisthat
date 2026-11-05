@@ -8,6 +8,7 @@ import (
 	"whoisthat-core/lib/version"
 	"whoisthat-core/lib/xraymgr"
 	"whoisthat-core/structs"
+	"whoisthat-core/utils"
 )
 
 func (cmd *Cmd) GetApplicationState(data structs.GetApplicationStateData, proxy_manager *proxy.ProxyManager, tun_manager *tunmode.TunModeManager) {
@@ -48,7 +49,7 @@ func (cmd *Cmd) GetApplicationState(data structs.GetApplicationStateData, proxy_
 // killSwitchArmed never over-claims protection: an inspection failure is
 // reported as "not armed" and leaves a log line for doctor/diagnostics.
 func killSwitchArmed(proxy_manager *proxy.ProxyManager) bool {
-	if proxy_manager == nil || !proxy_manager.KillSwitchEnabled() {
+	if utils.TestMode() || proxy_manager == nil || !proxy_manager.KillSwitchEnabled() {
 		return false
 	}
 	armed, err := probeKillSwitchArmed()
