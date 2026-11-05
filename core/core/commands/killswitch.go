@@ -80,7 +80,7 @@ func (cmd *Cmd) SetKillSwitch(data structs.SetKillSwitchData, proxy_manager kill
 		logger.Warn("kill-switch: server IP unknown, block not armed")
 		cmd.warn("set-kill-switch-failed", "kill-switch not armed: server IP unknown")
 		appconfig.SetKillSwitch(true)
-		cmd.send("kill-switch-updated", structs.SetKillSwitchData{Enabled: true, Armed: false})
+		cmd.send("kill-switch-updated", cmd.killSwitchState())
 		return
 	}
 
@@ -88,7 +88,7 @@ func (cmd *Cmd) SetKillSwitch(data structs.SetKillSwitchData, proxy_manager kill
 		logger.Warn("kill-switch: failed to apply block:", err)
 		cmd.warn("set-kill-switch-failed", "failed to arm kill-switch")
 		appconfig.SetKillSwitch(true)
-		cmd.send("kill-switch-updated", structs.SetKillSwitchData{Enabled: true, Armed: false})
+		cmd.send("kill-switch-updated", cmd.killSwitchState())
 		return
 	}
 
