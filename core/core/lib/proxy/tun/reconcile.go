@@ -38,7 +38,9 @@ nft delete table inet whoisthat_split 2>/dev/null || true
 
 # --- iptables kill-switch chains (legacy backend) ---
 for IPT in iptables ip6tables; do
-    "$IPT" -D OUTPUT -j WHOISTHAT_KS 2>/dev/null || true
+    while "$IPT" -C OUTPUT -j WHOISTHAT_KS 2>/dev/null; do
+        "$IPT" -D OUTPUT -j WHOISTHAT_KS
+    done
     "$IPT" -F WHOISTHAT_KS 2>/dev/null || true
     "$IPT" -X WHOISTHAT_KS 2>/dev/null || true
 done

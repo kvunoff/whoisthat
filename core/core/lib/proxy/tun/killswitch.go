@@ -237,41 +237,48 @@ func buildKillSwitchNftScript(proxyIPs []string, tunName string, dnsServers []st
 
 	var b strings.Builder
 	b.WriteString("set -e\n")
-	b.WriteString("nft delete table inet whoisthat_ks 2>/dev/null || true\n")
-	b.WriteString("nft add table inet whoisthat_ks\n")
-	b.WriteString("nft add chain inet whoisthat_ks output '{ type filter hook output priority 0; policy accept; }'\n")
+	// Repair an interrupted install: a table without its chain must not be
+	// treated as armed. policy drop makes the bootstrap fail-closed before the
+	// allowlist exists; the batch below refills it atomically.
+	b.WriteString("if ! nft list chain inet whoisthat_ks output >/dev/null 2>&1; then\n")
+	b.WriteString("    nft add table inet whoisthat_ks 2>/dev/null || true\n")
+	b.WriteString("    nft add chain inet whoisthat_ks output '{ type filter hook output priority 0; policy drop; }'\n")
+	b.WriteString("fi\n")
+	b.WriteString("nft -f - <<'WHOISTHAT_KS_EOF'\n")
+	b.WriteString("flush chain inet whoisthat_ks output\n")
 
-	b.WriteString("nft add rule inet whoisthat_ks output oif lo accept\n")
+	b.WriteString("add rule inet whoisthat_ks output oif lo accept\n")
 	for _, ip := range killSwitchV4 {
-		fmt.Fprintf(&b, "nft add rule inet whoisthat_ks output ip daddr %s accept\n", ip)
+		fmt.Fprintf(&b, "add rule inet whoisthat_ks output ip daddr %s accept\n", ip)
 	}
 	for _, ip := range killSwitchV6 {
-		fmt.Fprintf(&b, "nft add rule inet whoisthat_ks output ip6 daddr %s accept\n", ip)
+		fmt.Fprintf(&b, "add rule inet whoisthat_ks output ip6 daddr %s accept\n", ip)
 	}
 
 	// Resolution must keep working while the tunnel is being (re)established.
 	for _, ip := range append(append([]string{}, dns4...), killSwitchDNSSink4) {
-		fmt.Fprintf(&b, "nft add rule inet whoisthat_ks output ip daddr %s accept\n", ip)
+		fmt.Fprintf(&b, "add rule inet whoisthat_ks output ip daddr %s accept\n", ip)
 	}
 	for _, ip := range append(append([]string{}, dns6...), killSwitchDNSSink6) {
-		fmt.Fprintf(&b, "nft add rule inet whoisthat_ks output ip6 daddr %s accept\n", ip)
+		fmt.Fprintf(&b, "add rule inet whoisthat_ks output ip6 daddr %s accept\n", ip)
 	}
 
 	// Xray's freedom outbound / split-exclude sockets.
-	fmt.Fprintf(&b, "nft add rule inet whoisthat_ks output meta mark %d accept\n", killSwitchDirectMark)
+	fmt.Fprintf(&b, "add rule inet whoisthat_ks output meta mark %d accept\n", killSwitchDirectMark)
 
 	if tunName != "" {
-		fmt.Fprintf(&b, "nft add rule inet whoisthat_ks output oifname %q accept\n", tunName)
+		fmt.Fprintf(&b, "add rule inet whoisthat_ks output oifname %q accept\n", tunName)
 	}
 
 	for _, ip := range proxy4 {
-		fmt.Fprintf(&b, "nft add rule inet whoisthat_ks output ip daddr %s accept\n", ip)
+		fmt.Fprintf(&b, "add rule inet whoisthat_ks output ip daddr %s accept\n", ip)
 	}
 	for _, ip := range proxy6 {
-		fmt.Fprintf(&b, "nft add rule inet whoisthat_ks output ip6 daddr %s accept\n", ip)
+		fmt.Fprintf(&b, "add rule inet whoisthat_ks output ip6 daddr %s accept\n", ip)
 	}
 
-	b.WriteString("nft add rule inet whoisthat_ks output drop\n")
+	b.WriteString("add rule inet whoisthat_ks output drop\n")
+	b.WriteString("WHOISTHAT_KS_EOF\n")
 	return b.String()
 }
 
@@ -283,12 +290,18 @@ func buildKillSwitchIptablesScript(proxyIPs []string, tunName string, dnsServers
 
 	var b strings.Builder
 	b.WriteString("set -e\n")
+	// Remove every jump an older session may have left: one -D only removes
+	// the first, and a still-referenced chain cannot be deleted.
+	b.WriteString("for IPT in iptables ip6tables; do\n")
+	b.WriteString("    while \"$IPT\" -C OUTPUT -j WHOISTHAT_KS 2>/dev/null; do\n")
+	b.WriteString("        \"$IPT\" -D OUTPUT -j WHOISTHAT_KS\n")
+	b.WriteString("    done\n")
+	b.WriteString("    \"$IPT\" -F WHOISTHAT_KS 2>/dev/null || true\n")
+	b.WriteString("    \"$IPT\" -X WHOISTHAT_KS 2>/dev/null || true\n")
+	b.WriteString("done\n")
 
 	// --- IPv4 ---
-	b.WriteString("iptables -D OUTPUT -j WHOISTHAT_KS 2>/dev/null || true\n")
-	b.WriteString("iptables -F WHOISTHAT_KS 2>/dev/null || true\n")
-	b.WriteString("iptables -X WHOISTHAT_KS 2>/dev/null || true\n")
-	b.WriteString("iptables -N WHOISTHAT_KS\n")
+	b.WriteString("iptables -N WHOISTHAT_KS 2>/dev/null || iptables -F WHOISTHAT_KS\n")
 	b.WriteString("iptables -A WHOISTHAT_KS -o lo -j ACCEPT\n")
 	for _, ip := range killSwitchV4 {
 		fmt.Fprintf(&b, "iptables -A WHOISTHAT_KS -d %s -j ACCEPT\n", ip)
@@ -304,13 +317,10 @@ func buildKillSwitchIptablesScript(proxyIPs []string, tunName string, dnsServers
 		fmt.Fprintf(&b, "iptables -A WHOISTHAT_KS -d %s -j ACCEPT\n", ip)
 	}
 	b.WriteString("iptables -A WHOISTHAT_KS -j DROP\n")
-	b.WriteString("iptables -I OUTPUT -j WHOISTHAT_KS\n")
+	b.WriteString("iptables -I OUTPUT 1 -j WHOISTHAT_KS\n")
 
 	// --- IPv6 ---
-	b.WriteString("ip6tables -D OUTPUT -j WHOISTHAT_KS 2>/dev/null || true\n")
-	b.WriteString("ip6tables -F WHOISTHAT_KS 2>/dev/null || true\n")
-	b.WriteString("ip6tables -X WHOISTHAT_KS 2>/dev/null || true\n")
-	b.WriteString("ip6tables -N WHOISTHAT_KS\n")
+	b.WriteString("ip6tables -N WHOISTHAT_KS 2>/dev/null || ip6tables -F WHOISTHAT_KS\n")
 	b.WriteString("ip6tables -A WHOISTHAT_KS -o lo -j ACCEPT\n")
 	for _, ip := range killSwitchV6 {
 		fmt.Fprintf(&b, "ip6tables -A WHOISTHAT_KS -d %s -j ACCEPT\n", ip)
@@ -326,7 +336,7 @@ func buildKillSwitchIptablesScript(proxyIPs []string, tunName string, dnsServers
 		fmt.Fprintf(&b, "ip6tables -A WHOISTHAT_KS -d %s -j ACCEPT\n", ip)
 	}
 	b.WriteString("ip6tables -A WHOISTHAT_KS -j DROP\n")
-	b.WriteString("ip6tables -I OUTPUT -j WHOISTHAT_KS\n")
+	b.WriteString("ip6tables -I OUTPUT 1 -j WHOISTHAT_KS\n")
 
 	return b.String()
 }

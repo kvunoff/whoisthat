@@ -30,7 +30,12 @@ func TestReconcileScriptCoversAllTables(t *testing.T) {
 // table) must be reconciled on the legacy backend too.
 func TestReconcileScriptClearsKillSwitchChain(t *testing.T) {
 	script := buildReconcileScript("whoisthattun")
-	for _, w := range []string{"WHOISTHAT_KS", "-F WHOISTHAT_KS", "-X WHOISTHAT_KS"} {
+	for _, w := range []string{
+		"WHOISTHAT_KS",
+		"-F WHOISTHAT_KS",
+		"-X WHOISTHAT_KS",
+		`while "$IPT" -C OUTPUT -j WHOISTHAT_KS`,
+	} {
 		if !strings.Contains(script, w) {
 			t.Errorf("reconcile script missing kill-switch cleanup: %q", w)
 		}
@@ -86,6 +91,7 @@ func TestReconcileScriptIsIdempotent(t *testing.T) {
 			strings.HasPrefix(trimmed, "do") ||
 			strings.HasPrefix(trimmed, "done") ||
 			strings.HasPrefix(trimmed, "i=") ||
+			strings.HasPrefix(trimmed, `"$IPT"`) ||
 			trimmed == "done"
 		if !guarded {
 			t.Errorf("unguarded command in reconcile script (not idempotent): %q", trimmed)

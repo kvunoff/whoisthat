@@ -15,7 +15,10 @@ func TestKillSwitchNftWhitelistsEverythingDocumented(t *testing.T) {
 	)
 
 	mustContain := []string{
-		"nft delete table inet whoisthat_ks",
+		"nft list chain inet whoisthat_ks output",
+		"policy drop",
+		"nft -f - <<'WHOISTHAT_KS_EOF'",
+		"flush chain inet whoisthat_ks output",
 		"oif lo accept",
 		"ip daddr 127.0.0.0/8 accept",
 		"ip daddr 10.0.0.0/8 accept",
@@ -43,8 +46,27 @@ func TestKillSwitchNftWhitelistsEverythingDocumented(t *testing.T) {
 		}
 	}
 
-	if !strings.HasSuffix(strings.TrimSpace(script), "nft add rule inet whoisthat_ks output drop") {
-		t.Errorf("nft script must end with the drop rule, got:\n%s", script)
+	if !strings.HasSuffix(strings.TrimSpace(script), "add rule inet whoisthat_ks output drop\nWHOISTHAT_KS_EOF") {
+		t.Errorf("nft script must end with the drop rule inside the batch, got:\n%s", script)
+	}
+}
+
+// The allowlist must be applied in one transaction: a partial batch would
+// otherwise leave the chain flushes but incomplete.
+func TestKillSwitchNftScriptIsAtomic(t *testing.T) {
+	script := buildKillSwitchNftScript(
+		[]string{"203.0.113.7"},
+		"whoisthattun",
+		[]string{"1.1.1.1"},
+	)
+	if got := strings.Count(script, "nft -f -"); got != 1 {
+		t.Fatalf("expected exactly one nft -f batch, got %d:\n%s", got, script)
+	}
+	if got := strings.Count(script, "flush chain inet whoisthat_ks output"); got != 1 {
+		t.Fatalf("expected exactly one flush, got %d:\n%s", got, script)
+	}
+	if strings.Contains(script, "nft add rule") {
+		t.Fatalf("allowlist rules must be inside the batch, got:\n%s", script)
 	}
 }
 
@@ -57,6 +79,7 @@ func TestKillSwitchIptablesWhitelistsEverythingDocumented(t *testing.T) {
 
 	mustContain := []string{
 		"iptables -N WHOISTHAT_KS",
+		"iptables -I OUTPUT 1 -j WHOISTHAT_KS",
 		"iptables -A WHOISTHAT_KS -o lo -j ACCEPT",
 		"iptables -A WHOISTHAT_KS -d 10.0.0.0/8 -j ACCEPT",
 		"iptables -A WHOISTHAT_KS -d 192.168.0.0/16 -j ACCEPT",
@@ -73,6 +96,17 @@ func TestKillSwitchIptablesWhitelistsEverythingDocumented(t *testing.T) {
 	for _, want := range mustContain {
 		if !strings.Contains(script, want) {
 			t.Errorf("iptables script missing %q\n---\n%s", want, script)
+		}
+	}
+
+	// Duplicate jumps from an older session must be removed before recreating
+	// the chain, otherwise -X fails and -N aborts under set -e.
+	for _, want := range []string{
+		`while "$IPT" -C OUTPUT -j WHOISTHAT_KS`,
+		"iptables -N WHOISTHAT_KS 2>/dev/null || iptables -F WHOISTHAT_KS",
+	} {
+		if !strings.Contains(script, want) {
+			t.Errorf("iptables script missing %q:\n%s", want, script)
 		}
 	}
 
@@ -205,7 +239,7 @@ func TestKillSwitchNftWithoutProxyIPsStillFailsClosed(t *testing.T) {
 			t.Errorf("nft script missing %q\n---\n%s", want, script)
 		}
 	}
-	if !strings.HasSuffix(strings.TrimSpace(script), "nft add rule inet whoisthat_ks output drop") {
+	if !strings.HasSuffix(strings.TrimSpace(script), "add rule inet whoisthat_ks output drop\nWHOISTHAT_KS_EOF") {
 		t.Errorf("nft script must still end with the drop rule:\n%s", script)
 	}
 }
