@@ -27,6 +27,7 @@ impl App {
         self.connection_status = state.connection_status;
         self.tun_enabled = state.tun_status;
         self.kill_switch_enabled = state.kill_switch;
+        self.kill_switch_armed = state.kill_switch_armed;
         if state.split_tunnel.is_empty() {
             self.split_tunnel = "off".to_string();
         } else {

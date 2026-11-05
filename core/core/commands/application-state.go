@@ -27,6 +27,7 @@ func (cmd *Cmd) GetApplicationState(data structs.GetApplicationStateData, proxy_
 		TunStatus:        tun_manager.IsEnabledLocked(),
 		HwidInfo:         GetHwidInfo(),
 		KillSwitch:       proxy_manager.KillSwitchEnabled(),
+		KillSwitchArmed:  killSwitchArmed(proxy_manager),
 		SplitTunnel:      appconfig.GetConfig().SplitTunnel.Mode,
 		Autoconnect: structs.AutoconnectInfo{
 			Enabled: appconfig.GetConfig().AutoconnectEnabled,
@@ -42,4 +43,18 @@ func (cmd *Cmd) GetApplicationState(data structs.GetApplicationStateData, proxy_
 	}
 
 	cmd.send("application-state", application_state)
+}
+
+// killSwitchArmed never over-claims protection: an inspection failure is
+// reported as "not armed" and leaves a log line for doctor/diagnostics.
+func killSwitchArmed(proxy_manager *proxy.ProxyManager) bool {
+	if proxy_manager == nil || !proxy_manager.KillSwitchEnabled() {
+		return false
+	}
+	armed, err := tunmode.KillSwitchArmed()
+	if err != nil {
+		logger.Warn("kill-switch: cannot inspect state:", err)
+		return false
+	}
+	return armed
 }

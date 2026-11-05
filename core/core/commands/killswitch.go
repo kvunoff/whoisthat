@@ -16,22 +16,32 @@ func (cmd *Cmd) SetKillSwitch(data structs.SetKillSwitchData, proxy_manager *pro
 
 	if data.Enabled && appconfig.GetConfig().SplitTunnel.Mode == "include" {
 		cmd.warn("set-kill-switch-failed", "kill-switch is incompatible with split-tunnel include mode; switch to exclude/off first")
-		cmd.send("kill-switch-updated", structs.SetKillSwitchData{Enabled: appconfig.GetConfig().KillSwitchEnabled})
+		cmd.send("kill-switch-updated", cmd.killSwitchState())
 		return
 	}
 
 	if !data.Enabled {
+		if data.Force {
+			// Explicit escape hatch for a broken firewall: remove best-effort
+			// and report off even though the state could not be verified.
+			_ = tunmode.RemoveKillSwitchBlock()
+			appconfig.SetKillSwitch(false)
+			logger.Warn("kill-switch: force-disabled; firewall state was not verified")
+			cmd.warn("set-kill-switch-failed", "kill-switch force-disabled; rules were removed best-effort")
+			cmd.send("kill-switch-updated", structs.SetKillSwitchData{Enabled: false, Armed: false})
+			return
+		}
 		if err := tunmode.RemoveKillSwitchBlock(); err != nil {
 			logger.Warn("kill-switch: failed to remove block:", err)
 			// The rules may still be dropping traffic. Reporting "off" while the
 			// block is armed would be a lie, so keep the switch on and let the
-			// user retry once the cause is gone.
+			// user retry (or use --force) once the cause is gone.
 			cmd.failKillSwitch(true, "failed to remove kill-switch block")
 			return
 		}
 		logger.Info("kill-switch: block removed")
 		appconfig.SetKillSwitch(false)
-		cmd.send("kill-switch-updated", data)
+		cmd.send("kill-switch-updated", structs.SetKillSwitchData{Enabled: false, Armed: false})
 		return
 	}
 
@@ -40,34 +50,51 @@ func (cmd *Cmd) SetKillSwitch(data structs.SetKillSwitchData, proxy_manager *pro
 	// "ON (not armed)" instead of silently claiming protection.
 	cfg := appconfig.GetConfig()
 	ips := []string{}
-	if proxy_manager != nil && proxy_manager.GetStatus().Connection == "connected" {
+	connected := proxy_manager != nil && proxy_manager.GetStatus().Connection == "connected"
+	if connected {
 		ips = proxy_manager.GetProxyIPs()
-		if len(ips) == 0 {
-			logger.Warn("kill-switch: server IP unknown, block not armed")
-			cmd.warn("set-kill-switch-failed", "kill-switch not armed: server IP unknown")
-			appconfig.SetKillSwitch(true)
-			cmd.send("kill-switch-updated", data)
-			return
-		}
+	}
+	if connected && len(ips) == 0 {
+		// Arming an empty allowlist on a live connection would drop the tunnel.
+		logger.Warn("kill-switch: server IP unknown, block not armed")
+		cmd.warn("set-kill-switch-failed", "kill-switch not armed: server IP unknown")
+		appconfig.SetKillSwitch(true)
+		cmd.send("kill-switch-updated", structs.SetKillSwitchData{Enabled: true, Armed: false})
+		return
 	}
 
 	if err := tunmode.SetupKillSwitchBlock(ips, cfg.TunName, cfg.DnsServers); err != nil {
 		logger.Warn("kill-switch: failed to apply block:", err)
 		cmd.warn("set-kill-switch-failed", "failed to arm kill-switch")
 		appconfig.SetKillSwitch(true)
-		cmd.send("kill-switch-updated", data)
+		cmd.send("kill-switch-updated", structs.SetKillSwitchData{Enabled: true, Armed: false})
 		return
 	}
 
 	logger.Infof("kill-switch: block applied, whitelisted IPs: %v", ips)
 	appconfig.SetKillSwitch(true)
-	cmd.send("kill-switch-updated", data)
+	cmd.send("kill-switch-updated", structs.SetKillSwitchData{Enabled: true, Armed: true})
+}
+
+// killSwitchState reports the persisted intent plus the actual kernel state.
+func (cmd *Cmd) killSwitchState() structs.SetKillSwitchData {
+	enabled := appconfig.GetConfig().KillSwitchEnabled
+	armed := false
+	if enabled {
+		var err error
+		armed, err = tunmode.KillSwitchArmed()
+		if err != nil {
+			logger.Warn("kill-switch: cannot inspect state:", err)
+			armed = false
+		}
+	}
+	return structs.SetKillSwitchData{Enabled: enabled, Armed: armed}
 }
 
 // failKillSwitch reports the state the daemon actually ended up in, so the UI
 // and config.json never claim a state the firewall does not have.
 func (cmd *Cmd) failKillSwitch(armed bool, reason string) {
 	appconfig.SetKillSwitch(armed)
-	cmd.send("kill-switch-updated", structs.SetKillSwitchData{Enabled: armed})
+	cmd.send("kill-switch-updated", cmd.killSwitchState())
 	cmd.warn("set-kill-switch-failed", reason)
 }

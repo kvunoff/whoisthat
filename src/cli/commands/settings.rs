@@ -25,6 +25,9 @@ const CORE_KEYS: &[&str] = &[
     "test.auto-on-subscribe",
 ];
 
+/// Reported by the core but not settable (the daemon owns the kernel state).
+const READONLY_KEYS: &[&str] = &["kill-switch-armed"];
+
 const LOCAL_KEYS: &[&str] = &[
     "theme",
     "show-ip",
@@ -74,9 +77,17 @@ async fn list(g: &GlobalArgs) -> Result<(), CliError> {
                     entries.push(((*key).to_string(), v, source));
                 }
             }
+            for key in READONLY_KEYS {
+                if let Some(v) = core_value(&state, &cfg, key) {
+                    entries.push(((*key).to_string(), v, "core"));
+                }
+            }
         }
         Err(_) => {
             for key in CORE_KEYS {
+                entries.push(((*key).to_string(), Value::String("unknown".into()), "core"));
+            }
+            for key in READONLY_KEYS {
                 entries.push(((*key).to_string(), Value::String("unknown".into()), "core"));
             }
         }
@@ -164,6 +175,9 @@ async fn set_values(g: &GlobalArgs, assignments: &[String]) -> Result<(), CliErr
             return Err(CliError::Usage(format!("expected KEY=VALUE, got '{pair}'")));
         };
         let key = canonical_key(key)?;
+        if READONLY_KEYS.contains(&key.as_str()) {
+            return Err(CliError::Usage(format!("'{key}' is read-only")));
+        }
         validate(&key, value)?;
         parsed.push((key, value.to_string()));
     }
@@ -217,7 +231,11 @@ async fn apply_core(
             let reply: SetKillSwitchData = session
                 .request(
                     "set-kill-switch",
-                    &SetKillSwitchData { enabled: want },
+                    &SetKillSwitchData {
+                        enabled: want,
+                        force: false,
+                        armed: false,
+                    },
                     Reply::Id {
                         expect: &["kill-switch-updated"],
                         fatal_warns: &[],
@@ -236,7 +254,7 @@ async fn apply_core(
             cfg.kill_switch_enabled = reply.enabled;
             config::save_config(&cfg);
             session.cfg = cfg;
-            out.line(format!("kill-switch={}", reply.enabled));
+            out.line(format!("kill-switch={} armed={}", reply.enabled, reply.armed));
         }
         "split-tunnel" => {
             let reply: SetSplitTunnelData = session
@@ -561,7 +579,7 @@ fn canonical_key(key: &str) -> Result<String, CliError> {
         "killswitch" | "kill_switch" => "kill-switch",
         other => other,
     };
-    if is_core_key(key) || LOCAL_KEYS.contains(&key) {
+    if is_core_key(key) || READONLY_KEYS.contains(&key) || LOCAL_KEYS.contains(&key) {
         return Ok(key.to_string());
     }
     let hint = CORE_KEYS
@@ -610,6 +628,7 @@ fn core_value(state: &ApplicationState, cfg: &config::AppConfig, key: &str) -> O
     let (ac_enabled, ac_group, ac_profile, ac_mode) = autoconnect_config_json();
     Some(match key {
         "kill-switch" => json!(state.kill_switch),
+        "kill-switch-armed" => json!(state.kill_switch_armed),
         "split-tunnel" => json!(state.split_tunnel),
         "autoconnect" => json!(state.autoconnect.enabled),
         "autoconnect-profile" => {

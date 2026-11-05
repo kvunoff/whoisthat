@@ -229,6 +229,7 @@ impl App {
                     auto_test_on_subscribe: self.test_config.auto_test_on_subscribe,
                     tun_name: &self.tun_name,
                     kill_switch_enabled: self.kill_switch_enabled,
+                    kill_switch_armed: self.kill_switch_armed,
                     split_tunnel: &self.split_tunnel,
                     hwid: self.hwid_info.as_ref(),
                 };

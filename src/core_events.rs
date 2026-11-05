@@ -315,8 +315,9 @@ pub(crate) async fn handle_core_event(
             cfg.tun_name = app.tun_name.clone();
             config::save_config(cfg);
         }
-        CoreEvent::KillSwitchUpdated(enabled) => {
+        CoreEvent::KillSwitchUpdated { enabled, armed } => {
             app.kill_switch_enabled = enabled;
+            app.kill_switch_armed = armed;
             // The core may reject the change (e.g. include-mode split tunnel);
             // keep config.toml in sync with the authoritative value.
             if cfg.kill_switch_enabled != enabled {

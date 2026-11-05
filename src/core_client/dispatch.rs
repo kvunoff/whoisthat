@@ -42,7 +42,10 @@ pub enum CoreEvent {
     },
     HwidUpdated(HwidData),
     TunNameUpdated(String),
-    KillSwitchUpdated(bool),
+    KillSwitchUpdated {
+        enabled: bool,
+        armed: bool,
+    },
     SplitTunnelUpdated(String),
     AutoconnectUpdated(AutoconnectInfo),
     TestProgress(TestProgress),
@@ -270,7 +273,10 @@ pub(crate) fn dispatch(msg: TcpMessage) -> CoreEvent {
         }),
         "kill-switch-updated" => {
             try_dispatch!(msg, "kill-switch-updated", SetKillSwitchData, |d| {
-                CoreEvent::KillSwitchUpdated(d.enabled)
+                CoreEvent::KillSwitchUpdated {
+                    enabled: d.enabled,
+                    armed: d.armed,
+                }
             })
         }
         "split-tunnel-updated" => {

@@ -159,6 +159,7 @@ pub struct SettingsValues<'a> {
     pub auto_test_on_subscribe: bool,
     pub tun_name: &'a str,
     pub kill_switch_enabled: bool,
+    pub kill_switch_armed: bool,
     pub split_tunnel: &'a str,
     pub hwid: Option<&'a HwidData>,
 }
@@ -265,7 +266,11 @@ pub fn render_settings(
         values.log_level.to_string(),
         values.tun_name.to_string(),
         if values.kill_switch_enabled {
-            "● on".into()
+            if values.kill_switch_armed {
+                "● on".into()
+            } else {
+                "▲ on (not armed)".into()
+            }
         } else {
             "○ off".into()
         },
