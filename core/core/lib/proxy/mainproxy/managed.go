@@ -9,6 +9,7 @@ import (
 	"whoisthat-core/lib/geo"
 	"whoisthat-core/lib/xrayjson"
 	"whoisthat-core/structs"
+	"whoisthat-core/utils"
 )
 
 // prepareManagedConfig builds the runtime config for a JSON-subscription
@@ -62,14 +63,16 @@ func (p *ProxyManager) managedSource(profile structs.Profile) ([]string, map[str
 	if err != nil {
 		return nil, nil, fmt.Errorf("load provider config: %w", err)
 	}
-	ips, hosts := resolveServerRefs(xrayjson.ServerAddresses(raw))
+	ips, hosts := resolveServerRefs(xrayjson.ServerAddresses(raw), appconfig.GetConfig().DnsServers)
 	return ips, hosts, nil
 }
 
 // resolveServerRefs resolves every outbound server address once, before TUN
 // takes over DNS. It returns the deduplicated IP list (killswitch, TUN routes)
-// and a domain -> IPs map for the Xray dns.hosts bootstrap section.
-func resolveServerRefs(refs []xrayjson.HostPort) ([]string, map[string][]string) {
+// and a domain -> IPs map for the Xray dns.hosts bootstrap section. The
+// configured DNS servers are used first: they are always allowed by the
+// kill-switch, unlike the system resolver's upstream.
+func resolveServerRefs(refs []xrayjson.HostPort, dnsServers []string) ([]string, map[string][]string) {
 	var ips []string
 	hosts := map[string][]string{}
 	seenIP := map[string]bool{}
@@ -96,13 +99,13 @@ func resolveServerRefs(refs []xrayjson.HostPort) ([]string, map[string][]string)
 			continue
 		}
 		seenHost[host] = true
-		resolved, err := net.LookupIP(host)
+		resolved, err := utils.ResolveDomain(host, dnsServers)
 		if err != nil {
 			continue
 		}
-		for _, ip := range resolved {
-			addIP(ip.String())
-			hosts[host] = append(hosts[host], ip.String())
+		for _, ip := range append(append([]string{}, resolved.IPv4...), resolved.IPv6...) {
+			addIP(ip)
+			hosts[host] = append(hosts[host], ip)
 		}
 	}
 	return ips, hosts

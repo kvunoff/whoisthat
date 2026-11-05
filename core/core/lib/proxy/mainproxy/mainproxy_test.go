@@ -2,6 +2,7 @@ package mainproxy
 
 import (
 	"encoding/json"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -403,5 +404,77 @@ func TestConnect_InvalidURIReleasesPort(t *testing.T) {
 	}
 	if _, err := p.portPool.GetPort(); err != nil {
 		t.Fatalf("api port leaked after a failed connect: %v", err)
+	}
+}
+
+func TestConnect_PreStartHookRunsBeforeCoreStarts(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+
+	p := newTestProxyManager()
+	p.portPool = portpool.CreatePortPool(30000, 30001)
+	fake := &fakeCore{exited: make(chan error, 1)}
+	old := newCore
+	newCore = func() coreProc { return fake }
+	t.Cleanup(func() { newCore = old })
+
+	var got []string
+	p.SetPreStartHandler(func(ips []string) error {
+		if fake.running {
+			t.Error("pre-start hook ran after the core started")
+		}
+		got = append([]string(nil), ips...)
+		return nil
+	})
+
+	profile := structs.Profile{
+		Name:     "test",
+		Protocol: "vless",
+		Address:  "127.0.0.1",
+		Uri:      "vless://uuid@127.0.0.1:443?test=1#Test",
+	}
+	if err := p.Connect(profile, "", false); err != nil {
+		t.Fatalf("Connect() = %v", err)
+	}
+	if !fake.running {
+		t.Fatal("core was not started")
+	}
+	if len(got) == 0 || got[0] != "127.0.0.1" {
+		t.Fatalf("hook got IPs %v, want the resolved profile IP", got)
+	}
+}
+
+func TestConnect_AbortsWhenPreStartHookFails(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+
+	p := newTestProxyManager()
+	p.portPool = portpool.CreatePortPool(30000, 30001)
+	fake := &fakeCore{exited: make(chan error, 1)}
+	old := newCore
+	newCore = func() coreProc { return fake }
+	t.Cleanup(func() { newCore = old })
+
+	p.SetPreStartHandler(func([]string) error { return ErrKillSwitchNotArmed })
+
+	profile := structs.Profile{
+		Name:     "test",
+		Protocol: "vless",
+		Address:  "127.0.0.1",
+		Uri:      "vless://uuid@127.0.0.1:443?test=1#Test",
+	}
+	err := p.Connect(profile, "", false)
+	if !errors.Is(err, ErrKillSwitchNotArmed) {
+		t.Fatalf("Connect() = %v, want ErrKillSwitchNotArmed", err)
+	}
+	if fake.running {
+		t.Fatal("core started despite the failed pre-start hook")
+	}
+	if _, err := p.portPool.GetPort(); err != nil {
+		t.Fatalf("api port leaked after a failed hook: %v", err)
+	}
+}
+
+func TestResolveProfileIPsKeepsIPLiterals(t *testing.T) {
+	if got := resolveProfileIPs("192.0.2.7", []string{"1.1.1.1"}); len(got) != 1 || got[0] != "192.0.2.7" {
+		t.Fatalf("resolveProfileIPs() = %v, want the literal IP", got)
 	}
 }

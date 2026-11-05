@@ -130,6 +130,23 @@ func main() {
 	proxy_manager := proxy.ProxyManager{}
 	proxy_manager.DB = &database
 	proxy_manager.Init()
+	// Install the kill-switch allowlist with the exact IPs Xray is about to
+	// use, right before it starts. This keeps the block armed for the whole
+	// connect instead of opening a leak window.
+	proxy_manager.SetPreStartHandler(func(ips []string) error {
+		if testMode() || !appconfig.GetConfig().KillSwitchEnabled {
+			return nil
+		}
+		if len(ips) == 0 {
+			return fmt.Errorf("%w: server IP unknown", proxy.ErrKillSwitchNotArmed)
+		}
+		cfg := appconfig.GetConfig()
+		if err := tunmode.SetupKillSwitchBlock(ips, cfg.TunName, cfg.DnsServers); err != nil {
+			return fmt.Errorf("%w: %v", proxy.ErrKillSwitchNotArmed, err)
+		}
+		logger.Infof("kill-switch: allowlist applied before start, %d IPs", len(ips))
+		return nil
+	})
 	// Seed the live test config from the persisted AppConfig so user
 	// customizations (samples/concurrency/endpoint/timeout) made in the
 	// TUI's Settings tab survive core restarts.

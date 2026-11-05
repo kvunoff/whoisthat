@@ -2,6 +2,7 @@ package mainproxy
 
 import (
 	"encoding/json"
+	"errors"
 	"net"
 	"strings"
 	"sync"
@@ -13,6 +14,7 @@ import (
 	"whoisthat-core/lib/logger"
 	"whoisthat-core/lib/proxy/xray"
 	"whoisthat-core/structs"
+	"whoisthat-core/utils"
 )
 
 // connect -> can also switch
@@ -73,6 +75,12 @@ type ProxyManager struct {
 	exitHandlerMu    sync.RWMutex
 	onUnexpectedExit func(string)
 
+	// preStartMu guards the handler that runs after the profile's server IPs
+	// are resolved and before Xray starts (the daemon uses it to install the
+	// kill-switch allowlist).
+	preStartMu sync.RWMutex
+	onPreStart PreStartFunc
+
 	// exit-watcher state. The mutex is separate from p.mu so retire/start stay
 	// safe from any caller, including Stop() which already holds p.mu.
 	watchMu       sync.Mutex
@@ -98,6 +106,32 @@ func (p *ProxyManager) notifyUnexpectedExit(reason string) {
 	if fn != nil {
 		go fn(reason)
 	}
+}
+
+// PreStartFunc runs after the profile's server IPs are resolved and before the
+// Xray process starts. A non-nil error aborts the connect: the daemon must not
+// report "connected" while an enabled kill-switch could not be armed.
+type PreStartFunc func(proxyIPs []string) error
+
+// ErrKillSwitchNotArmed marks a failure to install the enabled kill-switch, so
+// the command layer can emit a specific warning instead of a generic
+// "connect failed".
+var ErrKillSwitchNotArmed = errors.New("kill-switch is enabled but could not be armed")
+
+func (p *ProxyManager) SetPreStartHandler(fn PreStartFunc) {
+	p.preStartMu.Lock()
+	p.onPreStart = fn
+	p.preStartMu.Unlock()
+}
+
+func (p *ProxyManager) runPreStartHandler(proxyIPs []string) error {
+	p.preStartMu.RLock()
+	fn := p.onPreStart
+	p.preStartMu.RUnlock()
+	if fn == nil {
+		return nil
+	}
+	return fn(proxyIPs)
 }
 
 func (p *ProxyManager) Init() {
@@ -325,7 +359,7 @@ func (p *ProxyManager) Connect(profile structs.Profile, tunName string, tunEnabl
 		// Resolve the VPN server address before Xray starts: once TUN is up the
 		// system resolver points at the tunnel and the server domain must already
 		// be available as a DNS bootstrap entry.
-		profileIPs = resolveProfileIPs(profile.Address)
+		profileIPs = resolveProfileIPs(profile.Address, app_config.DnsServers)
 
 		if p.DB != nil {
 			sel, selErr := p.DB.ResolveRouting(profile.GroupId)
@@ -366,6 +400,16 @@ func (p *ProxyManager) Connect(profile structs.Profile, tunName string, tunEnabl
 			p.portPool.ReleasePort(apiPort)
 		}
 		return testErr
+	}
+
+	// Install the enabled kill-switch allowlist with the exact IPs Xray is
+	// about to use, before it starts. The block is never removed around the
+	// connect, so there is no unprotected window.
+	if err := p.runPreStartHandler(profileIPs); err != nil {
+		if p.portPool != nil && apiPort != 0 {
+			p.portPool.ReleasePort(apiPort)
+		}
+		return err
 	}
 
 	p.core = newCore()
@@ -501,16 +545,15 @@ func (p *ProxyManager) GetProxyIPs() []string {
 	return p.proxyIPs
 }
 
-func resolveProfileIPs(address string) []string {
-	ips, err := net.LookupIP(address)
+// resolveProfileIPs resolves the VPN server through the configured DNS servers
+// first: with the kill-switch armed, the system resolver's upstream may not be
+// on the allowlist, while cfg.DnsServers always are.
+func resolveProfileIPs(address string, dnsServers []string) []string {
+	resolved, err := utils.ResolveDomain(address, dnsServers)
 	if err != nil {
 		return nil
 	}
-	var result []string
-	for _, ip := range ips {
-		result = append(result, ip.String())
-	}
-	return result
+	return append(append([]string{}, resolved.IPv4...), resolved.IPv6...)
 }
 
 // bootstrapHosts returns a dns.hosts entry for a VPN server addressed by name.

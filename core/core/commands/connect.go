@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	appconfig "whoisthat-core/lib/AppConfig"
 	"whoisthat-core/lib/logger"
@@ -68,6 +69,9 @@ func (cmd *Cmd) Connect(data structs.ConnectData, proxy_manager *proxy.ProxyMana
 	if err := proxy_manager.Connect(profile, tunName, false); err != nil {
 		logger.Warn("connect failed:", err)
 		cmd.warn("connect-failed", err.Error())
+		if errors.Is(err, proxy.ErrKillSwitchNotArmed) {
+			cmd.warn("set-kill-switch-failed", "kill-switch is enabled but could not be armed; connect aborted")
+		}
 
 		// The old connection was already stopped and the kill-switch block was
 		// removed above. Re-arm it with the last known server IPs so a failed
