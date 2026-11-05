@@ -69,6 +69,7 @@ impl App {
                 area,
             ),
             Popup::Help => self.render_help_popup(f, area),
+            Popup::Update { info } => self.render_update_popup(f, info, area),
             Popup::AddGroup { url, cursor } => {
                 self.render_group_form(f, "Add Group", None, url, *cursor, 0, true, "", 0, area)
             }
@@ -393,6 +394,75 @@ impl App {
         );
         f.render_widget(
             Paragraph::new(" Enter confirm | Esc cancel ")
+                .style(s_accent())
+                .alignment(Alignment::Center),
+            chunks[1],
+        );
+    }
+
+    fn render_update_popup(
+        &self,
+        f: &mut Frame,
+        info: &crate::update_check::UpdateInfo,
+        area: Rect,
+    ) {
+        let pa = responsive_rect(64, 12, 94, 70, area);
+        f.render_widget(Clear, pa);
+
+        let block = Block::default()
+            .title(" Update available ")
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(Style::default().fg(accent()))
+            .style(s_surface());
+
+        let inner = block.inner(pa);
+        f.render_widget(block, pa);
+
+        let chunks = Layout::vertical([Constraint::Min(5), Constraint::Length(2)]).split(inner);
+
+        let mut lines = vec![
+            Line::from(vec![
+                Span::styled("WhoisThat ", s_dim()),
+                Span::styled(format!("v{}", info.current), s_text()),
+                Span::styled(" → ", s_dim()),
+                Span::styled(format!("v{}", info.latest), s_accent_bold()),
+            ]),
+            Line::from(vec![
+                Span::styled("Installed via: ", s_dim()),
+                Span::styled(info.source.label(), s_text()),
+            ]),
+            Line::from(""),
+        ];
+
+        match &info.command {
+            Some(command) => {
+                lines.push(Line::from(Span::styled("Update command:", s_dim())));
+                lines.push(Line::from(Span::styled(command.clone(), s_text())));
+            }
+            None => {
+                lines.push(Line::from(Span::styled("Open the release page:", s_dim())));
+                lines.push(Line::from(Span::styled(
+                    info.release_url.clone(),
+                    s_accent(),
+                )));
+            }
+        }
+
+        f.render_widget(
+            Paragraph::new(lines)
+                .style(s_text())
+                .wrap(Wrap { trim: true }),
+            chunks[0],
+        );
+
+        let hint = if info.command.is_some() {
+            " Enter/u copy command  |  s skip this version  |  Esc later "
+        } else {
+            " s skip this version  |  Esc later "
+        };
+        f.render_widget(
+            Paragraph::new(hint)
                 .style(s_accent())
                 .alignment(Alignment::Center),
             chunks[1],

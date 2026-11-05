@@ -34,6 +34,37 @@ fn make_app_with_profile() -> App {
     app
 }
 
+fn test_update() -> crate::update_check::UpdateInfo {
+    crate::update_check::UpdateInfo {
+        current: "0.18.1".into(),
+        latest: "0.18.2".into(),
+        source: crate::update_check::InstallSource::Manual,
+        command: None,
+        release_url: "https://github.com/kvunoff/whoisthat/releases/tag/v0.18.2".into(),
+    }
+}
+
+#[test]
+fn update_popup_waits_for_other_modals() {
+    let mut app = make_app_with_profile();
+    app.pending_update = Some(test_update());
+    app.popup = Some(Popup::Help);
+    app.promote_pending_update();
+    assert!(app.pending_update.is_some());
+    assert!(matches!(app.popup, Some(Popup::Help)));
+
+    app.popup = None;
+    app.search_mode = true;
+    app.promote_pending_update();
+    assert!(app.pending_update.is_some());
+
+    app.search_mode = false;
+    app.promote_pending_update();
+    assert!(matches!(app.popup, Some(Popup::Update { .. })));
+    assert_eq!(app.focus, Focus::Popup);
+    assert!(app.pending_update.is_none());
+}
+
 #[test]
 fn test_toggle_focus_reaches_group_details() {
     let mut app = make_app_with_profile();

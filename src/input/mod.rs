@@ -30,6 +30,7 @@ pub(crate) async fn handle_input(
     match ev {
         AppEvent::Tick => {
             app.logs_state.poll();
+            app.promote_pending_update();
             if !app.is_connected() {
                 app.traffic_history.push_zero();
             }
@@ -60,7 +61,7 @@ pub(crate) async fn handle_input(
                 }
 
                 if app.popup.is_some() {
-                    return handle_popup_input(app, client, key, logger).await;
+                    return handle_popup_input(app, client, key, cfg, logger).await;
                 }
 
                 return handle_normal_input(app, client, key, cfg, logger, ip_tx).await;

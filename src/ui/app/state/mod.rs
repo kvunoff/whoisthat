@@ -156,6 +156,17 @@ impl App {
         }
     }
 
+    /// Show a pending update once no other modal or search is active.
+    pub fn promote_pending_update(&mut self) {
+        if self.popup.is_some() || self.routing_popup.is_some() || self.search_mode {
+            return;
+        }
+        if let Some(info) = self.pending_update.take() {
+            self.popup = Some(Popup::Update { info });
+            self.focus = Focus::Popup;
+        }
+    }
+
     // --- tree helpers ---
 
     pub fn tree_len(&self) -> usize {

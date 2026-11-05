@@ -1,5 +1,6 @@
 use crossterm::event::{self, KeyCode};
 
+use crate::config;
 use crate::core_client::CoreClient;
 use crate::core_client::protocol::{ProfileID, SetHwidData};
 use crate::logfile::ClearAction;
@@ -15,6 +16,7 @@ pub(crate) async fn handle_popup_input(
     app: &mut App,
     client: &CoreClient,
     key: event::KeyEvent,
+    cfg: &mut crate::config::AppConfig,
     logger: &'static FileLogger,
 ) -> bool {
     match app.popup.take() {
@@ -93,6 +95,42 @@ pub(crate) async fn handle_popup_input(
             _ => {
                 app.popup = Some(Popup::Recovery { config, db, day });
                 return false;
+            }
+        },
+        Some(Popup::Update { info }) => match key.code {
+            KeyCode::Enter | KeyCode::Char('u') => {
+                if let Some(command) = &info.command {
+                    let copied = arboard::Clipboard::new()
+                        .and_then(|mut clipboard| clipboard.set_text(command.clone()));
+                    match copied {
+                        Ok(()) => app.msg("Update command copied"),
+                        Err(_) => app.msg("Could not copy update command"),
+                    }
+                } else {
+                    app.msg("No update command for this install");
+                }
+                app.focus = Focus::LeftPanel;
+            }
+            KeyCode::Char('s') => {
+                cfg.skipped_version = info.latest.clone();
+                match config::try_save_config(cfg) {
+                    Ok(()) => {
+                        app.msg(format!("Version {} skipped", info.latest));
+                        app.focus = Focus::LeftPanel;
+                    }
+                    Err(e) => {
+                        // Keep the popup: otherwise the user thinks the skip
+                        // stuck and it silently comes back after a restart.
+                        app.msg(format!("Skip not saved: {e}"));
+                        app.popup = Some(Popup::Update { info });
+                    }
+                }
+            }
+            KeyCode::Esc | KeyCode::Char('q') => {
+                app.focus = Focus::LeftPanel;
+            }
+            _ => {
+                app.popup = Some(Popup::Update { info });
             }
         },
         Some(Popup::Help) => match key.code {

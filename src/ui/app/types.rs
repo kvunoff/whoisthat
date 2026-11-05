@@ -64,6 +64,10 @@ pub enum Popup {
     TabSwitcher {
         cursor: usize,
     },
+    /// A newer stable release is available; `Enter` copies the update command.
+    Update {
+        info: crate::update_check::UpdateInfo,
+    },
     /// Offered when the core could not read the settings file or the encrypted
     /// database. Enter restores from the last known good copy, Esc postpones.
     Recovery {
