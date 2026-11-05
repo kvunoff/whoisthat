@@ -17,7 +17,7 @@ This document provides a complete technical specification for the length-prefixe
 * **Payload**: UTF-8 encoded JSON object.
 * **Maximum Frame**: 64 MiB on both sides. Larger frames are rejected before allocation/parsing.
 * **Request correlation (optional)**: a client may include an `"id"` string in a request; notifications produced while handling it carry the same `"id"`. The current TUI is event-driven and does not require it.
-* **Protocol Version**: `4` (shared by `core/core/lib/version/protocol.txt`). The TCP handshake rejects a mismatch; on UDS the TUI compares `application-state.protocol_version` and kills/respawns a mismatched core instead of reattaching.
+* **Protocol Version**: `5` (shared by `core/core/lib/version/protocol.txt`). The TCP handshake rejects a mismatch; on UDS the TUI compares `application-state.protocol_version` and kills/respawns a mismatched core instead of reattaching.
 
 ### Request correlation
 
@@ -53,10 +53,10 @@ persisted intent, `armed` is the actual kernel state.
 UDS clients are authenticated by filesystem permissions. The opt-in TCP transport additionally requires a token that the core writes to `$XDG_RUNTIME_DIR/whoisthat/ipc.token` (`0600`). The first frame on a TCP connection must be:
 
 ```json
-{"msg":"hello","data":{"token":"<64 hex chars>","protocol_version":4}}
+{"msg":"hello","data":{"token":"<64 hex chars>","protocol_version":5}}
 ```
 
-The core replies with `{"msg":"hello-ok","data":{"protocol_version":4}}` or `{"msg":"hello-error","data":{"error":"..."}}` and closes the connection. Commands sent before a successful handshake are never processed.
+The core replies with `{"msg":"hello-ok","data":{"protocol_version":5}}` or `{"msg":"hello-error","data":{"error":"..."}}` and closes the connection. Commands sent before a successful handshake are never processed.
 
 ---
 

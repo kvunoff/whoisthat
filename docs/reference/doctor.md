@@ -101,9 +101,9 @@ When running `whoisthat doctor --json`:
 
 ```json
 {
-  "version": "0.18.0",
-  "core_version": "0.5.0",
-  "core_protocol_version": 4,
+  "version": "0.18.1",
+  "core_version": "0.5.1",
+  "core_protocol_version": 5,
   "categories": [
     {
       "title": "Binaries & Runtimes",
@@ -111,7 +111,7 @@ When running `whoisthat doctor --json`:
         {
           "name": "whoisthat",
           "status": "pass",
-          "message": "/usr/bin/whoisthat (v0.18.0)"
+          "message": "/usr/bin/whoisthat (v0.18.1)"
         },
         {
           "name": "whoisthat-core",
