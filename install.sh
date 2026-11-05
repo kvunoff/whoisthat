@@ -335,13 +335,16 @@ download_file_with_fallback() {
 }
 
 # True when a distro package owns the path, so the installer does not clobber
-# (or later delete) a file that pacman/dpkg will expect to exist.
+# (or later delete) a file that pacman/dpkg/rpm will expect to exist.
 package_owns() {
     local path="$1"
     if command -v pacman >/dev/null 2>&1 && pacman -Qo "$path" >/dev/null 2>&1; then
         return 0
     fi
     if command -v dpkg >/dev/null 2>&1 && dpkg -S "$path" >/dev/null 2>&1; then
+        return 0
+    fi
+    if command -v rpm >/dev/null 2>&1 && rpm -qf "$path" >/dev/null 2>&1; then
         return 0
     fi
     return 1
