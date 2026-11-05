@@ -84,6 +84,28 @@ whoisthat doctor
 
 See [Development & Testing](/reference/development#local-development-loop) for the full loop.
 
+### Update notification in the TUI
+
+The TUI checks `github.com/kvunoff/whoisthat/releases/latest` at most once every
+24 hours and shows a popup when a newer stable release exists. The last version
+seen is cached, so the popup still appears on later launches without another
+network request.
+
+* Only stable TUI releases (`vX.Y.Z`) are considered; `core-v*` tags are ignored.
+* The install source is detected automatically: pacman/dpkg/rpm package,
+  `install.sh`, a manual copy, or a development build.
+* The popup shows the update command for that source and copies it with
+  <kbd>Enter</kbd>/<kbd>u</kbd>; nothing is executed from the TUI. `.deb`/`.rpm`
+  commands also verify the release `SHA256SUMS`.
+* <kbd>s</kbd> skips that version; <kbd>Esc</kbd> postpones until the next launch.
+* Development builds (`cargo run`, `make build`) and `WHOISTHAT_TEST_MODE=1` are
+  never checked.
+
+Disable the check with `check_updates = false`,
+`whoisthat settings set check-updates=off`, or `WHOISTHAT_NO_UPDATE_CHECK=1`.
+If GitHub is unreachable, no new request is made and any previously cached
+version is still shown.
+
 ---
 
 ## 3. After Upgrading

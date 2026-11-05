@@ -62,6 +62,18 @@ test_samples = 3
 test_endpoint = "https://cp.cloudflare.com/generate_204"
 auto_test_on_subscribe = true
 
+# Check GitHub for a newer stable TUI release at startup (at most once a day)
+check_updates = true
+
+# Release the user asked not to be reminded about (without the "v" prefix)
+skipped_version = ""
+
+# Unix time of the last network check (service field)
+last_update_check = 0
+
+# Last release seen on GitHub (service field, without the "v")
+latest_version = ""
+
 # Interface name for TUN adapter (mirrors core configuration)
 tun_name = "whoisthattun"
 

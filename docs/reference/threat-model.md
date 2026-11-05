@@ -47,6 +47,14 @@ The database key is stored on the same machine, protected only by file mode. The
 
 Both the core and the TUI redact userinfo and query strings before logging. **A token embedded in the URL path is not masked.** Log files are `0600`, but treat `whoisthat logs`, `doctor --json` and `core.log` as sensitive when pasting them into an issue.
 
+### Update checks
+
+When `check_updates` is enabled (the default), the TUI requests
+`github.com/kvunoff/whoisthat/releases/latest` at most once every 24 hours. The
+request carries a static `whoisthat-update-check` User-Agent and no account,
+device or profile identifiers. It follows `HTTPS_PROXY` when set. Disable it in
+Settings or with `WHOISTHAT_NO_UPDATE_CHECK=1`.
+
 ### DNS and routing limits
 
 - Only destination port 53 is hijacked. DoH/DoT to another port, or applications with their own resolver, are not intercepted.

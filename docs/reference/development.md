@@ -70,6 +70,7 @@ whoisthat/
 │   ├── core_spawn.rs   ← spawn_core, find_core_binary, ensure_core_caps (pkexec fallback)
 │   ├── systemd.rs      ← Unit-file generation, linger, enable/disable service
 │   ├── net_info.rs     ← fetch_public_ip / fetch_public_ipv6 (HTTPS via ureq to ipify)
+│   ├── update_check.rs ← GitHub release check, install-source detection, update command
 │   ├── deeplink/       ← wit:// parser, imports, and desktop entry/icon registration (parse, actions, desktop)
 │   ├── launcher.rs     ← `whoisthat run <app>` — launch into split-tunnel slice (foreground/background)
 │   ├── terminal.rs     ← Re-exec the TUI in a terminal when launched without a tty

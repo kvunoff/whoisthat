@@ -252,6 +252,7 @@ Local keys (`config.toml`):
 | `log-level` | `error`/`warn`/`info`/`debug`/`trace` |
 | `terminal` | terminal command for the desktop launcher (empty = auto) |
 | `test-method` | `tcp`/`http-get`/`http-head` |
+| `check-updates` | `true`/`false` |
 | `core.host` | host |
 | `core.port` | `1..65535` |
 | `core.use-tcp` | `true`/`false` |

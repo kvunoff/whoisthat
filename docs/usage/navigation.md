@@ -32,6 +32,8 @@ whoisthat test group Work --wait
 | <kbd>q</kbd> | — | **Detach** TUI (leaves VPN running in background) |
 | <kbd>Q</kbd> | <kbd>Ctrl+C</kbd> | **Quit** completely (terminates VPN tunnel and exits daemon) |
 | <kbd>?</kbd> | — | Open interactive help dialog |
+| <kbd>u</kbd> / <kbd>Enter</kbd> | — | Update popup: copy the update command to the clipboard |
+| <kbd>s</kbd> | — | Update popup: skip this version until the next release |
 
 ---
 
