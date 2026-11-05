@@ -364,6 +364,42 @@ mod tests {
     }
 
     #[test]
+    fn test_dispatch_application_state_armed_flag() {
+        let event = dispatch(make_msg(
+            "application-state",
+            json!({
+                "groups": [],
+                "connection-status": { "connection": "disconnected", "connected_at": 0 },
+                "tun-status": false,
+                "kill_switch": true,
+                "kill_switch_armed": true
+            }),
+        ));
+        match event {
+            CoreEvent::ApplicationState(s) => {
+                assert!(s.kill_switch);
+                assert!(s.kill_switch_armed);
+            }
+            other => panic!("unexpected event: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_dispatch_kill_switch_updated_carries_armed() {
+        let event = dispatch(make_msg(
+            "kill-switch-updated",
+            json!({"enabled": true, "armed": false}),
+        ));
+        match event {
+            CoreEvent::KillSwitchUpdated { enabled, armed } => {
+                assert!(enabled);
+                assert!(!armed);
+            }
+            other => panic!("unexpected event: {other:?}"),
+        }
+    }
+
+    #[test]
     fn test_dispatch_status_changed() {
         let event = dispatch(make_msg(
             "status-changed",

@@ -3,13 +3,17 @@
 package tunmode
 
 import (
+	"net"
 	"os"
 	"os/exec"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"golang.org/x/sys/unix"
+
+	"whoisthat-core/lib/netmark"
 )
 
 // These tests exercise the real ip/nftables/sysctl commands in a throwaway
@@ -205,5 +209,41 @@ func TestNetnsKillSwitchArmedProbeAndRemove(t *testing.T) {
 	}
 	if armed, err := KillSwitchArmed(); armed || err != nil {
 		t.Fatalf("KillSwitchArmed() after removal = %v, %v; want false, nil", armed, err)
+	}
+}
+
+// The daemon's own downloads (geo, runtime, subscriptions) must keep working
+// while the block is armed; they rely on SO_MARK=DirectMark.
+func TestNetnsNetmarkSetsDirectMark(t *testing.T) {
+	enterTestNetns(t)
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer listener.Close()
+
+	conn, err := netmark.Dialer(time.Second).Dial("tcp", listener.Addr().String())
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.Close()
+
+	tcp, ok := conn.(*net.TCPConn)
+	if !ok {
+		t.Fatalf("connection is %T, want *net.TCPConn", conn)
+	}
+	raw, err := tcp.SyscallConn()
+	if err != nil {
+		t.Fatalf("SyscallConn: %v", err)
+	}
+	var mark int
+	if err := raw.Control(func(fd uintptr) {
+		mark, _ = unix.GetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_MARK)
+	}); err != nil {
+		t.Fatalf("control: %v", err)
+	}
+	if mark != netmark.DirectMark {
+		t.Fatalf("SO_MARK = %d, want %d", mark, netmark.DirectMark)
 	}
 }
