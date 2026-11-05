@@ -72,6 +72,14 @@ sudo apt install ./whoisthat_<version>-1_amd64.deb
 sudo dnf install ./whoisthat-<version>-1.x86_64.rpm
 ```
 
+Ubuntu 24.04 and 26.04 users can install from the PPA instead:
+
+```bash
+sudo add-apt-repository ppa:kvunoff/whoisthat
+sudo apt update
+sudo apt install whoisthat
+```
+
 ### Arch Linux (AUR)
 ```bash
 paru -S whoisthat-bin   # prebuilt binaries

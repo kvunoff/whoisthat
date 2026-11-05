@@ -1,11 +1,12 @@
 # Installation
 
-WhoisThat can be installed via an automated installer script, a distribution package (`.deb` / `.rpm`), the Arch User Repository (AUR), or compiled manually from source.
+WhoisThat can be installed via an automated installer script, a distribution package (`.deb` / `.rpm`), the Ubuntu PPA, the Arch User Repository (AUR), or compiled manually from source.
 
 ::: warning Pick one installation method
-The installer, the `.deb`/`.rpm` packages and the AUR packages all own the same
-files under `/usr/bin`. Mixing them causes conflicts and package-manager
-warnings. The AUR source and prebuilt packages also conflict with each other.
+The installer, the `.deb`/`.rpm` packages, the Ubuntu PPA and the AUR packages
+all own the same files under `/usr/bin`. Mixing them causes conflicts and
+package-manager warnings. The AUR source and prebuilt packages also conflict
+with each other.
 The installer refuses to overwrite package-managed binaries, and the AUR
 packages refuse to install over a binary that pacman does not own (an
 `install.sh` or manual install). Remove the other installation first.
@@ -63,6 +64,22 @@ them; upgrade through the package manager instead.
 
 Every release publishes `.deb` and `.rpm` packages for `amd64`/`x86_64` and
 `arm64`/`aarch64` alongside the installer archives.
+
+### Ubuntu PPA
+
+Ubuntu 24.04 and 26.04 users can install and upgrade through the PPA:
+
+```bash
+sudo add-apt-repository ppa:kvunoff/whoisthat
+sudo apt update
+sudo apt install whoisthat
+```
+
+The PPA ships the same static binaries as the release archives. Do not mix it
+with the GitHub `.deb`, the installer or the AUR package: all of them own the
+same files under `/usr/bin`.
+
+### Direct `.deb` / `.rpm`
 
 ```bash
 # Debian / Ubuntu
@@ -208,10 +225,10 @@ whoisthat doctor
 Example successful output:
 
 ```
-WhoisThat Doctor v0.18.2 / core v0.5.1 (protocol 5) — System Diagnostics
+WhoisThat Doctor v0.18.3 / core v0.5.1 (protocol 5) — System Diagnostics
 
 [+] Binaries & Runtimes
-  ✓ whoisthat: /usr/bin/whoisthat (v0.18.2)
+  ✓ whoisthat: /usr/bin/whoisthat (v0.18.3)
   ✓ whoisthat-core: /usr/bin/whoisthat-core
   ✓ xray-core: ~/.local/share/whoisthat/runtimes/xray/v26.10.31/xray (v26.10.31)
   ✓ system tools: ip, getcap, setcap, pkexec available

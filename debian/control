@@ -1,0 +1,17 @@
+Source: whoisthat
+Section: net
+Priority: optional
+Maintainer: kvunoff <kvunoff@proton.me>
+Build-Depends: debhelper-compat (= 13)
+Standards-Version: 4.7.0
+Rules-Requires-Root: no
+Homepage: https://github.com/kvunoff/whoisthat
+
+Package: whoisthat
+Architecture: amd64 arm64
+Depends: ${misc:Depends}, iproute2, nftables, libcap2-bin, systemd
+Recommends: polkitd | policykit-1
+Description: Modern terminal-based VPN client with Xray-core backend
+ WhoisThat is a terminal UI and CLI that drives a local Xray-core daemon
+ over IPC. Proxy and TUN modes, split tunneling, routing and an encrypted
+ profile database are included.

@@ -1,0 +1,16 @@
+#!/bin/sh
+# install.sh and manual copies are invisible to dpkg. Refuse to overwrite them:
+# the user must remove the script install first, exactly like the AUR packages.
+set -e
+
+[ "$1" = install ] || exit 0
+
+for bin in /usr/bin/whoisthat /usr/bin/whoisthat-core; do
+    [ -e "$bin" ] || continue
+    if ! dpkg-query -S "$bin" >/dev/null 2>&1; then
+        echo "WhoisThat is already installed outside dpkg (install.sh or a manual copy)." >&2
+        echo "Remove it first:" >&2
+        echo "  curl -fsSL https://raw.githubusercontent.com/kvunoff/whoisthat/main/install.sh | sudo bash -s -- --uninstall" >&2
+        exit 1
+    fi
+done

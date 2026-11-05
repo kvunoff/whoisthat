@@ -129,14 +129,43 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+      - name: Install packaging tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq debhelper devscripts dpkg-dev dput python3-paramiko
       - name: shellcheck
-        run: shellcheck -S warning install.sh scripts/install.test.sh scripts/check-versions.sh scripts/check-docs.sh scripts/check-docs.test.sh scripts/bump.sh scripts/bump.test.sh scripts/release-upload.test.sh scripts/ipc-e2e.test.sh pkg/package-postinstall.sh
+        run: shellcheck -S warning install.sh debian/postinst debian/preinst scripts/install.test.sh scripts/check-versions.sh scripts/check-docs.sh scripts/check-docs.test.sh scripts/bump.sh scripts/bump.test.sh scripts/release-upload.test.sh scripts/ipc-e2e.test.sh scripts/package.sh scripts/package/_common.sh scripts/package/aur.sh scripts/package/aur-bin.sh scripts/package/ppa.sh scripts/package.test.sh
       - name: install.sh tests
         run: ./scripts/install.test.sh
       - name: check-docs.sh tests
         run: ./scripts/check-docs.test.sh
       - name: release upload policy tests
         run: ./scripts/release-upload.test.sh
+      - name: packaging tests
+        run: ./scripts/package.test.sh
+      - name: PPA source package smoke
+        run: |
+          set -euo pipefail
+          tmp=$(mktemp -d)
+          trap 'rm -rf "$tmp"' EXIT
+          mkdir -p "$tmp/dist" "$tmp/files"
+          for file in whoisthat whoisthat-core whoisthat.desktop \
+            whoisthat-url.desktop whoisthat.svg LICENSE; do
+            printf 'fixture\n' > "$tmp/files/$file"
+          done
+          tar -czf "$tmp/dist/whoisthat-linux-amd64.tar.gz" -C "$tmp/files" .
+          tar -czf "$tmp/dist/whoisthat-linux-arm64.tar.gz" -C "$tmp/files" .
+          ./scripts/package.sh ppa --dry-run --workdir "$tmp/work" \
+            --artifacts "$tmp/dist" --series noble
+
+          version=$(sed -n 's/^version = "\([^"]*\)"$/\1/p' Cargo.toml | head -n1)
+          pkgrel=$(sed -n 's/^pkgrel=//p' pkg/aur/PKGBUILD | head -n1)
+          src="$tmp/work/ppa/noble/whoisthat-$version"
+          ( cd "$src" && dpkg-buildpackage -b -d -us -uc )
+          deb="$tmp/work/ppa/noble/whoisthat_${version}-${pkgrel}~ubuntu24.04.1_amd64.deb"
+          dpkg-deb -c "$deb" > "$tmp/deb.list"
+          grep -q './usr/bin/whoisthat$' "$tmp/deb.list"
+          grep -q './usr/bin/whoisthat-core$' "$tmp/deb.list"
 
   bump:
     name: Bump script tests

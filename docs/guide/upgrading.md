@@ -65,6 +65,15 @@ If `whoisthat` was installed with `install.sh`, AUR packages refuse to install
 over the files pacman does not own. Remove the script install first with
 `install.sh --uninstall`, then install from the AUR.
 
+### Ubuntu PPA
+
+```bash
+sudo apt update
+sudo apt upgrade whoisthat
+```
+
+The PPA is refreshed for every release on Ubuntu 24.04 and 26.04.
+
 If you installed WhoisThat as a `.deb` or `.rpm`, upgrade it with the package
 manager (`apt upgrade`, `dnf upgrade`) rather than the installer.
 

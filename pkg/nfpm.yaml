@@ -32,7 +32,7 @@ contents:
     expand: true
 
 scripts:
-  postinstall: pkg/package-postinstall.sh
+  postinstall: debian/postinst
 
 depends:
   - iproute2

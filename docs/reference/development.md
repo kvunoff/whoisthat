@@ -40,12 +40,12 @@ whoisthat/
 ├── .cargo/config.toml  ← static musl linker and rustflags for release builds
 ├── Cargo.toml          ← Rust project manifest (TUI & CLI dependencies)
 ├── README.md           ← Quick overview and reference guide
+├── debian/             ← Ubuntu PPA packaging (control, rules, preinst, postinst)
 ├── install.sh          ← Release downloader / source installer / updater
 ├── pkg/
 │   ├── whoisthat.desktop ← Desktop launcher entry (opens the TUI in a terminal)
 │   ├── whoisthat-url.desktop ← Hidden x-scheme-handler/wit deep link handler
 │   ├── nfpm.yaml         ← deb/rpm package definition (binaries, entries, icon)
-│   ├── package-postinstall.sh ← deb/rpm post-install: setcap + desktop/icon caches
 │   ├── aur/              ← source AUR package (PKGBUILD + .SRCINFO + whoisthat.install)
 │   └── aur-bin/          ← prebuilt AUR package (PKGBUILD + whoisthat-bin.install)
 ├── src/                ← Rust TUI & CLI source code
@@ -113,8 +113,7 @@ whoisthat/
 │           └── proxy/       ← mainproxy (connect/stop/status, routing+DNS, tester+probes), xray wrapper, TUN manager + scripts
 └── .github/workflows/
     ├── ci.yml          ← Automated CI: Rust, Go, shell, docs, versions and static musl build
-    ├── release.yml     ← Builds release assets, publishes drafts and whoisthat-bin
-    ├── aur-publish.yml ← Tag-triggered source-package publish to AUR
+    ├── release.yml     ← Builds release assets, publishes drafts and AUR/PPA packages
     ├── core-sync.yml   ← Mirrors core/core into kvunoff/whoisthat-core
     └── deploy-docs.yml ← Automated documentation build and deploy to GitHub Pages
 ```
@@ -339,14 +338,29 @@ workflow then builds static musl binaries and publishes:
   icon and license), `.deb`, `.rpm`, and `SHA256SUMS`;
 * `core-v*`: `whoisthat-core-linux-<arch>.tar.gz` and `SHA256SUMS`.
 
-Only after every asset is uploaded does CI publish `core-v*`, publish `v*`, set
-`v*` as GitHub Latest, and push `whoisthat-bin` to AUR. `install.sh` resolves
-`/releases/latest`, so users never see a release without binaries. Every archive
-also carries a GitHub build-provenance attestation (`gh attestation verify`).
-The AUR
-source package (`whoisthat`) is published independently by `aur-publish.yml`
-from the tag. The first push of `whoisthat-bin` creates the AUR package base;
-the workflow needs only the `AUR_SSH_KEY` secret.
+Only after every asset is uploaded does CI publish `core-v*`, publish `v*` and
+set `v*` as GitHub Latest. `install.sh` resolves `/releases/latest`, so users
+never see a release without binaries. Every archive also carries a GitHub
+build-provenance attestation (`gh attestation verify`).
+
+Distribution channels are published next by the `publish-packages` matrix:
+`aur` (source), `aur-bin` (prebuilt) and `ppa` (Ubuntu 24.04/26.04). All three
+go through the same entrypoint:
+
+```bash
+./scripts/package.sh <aur|aur-bin|ppa> --tag vX.Y.Z --publish
+```
+
+Each target defines `prepare`, `build`, `publish` and `verify` in
+`scripts/package/<target>.sh`. Without `--publish` the command only builds the
+metadata in a temporary directory, so it is safe to run locally. The matrix
+needs one `PACKAGING_SSH_KEY` for both AUR and Launchpad SFTP (`AUR_SSH_KEY` is
+accepted as a legacy fallback) and `LAUNCHPAD_GPG_KEY` /
+`LAUNCHPAD_GPG_PASSPHRASE` (plus optional `LAUNCHPAD_GPG_KEYID`) for the PPA.
+Launchpad requires a GPG-signed upload even over SFTP, so the SSH key cannot
+replace the GPG key. The first push of each AUR package creates the package
+base. `LAUNCHPAD_USER` and `LAUNCHPAD_PPA` default to `kvunoff` and
+`whoisthat`.
 
 `release.yml` can also be dispatched manually with a tag. It checks out that
 tag (never the branch) and refuses unless `check-versions.sh --tag <tag>`
@@ -366,7 +380,7 @@ Continuous integration is handled via GitHub Actions in `.github/workflows/`:
   * Rust: `cargo fmt --all --check`, `cargo clippy --all-targets --no-deps -- -D warnings`, `cargo test` on a pinned rustc.
   * MSRV: `cargo check --all-targets --locked` on the `rust-version` declared in `Cargo.toml`.
   * Go: `go vet ./...`, `go build ./...`, `go test ./...`, `go mod tidy -diff`, `govulncheck`.
-  * Shell: `shellcheck -S warning` over `install.sh` and `scripts/*.sh`, then `./scripts/install.test.sh`, `./scripts/check-docs.test.sh`, `./scripts/release-upload.test.sh`.
+  * Shell: `shellcheck -S warning` over `install.sh`, `debian/postinst` and `scripts/*.sh`, then `./scripts/install.test.sh`, `./scripts/check-docs.test.sh`, `./scripts/release-upload.test.sh`, `./scripts/package.test.sh`.
   * Bump driver: `./scripts/bump.test.sh` (separate job).
   * Version consistency: `./scripts/check-versions.sh` (Cargo/package/PKGBUILD/aur-bin/.SRCINFO/docs/Xray pins).
   * Static build: `cargo build --target x86_64-unknown-linux-musl` plus a `CGO_ENABLED=0` core build, asserting neither binary has an `INTERP` segment.
@@ -380,15 +394,11 @@ Continuous integration is handled via GitHub Actions in `.github/workflows/`:
   3. Creates the bundle tarballs, `.deb`/`.rpm` via `nfpm`, and smoke-tests the packages in Debian and Fedora containers.
   4. Attests build provenance for `dist/*`.
   5. Uploads assets to the existing releases (drafts replaceable, published assets never overwritten), verifies the attestations, publishes `core-v*` first and `v*` last, marks `v*` Latest.
-  6. Publishes `whoisthat-bin` to AUR with the release checksums.
+  6. Runs the `publish-packages` matrix (`aur`, `aur-bin`, `ppa`). Each row calls
+     `./scripts/package.sh <target> --tag "$TAG" --publish`; the target computes
+     `pkgrel`, regenerates `PKGBUILD`/`.SRCINFO` or the Debian source package,
+     and pushes to AUR or uploads to Launchpad.
   7. Runs the real `install.sh` in Debian, Ubuntu, Fedora and Arch containers.
-* **`aur-publish.yml`**: Triggers on every `v*` tag push and publishes the
-  **source** AUR package (`whoisthat`):
-  1. Parses version from tag and runs `./scripts/check-versions.sh --tag <tag>`.
-  2. Clones the live AUR repo.
-  3. Computes `pkgrel` (increments if `pkgver` matches latest AUR, resets to 1 for a new version, and reuses the repo `pkgrel` when rolling back to an older version).
-  4. Regenerates `PKGBUILD` and `.SRCINFO` in CI.
-  5. Pushes to AUR using the `AUR_SSH_KEY` secret.
 * **`core-sync.yml`**: Mirrors `core/core` into `kvunoff/whoisthat-core` on
   `core/core/**` changes and `core-v*` tags.
 * **`deploy-docs.yml`**: Builds and deploys this VitePress documentation to GitHub Pages whenever changes are committed to `docs/**`.

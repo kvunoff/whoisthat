@@ -1,0 +1,26 @@
+#!/usr/bin/make -f
+include /usr/share/dpkg/architecture.mk
+
+%:
+	dh $@
+
+override_dh_auto_configure override_dh_auto_build override_dh_auto_test:
+	:
+
+# The binaries are prebuilt and attested by the release workflow. Stripping
+# or dwz-ing them would change the artifacts the PPA claims to ship, and a
+# static musl binary has no shared-library dependencies to resolve.
+override_dh_strip override_dh_dwz override_dh_shlibdeps:
+	:
+
+override_dh_auto_install:
+	case "$(DEB_HOST_ARCH)" in \
+	  amd64|arm64) ;; \
+	  *) echo "unsupported architecture: $(DEB_HOST_ARCH)" >&2; exit 1 ;; \
+	esac
+	install -Dm755 dist/$(DEB_HOST_ARCH)/whoisthat debian/whoisthat/usr/bin/whoisthat
+	install -Dm755 dist/$(DEB_HOST_ARCH)/whoisthat-core debian/whoisthat/usr/bin/whoisthat-core
+	install -Dm644 dist/$(DEB_HOST_ARCH)/whoisthat.desktop debian/whoisthat/usr/share/applications/whoisthat.desktop
+	install -Dm644 dist/$(DEB_HOST_ARCH)/whoisthat-url.desktop debian/whoisthat/usr/share/applications/whoisthat-url.desktop
+	install -Dm644 dist/$(DEB_HOST_ARCH)/whoisthat.svg debian/whoisthat/usr/share/icons/hicolor/scalable/apps/whoisthat.svg
+	install -Dm644 dist/$(DEB_HOST_ARCH)/LICENSE debian/whoisthat/usr/share/licenses/whoisthat/LICENSE

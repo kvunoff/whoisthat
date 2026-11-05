@@ -331,13 +331,17 @@ jobs:
             gh release edit "$TAG" --latest
           fi
 
-  aur-bin:
-    name: Publish whoisthat-bin to AUR
+  publish-packages:
+    name: Publish ${{ matrix.target }}
     needs: publish
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 30
     permissions:
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [aur, aur-bin, ppa]
     steps:
       - uses: actions/checkout@v7
         with:
@@ -350,94 +354,20 @@ jobs:
           merge-multiple: true
           path: dist
 
-      - name: Setup SSH
+      - name: Install packaging tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq debhelper devscripts dpkg-dev dput gnupg python3-paramiko
+
+      - name: Publish
         env:
+          # One SSH key for AUR and Launchpad SFTP; AUR_SSH_KEY is a legacy fallback.
+          PACKAGING_SSH_KEY: ${{ secrets.PACKAGING_SSH_KEY }}
           AUR_SSH_KEY: ${{ secrets.AUR_SSH_KEY }}
-        run: |
-          mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
-          printf '%s\n' "$AUR_SSH_KEY" > ~/.ssh/aur_key
-          chmod 600 ~/.ssh/aur_key
-          printf '%s\n' \
-            'aur.archlinux.org ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEuBKrPzbawxA/k2g6NcyV5jmqwJ2s+zpgZGZ7tpLIcN' \
-            > ~/.ssh/known_hosts
-          chmod 600 ~/.ssh/known_hosts
-          cat > ~/.ssh/config <<'EOF'
-          Host aur.archlinux.org
-            HostName aur.archlinux.org
-            IdentityFile ~/.ssh/aur_key
-            User aur
-            StrictHostKeyChecking yes
-          EOF
-          chmod 600 ~/.ssh/config
-
-      - name: Update and push PKGBUILD
-        run: |
-          set -euo pipefail
-
-          TMP=$(mktemp -d)
-          GIT_SSH_COMMAND="ssh -i ~/.ssh/aur_key -o StrictHostKeyChecking=yes" \
-            git clone ssh://aur@aur.archlinux.org/whoisthat-bin.git "$TMP"
-
-          VERSION=$(sed -n 's/^version = "\([^"]*\)"$/\1/p' Cargo.toml | head -n1)
-          AUR_VER=$(sed -n 's/^pkgver=//p' "$TMP/PKGBUILD")
-          AUR_REL=$(sed -n 's/^pkgrel=//p' "$TMP/PKGBUILD")
-          if [ "$AUR_VER" = "$VERSION" ]; then
-            PKGREL=$((AUR_REL + 1))
-          else
-            PKGREL=1
-          fi
-          echo "Publishing whoisthat-bin ${VERSION}-${PKGREL}"
-
-          SHA_AMD64=$(sha256sum dist/whoisthat-linux-amd64.tar.gz | awk '{print $1}')
-          SHA_ARM64=$(sha256sum dist/whoisthat-linux-arm64.tar.gz | awk '{print $1}')
-
-          cp pkg/aur-bin/PKGBUILD "$TMP/PKGBUILD"
-          cp pkg/aur-bin/whoisthat-bin.install "$TMP/whoisthat-bin.install"
-          sed -i "s/^pkgver=.*/pkgver=${VERSION}/" "$TMP/PKGBUILD"
-          sed -i "s/^pkgrel=.*/pkgrel=${PKGREL}/" "$TMP/PKGBUILD"
-          sed -i "s/^sha256sums_x86_64=.*/sha256sums_x86_64=('${SHA_AMD64}')/" "$TMP/PKGBUILD"
-          sed -i "s/^sha256sums_aarch64=.*/sha256sums_aarch64=('${SHA_ARM64}')/" "$TMP/PKGBUILD"
-
-          (
-            cd "$TMP"
-            # shellcheck disable=SC1091
-            source PKGBUILD
-            {
-              echo "pkgbase = ${pkgname}"
-              echo -e "\tpkgdesc = ${pkgdesc}"
-              echo -e "\tpkgver = ${pkgver}"
-              echo -e "\tpkgrel = ${pkgrel}"
-              echo -e "\turl = ${url}"
-              echo -e "\tinstall = ${install}"
-              for a in "${arch[@]}"; do echo -e "\tarch = ${a}"; done
-              echo -e "\tlicense = ${license[0]}"
-              for dep in "${provides[@]}"; do echo -e "\tprovides = ${dep}"; done
-              for dep in "${conflicts[@]}"; do echo -e "\tconflicts = ${dep}"; done
-              for dep in "${depends[@]}"; do echo -e "\tdepends = ${dep}"; done
-              for dep in "${optdepends[@]}"; do echo -e "\toptdepends = ${dep}"; done
-              for opt in "${options[@]}"; do echo -e "\toptions = ${opt}"; done
-              for a in "${arch[@]}"; do
-                declare -n srcs="source_${a}"
-                declare -n sums="sha256sums_${a}"
-                for s in "${srcs[@]}"; do echo -e "\tsource_${a} = ${s}"; done
-                for s in "${sums[@]}"; do echo -e "\tsha256sums_${a} = ${s}"; done
-              done
-              echo
-              echo "pkgname = ${pkgname}"
-            } > .SRCINFO
-          )
-
-          git -C "$TMP" config user.email "ci@github-actions"
-          git -C "$TMP" config user.name "GitHub Actions"
-          git -C "$TMP" add -A
-          git -C "$TMP" commit -m "v${VERSION}-${PKGREL}: update package" || {
-            echo "AUR is already up to date"
-            rm -rf "$TMP"
-            exit 0
-          }
-          git -C "$TMP" push
-          rm -rf "$TMP"
+          LAUNCHPAD_GPG_KEY: ${{ secrets.LAUNCHPAD_GPG_KEY }}
+          LAUNCHPAD_GPG_PASSPHRASE: ${{ secrets.LAUNCHPAD_GPG_PASSPHRASE }}
+          LAUNCHPAD_GPG_KEYID: ${{ secrets.LAUNCHPAD_GPG_KEYID }}
+        run: ./scripts/package.sh "${{ matrix.target }}" --tag "$TAG" --publish
 
   install-smoke:
     name: Installer smoke (${{ matrix.image }})

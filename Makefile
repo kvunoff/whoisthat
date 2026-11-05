@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 BINDIR ?= /usr/bin
 
-.PHONY: all build core rust test test-go test-race test-rust test-bump test-docs test-release test-e2e lint version-check docs-check fmt integration docs install clean coverage
+.PHONY: all build core rust test test-go test-race test-rust test-bump test-docs test-release test-package test-e2e lint version-check docs-check fmt integration docs install clean coverage package-aur package-aur-bin package-ppa
 
 all: build
 
@@ -14,7 +14,7 @@ core:
 rust:
 	cargo build --release --locked
 
-test: test-go test-rust test-bump test-docs test-release
+test: test-go test-rust test-bump test-docs test-release test-package
 
 test-go:
 	cd core/core && go test ./...
@@ -37,6 +37,13 @@ test-docs:
 # Release upload policy: per-asset backfill and immutability of published releases.
 test-release:
 	./scripts/release-upload.test.sh
+
+# Packaging targets: aur (source), aur-bin (prebuilt), ppa.
+test-package:
+	./scripts/package.test.sh
+
+package-%:
+	./scripts/package.sh $*
 
 # IPC smoke test: a real core in a temp XDG sandbox, read back through the CLI.
 # Needs both binaries built (`make core` and `cargo build`).
