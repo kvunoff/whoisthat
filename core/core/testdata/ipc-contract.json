@@ -107,7 +107,7 @@
       "error": "none"
     },
     "core_version": "0.4.3",
-    "protocol_version": 4,
+    "protocol_version": 5,
     "tun_name": "whoisthattun",
     "test_config": {
       "concurrency": 16,

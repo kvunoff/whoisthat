@@ -3,12 +3,15 @@ package TCPServer
 import (
 	"bufio"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"net"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"whoisthat-core/lib/version"
 )
 
 // newTestServer returns a Server with an empty clients map. DB and managers
@@ -333,13 +336,17 @@ func writeFramed(t *testing.T, w net.Conn, payload []byte) {
 }
 
 func TestTCPAuthRequiresToken(t *testing.T) {
+	hello := func(token string) string {
+		return fmt.Sprintf(`{"msg":"hello","data":{"token":%q,"protocol_version":%d}}`,
+			token, version.ProtocolVersion)
+	}
 	tests := []struct {
 		name    string
 		payload string
 		ok      bool
 	}{
-		{"valid", `{"msg":"hello","data":{"token":"secret","protocol_version":4}}`, true},
-		{"bad-token", `{"msg":"hello","data":{"token":"wrong","protocol_version":4}}`, false},
+		{"valid", hello("secret"), true},
+		{"bad-token", hello("wrong"), false},
 		{"bad-protocol", `{"msg":"hello","data":{"token":"secret","protocol_version":2}}`, false},
 		{"wrong-message", `{"msg":"connect","data":{}}`, false},
 	}

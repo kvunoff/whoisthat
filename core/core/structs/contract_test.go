@@ -173,7 +173,7 @@ func ipcContractFixtures() map[string]any {
 		Autoconnect:     AutoconnectInfo{Enabled: true, Mode: "tun"},
 		XrayStatus:      xrayStatus,
 		CoreVersion:     "0.4.3",
-		ProtocolVersion: 4,
+		ProtocolVersion: 5,
 		TunName:         "whoisthattun",
 		TestConfig:      testConfig,
 		ConfigStatus:    ConfigStatus{State: "ok", Error: "none"},
