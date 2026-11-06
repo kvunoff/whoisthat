@@ -9,6 +9,9 @@ on:
       tag:
         description: 'Existing release tag vX.Y.Z to attach assets to (builds that tag, never the branch)'
         required: true
+      series:
+        description: 'PPA series to publish (e.g. noble or resolute); empty = noble,resolute'
+        required: false
 
 permissions:
   contents: write
@@ -367,7 +370,13 @@ jobs:
           LAUNCHPAD_GPG_KEY: ${{ secrets.LAUNCHPAD_GPG_KEY }}
           LAUNCHPAD_GPG_PASSPHRASE: ${{ secrets.LAUNCHPAD_GPG_PASSPHRASE }}
           LAUNCHPAD_GPG_KEYID: ${{ secrets.LAUNCHPAD_GPG_KEYID }}
-        run: ./scripts/package.sh "${{ matrix.target }}" --tag "$TAG" --publish
+          SERIES: ${{ inputs.series }}
+        run: |
+          args=(--tag "$TAG" --publish)
+          if [ -n "${SERIES:-}" ]; then
+            args+=(--series "$SERIES")
+          fi
+          ./scripts/package.sh "${{ matrix.target }}" "${args[@]}"
 
   install-smoke:
     name: Installer smoke (${{ matrix.image }})
