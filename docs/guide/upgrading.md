@@ -72,7 +72,8 @@ sudo apt update
 sudo apt upgrade whoisthat
 ```
 
-The PPA is refreshed for every release on Ubuntu 24.04 and 26.04.
+The PPA is refreshed for every release on Ubuntu 24.04 LTS (Noble). For
+Ubuntu 26.04 (Resolute), enable the Resolute series in the PPA settings first.
 
 If you installed WhoisThat as a `.deb` or `.rpm`, upgrade it with the package
 manager (`apt upgrade`, `dnf upgrade`) rather than the installer.
@@ -140,9 +141,15 @@ curl -fsSL https://raw.githubusercontent.com/kvunoff/whoisthat/main/install.sh |
 ```
 
 AUR users can install an older package version with their helper's
-downgrade/cache support (`whoisthat-bin` or `whoisthat`). When TUI and core
-versions no longer match the same protocol, the TUI respawns the daemon instead
-of attaching to it.
+downgrade/cache support (`whoisthat-bin` or `whoisthat`). PPA users can pin an
+older version explicitly:
+
+```bash
+sudo apt install whoisthat=<version>-1~ubuntu24.04.1
+```
+
+When TUI and core versions no longer match the same protocol, the TUI respawns
+the daemon instead of attaching to it.
 
 ---
 
@@ -160,6 +167,12 @@ For a package install:
 sudo pacman -Rns whoisthat-bin      # or whoisthat
 sudo apt remove whoisthat           # Debian / Ubuntu
 sudo dnf remove whoisthat           # Fedora / RHEL
+```
+
+If you installed from the PPA, remove the repository as well:
+
+```bash
+sudo add-apt-repository --remove ppa:kvunoff/whoisthat
 ```
 
 The script installer stops the user service and removes unowned binaries, the

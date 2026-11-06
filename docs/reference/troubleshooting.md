@@ -9,6 +9,8 @@ Encountering an issue? Consult this troubleshooting matrix and frequently asked 
 | Symptom | Likely Cause | Solution |
 | :--- | :--- | :--- |
 | **`TUN mode needs network capabilities`** popup appears | Core binary lacks Linux file capabilities (common after rebuilding `whoisthat-core`). | Run: `sudo setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep $(which whoisthat-core)` and restart `whoisthat` (accept the startup `pkexec` prompt if offered). |
+| **`whoisthat-core: Operation not permitted`** inside a container | The binary carries file capabilities, but the container's bounding set does not include them. | Run the container with `--cap-add=NET_ADMIN --cap-add=NET_RAW --cap-add=SETPCAP`, or use proxy mode. This is expected in unprivileged containers and does not affect a normal host install. |
+| **`whoisthat` is not found after adding the PPA** | Package index was not refreshed, or the requested Ubuntu series is not enabled in the PPA. | Run `sudo apt update`, then `apt-cache policy whoisthat`. For Ubuntu 26.04, enable the Resolute series in the PPA settings first. |
 | **`Failed to connect to core: Connection refused`** on startup | Socket path is locked by a stale process or port 4897 is occupied. | Terminate any lingering instances: `pkill -9 -f whoisthat-core` and restart the client. |
 | **VPN drops when closing terminal** | Client was exited with <kbd>q</kbd> while daemon was running as a child process of the shell session. | Enable **Systemd Autostart** in Settings, or run the core daemon as a systemd user service (`systemctl --user start whoisthat-core`). |
 | **Profile tests consistently show `err`** | Firewall blocking outbound test port range, or server credentials are invalid. | Inspect `~/.config/whoisthat/core.log` for the exact dialer error; verify the `test-port-range` (default `3095–30120`) is open. |
@@ -64,6 +66,7 @@ systemctl --user disable whoisthat-core 2>/dev/null
 sudo pacman -Rns whoisthat-bin      # or whoisthat
 # sudo apt remove whoisthat
 # sudo dnf remove whoisthat
+# sudo add-apt-repository --remove ppa:kvunoff/whoisthat   # PPA users
 
 # Script install:
 curl -fsSL https://raw.githubusercontent.com/kvunoff/whoisthat/main/install.sh | bash -s -- --uninstall

@@ -67,7 +67,7 @@ Every release publishes `.deb` and `.rpm` packages for `amd64`/`x86_64` and
 
 ### Ubuntu PPA
 
-Ubuntu 24.04 and 26.04 users can install and upgrade through the PPA:
+Ubuntu 24.04 LTS (Noble) users can install and upgrade through the PPA:
 
 ```bash
 sudo add-apt-repository ppa:kvunoff/whoisthat
@@ -75,9 +75,20 @@ sudo apt update
 sudo apt install whoisthat
 ```
 
-The PPA ships the same static binaries as the release archives. Do not mix it
-with the GitHub `.deb`, the installer or the AUR package: all of them own the
-same files under `/usr/bin`.
+Verify that the package comes from the PPA and that both binaries run:
+
+```bash
+apt-cache policy whoisthat
+whoisthat --version
+whoisthat-core --version
+```
+
+The PPA ships the same static binaries as the release archives and sets the
+required file capabilities in its post-install script, so no manual `setcap`
+step is needed. It currently publishes Noble `amd64` builds; other series and
+`arm64` can be enabled in the PPA settings, or use the release `.deb` or the
+installer. Do not mix the PPA with the GitHub `.deb`, the installer or the AUR
+package: all of them own the same files under `/usr/bin`.
 
 ### Direct `.deb` / `.rpm`
 

@@ -360,7 +360,9 @@ accepted as a legacy fallback) and `LAUNCHPAD_GPG_KEY` /
 Launchpad requires a GPG-signed upload even over SFTP, so the SSH key cannot
 replace the GPG key. The first push of each AUR package creates the package
 base. `LAUNCHPAD_USER` and `LAUNCHPAD_PPA` default to `kvunoff` and
-`whoisthat`.
+`whoisthat`. A manual `workflow_dispatch` can pass `series` (for example
+`resolute`) to upload only that PPA series; an empty value means
+`noble,resolute`.
 
 `release.yml` can also be dispatched manually with a tag. It checks out that
 tag (never the branch) and refuses unless `check-versions.sh --tag <tag>`

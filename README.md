@@ -6,6 +6,7 @@
 
   <p>
     <a href="https://docs.tuqise.com/"><img src="https://img.shields.io/badge/Documentation-VitePress-black?style=for-the-badge&logo=vitepress" alt="Documentation" /></a>
+    <a href="https://launchpad.net/~kvunoff/+archive/ubuntu/whoisthat"><img src="https://img.shields.io/badge/Ubuntu-PPA-black?style=for-the-badge&logo=ubuntu" alt="Ubuntu PPA" /></a>
     <a href="https://aur.archlinux.org/packages/whoisthat-bin"><img src="https://img.shields.io/aur/version/whoisthat-bin?color=black&label=AUR%20bin&style=for-the-badge&logo=archlinux" alt="AUR whoisthat-bin" /></a>
     <a href="https://aur.archlinux.org/packages/whoisthat"><img src="https://img.shields.io/aur/version/whoisthat?color=black&label=AUR%20src&style=for-the-badge&logo=archlinux" alt="AUR whoisthat" /></a>
     <a href="https://github.com/kvunoff/whoisthat-extension"><img src="https://img.shields.io/badge/GNOME-Extension-black?style=for-the-badge&logo=gnome" alt="GNOME Extension" /></a>
@@ -61,8 +62,9 @@ their SHA-256 checksums. Every archive also carries a GitHub build-provenance
 attestation: `gh attestation verify <file> --repo kvunoff/whoisthat`. Use
 `--release vX.Y.Z` to pin a version or `--from-source` to build locally.
 
-Pick **one** installation method: the script, a distribution package and an AUR
-package install the same files and conflict with each other.
+Pick **one** installation method: the script, a distribution package, the
+Ubuntu PPA and an AUR package install the same files and conflict with each
+other.
 
 ### Distribution Packages
 Every release ships `.deb` and `.rpm` packages for `amd64` and `arm64`:
@@ -72,13 +74,18 @@ sudo apt install ./whoisthat_<version>-1_amd64.deb
 sudo dnf install ./whoisthat-<version>-1.x86_64.rpm
 ```
 
-Ubuntu 24.04 and 26.04 users can install from the PPA instead:
+Ubuntu 24.04 LTS (Noble) users can install from the PPA instead:
 
 ```bash
 sudo add-apt-repository ppa:kvunoff/whoisthat
 sudo apt update
 sudo apt install whoisthat
 ```
+
+The PPA package sets the required file capabilities in its post-install script,
+so no manual `setcap` step is needed. It currently publishes Noble `amd64`
+builds; enable additional series or architectures in the PPA settings, or use
+the release `.deb` or the installer.
 
 ### Arch Linux (AUR)
 ```bash
