@@ -84,7 +84,7 @@ func (db *DB) loadOrCreateKey() {
 	if preferred == legacy {
 		if prefValid {
 			db.key = prefKey
-			_ = os.Chmod(preferred, 0600)
+			utils.EnsurePerms(preferred, 0600)
 			return
 		}
 		if prefExists {
@@ -108,7 +108,7 @@ func (db *DB) loadOrCreateKey() {
 		prefMatches, checked := db.keyMatchesDatabase(prefKey)
 		if prefMatches {
 			db.key = prefKey
-			_ = os.Chmod(preferred, 0600)
+			utils.EnsurePerms(preferred, 0600)
 			db.removeLegacyKey(legacy)
 			return
 		}
@@ -131,7 +131,7 @@ func (db *DB) loadOrCreateKey() {
 
 	case prefValid:
 		db.key = prefKey
-		_ = os.Chmod(preferred, 0600)
+		utils.EnsurePerms(preferred, 0600)
 		if legacyExists {
 			db.removeLegacyKey(legacy)
 		}
@@ -213,7 +213,9 @@ func (db *DB) removeLegacyKey(path string) {
 func (db *DB) adoptLegacyKey(preferred string, staleKey, legacyKey []byte) {
 	backup := preferred + ".stale-" + time.Now().Format("20060102-150405")
 	if len(staleKey) > 0 {
-		_ = os.WriteFile(backup, staleKey, 0600)
+		if err := os.WriteFile(backup, staleKey, 0600); err != nil {
+			logger.Warnf("db: cannot write stale key backup %s: %v", backup, err)
+		}
 	}
 	if err := utils.AtomicWriteFile(preferred, legacyKey, 0600); err != nil {
 		logger.Fatal("failed to restore legacy key to " + preferred + ": " + err.Error())
@@ -281,7 +283,7 @@ func (db *DB) writeEncryptedJSON(path string, data any) error {
 		return err
 	}
 
-	_ = os.Chmod(filepath.Dir(path), 0700)
+	utils.EnsurePerms(filepath.Dir(path), 0700)
 	return utils.AtomicWriteFile(path, wrapperJSON, 0600)
 }
 

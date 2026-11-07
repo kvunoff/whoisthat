@@ -139,7 +139,7 @@ func EnsureIPCToken() (string, error) {
 		token := strings.TrimSpace(string(data))
 		if len(token) == 64 {
 			if _, err := hex.DecodeString(token); err == nil {
-				_ = os.Chmod(path, 0600)
+				utils.EnsurePerms(path, 0600)
 				return token, nil
 			}
 		}
@@ -149,7 +149,7 @@ func EnsureIPCToken() (string, error) {
 		return "", fmt.Errorf("failed to generate IPC token: %w", err)
 	}
 	token := hex.EncodeToString(raw)
-	_ = os.Chmod(filepath.Dir(path), 0700)
+	utils.EnsurePerms(filepath.Dir(path), 0700)
 	if err := utils.AtomicWriteFile(path, []byte(token+"\n"), 0600); err != nil {
 		return "", fmt.Errorf("failed to write IPC token %s: %w", path, err)
 	}

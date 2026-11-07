@@ -3,7 +3,17 @@ package utils
 import (
 	"os"
 	"path/filepath"
+
+	"whoisthat-core/lib/logger"
 )
+
+// EnsurePerms tightens permissions and reports a failure. A filesystem that
+// cannot store modes must not crash the daemon, but the gap must be visible.
+func EnsurePerms(path string, mode os.FileMode) {
+	if err := os.Chmod(path, mode); err != nil {
+		logger.Warnf("cannot set %04o on %s: %v", mode, path, err)
+	}
+}
 
 // AtomicWriteFile writes data to path atomically: it creates a temporary file
 // in the same directory, fsyncs it, renames it over the destination and then

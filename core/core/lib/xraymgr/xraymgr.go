@@ -281,7 +281,7 @@ func (m *Manager) downloadAndInstall() error {
 	if _, err := os.Stat(testBin); err != nil {
 		return fmt.Errorf("extracted archive did not contain xray binary: %w", err)
 	}
-	_ = os.Chmod(testBin, 0755)
+	utils.EnsurePerms(testBin, 0755)
 
 	// 5. Test run the extracted binary
 	matches, actualVer, err := CheckBinaryVersion(testBin, PinnedVersion)

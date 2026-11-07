@@ -155,7 +155,7 @@ func SaveConfig() {
 		logger.Warn("save config: cannot create dir:", err)
 		return
 	}
-	_ = os.Chmod(dir_path, 0700)
+	utils.EnsurePerms(dir_path, 0700)
 
 	// A damaged file is the only copy of the values that could not be parsed.
 	// Keep it before the first write over it, then the file is valid again.
@@ -190,7 +190,7 @@ func readConfig() (AppConfig, LoadStatus) {
 		return defaultConfig(), LoadStatus{State: "corrupt", Error: "cannot read config.json: " + err.Error()}
 	}
 	// Tighten permissions left behind by older releases (0666/0644).
-	_ = os.Chmod(config_path, 0600)
+	utils.EnsurePerms(config_path, 0600)
 	return parseConfig(file_bytes)
 }
 
