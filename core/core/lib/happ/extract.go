@@ -119,7 +119,9 @@ func UpsertFromLink(database *db.DB, groupID int, link string, now int64) (struc
 	}
 
 	if parsed.Action == ActionOff {
-		_ = database.SetActiveRoutingProfile(groupID, "")
+		if err := database.SetActiveRoutingProfile(groupID, ""); err != nil {
+			logger.Warnf("happ: group %d: cannot disable active routing profile: %v", groupID, err)
+		}
 		return structs.RoutingProfile{}, true, nil
 	}
 
@@ -167,7 +169,9 @@ func UpsertFromLink(database *db.DB, groupID int, link string, now int64) (struc
 		}
 
 		if parsed.Action == ActionOnAdd && existing.State == "ready" {
-			_ = database.SetActiveRoutingProfile(groupID, existing.Id)
+			if err := database.SetActiveRoutingProfile(groupID, existing.Id); err != nil {
+				logger.Warnf("happ: group %d: cannot activate routing profile %s: %v", groupID, existing.Id, err)
+			}
 		}
 
 		return existing, false, nil
@@ -202,7 +206,9 @@ func UpsertFromLink(database *db.DB, groupID int, link string, now int64) (struc
 	group, gErr := database.LoadGroupConfig(groupID)
 	if gErr == nil && newProf.State == "ready" {
 		if parsed.Action == ActionOnAdd || group.ActiveRoutingProfileId == "" {
-			_ = database.SetActiveRoutingProfile(groupID, newProf.Id)
+			if err := database.SetActiveRoutingProfile(groupID, newProf.Id); err != nil {
+				logger.Warnf("happ: group %d: cannot activate routing profile %s: %v", groupID, newProf.Id, err)
+			}
 		}
 	}
 

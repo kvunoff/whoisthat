@@ -60,7 +60,7 @@ func (cmd *Cmd) ImportHappRouting(data structs.ImportHappRoutingData, proxy_mana
 
 	if isOff {
 		if isConnected && proxy_manager != nil {
-			_ = proxy_manager.ReloadRouting(tunName)
+			cmd.reloadRouting(proxy_manager, tunName)
 			cmd.refreshDnsHijackFor(proxy_manager.GetStatus().Profile)
 		}
 	} else if rp.State == "updating" {
@@ -76,13 +76,16 @@ func (cmd *Cmd) ImportHappRouting(data structs.ImportHappRoutingData, proxy_mana
 			g, err := cmd.DB.LoadGroupConfig(gID)
 			if err == nil {
 				if g.PendingActiveRoutingProfileId == profile.Id && profile.State == "ready" {
-					_ = cmd.DB.SetActiveRoutingProfile(gID, profile.Id)
-					g.ActiveRoutingProfileId = profile.Id
+					if err := cmd.DB.SetActiveRoutingProfile(gID, profile.Id); err != nil {
+						logger.Warnf("group %d: cannot persist active routing profile %s: %v", gID, profile.Id, err)
+					} else {
+						g.ActiveRoutingProfileId = profile.Id
+					}
 				}
 				if proxy_manager != nil {
 					st := proxy_manager.GetStatus()
 					if st.Connection == "connected" && st.Profile.GroupId == gID && g.ActiveRoutingProfileId == profile.Id {
-						_ = proxy_manager.ReloadRouting(appconfig.GetConfig().TunName)
+						cmd.reloadRouting(proxy_manager, appconfig.GetConfig().TunName)
 						cmd.refreshDnsHijackFor(st.Profile)
 					}
 				}
@@ -101,7 +104,7 @@ func (cmd *Cmd) ImportHappRouting(data structs.ImportHappRoutingData, proxy_mana
 			grp = refGroup
 		}
 		if isConnected && grp.ActiveRoutingProfileId == rp.Id && proxy_manager != nil {
-			_ = proxy_manager.ReloadRouting(tunName)
+			cmd.reloadRouting(proxy_manager, tunName)
 			cmd.refreshDnsHijackFor(proxy_manager.GetStatus().Profile)
 		}
 	}
@@ -153,7 +156,7 @@ func (cmd *Cmd) SetGroupRoutingMode(data structs.SetGroupRoutingModeData, proxy_
 	if proxy_manager != nil {
 		st := proxy_manager.GetStatus()
 		if st.Connection == "connected" && st.Profile.GroupId == data.GroupId {
-			_ = proxy_manager.ReloadRouting(appconfig.GetConfig().TunName)
+			cmd.reloadRouting(proxy_manager, appconfig.GetConfig().TunName)
 			cmd.refreshDnsHijackFor(st.Profile)
 		}
 	}
@@ -193,7 +196,7 @@ func (cmd *Cmd) SetActiveRoutingProfile(data structs.SetActiveRoutingProfileData
 	if proxy_manager != nil {
 		st := proxy_manager.GetStatus()
 		if st.Connection == "connected" && st.Profile.GroupId == data.GroupId {
-			_ = proxy_manager.ReloadRouting(appconfig.GetConfig().TunName)
+			cmd.reloadRouting(proxy_manager, appconfig.GetConfig().TunName)
 			cmd.refreshDnsHijackFor(st.Profile)
 		}
 	}
@@ -206,12 +209,16 @@ func (cmd *Cmd) SetActiveRoutingProfile(data structs.SetActiveRoutingProfileData
 	if targetID != "" {
 		if rp, err := cmd.DB.LoadRoutingProfile(data.GroupId, targetID); err == nil {
 			var hp happ.HappProfile
-			_ = json.Unmarshal(rp.RawJSON, &hp)
+			if err := json.Unmarshal(rp.RawJSON, &hp); err != nil {
+				logger.Warnf("routing profile %s: cannot parse stored JSON: %v", rp.Id, err)
+			}
 			if (hp.Geoipurl != "" || hp.Geositeurl != "") && (rp.State == "error" || rp.GeoUpdatedAt == 0) {
 				go func(gID int, profile structs.RoutingProfile) {
 					profile.State = "updating"
 					profile.LastError = ""
-					_ = cmd.DB.SaveRoutingProfile(profile)
+					if err := cmd.DB.SaveRoutingProfile(profile); err != nil {
+						logger.Warnf("routing profile %s: cannot persist updating state: %v", profile.Id, err)
+					}
 					if g, err := cmd.DB.LoadGroupConfig(gID); err == nil {
 						rProfiles, _ := cmd.DB.ListRoutingProfileInfos(gID, g.ActiveRoutingProfileId)
 						gwp, _ := cmd.DB.GetGroupDataAndProfiles(gID)
@@ -236,7 +243,7 @@ func (cmd *Cmd) SetActiveRoutingProfile(data structs.SetActiveRoutingProfileData
 						if proxy_manager != nil {
 							st := proxy_manager.GetStatus()
 							if st.Connection == "connected" && st.Profile.GroupId == gID && g.ActiveRoutingProfileId == profile.Id {
-								_ = proxy_manager.ReloadRouting(appconfig.GetConfig().TunName)
+								cmd.reloadRouting(proxy_manager, appconfig.GetConfig().TunName)
 								cmd.refreshDnsHijackFor(st.Profile)
 							}
 						}
@@ -287,7 +294,7 @@ func (cmd *Cmd) DeleteRoutingProfile(data structs.DeleteRoutingProfileData, prox
 	if wasActive && proxy_manager != nil {
 		st := proxy_manager.GetStatus()
 		if st.Connection == "connected" && st.Profile.GroupId == data.GroupId {
-			_ = proxy_manager.ReloadRouting(appconfig.GetConfig().TunName)
+			cmd.reloadRouting(proxy_manager, appconfig.GetConfig().TunName)
 			cmd.refreshDnsHijackFor(st.Profile)
 		}
 	}

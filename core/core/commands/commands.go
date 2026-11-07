@@ -179,6 +179,18 @@ func (cmd *Cmd) Warn(key string, msg string) {
 	cmd.warn(key, msg)
 }
 
+// reloadRouting reconfigures a live session and reports a failed swap instead
+// of leaving the UI on the old routing while claiming success.
+func (cmd *Cmd) reloadRouting(pm *mainproxy.ProxyManager, tunName string) {
+	if pm == nil {
+		return
+	}
+	if err := pm.ReloadRouting(tunName); err != nil {
+		logger.Warnf("failed to reload routing in running proxy: %v", err)
+		cmd.warn("update-routing-failed", fmt.Sprintf("failed to reload routing: %v", err))
+	}
+}
+
 func (cmd *Cmd) send(msg string, obj any) {
 	cmd.Broadcast(lib.CreateJsonNotificationWithID(msg, obj, cmd.RequestID))
 }
