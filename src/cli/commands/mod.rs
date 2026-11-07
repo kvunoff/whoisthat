@@ -1,9 +1,11 @@
+pub mod completions;
 pub mod connection;
 pub mod core;
 pub mod doctor;
 pub mod hwid;
 pub mod links;
 pub mod logs;
+pub mod man;
 pub mod profiles;
 pub mod routing;
 pub mod settings;

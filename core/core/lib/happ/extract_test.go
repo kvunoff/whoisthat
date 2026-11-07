@@ -55,6 +55,17 @@ happ://routing/off
 	}
 }
 
+func TestUpsertFromLinkOffOnMissingGroupIsNotFatal(t *testing.T) {
+	database := newTestDB(t)
+	_, isOff, err := UpsertFromLink(database, 999, "happ://routing/off", 1)
+	if err != nil {
+		t.Fatalf("off link on a missing group must not fail: %v", err)
+	}
+	if !isOff {
+		t.Fatal("expected isOff=true")
+	}
+}
+
 func TestUpsertFromLink(t *testing.T) {
 	database := newTestDB(t)
 	addedGroup, err := database.AddGroup("SubGroup", "")

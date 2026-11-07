@@ -6,6 +6,26 @@ import (
 	"testing"
 )
 
+func TestEnsurePermsSetsMode(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "secret")
+	if err := os.WriteFile(path, []byte("x"), 0600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	EnsurePerms(path, 0600)
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if info.Mode().Perm() != 0600 {
+		t.Errorf("mode = %o, want 600", info.Mode().Perm())
+	}
+}
+
+func TestEnsurePermsMissingPathDoesNotPanic(t *testing.T) {
+	EnsurePerms(filepath.Join(t.TempDir(), "missing"), 0600)
+}
+
 func TestAtomicWriteFileReplacesContentAndPermissions(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "nested", "secret.json")

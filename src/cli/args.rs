@@ -84,8 +84,19 @@ pub enum Command {
     Ip,
     /// Print version
     Version,
+    /// Print shell completions
+    Completions(CompletionsArgs),
+    /// Print the man page (roff)
+    Man,
     /// Launch an application inside the split-tunnel slice
     Run(RunArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct CompletionsArgs {
+    /// Target shell
+    #[arg(value_enum)]
+    pub shell: clap_complete::Shell,
 }
 
 #[derive(Debug, Args)]

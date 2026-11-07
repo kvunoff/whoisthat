@@ -208,15 +208,18 @@ func (cmd *Cmd) updateSubscriptionLocked(data structs.UpdateSubscriptionData, pr
 				grp, err := cmd.DB.LoadGroupConfig(gID)
 				if err == nil {
 					if grp.PendingActiveRoutingProfileId == p.Id && p.State == "ready" {
-						_ = cmd.DB.SetActiveRoutingProfile(gID, p.Id)
-						grp.ActiveRoutingProfileId = p.Id
+						if err := cmd.DB.SetActiveRoutingProfile(gID, p.Id); err != nil {
+							logger.Warnf("group %d: cannot persist active routing profile %s: %v", gID, p.Id, err)
+						} else {
+							grp.ActiveRoutingProfileId = p.Id
+						}
 					}
 					// A background refresh must not reconfigure a live session;
 					// the new routing profile applies on the next connect.
 					if !bg && proxy_manager != nil {
 						st := proxy_manager.GetStatus()
 						if st.Connection == "connected" && st.Profile.GroupId == gID && grp.ActiveRoutingProfileId == p.Id {
-							_ = proxy_manager.ReloadRouting(appconfig.GetConfig().TunName)
+							cmd.reloadRouting(proxy_manager, appconfig.GetConfig().TunName)
 							cmd.refreshDnsHijackFor(st.Profile)
 						}
 					}

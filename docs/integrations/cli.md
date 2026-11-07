@@ -388,6 +388,43 @@ whoisthat run -- /opt/app/-weird-name    # app name that starts with a dash
 
 ---
 
+## Completions and man page
+
+Both commands are local: they do not talk to the core daemon.
+
+```bash
+whoisthat completions bash           # bash
+whoisthat completions zsh            # zsh
+whoisthat completions fish           # fish
+whoisthat completions elvish
+whoisthat completions powershell
+
+whoisthat man                        # roff man page on stdout
+```
+
+Install them for the current user:
+
+```bash
+whoisthat completions zsh > ~/.zfunc/_whoisthat
+whoisthat man > whoisthat.1 && man -l whoisthat.1
+```
+
+Packages (`.deb`, `.rpm`, AUR, PPA) and `install.sh` install the same scripts
+system-wide, so zsh works without any rc edits:
+
+| Shell | System path (package/install.sh) | TUI fallback |
+| :--- | :--- | :--- |
+| bash | `/usr/share/bash-completion/completions/whoisthat` | `$XDG_DATA_HOME/bash-completion/completions/whoisthat` |
+| fish | `/usr/share/fish/vendor_completions.d/whoisthat.fish` | `$XDG_CONFIG_HOME/fish/completions/whoisthat.fish` |
+| zsh | `/usr/share/zsh/site-functions/_whoisthat` | `~/.zfunc/_whoisthat` (add `fpath+=~/.zfunc` before `compinit`) |
+
+The TUI writes the fallback only when the system file is absent, and only for
+the login shell from `$SHELL`; unknown shells are skipped. It never edits rc
+files. The man page is installed as `/usr/share/man/man1/whoisthat.1`
+(packages compress it to `whoisthat.1.gz`).
+
+---
+
 ## Legacy flags
 
 Old flags are hidden aliases and keep working:

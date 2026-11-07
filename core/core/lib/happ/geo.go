@@ -16,6 +16,7 @@ import (
 	"time"
 	"whoisthat-core/db"
 	"whoisthat-core/lib/geo"
+	"whoisthat-core/lib/logger"
 	"whoisthat-core/structs"
 )
 
@@ -81,7 +82,9 @@ func EnsureProfileGeo(ctx context.Context, database *db.DB, profile *structs.Rou
 			_ = os.RemoveAll(tmpDirAbs)
 			profile.State = "error"
 			profile.LastError = sanitizeError(downloadErr)
-			_ = database.SaveRoutingProfile(*profile)
+			if err := database.SaveRoutingProfile(*profile); err != nil {
+				logger.Warnf("happ: profile %s: cannot persist error state: %v", profile.Name, err)
+			}
 		}
 	}()
 

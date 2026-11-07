@@ -240,7 +240,9 @@ func (db *DB) deleteRoutingProfile(groupID int, id string) error {
 			changed = true
 		}
 		if changed {
-			_ = db.updateGroup(group)
+			if err := db.updateGroup(group); err != nil {
+				logger.Warnf("db: group %d: cannot clear active routing profile: %v", groupID, err)
+			}
 		}
 	}
 	return nil

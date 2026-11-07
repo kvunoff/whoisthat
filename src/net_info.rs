@@ -7,13 +7,15 @@ use std::time::Duration;
 /// modify) the response rendered in the status bar. We now require TLS and
 /// only accept a response that parses as an IP address of the expected family.
 fn fetch_ip(url: &str, want_v6: bool) -> Option<String> {
-    let agent = ureq::AgentBuilder::new()
-        .timeout_connect(Duration::from_secs(5))
-        .timeout_read(Duration::from_secs(5))
-        .timeout_write(Duration::from_secs(5))
-        .build();
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .timeout_connect(Some(Duration::from_secs(5)))
+        .timeout_per_read(Some(Duration::from_secs(5)))
+        .timeout_per_write(Some(Duration::from_secs(5)))
+        .build()
+        .into();
 
-    let body = agent.get(url).call().ok()?.into_string().ok()?;
+    let mut response = agent.get(url).call().ok()?;
+    let body = response.body_mut().read_to_string().ok()?;
     let ip: IpAddr = body.trim().parse().ok()?;
     if ip.is_ipv6() == want_v6 {
         Some(ip.to_string())

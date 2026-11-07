@@ -281,7 +281,7 @@ func coreLogPath(configDir string) string {
 
 	fallbackDir := filepath.Join(os.TempDir(), fmt.Sprintf("whoisthat-%d", utils.RealUserUid()))
 	_ = os.MkdirAll(fallbackDir, 0700)
-	_ = os.Chmod(fallbackDir, 0700)
+	utils.EnsurePerms(fallbackDir, 0700)
 	return filepath.Join(fallbackDir, "core.log")
 }
 

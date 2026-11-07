@@ -107,6 +107,7 @@ func (db *DB) deleteProfile(group_id int, id int) error {
 			}
 		}
 		group_config.ProfileOrder = newOrder
+		// saveGroupConfig logs write failures itself.
 		_ = db.saveGroupConfig(group_config)
 	}
 	return nil

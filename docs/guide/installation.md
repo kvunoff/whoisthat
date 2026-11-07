@@ -47,6 +47,7 @@ The script is always fetched from `main`. To install a specific release, pass
 4. Installs binaries into `/usr/bin/` and removes legacy copies from `/usr/local/bin/`.
 5. Grants `cap_net_admin,cap_net_raw,cap_setpcap=+ep` to `/usr/bin/whoisthat-core`.
 6. Installs `whoisthat.desktop` (application menu launcher) and `whoisthat-url.desktop` (hidden `wit://` handler) into `/usr/share/applications`, plus `whoisthat.svg` into the icon theme, and refreshes the desktop and icon caches. It then runs `whoisthat link register` as the invoking user: this refreshes the per-user entries left by older versions and binds `wit://` with `xdg-mime`. The TUI re-verifies the registration on every launch.
+7. Generates shell completions (bash, zsh, fish) and the man page from the installed binary and writes them to `/usr/share/bash-completion/completions/whoisthat`, `/usr/share/zsh/site-functions/_whoisthat`, `/usr/share/fish/vendor_completions.d/whoisthat.fish` and `/usr/share/man/man1/whoisthat.1`. No shell rc file is edited.
 
 Every release archive also carries a GitHub build-provenance attestation. To
 check a downloaded archive before installing:
@@ -131,6 +132,10 @@ Both packages install the same files:
 * `/usr/share/applications/whoisthat.desktop` (application menu launcher, opens the TUI)
 * `/usr/share/applications/whoisthat-url.desktop` (hidden `wit://` deep link handler)
 * `/usr/share/icons/hicolor/scalable/apps/whoisthat.svg`
+* `/usr/share/bash-completion/completions/whoisthat`
+* `/usr/share/zsh/site-functions/_whoisthat`
+* `/usr/share/fish/vendor_completions.d/whoisthat.fish`
+* `/usr/share/man/man1/whoisthat.1` (`install.sh`) or `whoisthat.1.gz` (packages compress man pages)
 
 They conflict with each other, so pacman will prompt to remove the installed one
 when you switch between `whoisthat` and `whoisthat-bin`.

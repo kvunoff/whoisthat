@@ -23,7 +23,7 @@ func (db *DB) Initialize() {
 		logger.Fatal("failed to create database directory " + db.Path + ": " + err.Error())
 	}
 	// Tighten directories created by older releases with a wider mode.
-	_ = os.Chmod(db.Path, 0700)
+	utils.EnsurePerms(db.Path, 0700)
 	db.loadOrCreateKey()
 	db.ensureDBConfigExistance()
 	// Keep a daily copy before anything can rewrite the files. Never snapshot a

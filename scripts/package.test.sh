@@ -181,7 +181,7 @@ export FAKE_DPUT_LOG="$TMP/dput.log"
 DIST="$TMP/dist"
 mkdir -p "$DIST" "$TMP/artifact"
 for file in whoisthat whoisthat-core whoisthat.desktop whoisthat-url.desktop \
-    whoisthat.svg LICENSE; do
+    whoisthat.svg LICENSE whoisthat.bash _whoisthat whoisthat.fish whoisthat.1; do
     printf 'fixture\n' > "$TMP/artifact/$file"
 done
 tar -czf "$DIST/whoisthat-linux-amd64.tar.gz" -C "$TMP/artifact" .
@@ -277,6 +277,14 @@ grep -q 'dist/$(DEB_HOST_ARCH)/whoisthat' debian/rules &&
 [ -x debian/postinst ] && ok "postinst executable" || bad "postinst missing"
 grep -q 'postinstall: debian/postinst' pkg/nfpm.yaml &&
     ok "nfpm postinst path" || bad "nfpm postinst path"
+
+echo "shell integration packaging"
+for file in pkg/nfpm.yaml debian/rules pkg/aur/PKGBUILD pkg/aur-bin/PKGBUILD; do
+    grep -q 'site-functions/_whoisthat' "$file" &&
+        ok "$file installs zsh completions" || bad "$file misses zsh completions"
+done
+grep -q 'site-functions/_whoisthat' install.sh &&
+    ok "install.sh installs zsh completions" || bad "install.sh misses zsh completions"
 
 echo
 if [ "$fail" -ne 0 ]; then

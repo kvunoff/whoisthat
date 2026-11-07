@@ -210,7 +210,9 @@ func (db *DB) deleteGroup(id int) error {
 			}
 		}
 		db_config.GroupOrder = newOrder
-		_ = db.saveDBConfig(db_config)
+		if err := db.saveDBConfig(db_config); err != nil {
+			logger.Warnf("db: cannot persist group order: %v", err)
+		}
 	}
 	return nil
 }
@@ -352,6 +354,7 @@ func (db *DB) MoveProfile(from_group_id int, to_group_id int, profile_id int) (s
 			}
 		}
 		from_group.ProfileOrder = newOrder
+		// saveGroupConfig logs write failures itself.
 		_ = db.saveGroupConfig(from_group)
 	}
 

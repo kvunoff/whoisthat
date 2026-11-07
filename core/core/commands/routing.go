@@ -144,8 +144,5 @@ func (cmd *Cmd) reloadRoutingIfNeeded(proxy_manager *proxy.ProxyManager, changed
 		}
 	}
 
-	if err := proxy_manager.ReloadRouting(appconfig.GetConfig().TunName); err != nil {
-		logger.Warnf("failed to reload routing in running proxy: %v", err)
-		cmd.warn("update-routing-failed", fmt.Sprintf("failed to reload routing: %v", err))
-	}
+	cmd.reloadRouting(proxy_manager, appconfig.GetConfig().TunName)
 }

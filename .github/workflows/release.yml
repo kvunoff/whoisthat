@@ -140,6 +140,12 @@ jobs:
           check_static dist/whoisthat
           check_static dist/whoisthat-core
 
+          # Generated from the native-arch binary, before packaging.
+          ./dist/whoisthat completions bash > dist/whoisthat.bash
+          ./dist/whoisthat completions zsh > dist/_whoisthat
+          ./dist/whoisthat completions fish > dist/whoisthat.fish
+          ./dist/whoisthat man > dist/whoisthat.1
+
       - name: Create archives
         env:
           ARCH: ${{ matrix.arch }}
@@ -147,10 +153,12 @@ jobs:
           set -euo pipefail
           mkdir -p stage/bundle stage/core
           cp dist/whoisthat dist/whoisthat-core dist/whoisthat.desktop \
-            dist/whoisthat-url.desktop dist/whoisthat.svg dist/LICENSE stage/bundle/
+            dist/whoisthat-url.desktop dist/whoisthat.svg dist/LICENSE \
+            dist/whoisthat.bash dist/_whoisthat dist/whoisthat.fish dist/whoisthat.1 stage/bundle/
           cp dist/whoisthat-core dist/LICENSE stage/core/
           tar -czf "dist/whoisthat-linux-${ARCH}.tar.gz" -C stage/bundle \
-            whoisthat whoisthat-core whoisthat.desktop whoisthat-url.desktop whoisthat.svg LICENSE
+            whoisthat whoisthat-core whoisthat.desktop whoisthat-url.desktop whoisthat.svg LICENSE \
+            whoisthat.bash _whoisthat whoisthat.fish whoisthat.1
           tar -czf "dist/whoisthat-core-linux-${ARCH}.tar.gz" -C stage/core \
             whoisthat-core LICENSE
 
