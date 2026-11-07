@@ -21,7 +21,8 @@ prepare() {
     local arch file
     for arch in amd64 arm64; do
         for file in whoisthat whoisthat-core whoisthat.desktop \
-            whoisthat-url.desktop whoisthat.svg LICENSE; do
+            whoisthat-url.desktop whoisthat.svg LICENSE \
+            whoisthat.bash _whoisthat whoisthat.fish whoisthat.1; do
             [ -f "$WORKDIR/dist/$arch/$file" ] ||
                 die "$arch artifact is missing $file"
         done

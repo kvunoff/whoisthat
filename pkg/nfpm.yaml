@@ -30,6 +30,18 @@ contents:
   - src: ${ARTIFACT_DIR}/LICENSE
     dst: /usr/share/licenses/whoisthat/LICENSE
     expand: true
+  - src: ${ARTIFACT_DIR}/whoisthat.bash
+    dst: /usr/share/bash-completion/completions/whoisthat
+    expand: true
+  - src: ${ARTIFACT_DIR}/_whoisthat
+    dst: /usr/share/zsh/site-functions/_whoisthat
+    expand: true
+  - src: ${ARTIFACT_DIR}/whoisthat.fish
+    dst: /usr/share/fish/vendor_completions.d/whoisthat.fish
+    expand: true
+  - src: ${ARTIFACT_DIR}/whoisthat.1
+    dst: /usr/share/man/man1/whoisthat.1
+    expand: true
 
 scripts:
   postinstall: debian/postinst

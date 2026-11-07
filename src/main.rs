@@ -14,6 +14,7 @@ mod logfmt;
 mod logger;
 mod net_info;
 mod popups;
+mod shell_integration;
 mod systemd;
 mod terminal;
 mod testing;
@@ -109,6 +110,8 @@ async fn main() -> io::Result<()> {
 
     // Auto-register wit:// desktop scheme handler in background
     deeplink::ensure_desktop_registered();
+    // Keep shell completions for bash/fish in sync (zsh: ~/.zfunc).
+    shell_integration::ensure_completions_installed();
 
     let endpoint = cfg.endpoint();
     log::info!("Core IPC endpoint: {}", endpoint.describe());

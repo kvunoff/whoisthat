@@ -516,6 +516,20 @@ uninstall_whoisthat() {
         info "Leaving package-owned $system_icon in place"
     fi
 
+    local generated
+    for generated in \
+        /usr/share/bash-completion/completions/whoisthat \
+        /usr/share/zsh/site-functions/_whoisthat \
+        /usr/share/fish/vendor_completions.d/whoisthat.fish \
+        /usr/share/man/man1/whoisthat.1; do
+        if [ -f "$generated" ] && ! package_owns "$generated"; then
+            $SUDO rm -f "$generated"
+            info "Removed $generated"
+        elif [ -f "$generated" ]; then
+            info "Leaving package-owned $generated in place"
+        fi
+    done
+
     # User-owned caches must be refreshed as the target user, never as root.
     if command -v update-desktop-database >/dev/null 2>&1; then
         as_target update-desktop-database "$TARGET_HOME/.local/share/applications" >/dev/null 2>&1 || true
@@ -895,6 +909,32 @@ build_whoisthat() {
 }
 
 # --- step 6: install binaries & set capabilities -----------------------------
+# Completion scripts and the man page are generated from the installed binary,
+# so they always match its version. Packages install the same paths directly.
+install_generated() {
+    local dst=$1
+    shift
+    local tmp
+    tmp=$(mktemp)
+    if "$BIN_DIR/whoisthat" "$@" >"$tmp" 2>/dev/null; then
+        $SUDO install -Dm644 "$tmp" "$dst"
+    else
+        warn "Could not generate $dst"
+    fi
+    rm -f "$tmp"
+}
+
+install_shell_integration() {
+    [ -x "$BIN_DIR/whoisthat" ] || return 0
+    install_generated /usr/share/bash-completion/completions/whoisthat completions bash
+    install_generated /usr/share/zsh/site-functions/_whoisthat completions zsh
+    install_generated /usr/share/fish/vendor_completions.d/whoisthat.fish completions fish
+    install_generated /usr/share/man/man1/whoisthat.1 man
+    if command -v mandb >/dev/null 2>&1; then
+        $SUDO mandb >/dev/null 2>&1 || true
+    fi
+}
+
 install_binaries() {
     step "Install binaries to $BIN_DIR"
 
@@ -967,6 +1007,7 @@ install_binaries() {
         warn "Could not refresh per-user desktop entries; run 'whoisthat link register'."
     fi
 
+    install_shell_integration
 }
 
 # --- Xray archive verification ------------------------------------------------
