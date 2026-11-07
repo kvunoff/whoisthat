@@ -54,9 +54,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Install cargo-llvm-cov
         run: cargo install cargo-llvm-cov --locked
-      # Report only for now: no --fail-under until the baseline is known.
+      # Threshold = measured baseline (38.5% lines) - 2.
       - name: Rust coverage
-        run: cargo llvm-cov --lcov --output-path lcov.info
+        run: cargo llvm-cov --lcov --output-path lcov.info --fail-under-lines 36
       - uses: actions/upload-artifact@v7
         with:
           name: rust-coverage
@@ -98,6 +98,23 @@ jobs:
       - name: vet
         working-directory: core/core
         run: go vet ./...
+      - name: No silently ignored state errors
+        working-directory: core/core
+        run: |
+          if grep -rn --include='*.go' --exclude='*_test.go' \
+            -e '_ = proxy_manager.ReloadRouting' \
+            -e '_ = cmd.DB.SetActiveRoutingProfile' \
+            -e '_ = database.SetActiveRoutingProfile' \
+            -e '_ = cmd.DB.SaveRoutingProfile' \
+            -e '_ = database.SaveRoutingProfile' \
+            -e '_ = db.updateGroup' \
+            -e '_ = db.saveDBConfig' \
+            -e '_ = os.Chmod(' \
+            -e '_ = os.WriteFile(' \
+            .; then
+            echo 'error: swallowed state error (plan 2026-11-07, item 1)' >&2
+            exit 1
+          fi
       - name: Build
         working-directory: core/core
         run: go build ./...
@@ -110,6 +127,12 @@ jobs:
       - name: Coverage summary
         working-directory: core/core
         run: go tool cover -func=cover.out | tail -1
+      - name: Coverage floor
+        # Threshold = measured baseline (57%) - 2.
+        working-directory: core/core
+        run: |
+          total=$(go tool cover -func=cover.out | awk '/^total:/{gsub(/%/,"",$3); print $3}')
+          awk -v t="$total" 'BEGIN { if (t+0 < 55) { print "coverage " t "% below 55%"; exit 1 } }'
       - uses: actions/upload-artifact@v7
         with:
           name: go-coverage
@@ -120,6 +143,22 @@ jobs:
       - name: Vulnerability scan
         working-directory: core/core
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+
+  fuzz:
+    name: Fuzz parsers
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    needs: go
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: core/core/go.mod
+          cache-dependency-path: core/core/go.sum
+      - name: Fuzz
+        run: make test-fuzz
 
   shell:
     name: Shell scripts (shellcheck)
@@ -150,7 +189,8 @@ jobs:
           trap 'rm -rf "$tmp"' EXIT
           mkdir -p "$tmp/dist" "$tmp/files"
           for file in whoisthat whoisthat-core whoisthat.desktop \
-            whoisthat-url.desktop whoisthat.svg LICENSE; do
+            whoisthat-url.desktop whoisthat.svg LICENSE \
+            whoisthat.bash _whoisthat whoisthat.fish whoisthat.1; do
             printf 'fixture\n' > "$tmp/files/$file"
           done
           tar -czf "$tmp/dist/whoisthat-linux-amd64.tar.gz" -C "$tmp/files" .
@@ -166,6 +206,8 @@ jobs:
           dpkg-deb -c "$deb" > "$tmp/deb.list"
           grep -q './usr/bin/whoisthat$' "$tmp/deb.list"
           grep -q './usr/bin/whoisthat-core$' "$tmp/deb.list"
+          grep -q './usr/share/zsh/site-functions/_whoisthat$' "$tmp/deb.list"
+          grep -q './usr/share/man/man1/whoisthat.1$' "$tmp/deb.list"
 
   bump:
     name: Bump script tests

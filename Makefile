@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 BINDIR ?= /usr/bin
 
-.PHONY: all build core rust test test-go test-race test-rust test-bump test-docs test-release test-package test-e2e lint version-check docs-check fmt integration docs install clean coverage package-aur package-aur-bin package-ppa
+.PHONY: all build core rust test test-go test-race test-rust test-bump test-docs test-release test-package test-e2e test-fuzz lint version-check docs-check fmt integration docs install clean coverage package-aur package-aur-bin package-ppa
 
 all: build
 
@@ -50,11 +50,17 @@ package-%:
 test-e2e:
 	./scripts/ipc-e2e.test.sh
 
-# Coverage report (no gate): lcov for Rust, coverprofile for Go.
+# Coverage report with line thresholds: lcov for Rust, coverprofile for Go.
 # Requires: rustup component add llvm-tools-preview && cargo install cargo-llvm-cov
 coverage:
-	cargo llvm-cov --lcov --output-path lcov.info
+	cargo llvm-cov --lcov --output-path lcov.info --fail-under-lines 36
 	cd core/core && go test -coverprofile=cover.out ./... && go tool cover -func=cover.out | tail -1
+
+# Fuzz the untrusted-input parsers; each target needs its own invocation.
+test-fuzz:
+	cd core/core && go test -run '^$$' -fuzz=FuzzParseUri -fuzztime=30s ./lib/parser
+	cd core/core && go test -run '^$$' -fuzz=FuzzParseLink -fuzztime=30s ./lib/happ
+	cd core/core && go test -run '^$$' -fuzz=FuzzParse -fuzztime=30s ./lib/xrayjson
 
 # Privileged TUN/firewall scenarios in a throwaway network namespace.
 # Requires root (or CAP_NET_ADMIN) and is intentionally not part of `make test`.
@@ -67,6 +73,20 @@ lint: version-check docs-check
 	cargo clippy --all-targets --no-deps -- -D warnings
 	cd core/core && go vet ./...
 	gofmt -l core/core | (! grep .)
+	@if grep -rn --include='*.go' --exclude='*_test.go' \
+	  -e '_ = proxy_manager.ReloadRouting' \
+	  -e '_ = cmd.DB.SetActiveRoutingProfile' \
+	  -e '_ = database.SetActiveRoutingProfile' \
+	  -e '_ = cmd.DB.SaveRoutingProfile' \
+	  -e '_ = database.SaveRoutingProfile' \
+	  -e '_ = db.updateGroup' \
+	  -e '_ = db.saveDBConfig' \
+	  -e '_ = os.Chmod(' \
+	  -e '_ = os.WriteFile(' \
+	  core/core; then \
+		echo 'error: swallowed state error (plan 2026-11-07, item 1)' >&2; \
+		exit 1; \
+	fi
 
 # Docs must not drift from the code (IPC, config keys, CLI, links, versions).
 docs-check:
