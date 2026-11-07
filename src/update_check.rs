@@ -3,6 +3,7 @@ use std::process::Command;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tokio::sync::mpsc;
+use ureq::ResponseExt;
 
 use crate::event_loop::AppEvent;
 
@@ -282,17 +283,18 @@ fn valid_cached(value: &str) -> Option<String> {
 }
 
 fn fetch_latest_tag() -> Option<String> {
-    let agent = ureq::AgentBuilder::new()
-        .timeout_connect(Duration::from_secs(3))
-        .timeout_read(Duration::from_secs(5))
-        .timeout_write(Duration::from_secs(5))
-        .build();
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .timeout_connect(Some(Duration::from_secs(3)))
+        .timeout_per_read(Some(Duration::from_secs(5)))
+        .timeout_per_write(Some(Duration::from_secs(5)))
+        .build()
+        .into();
     let response = agent
         .get(LATEST_URL)
-        .set("User-Agent", "whoisthat-update-check")
+        .header("User-Agent", "whoisthat-update-check")
         .call()
         .ok()?;
-    parse_release_tag(response.get_url())
+    parse_release_tag(&response.get_uri().to_string())
 }
 
 /// Run a release check in the background. `fetch = false` only re-uses the

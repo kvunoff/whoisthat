@@ -122,6 +122,8 @@ async fn dispatch(cmd: Command, g: &GlobalArgs) -> Result<(), CliError> {
         Command::Doctor(a) => commands::doctor::run(g, a).await,
         Command::Ip => commands::connection::ip(g).await,
         Command::Version => commands::connection::version(g).await,
+        Command::Completions(a) => commands::completions::run(a.shell),
+        Command::Man => commands::man::run(),
         Command::Run(_) => unreachable!("run is handled in cli::run"),
     }
 }
@@ -209,6 +211,13 @@ mod tests {
     #[test]
     fn clap_definition_is_consistent() {
         Cli::command().debug_assert();
+    }
+
+    #[test]
+    fn parses_completions_and_man() {
+        assert!(Cli::try_parse_from(["whoisthat", "completions", "bash"]).is_ok());
+        assert!(Cli::try_parse_from(["whoisthat", "completions", "nope"]).is_err());
+        assert!(Cli::try_parse_from(["whoisthat", "man"]).is_ok());
     }
 
     #[test]
