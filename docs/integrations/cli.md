@@ -420,7 +420,8 @@ system-wide, so zsh works without any rc edits:
 
 The TUI writes the fallback only when the system file is absent, and only for
 the login shell from `$SHELL`; unknown shells are skipped. It never edits rc
-files. The man page is installed as `/usr/share/man/man1/whoisthat.1`.
+files. The man page is installed as `/usr/share/man/man1/whoisthat.1`
+(packages compress it to `whoisthat.1.gz`).
 
 ---
 

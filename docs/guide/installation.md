@@ -135,7 +135,7 @@ Both packages install the same files:
 * `/usr/share/bash-completion/completions/whoisthat`
 * `/usr/share/zsh/site-functions/_whoisthat`
 * `/usr/share/fish/vendor_completions.d/whoisthat.fish`
-* `/usr/share/man/man1/whoisthat.1`
+* `/usr/share/man/man1/whoisthat.1` (`install.sh`) or `whoisthat.1.gz` (packages compress man pages)
 
 They conflict with each other, so pacman will prompt to remove the installed one
 when you switch between `whoisthat` and `whoisthat-bin`.

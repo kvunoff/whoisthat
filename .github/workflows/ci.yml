@@ -207,7 +207,8 @@ jobs:
           grep -q './usr/bin/whoisthat$' "$tmp/deb.list"
           grep -q './usr/bin/whoisthat-core$' "$tmp/deb.list"
           grep -q './usr/share/zsh/site-functions/_whoisthat$' "$tmp/deb.list"
-          grep -q './usr/share/man/man1/whoisthat.1$' "$tmp/deb.list"
+          # dh_compress turns the man page into whoisthat.1.gz.
+          grep -qE './usr/share/man/man1/whoisthat\.1(\.gz)?$' "$tmp/deb.list"
 
   bump:
     name: Bump script tests
