@@ -174,6 +174,12 @@ pub(crate) fn uid() -> u32 {
     unsafe { libc_getuid() }
 }
 
+/// Effective uid of this process. `uid()` above is the *real* user, so the two
+/// differ exactly when we were started through sudo/pkexec.
+pub(crate) fn effective_uid() -> u32 {
+    unsafe { libc_getuid() }
+}
+
 /// Fallback location when the XDG directory is not writable. A per-uid
 /// directory keeps the file out of a shared predictable /tmp path.
 pub fn fallback_log_path(name: &str) -> PathBuf {
