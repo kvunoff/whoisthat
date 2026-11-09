@@ -50,7 +50,6 @@ depends:
   - iproute2
   - nftables
   - libcap2-bin
-  - systemd
 
 overrides:
   rpm:
@@ -58,4 +57,3 @@ overrides:
       - iproute
       - nftables
       - libcap
-      - systemd

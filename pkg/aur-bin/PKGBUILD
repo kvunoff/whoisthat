@@ -6,10 +6,11 @@ pkgdesc="Modern terminal-based VPN client with Xray-core backend (prebuilt binar
 arch=('x86_64' 'aarch64')
 url="https://github.com/kvunoff/whoisthat"
 license=('MIT')
-depends=('iproute2' 'nftables' 'libcap' 'systemd')
+depends=('iproute2' 'nftables' 'libcap')
 optdepends=(
     'iptables: legacy firewall backend for TUN mode'
     'polkit: pkexec-based capability setup from the TUI'
+    'systemd: autostart via user unit and linger'
     'xray: system Xray-core binary (managed runtime used automatically if absent)'
 )
 provides=('whoisthat')
