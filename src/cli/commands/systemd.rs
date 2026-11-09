@@ -4,10 +4,11 @@ use super::super::output::Out;
 
 pub async fn dispatch(g: &GlobalArgs, cmd: SystemdCmd) -> Result<(), CliError> {
     let out = Out::new(g);
+    let available = crate::platform::has_systemd();
     match cmd {
         SystemdCmd::Status => {
-            let enabled = crate::systemd::systemd_is_enabled();
-            let linger = crate::systemd::linger_is_enabled();
+            let enabled = available && crate::systemd::systemd_is_enabled();
+            let linger = available && crate::systemd::linger_is_enabled();
             let unit = crate::systemd::systemd_service_path();
             if g.json {
                 out.json(&serde_json::json!({
@@ -15,7 +16,11 @@ pub async fn dispatch(g: &GlobalArgs, cmd: SystemdCmd) -> Result<(), CliError> {
                     "path": unit.to_string_lossy(),
                     "enabled": enabled,
                     "linger": linger,
+                    "backend_available": available,
                 }));
+            } else if !available {
+                println!("Systemd not detected; systemd autostart is unavailable.");
+                println!("Unit file: {}", unit.display());
             } else {
                 println!(
                     "Systemd user service (whoisthat-core.service): {}",
@@ -25,6 +30,12 @@ pub async fn dispatch(g: &GlobalArgs, cmd: SystemdCmd) -> Result<(), CliError> {
                 println!("Linger:    {}", if linger { "enabled" } else { "disabled" });
             }
             Ok(())
+        }
+        SystemdCmd::Enable | SystemdCmd::Disable | SystemdCmd::Toggle if !available => {
+            Err(CliError::Core(
+                "systemd not detected; use 'whoisthat autostart ...' after setting up an init backend or desktop autostart"
+                    .into(),
+            ))
         }
         SystemdCmd::Enable => set(g, true).await,
         SystemdCmd::Disable => set(g, false).await,

@@ -216,6 +216,7 @@ impl App {
                 let values = SettingsValues {
                     autoconnect: self.autoconnect_enabled,
                     autostart_mode: &self.autostart_mode,
+                    systemd_available: self.systemd_available,
                     systemd_enabled: self.systemd_enabled,
                     theme: crate::ui::theme::current_theme().name,
                     show_ip: self.show_ip,

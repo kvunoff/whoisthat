@@ -85,7 +85,9 @@ pub(super) async fn handle(
                         .await;
                 }
                 2 => {
-                    if app.systemd_enabled {
+                    if !app.systemd_available {
+                        app.msg("Systemd autostart unavailable: systemd not detected");
+                    } else if app.systemd_enabled {
                         app.msg("Disabling systemd autostart...");
                         let result = tokio::task::spawn_blocking(teardown_systemd_service).await;
                         match result {

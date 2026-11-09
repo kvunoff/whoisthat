@@ -13,6 +13,7 @@ mod logfile;
 mod logfmt;
 mod logger;
 mod net_info;
+mod platform;
 mod popups;
 mod shell_integration;
 mod systemd;
@@ -69,6 +70,13 @@ async fn main() -> io::Result<()> {
     match cli::run(&argv[1..]).await {
         cli::Outcome::Tui => {}
         cli::Outcome::Exit(code) => std::process::exit(code),
+    }
+
+    if platform::started_via_privilege_wrapper() {
+        eprintln!(
+            "whoisthat: run as your normal user, not via sudo/pkexec (root-owned config and cgroup state break split tunnelling)"
+        );
+        std::process::exit(1);
     }
 
     let logger = init_logger();
@@ -219,6 +227,7 @@ async fn main() -> io::Result<()> {
             auto_test_on_subscribe: cfg.auto_test_on_subscribe,
         },
     );
+    app.systemd_available = platform::has_systemd();
     app.systemd_enabled = systemd_is_enabled();
     app.check_updates = cfg.check_updates;
 

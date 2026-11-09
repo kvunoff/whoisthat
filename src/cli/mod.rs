@@ -55,6 +55,13 @@ pub async fn run(raw_args: &[String]) -> Outcome {
         return Outcome::Exit(2);
     };
 
+    if crate::platform::started_via_privilege_wrapper() && !is_read_only(&cmd) {
+        eprintln!(
+            "whoisthat: run as your normal user, not via sudo/pkexec (root-owned config, lifecycle markers and cgroup state would break)"
+        );
+        return Outcome::Exit(1);
+    }
+
     if let Command::Run(args) = cmd {
         let mut argv = Vec::new();
         if args.detach {
@@ -126,6 +133,21 @@ async fn dispatch(cmd: Command, g: &GlobalArgs) -> Result<(), CliError> {
         Command::Man => commands::man::run(),
         Command::Run(_) => unreachable!("run is handled in cli::run"),
     }
+}
+
+/// Read-only diagnostics keep working under sudo; anything that writes config,
+/// lifecycle markers or cgroup state must run as the real user.
+fn is_read_only(cmd: &Command) -> bool {
+    matches!(
+        cmd,
+        Command::Status(_)
+            | Command::Logs(_)
+            | Command::Doctor(_)
+            | Command::Ip
+            | Command::Version
+            | Command::Completions(_)
+            | Command::Man
+    )
 }
 
 fn finish(result: Result<(), CliError>) -> Outcome {

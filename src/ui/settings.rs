@@ -151,6 +151,7 @@ pub fn item_count() -> usize {
 pub struct SettingsValues<'a> {
     pub autoconnect: bool,
     pub autostart_mode: &'a str,
+    pub systemd_available: bool,
     pub systemd_enabled: bool,
     pub theme: &'a str,
     pub show_ip: bool,
@@ -253,7 +254,9 @@ pub fn render_settings(
             "○ off".into()
         },
         values.autostart_mode.to_string(),
-        if values.systemd_enabled {
+        if !values.systemd_available {
+            "unavailable".into()
+        } else if values.systemd_enabled {
             "● on".into()
         } else {
             "○ off".into()
