@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 BINDIR ?= /usr/bin
 
-.PHONY: all build core rust test test-go test-race test-rust test-bump test-docs test-release test-package test-e2e test-fuzz lint version-check docs-check fmt integration docs install clean coverage package-aur package-aur-bin package-ppa
+.PHONY: all build core rust test test-go test-race test-rust test-shell test-bump test-docs test-release test-package test-e2e test-fuzz lint version-check docs-check fmt integration docs install clean coverage package-aur package-aur-bin package-ppa
 
 all: build
 
@@ -14,7 +14,7 @@ core:
 rust:
 	cargo build --release --locked
 
-test: test-go test-rust test-bump test-docs test-release test-package
+test: test-go test-rust test-shell test-bump test-docs test-release test-package
 
 test-go:
 	cd core/core && go test ./...
@@ -25,6 +25,12 @@ test-race:
 
 test-rust:
 	cargo test
+
+# Root helpers: fake init systems and fake core, no root required.
+test-shell:
+	./scripts/cgroup-setup.test.sh
+	./scripts/run-core.test.sh
+	./scripts/install-init.test.sh
 
 # Release-driver tests: throwaway clones, local bare origin, fake gh.
 test-bump:

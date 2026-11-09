@@ -1,0 +1,20 @@
+#!/sbin/openrc-run
+# shellcheck shell=sh
+# shellcheck disable=SC2034
+description="WhoisThat split-tunnel cgroup setup"
+
+depend() {
+    after cgroups
+    before whoisthat-core
+}
+
+start() {
+    ebegin "Setting up WhoisThat cgroups"
+    /usr/lib/whoisthat/init-hook
+    eend $?
+}
+
+stop() {
+    ebegin "WhoisThat cgroups are left in place"
+    eend 0
+}

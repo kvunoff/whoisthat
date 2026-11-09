@@ -1,0 +1,157 @@
+#!/bin/sh
+# Init wrapper for non-systemd hosts: keeps whoisthat-core alive and owns its
+# lifecycle. Never exits, so OpenRC/dinit/runit supervisors do not loop.
+#
+#   run-core <home>
+#
+# State files (0600, written by the TUI/CLI as the same user):
+#   autostart    - the user wants the core at boot/login
+#   core-stop    - explicit stop; do not restart until the next boot
+#   core-start   - transient start request
+#   core-restart - transient restart request (survives a crash)
+#   core-run     - the core is running in this session (crash restart)
+#   core.pid     - PID of the running core (TERM/KILL fallback)
+set -u
+umask 077
+
+if [ "$#" -lt 1 ]; then
+    echo "usage: run-core <home>" >&2
+    exit 2
+fi
+
+HOME=$1
+export HOME
+UID_NUM=$(id -u)
+case "$UID_NUM" in
+    ''|*[!0-9]*)
+        echo "whoisthat: invalid uid" >&2
+        exit 2
+        ;;
+esac
+if [ "$UID_NUM" -lt 1000 ]; then
+    echo "whoisthat: refusing to run core for uid $UID_NUM" >&2
+    while :; do sleep 3600; done
+fi
+
+CONF=$HOME/.config/whoisthat
+if [ -n "${XDG_CONFIG_HOME:-}" ] && [ "${XDG_CONFIG_HOME#/}" != "$XDG_CONFIG_HOME" ]; then
+    CONF=$XDG_CONFIG_HOME/whoisthat
+fi
+
+RUN_ROOT=/run/whoisthat
+CORE=/usr/bin/whoisthat-core
+if [ "${WHOISTHAT_TEST_MODE:-}" = 1 ]; then
+    if [ -n "${WHOISTHAT_RUN_ROOT:-}" ]; then
+        RUN_ROOT=$WHOISTHAT_RUN_ROOT
+    fi
+    if [ -n "${WHOISTHAT_CORE:-}" ]; then
+        CORE=$WHOISTHAT_CORE
+    fi
+fi
+
+RT=$RUN_ROOT/$UID_NUM
+FLAG=$CONF/autostart
+STOP=$CONF/core-stop
+START=$CONF/core-start
+RESTART=$CONF/core-restart
+RUN=$CONF/core-run
+PIDFILE=$CONF/core.pid
+
+core_pid() {
+    [ -f "$PIDFILE" ] || return 1
+    pid=$(cat "$PIDFILE" 2>/dev/null || true)
+    case "$pid" in
+        ''|*[!0-9]*) return 1 ;;
+    esac
+    [ "$(cat "/proc/$pid/comm" 2>/dev/null || true)" = "whoisthat-core" ] || return 1
+    echo "$pid"
+}
+
+kill_core() {
+    pid=$(core_pid) || {
+        rm -f "$PIDFILE"
+        return 0
+    }
+    kill -TERM "$pid" 2>/dev/null || true
+    i=0
+    while [ "$i" -lt 50 ] && [ -d "/proc/$pid" ]; do
+        sleep 0.1 2>/dev/null || sleep 1
+        i=$((i + 1))
+    done
+    if [ -d "/proc/$pid" ]; then
+        kill -KILL "$pid" 2>/dev/null || true
+    fi
+    rm -f "$PIDFILE"
+}
+
+cleanup() {
+    kill_core
+    exit 0
+}
+# First, before any check can fail: a TERM on startup must still stop the child.
+trap cleanup TERM INT
+
+while :; do
+    # cgroup-setup and upgrades may appear after the service started.
+    if [ -L "$RT" ] || [ ! -d "$RT" ] \
+        || [ "$(stat -c %u "$RT" 2>/dev/null)" != "$UID_NUM" ] \
+        || [ "$(stat -c %a "$RT" 2>/dev/null)" != "700" ]; then
+        echo "whoisthat: $RT missing/invalid; run: sudo /usr/lib/whoisthat/cgroup-setup ${USER:-$UID_NUM}" >&2
+        sleep 2
+        continue
+    fi
+    if [ ! -x "$CORE" ]; then
+        echo "whoisthat: $CORE not found" >&2
+        sleep 2
+        continue
+    fi
+
+    if [ -f "$STOP" ]; then
+        sleep 2
+        continue
+    fi
+    if [ ! -f "$FLAG" ] && [ ! -f "$RUN" ] && [ ! -f "$START" ] && [ ! -f "$RESTART" ]; then
+        sleep 2
+        continue
+    fi
+
+    XDG_RUNTIME_DIR=$RT
+    export XDG_RUNTIME_DIR
+    PATH=/usr/bin:/usr/sbin:/bin:/sbin
+    export PATH
+
+    restart=0
+    [ -f "$RESTART" ] && restart=1
+    if [ -f "$START" ] || [ -f "$RESTART" ]; then
+        : > "$RUN"
+        chmod 600 "$RUN" 2>/dev/null || true
+    fi
+    rm -f "$START" "$RESTART"
+
+    "$CORE" &
+    child=$!
+    echo "$child" > "$PIDFILE"
+    wait "$child"
+    rc=$?
+    rm -f "$PIDFILE"
+
+    if [ -f "$STOP" ]; then
+        rm -f "$RUN"
+        sleep 2
+        continue
+    fi
+    if [ "$rc" -ne 0 ]; then
+        if [ "$restart" = 1 ]; then
+            : > "$RESTART"
+        fi
+        sleep 2
+        continue
+    fi
+    if [ "$restart" = 1 ]; then
+        continue
+    fi
+    # Clean exit without a request: pause instead of starting in a tight loop.
+    while [ ! -f "$START" ] && [ ! -f "$RESTART" ] && [ ! -f "$STOP" ]; do
+        sleep 2
+    done
+done
