@@ -1,0 +1,253 @@
+#!/bin/sh
+# Root helper: create/remove the native split-tunnel cgroup and runtime dirs.
+#
+#   cgroup-setup [USER...]                 # default: the invoking user
+#   cgroup-setup --all-users               # every uid >= 1000
+#   cgroup-setup --uid N                   # explicit uid (tests/service)
+#   cgroup-setup --remove [USER...]
+#   cgroup-setup --remove --all-users
+#
+# Required once after install and on every boot (init hook), because
+# /sys/fs/cgroup and /run are tmpfs. On systemd hosts the user manager already
+# delegates cgroups, so this is a no-op there.
+set -eu
+umask 022
+
+CGROUP_ROOT=/sys/fs/cgroup
+RUN_ROOT=/run/whoisthat
+TEST_MODE=0
+
+warn() { echo "whoisthat: $*" >&2; }
+die() { echo "whoisthat: $*" >&2; exit 1; }
+
+usage() {
+    sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'
+}
+
+case "${WHOISTHAT_TEST_MODE:-}" in
+    1) TEST_MODE=1 ;;
+esac
+
+if [ "$TEST_MODE" = 1 ]; then
+    if [ -n "${WHOISTHAT_CGROUP_ROOT:-}" ]; then
+        CGROUP_ROOT=$WHOISTHAT_CGROUP_ROOT
+    fi
+    if [ -n "${WHOISTHAT_RUN_ROOT:-}" ]; then
+        RUN_ROOT=$WHOISTHAT_RUN_ROOT
+    fi
+    case "$CGROUP_ROOT" in
+        /*) ;;
+        *) die "WHOISTHAT_CGROUP_ROOT must be an absolute path" ;;
+    esac
+    case "$RUN_ROOT" in
+        /*) ;;
+        *) die "WHOISTHAT_RUN_ROOT must be an absolute path" ;;
+    esac
+    # A root script must never chown/rm -r system or home directories.
+    for root in "$CGROUP_ROOT" "$RUN_ROOT"; do
+        case "$root" in
+            /|/etc|/etc/*|/usr|/usr/*|/bin|/bin/*|/sbin|/sbin/*|/home|/home/*|/root|/root/*)
+                die "refusing unsafe override root: $root"
+                ;;
+        esac
+    done
+fi
+
+if [ "$TEST_MODE" != 1 ] && [ -d /run/systemd/system ]; then
+    warn "systemd detected; cgroup delegation already works, nothing to do"
+    exit 0
+fi
+
+remove=0
+all_users=0
+uid_arg=
+users=
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --remove) remove=1 ;;
+        --all-users) all_users=1 ;;
+        --uid)
+            [ $# -ge 2 ] || die "--uid needs a value"
+            uid_arg=$2
+            shift
+            ;;
+        --uid=*) uid_arg=${1#--uid=} ;;
+        -h|--help) usage; exit 0 ;;
+        --) shift; break ;;
+        -*) die "unknown option: $1" ;;
+        *) users="$users $1" ;;
+    esac
+    shift
+done
+while [ $# -gt 0 ]; do
+    users="$users $1"
+    shift
+done
+
+valid_uid() {
+    case "$1" in
+        ''|*[!0-9]*) return 1 ;;
+    esac
+    [ "$1" -ge 1000 ]
+}
+
+passwd_field() { # uid -> one line of /etc/passwd
+    getent passwd "$1" 2>/dev/null || awk -F: -v u="$1" '$3 == u { print; exit }' /etc/passwd
+}
+
+user_uid() {
+    uid=$(id -u -- "$1" 2>/dev/null) || die "no such user: $1"
+    valid_uid "$uid" || die "refusing uid $uid (must be >= 1000)"
+    echo "$uid"
+}
+
+add_uid() {
+    case " $uids " in
+        *" $1 "*) return 0 ;;
+    esac
+    uids="$uids $1"
+}
+
+uids=
+if [ -n "$uid_arg" ]; then
+    valid_uid "$uid_arg" || die "refusing uid $uid_arg (must be >= 1000)"
+    add_uid "$uid_arg"
+elif [ "$all_users" = 1 ]; then
+    all=$(getent passwd 2>/dev/null || cat /etc/passwd)
+    for uid in $(printf '%s\n' "$all" | awk -F: '$3 >= 1000 && $3 < 60000 { print $3 }'); do
+        add_uid "$uid"
+    done
+elif [ -n "$users" ]; then
+    for user in $users; do
+        add_uid "$(user_uid "$user")"
+    done
+else
+    if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != root ]; then
+        add_uid "$(user_uid "$SUDO_USER")"
+    elif [ -n "${PKEXEC_UID:-}" ]; then
+        valid_uid "$PKEXEC_UID" || die "refusing uid $PKEXEC_UID (must be >= 1000)"
+        add_uid "$PKEXEC_UID"
+    else
+        self=$(id -u)
+        valid_uid "$self" || die "no target user; run with a username or from the user's shell"
+        add_uid "$self"
+    fi
+fi
+
+[ -n "$uids" ] || die "no users to set up"
+
+cgroup_gid() {
+    line=$(passwd_field "$1")
+    if [ -n "$line" ]; then
+        echo "$line" | cut -d: -f4
+    else
+        id -g -- "$1" 2>/dev/null || echo 0
+    fi
+}
+
+create_user() {
+    uid=$1
+    gid=$(cgroup_gid "$uid")
+    [ -n "$gid" ] || gid=0
+
+    if [ ! -f "$CGROUP_ROOT/cgroup.controllers" ]; then
+        warn "cgroup v2 not mounted at $CGROUP_ROOT; split tunnel is unavailable"
+        return 1
+    fi
+
+    cg="$CGROUP_ROOT/whoisthat-$uid"
+    mkdir -p "$cg" || { warn "cannot create $cg"; return 1; }
+    chown "$uid:$gid" "$cg"
+    chmod 0755 "$cg"
+    for f in cgroup.procs cgroup.threads; do
+        if [ -f "$cg/$f" ]; then
+            chown "$uid:$gid" "$cg/$f"
+        fi
+    done
+
+    if [ -L "$RUN_ROOT" ]; then
+        warn "refusing symlinked runtime root: $RUN_ROOT"
+        return 1
+    fi
+    mkdir -p "$RUN_ROOT" || { warn "cannot create $RUN_ROOT"; return 1; }
+    chmod 0755 "$RUN_ROOT"
+
+    run_dir="$RUN_ROOT/$uid"
+    if [ -L "$run_dir" ]; then
+        warn "refusing symlinked runtime dir: $run_dir"
+        return 1
+    fi
+    mkdir -p "$run_dir" || { warn "cannot create $run_dir"; return 1; }
+    chown "$uid:$gid" "$run_dir"
+    chmod 0700 "$run_dir"
+    return 0
+}
+
+remove_known() { # path owner-uid label
+    path=$1
+    owner=$2
+    if [ -L "$path" ]; then
+        warn "refusing to remove symlink $path"
+        return 0
+    fi
+    [ -e "$path" ] || return 0
+    actual=$(stat -c %u "$path" 2>/dev/null || echo "")
+    if [ "$actual" = "$owner" ] || [ "$actual" = 0 ]; then
+        rm -f -- "$path"
+    else
+        warn "refusing to remove $path (owner $actual)"
+    fi
+}
+
+remove_user() {
+    uid=$1
+    run_dir="$RUN_ROOT/$uid"
+    ok=0
+
+    if [ -d "$run_dir" ]; then
+        wd="$run_dir/whoisthat"
+        if [ -S "$wd/core.sock" ]; then
+            warn "whoisthat-core still owns $wd/core.sock; stop it before removing"
+        fi
+        if [ -d "$wd" ] && [ ! -L "$wd" ]; then
+            for f in core.sock core.lock ipc.token core.pid; do
+                remove_known "$wd/$f" "$uid"
+            done
+            rmdir "$wd" 2>/dev/null || warn "not empty: $wd"
+        fi
+        rmdir "$run_dir" 2>/dev/null || warn "not empty: $run_dir"
+        [ -d "$run_dir" ] || ok=1
+    fi
+
+    cg="$CGROUP_ROOT/whoisthat-$uid"
+    if [ -d "$cg" ]; then
+        rmdir "$cg" 2>/dev/null || warn "not empty: $cg"
+        [ -d "$cg" ] || ok=1
+    fi
+    [ "$ok" = 1 ]
+}
+
+ok=0
+for uid in $uids; do
+    if [ "$remove" = 1 ]; then
+        if remove_user "$uid"; then
+            ok=1
+        fi
+    else
+        if create_user "$uid"; then
+            ok=1
+        fi
+    fi
+done
+
+if [ "$remove" = 1 ] && [ "$all_users" = 1 ]; then
+    if [ -L "$RUN_ROOT/active" ]; then
+        warn "refusing to remove symlink $RUN_ROOT/active"
+    else
+        rm -f -- "$RUN_ROOT/active"
+    fi
+fi
+
+[ "$ok" = 1 ] || die "no cgroup/runtime directory could be set up"
+exit 0
