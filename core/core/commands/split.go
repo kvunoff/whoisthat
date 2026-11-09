@@ -6,6 +6,7 @@ import (
 	proxy "whoisthat-core/lib/proxy/mainproxy"
 	tunmode "whoisthat-core/lib/proxy/tun"
 	"whoisthat-core/structs"
+	"whoisthat-core/utils"
 )
 
 // SetSplitTunnel persists the requested split-tunnel mode and, if TUN is
@@ -18,12 +19,23 @@ func (cmd *Cmd) SetSplitTunnel(data structs.SetSplitTunnelData, proxy_manager *p
 		cmd.send("split-tunnel-updated", structs.SetSplitTunnelData{Mode: appconfig.GetConfig().SplitTunnel.Mode})
 		return
 	}
+
+	oldMode := appconfig.GetConfig().SplitTunnel.Mode
+	// Validate before persisting: a mode that cannot work must not survive a
+	// restart and break TUN autoconnect later.
+	if err := tunmode.ValidateSplitUid(data.Mode, utils.RealUserUid()); err != nil {
+		cmd.warn("set-split-tunnel-failed", err.Error())
+		cmd.send("split-tunnel-updated", structs.SetSplitTunnelData{Mode: oldMode})
+		return
+	}
 	mode := appconfig.SetSplitTunnelMode(data.Mode)
 
 	if tun_manager.IsEnabledLocked() {
-		if err := tun_manager.ReapplySplit(); err != nil {
+		if err := tun_manager.ReapplySplit(oldMode); err != nil {
+			appconfig.SetSplitTunnelMode(oldMode)
 			logger.Warn("split: failed to reapply live rules:", err)
 			cmd.warn("set-split-tunnel-failed", "failed to apply split tunnel routing")
+			cmd.send("split-tunnel-updated", structs.SetSplitTunnelData{Mode: oldMode})
 			return
 		}
 		// include/exclude changes whether FakeDNS is safe, so Xray's DNS section
