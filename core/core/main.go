@@ -10,6 +10,8 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime/debug"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 	cmd "whoisthat-core/commands"
@@ -83,19 +85,21 @@ func main() {
 
 	// A second daemon must not race the first one for the IPC socket, the TUN
 	// device and the firewall. The lock is held until the process exits.
-	held, err := acquireInstanceLock()
+	// Config is loaded first so the lock probe knows about an ipc-socket-path
+	// override from config.json.
+	appconfig.LoadConfig()
+	held, lock_dir, err := acquireInstanceLock()
 	if err != nil {
 		// The runtime dir may be unavailable; the socket probe below still
 		// keeps us from stealing a live core's socket.
 		logger.Warnf("instance lock unavailable: %v", err)
 	} else if !held {
-		logger.Info("another whoisthat-core is already running; exiting")
+		logger.Infof("another whoisthat-core is already running (lock: %s); exiting", lock_dir)
 		return // exit 0: a non-zero code would loop under systemd Restart=on-failure
 	}
 
 	stop_sig := make(chan bool, 1)
 	utils.RaiseAmbientCaps()
-	appconfig.LoadConfig()
 
 	// Cores from older builds hold no flock. Refuse to start while their
 	// socket is live: this check runs before the reconcile so we never tear
@@ -103,6 +107,18 @@ func main() {
 	if utils.SocketIsLive(appconfig.SocketPath()) {
 		logger.Infof("another whoisthat-core is already serving %s; exiting", appconfig.SocketPath())
 		return
+	}
+
+	// One core per network namespace: the TUN name and nft table are global.
+	// The marker is root-created (best effort); when present it names the uid
+	// that owns the rules, so a second user must not reconcile them away.
+	if !testMode() {
+		uid := runtimeUid()
+		if err := checkActiveUser(uid); err != nil {
+			logger.Error("refusing to start:", err)
+			return
+		}
+		claimActiveUser(uid)
 	}
 
 	// Self-heal: if no other core is already listening, tear down any leftover
@@ -234,6 +250,7 @@ func main() {
 			logger.Warn("shutdown: cleanup timed out after 10s, exiting anyway")
 			os.Remove(appconfig.SocketPath())
 		}
+		releaseActiveUser()
 		os.Exit(0)
 	}()
 	select {}
@@ -243,26 +260,140 @@ func main() {
 // exiting) releases the flock so the next core can start.
 var instanceLock *os.File
 
-// acquireInstanceLock returns (false, nil) when another core already holds the
-// lock, and a non-nil error only for real I/O failures.
-func acquireInstanceLock() (bool, error) {
+// acquireInstanceLock tries the primary runtime dir and also checks the known
+// fallback locations for a lock held by an older/newer core. It returns
+// (held, dir, error): a held lock is kept for the process lifetime, a busy one
+// in any known dir means another core owns the rules.
+func acquireInstanceLock() (bool, string, error) {
 	dir := utils.RuntimeDir()
+	for _, other := range knownRuntimeDirs() {
+		if other == dir {
+			continue
+		}
+		held, err := lockHeld(other)
+		if err != nil {
+			// An unreadable probe must not block startup; the socket check and
+			// the lock in the primary dir still protect us.
+			continue
+		}
+		if held {
+			return false, other, nil
+		}
+	}
 	if err := os.MkdirAll(dir, 0700); err != nil {
-		return false, err
+		return false, dir, err
+	}
+	f, err := os.OpenFile(filepath.Join(dir, "core.lock"), os.O_CREATE|os.O_RDWR, 0600)
+	if err != nil {
+		return false, dir, err
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		f.Close()
+		if errors.Is(err, syscall.EWOULDBLOCK) {
+			return false, dir, nil
+		}
+		return false, dir, err
+	}
+	instanceLock = f
+	return true, dir, nil
+}
+
+// lockHeld reports whether another process holds core.lock in dir. Stale lock
+// files are not an obstacle: only an actual flock counts.
+func lockHeld(dir string) (bool, error) {
+	info, err := os.Stat(dir)
+	if err != nil || !info.IsDir() {
+		return false, nil
 	}
 	f, err := os.OpenFile(filepath.Join(dir, "core.lock"), os.O_CREATE|os.O_RDWR, 0600)
 	if err != nil {
 		return false, err
 	}
+	defer f.Close()
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		f.Close()
 		if errors.Is(err, syscall.EWOULDBLOCK) {
-			return false, nil
+			return true, nil
 		}
 		return false, err
 	}
-	instanceLock = f
-	return true, nil
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_UN); err != nil {
+		return false, err
+	}
+	return false, nil
+}
+
+// knownRuntimeDirs lists every directory a core may have used for its socket.
+// Probing all of them prevents a new core from reconciling rules that belong to
+// a live core started with a different runtime dir.
+func knownRuntimeDirs() []string {
+	uid := strconv.Itoa(runtimeUid())
+	dirs := []string{utils.RuntimeDir()}
+	if p := strings.TrimSpace(appconfig.GetConfig().IPCSocketPath); p != "" {
+		dirs = append(dirs, filepath.Dir(p))
+	}
+	dirs = append(dirs,
+		filepath.Join("/run/whoisthat", uid, "whoisthat"),
+		filepath.Join("/tmp", "whoisthat-"+uid),
+	)
+	if xdg := os.Getenv("XDG_RUNTIME_DIR"); filepath.IsAbs(xdg) {
+		dirs = append(dirs, filepath.Join(xdg, "whoisthat"))
+	}
+	seen := make(map[string]bool, len(dirs))
+	out := make([]string, 0, len(dirs))
+	for _, dir := range dirs {
+		if !seen[dir] {
+			seen[dir] = true
+			out = append(out, dir)
+		}
+	}
+	return out
+}
+
+func runtimeUid() int {
+	if uid := utils.RealUserUid(); uid > 0 {
+		return uid
+	}
+	return os.Getuid()
+}
+
+const activeMarkerPath = "/run/whoisthat/active"
+
+// checkActiveUser blocks a second uid from reconciling the rules of the active
+// core. Best effort: without a root-created marker nothing is enforced.
+func checkActiveUser(uid int) error {
+	data, err := os.ReadFile(activeMarkerPath)
+	if err != nil {
+		return nil
+	}
+	owner := strings.TrimSpace(string(data))
+	if owner == "" || owner == strconv.Itoa(uid) {
+		return nil
+	}
+	return fmt.Errorf("another user (uid %s) owns whoisthat-core/tun; stop it before starting this one", owner)
+}
+
+// claimActiveUser is best effort: /run/whoisthat is root-owned, so a normal
+// user can only update the marker when the helper made it writable.
+// shortcut: the marker is only enforced when a root helper pre-creates it;
+// upgrade by having install-init write it once multi-user sessions matter.
+func claimActiveUser(uid int) {
+	err := os.WriteFile(activeMarkerPath, []byte(strconv.Itoa(uid)+"\n"), 0644)
+	if err != nil && !errors.Is(err, os.ErrNotExist) && !errors.Is(err, syscall.EACCES) {
+		logger.Warnf("active-core marker: %v", err)
+	}
+}
+
+func releaseActiveUser() {
+	data, err := os.ReadFile(activeMarkerPath)
+	if err != nil {
+		return
+	}
+	if strings.TrimSpace(string(data)) != strconv.Itoa(runtimeUid()) {
+		return
+	}
+	if err := os.Remove(activeMarkerPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		logger.Warnf("active-core marker cleanup: %v", err)
+	}
 }
 
 // coreAlreadyRunning reports whether another whoisthat-core is already
@@ -317,6 +448,11 @@ func coreAlreadyRunning() bool {
 	cfg := appconfig.GetConfig()
 	if utils.SocketIsLive(appconfig.SocketPath()) {
 		return true
+	}
+	for _, dir := range knownRuntimeDirs() {
+		if utils.SocketIsLive(filepath.Join(dir, "core.sock")) {
+			return true
+		}
 	}
 	if cfg.TCPEnabled {
 		if conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", cfg.CoreTCPPort), 300*time.Millisecond); err == nil {

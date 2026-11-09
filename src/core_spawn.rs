@@ -4,14 +4,46 @@ use std::os::unix::process::CommandExt;
 use std::process::Command;
 
 pub(crate) fn spawn_core(log_level: &str) -> io::Result<()> {
+    if let Some(err) = crate::config::runtime_base_error() {
+        return Err(io::Error::other(err));
+    }
+    match crate::lifecycle::effective_backend() {
+        crate::lifecycle::Backend::Init => {
+            // The init wrapper owns the core lifecycle: ask it to start and let
+            // the callers wait for the socket. Spawning here would bypass the
+            // wrapper and race it.
+            crate::lifecycle::remove_marker("core-stop");
+            crate::lifecycle::write_marker("core-start")?;
+            log::info!("init backend: requested core start via core-start marker");
+            return Ok(());
+        }
+        crate::lifecycle::Backend::Systemd if crate::systemd::systemd_is_enabled() => {
+            let status = Command::new("systemctl")
+                .args(["--user", "start", "whoisthat-core.service"])
+                .status()?;
+            if !status.success() {
+                return Err(io::Error::other("systemctl --user start failed"));
+            }
+            log::info!("Started whoisthat-core.service via systemd");
+            return Ok(());
+        }
+        _ => {}
+    }
+
+    let cfg = crate::config::load_config();
     let bin = find_core_binary();
-    Command::new(&bin)
-        .env("WHOISTHAT_LOG_LEVEL", log_level)
+    let mut cmd = Command::new(&bin);
+    cmd.env("WHOISTHAT_LOG_LEVEL", log_level)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
-        .process_group(0)
-        .spawn()?;
+        .process_group(0);
+    // The core appends /whoisthat itself, so pass the base, not our own dir.
+    // An explicit socket override already carries its own directory.
+    if cfg.ipc_socket_path.is_empty() {
+        cmd.env("XDG_RUNTIME_DIR", crate::config::runtime_base());
+    }
+    cmd.spawn()?;
     log::info!("Spawned whoisthat-core from {}", bin);
     Ok(())
 }

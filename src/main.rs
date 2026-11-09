@@ -9,6 +9,7 @@ mod event_loop;
 mod input;
 mod keymap;
 mod launcher;
+mod lifecycle;
 mod logfile;
 mod logfmt;
 mod logger;
@@ -83,6 +84,10 @@ async fn main() -> io::Result<()> {
     install_panic_hook(logger);
 
     let mut cfg = config::load_config();
+    if let Some(err) = config::runtime_base_error() {
+        eprintln!("whoisthat: {err}");
+        std::process::exit(1);
+    }
     // Desktop entries start the TUI without a tty: re-exec it inside a terminal.
     if !io::stdin().is_terminal() && !io::stdout().is_terminal() {
         terminal::relaunch(&cfg.terminal);
@@ -149,6 +154,21 @@ async fn main() -> io::Result<()> {
                     let _ = conn.send("die", &DieData {}).await;
                 }
                 tokio::time::sleep(Duration::from_millis(500)).await;
+                // systemd units restart only on failure; a clean `die` needs an
+                // explicit restart. The init wrapper restarts on core-restart.
+                match crate::lifecycle::effective_backend() {
+                    crate::lifecycle::Backend::Init => {
+                        if let Err(e) = crate::lifecycle::write_marker("core-restart") {
+                            log::warn!("cannot write core-restart: {e}");
+                        }
+                    }
+                    crate::lifecycle::Backend::Systemd if systemd_is_enabled() => {
+                        let _ = std::process::Command::new("systemctl")
+                            .args(["--user", "restart", "whoisthat-core.service"])
+                            .status();
+                    }
+                    _ => {}
+                }
             }
         }
         None => {

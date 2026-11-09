@@ -164,13 +164,7 @@ func SocketPath() string {
 }
 
 func DefaultSocketPath() string {
-	dir := os.Getenv("XDG_RUNTIME_DIR")
-	if dir == "" {
-		dir = filepath.Join("/tmp", fmt.Sprintf("whoisthat-%d", os.Getuid()))
-	} else {
-		dir = filepath.Join(dir, "whoisthat")
-	}
-	return filepath.Join(dir, "core.sock")
+	return filepath.Join(utils.RuntimeDir(), "core.sock")
 }
 
 // LoadStatus tells the TUI whether config.json could be read. States:
