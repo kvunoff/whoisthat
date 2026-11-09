@@ -1,10 +1,11 @@
 use std::fs;
-use std::os::unix::fs::{FileTypeExt, PermissionsExt};
-use std::path::Path;
+use std::os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt};
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::core_spawn::find_core_binary;
 use crate::doctor::types::{CheckCategory, CheckItem};
+use crate::platform::{self, PlatformPaths};
 
 pub(super) fn check_capabilities() -> CheckCategory {
     let mut items = Vec::new();
@@ -103,20 +104,152 @@ pub(super) fn check_capabilities() -> CheckCategory {
         ));
     }
 
-    // 4. cgroup v2
+    // 4. cgroup v2 / split-tunnel prerequisites.
     let cgroup_controllers = Path::new("/sys/fs/cgroup/cgroup.controllers");
-    if cgroup_controllers.exists() {
-        items.push(CheckItem::pass(
-            "cgroup v2",
-            "available — split-tunneling supported",
-        ));
-    } else {
+    if !cgroup_controllers.exists() {
         items.push(CheckItem::warn(
             "cgroup v2",
             "/sys/fs/cgroup/cgroup.controllers not found — system may use legacy cgroup v1",
             Some("Split-tunneling ('whoisthat run') requires unified cgroup v2 hierarchy".into()),
         ));
+    } else {
+        let uid = crate::config::uid();
+        let paths = PlatformPaths::default();
+        let setup_hint = format!("sudo {}/whoisthat/cgroup-setup $USER", paths.lib.display());
+        if platform::has_systemd() {
+            let manager_ok = Command::new("systemctl")
+                .args(["--user", "show-environment"])
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false);
+            let leaf = PathBuf::from(format!(
+                "/sys/fs/cgroup/user.slice/user-{uid}.slice/user@{uid}.service"
+            ));
+            if !manager_ok {
+                items.push(CheckItem::warn(
+                    "split cgroup",
+                    "systemd user manager is not reachable — split tunnelling will not work",
+                    Some(format!(
+                        "Log in as user {uid} in a session, or enable lingering: sudo loginctl enable-linger $USER"
+                    )),
+                ));
+            } else if owner_writable_dir(&leaf, uid) {
+                items.push(CheckItem::pass(
+                    "split cgroup",
+                    format!("{} (delegated to uid {uid})", leaf.display()),
+                ));
+            } else {
+                items.push(CheckItem::warn(
+                    "split cgroup",
+                    format!(
+                        "{} is missing or not writable by uid {uid}",
+                        leaf.display()
+                    ),
+                    Some(
+                        "Check systemd cgroup delegation (systemd.unified_cgroup_hierarchy=1) and lingering"
+                            .into(),
+                    ),
+                ));
+            }
+        } else {
+            check_native_cgroup(&mut items, &paths, uid, &setup_hint);
+        }
+    }
+
+    // 5. nftables socket cgroupv2 support: without it nft cannot match split
+    // apps by cgroup and the TUN start would fail after the split check above.
+    if has_nft {
+        let text = Command::new("nft")
+            .args(["describe", "socket"])
+            .output()
+            .map(|o| String::from_utf8_lossy(&o.stdout).to_lowercase())
+            .unwrap_or_default();
+        if text.contains("cgroupv2") {
+            items.push(CheckItem::pass(
+                "nft socket cgroupv2",
+                "supported by nftables",
+            ));
+        } else if text.is_empty() {
+            items.push(CheckItem::info(
+                "nft socket cgroupv2",
+                "cannot probe without root; split tunnelling needs kernel >= 5.13 and an nftables build with cgroupv2",
+            ));
+        } else {
+            items.push(CheckItem::warn(
+                "nft socket cgroupv2",
+                "this nftables/kernel does not list cgroupv2 socket matching — split-tunnel TUN start will fail",
+                Some("Upgrade the kernel (>= 5.13) and nftables".into()),
+            ));
+        }
     }
 
     CheckCategory::new("Linux Capabilities & Kernel", items)
+}
+
+fn owner_writable_dir(path: &Path, uid: u32) -> bool {
+    fs::metadata(path)
+        .map(|meta| meta.is_dir() && meta.uid() == uid && meta.permissions().mode() & 0o200 != 0)
+        .unwrap_or(false)
+}
+
+/// Native (non-systemd) split path: a root-created per-uid cgroup plus the
+/// canonical runtime directory tree.
+fn check_native_cgroup(
+    items: &mut Vec<CheckItem>,
+    paths: &PlatformPaths,
+    uid: u32,
+    setup_hint: &str,
+) {
+    let cgroup = paths.sys_cgroup.join(format!("whoisthat-{uid}"));
+    let procs = cgroup.join("cgroup.procs");
+    let mut issues = Vec::new();
+
+    if !owner_writable_dir(&cgroup, uid) {
+        issues.push(format!("{} missing or not owned by you", cgroup.display()));
+    }
+    match fs::metadata(&procs) {
+        Ok(meta) if meta.uid() == uid => {}
+        Ok(_) => issues.push(format!("{} is root-owned", procs.display())),
+        Err(_) => issues.push(format!("{} missing", procs.display())),
+    }
+
+    if issues.is_empty() {
+        items.push(CheckItem::pass(
+            "split cgroup",
+            format!("{} (writable by uid {uid})", cgroup.display()),
+        ));
+    } else {
+        items.push(CheckItem::warn(
+            "split cgroup",
+            format!("split tunnelling is unavailable: {}", issues.join("; ")),
+            Some(format!(
+                "{setup_hint} (available after installing the helper)"
+            )),
+        ));
+    }
+
+    let run_root = paths.run.join("whoisthat");
+    let user_run = run_root.join(uid.to_string());
+    let run_root_ok = fs::metadata(&run_root)
+        .map(|m| m.is_dir() && matches!(m.permissions().mode() & 0o777, 0o755 | 0o711))
+        .unwrap_or(false);
+    let user_run_ok = fs::metadata(&user_run)
+        .map(|m| m.is_dir() && m.uid() == uid && m.permissions().mode() & 0o777 == 0o700)
+        .unwrap_or(false);
+    if run_root_ok && user_run_ok {
+        items.push(CheckItem::pass(
+            "runtime dir",
+            format!("{} (0700, uid {uid})", user_run.display()),
+        ));
+    } else {
+        items.push(CheckItem::warn(
+            "runtime dir",
+            format!(
+                "{} or {} has the wrong owner/mode",
+                run_root.display(),
+                user_run.display()
+            ),
+            Some(setup_hint.to_string()),
+        ));
+    }
 }
