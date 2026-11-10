@@ -129,7 +129,7 @@ pub(crate) async fn handle_core_event(
                     }
                 }
                 if app.autoconnect_enabled
-                    && app.autostart_mode == "tun"
+                    && app.autoconnect_mode == "tun"
                     && app.is_connected()
                     && !app.tun_enabled
                 {
@@ -169,7 +169,7 @@ pub(crate) async fn handle_core_event(
                 config::save_config(cfg);
                 if app.autoconnect_enabled {
                     let _ = client
-                        .set_autoconnect(true, p.group_id, p.id, &app.autostart_mode)
+                        .set_autoconnect(true, p.group_id, p.id, &app.autoconnect_mode)
                         .await;
                 }
             }
@@ -334,7 +334,7 @@ pub(crate) async fn handle_core_event(
         }
         CoreEvent::AutoconnectUpdated(info) => {
             app.autoconnect_enabled = info.enabled;
-            app.autostart_mode = info.mode;
+            app.autoconnect_mode = info.mode;
         }
         CoreEvent::TestProgress(p) => {
             if p.total == 0 || p.tested >= p.total {

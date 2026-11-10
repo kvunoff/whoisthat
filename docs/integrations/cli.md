@@ -335,6 +335,28 @@ whoisthat core version
 
 ---
 
+## Autostart backends
+
+```bash
+whoisthat autostart status
+whoisthat autostart status --json
+whoisthat autostart enable
+whoisthat autostart enable --backend init
+whoisthat autostart disable
+whoisthat autostart toggle
+```
+
+* `systemd` — user unit plus lingering (systemd hosts only).
+* `init` — the init service on non-systemd hosts; toggling it only writes the
+  user marker (`~/.config/whoisthat/autostart`), no root prompt.
+* `desktop` — a per-user `~/.config/autostart/whoisthat-core.desktop` entry.
+* Without `--backend`, `enable` picks the first available backend.
+* `whoisthat systemd …` remains as a legacy command and always forces the
+  systemd backend; on a non-systemd host it reports that the backend is
+  unavailable instead of silently switching.
+
+---
+
 ## systemd, links and utilities
 
 ```bash
@@ -384,6 +406,10 @@ whoisthat run -- /opt/app/-weird-name    # app name that starts with a dash
 - `-d` after the application name is an application argument, not detach:
   `whoisthat run spotify -d` launches `spotify -d`.
 - The application's exit code is propagated.
+- On systemd hosts the app runs via `systemd-run --user` in `whoisthat_split.slice`.
+  Elsewhere a per-user `whoisthat-runner` service (started at boot inside
+  `/sys/fs/cgroup/whoisthat-<uid>`) forks it, so no sudo or password is needed.
+  If the runner is not running, the command fails with a hint to start it.
 - `whoisthat run --help` and `whoisthat help run` document the command.
 
 ---
@@ -437,7 +463,7 @@ Old flags are hidden aliases and keep working:
 | `-mt`, `--mode-toggle`, `toggle-tun` | `mode toggle` |
 | `--mode-tun`, `--tun` | `mode tun` |
 | `--mode-proxy`, `--proxy` | `mode proxy` |
-| `-st`, `--systemd-*` | `systemd *` |
+| `-st`, `--systemd-*` | `autostart toggle/enable/disable/status --backend systemd` |
 | `-kt`, `--killswitch-*` | `settings toggle/set kill-switch` |
 | `-p`, `--profiles` | `sub list` |
 | `add-sub <url> [name]` | `sub add <url> [name]` |

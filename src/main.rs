@@ -1,3 +1,4 @@
+mod autostart;
 mod cli;
 mod config;
 mod core_client;
@@ -250,8 +251,10 @@ async fn main() -> io::Result<()> {
             auto_test_on_subscribe: cfg.auto_test_on_subscribe,
         },
     );
-    app.systemd_available = platform::has_systemd();
-    app.systemd_enabled = systemd_is_enabled();
+    let autostart = autostart::status();
+    app.autostart_backend = autostart.backend.map(|b| b.name().to_string());
+    app.autostart_enabled = autostart.enabled;
+    app.autostart_available = !autostart.available.is_empty();
     app.check_updates = cfg.check_updates;
 
     if let Some(warning) = check_sudo_env() {

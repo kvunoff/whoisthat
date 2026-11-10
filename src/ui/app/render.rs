@@ -215,9 +215,10 @@ impl App {
                 .to_string();
                 let values = SettingsValues {
                     autoconnect: self.autoconnect_enabled,
-                    autostart_mode: &self.autostart_mode,
-                    systemd_available: self.systemd_available,
-                    systemd_enabled: self.systemd_enabled,
+                    autoconnect_mode: &self.autoconnect_mode,
+                    autostart_backend: self.autostart_backend.as_deref().unwrap_or("off"),
+                    autostart_enabled: self.autostart_enabled,
+                    autostart_available: self.autostart_available,
                     theme: crate::ui::theme::current_theme().name,
                     show_ip: self.show_ip,
                     log_enabled: self.log_enabled,

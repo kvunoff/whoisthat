@@ -20,7 +20,15 @@ pub(crate) enum Backend {
 }
 
 impl Backend {
-    fn parse(value: &str) -> Option<Self> {
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            Backend::Systemd => "systemd",
+            Backend::Init => "init",
+            Backend::Desktop => "desktop",
+        }
+    }
+
+    pub(crate) fn parse(value: &str) -> Option<Self> {
         match value {
             "systemd" => Some(Backend::Systemd),
             "init" => Some(Backend::Init),

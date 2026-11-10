@@ -34,7 +34,7 @@ impl App {
             self.split_tunnel = state.split_tunnel;
         }
         self.autoconnect_enabled = state.autoconnect.enabled;
-        self.autostart_mode = state.autoconnect.mode;
+        self.autoconnect_mode = state.autoconnect.mode;
         self.hwid_info = state.hwid_info;
         self.xray_status = state.xray_status;
         if !state.core_version.is_empty() {

@@ -40,7 +40,7 @@ pub fn settings_layout() -> Vec<SettingsRow> {
             kind: SettingsKind::Cycle,
         },
         SettingsRow::Item {
-            label: "Systemd autostart",
+            label: "Autostart",
             kind: SettingsKind::Toggle,
         },
         SettingsRow::Header("Display"),
@@ -150,9 +150,10 @@ pub fn item_count() -> usize {
 
 pub struct SettingsValues<'a> {
     pub autoconnect: bool,
-    pub autostart_mode: &'a str,
-    pub systemd_available: bool,
-    pub systemd_enabled: bool,
+    pub autoconnect_mode: &'a str,
+    pub autostart_backend: &'a str,
+    pub autostart_enabled: bool,
+    pub autostart_available: bool,
     pub theme: &'a str,
     pub show_ip: bool,
     pub log_enabled: bool,
@@ -253,11 +254,11 @@ pub fn render_settings(
         } else {
             "○ off".into()
         },
-        values.autostart_mode.to_string(),
-        if !values.systemd_available {
+        values.autoconnect_mode.to_string(),
+        if !values.autostart_available {
             "unavailable".into()
-        } else if values.systemd_enabled {
-            "● on".into()
+        } else if values.autostart_enabled {
+            format!("● {}", values.autostart_backend)
         } else {
             "○ off".into()
         },

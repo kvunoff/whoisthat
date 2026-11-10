@@ -76,6 +76,8 @@ pub enum Command {
     Logs(LogsArgs),
     /// systemd user service
     Systemd(SystemdArgs),
+    /// Autostart backend (systemd, init service or desktop entry)
+    Autostart(AutostartArgs),
     /// Deep links and desktop registration
     Link(LinkArgs),
     /// System diagnostics
@@ -643,6 +645,40 @@ pub enum SystemdCmd {
     Enable,
     Disable,
     Toggle,
+}
+
+#[derive(Debug, Args)]
+pub struct AutostartArgs {
+    #[command(subcommand)]
+    pub cmd: AutostartCmd,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum AutostartCmd {
+    /// Show the selected backend and its state
+    Status {
+        /// Force a backend for this query
+        #[arg(long, value_name = "BACKEND")]
+        backend: Option<String>,
+    },
+    /// Enable autostart
+    Enable {
+        /// Backend to enable (default: first available)
+        #[arg(long, value_name = "BACKEND")]
+        backend: Option<String>,
+    },
+    /// Disable autostart
+    Disable {
+        /// Backend to disable
+        #[arg(long, value_name = "BACKEND")]
+        backend: Option<String>,
+    },
+    /// Toggle autostart
+    Toggle {
+        /// Backend to enable when autostart is off
+        #[arg(long, value_name = "BACKEND")]
+        backend: Option<String>,
+    },
 }
 
 #[derive(Debug, Args)]

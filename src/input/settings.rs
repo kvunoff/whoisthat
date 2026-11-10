@@ -1,14 +1,13 @@
 use tokio::sync::mpsc;
 
+use crate::autostart::{self, Backend};
 use crate::config;
 use crate::core_client::CoreClient;
 use crate::core_client::protocol::SetHwidData;
 use crate::core_events::refresh_public_ip;
-use crate::core_spawn::find_core_binary;
 use crate::event_loop::AppEvent;
 use crate::keymap::AppAction;
 use crate::logger::{FileLogger, configure_logger};
-use crate::systemd::{setup_systemd_service, teardown_systemd_service};
 use crate::testing::persist_and_sync_test_config;
 use crate::ui::App;
 use crate::ui::app::{Focus, Popup};
@@ -63,7 +62,7 @@ pub(super) async fn handle(
                             new_val,
                             cfg.last_group_id,
                             cfg.last_profile_id,
-                            &app.autostart_mode,
+                            &app.autoconnect_mode,
                         )
                         .await;
                 }
@@ -71,7 +70,7 @@ pub(super) async fn handle(
                     let modes = ["proxy", "tun"];
                     let current = modes
                         .iter()
-                        .position(|m| *m == app.autostart_mode.as_str())
+                        .position(|m| *m == app.autoconnect_mode.as_str())
                         .unwrap_or(0);
                     let next = (current + 1) % modes.len();
                     let new_mode = modes[next].to_string();
@@ -85,32 +84,43 @@ pub(super) async fn handle(
                         .await;
                 }
                 2 => {
-                    if !app.systemd_available {
-                        app.msg("Systemd autostart unavailable: systemd not detected");
-                    } else if app.systemd_enabled {
-                        app.msg("Disabling systemd autostart...");
-                        let result = tokio::task::spawn_blocking(teardown_systemd_service).await;
-                        match result {
-                            Ok(Ok(())) => {
-                                app.systemd_enabled = false;
-                                app.msg("Systemd autostart disabled");
-                            }
-                            Ok(Err(e)) => app.msg(format!("Error: {}", e)),
-                            Err(e) => app.msg(format!("Error: {}", e)),
-                        }
+                    if !app.autostart_available {
+                        app.msg("Autostart unavailable: no backend detected");
                     } else {
-                        app.msg("Enabling systemd autostart...");
-                        let core_path = find_core_binary();
-                        let result =
-                            tokio::task::spawn_blocking(move || setup_systemd_service(&core_path))
-                                .await;
+                        let current = autostart::status();
+                        let mut order: Vec<Option<Backend>> = vec![None];
+                        order.extend(current.available.iter().copied().map(Some));
+                        let active = if current.enabled {
+                            current.backend
+                        } else {
+                            None
+                        };
+                        let index = order
+                            .iter()
+                            .position(|candidate| *candidate == active)
+                            .unwrap_or(0);
+                        let next = order[(index + 1) % order.len()];
+                        let result = tokio::task::spawn_blocking(move || match next {
+                            None => autostart::disable(),
+                            Some(backend) => autostart::enable(backend),
+                        })
+                        .await;
                         match result {
                             Ok(Ok(())) => {
-                                app.systemd_enabled = true;
-                                app.msg("Systemd autostart enabled");
+                                let status = autostart::status();
+                                app.autostart_backend =
+                                    status.backend.map(|b| b.name().to_string());
+                                app.autostart_enabled = status.enabled;
+                                app.autostart_available = !status.available.is_empty();
+                                app.msg(match next {
+                                    None => "Autostart disabled".to_string(),
+                                    Some(backend) => {
+                                        format!("Autostart: {}", backend.name())
+                                    }
+                                });
                             }
-                            Ok(Err(e)) => app.msg(format!("Error: {}", e)),
-                            Err(e) => app.msg(format!("Error: {}", e)),
+                            Ok(Err(e)) => app.msg(format!("Error: {e}")),
+                            Err(e) => app.msg(format!("Error: {e}")),
                         }
                     }
                 }
