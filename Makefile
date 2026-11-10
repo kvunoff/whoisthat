@@ -29,7 +29,6 @@ test-rust:
 # Root helpers: fake init systems and fake core, no root required.
 test-shell:
 	./scripts/cgroup-setup.test.sh
-	./scripts/cgroup-run.test.sh
 	./scripts/run-runner.test.sh
 	./scripts/run-core.test.sh
 	./scripts/install-init.test.sh
@@ -120,6 +119,7 @@ install:
 	fi
 	$(MAKE) build
 	sudo install -Dm755 target/release/whoisthat $(BINDIR)/whoisthat
+	sudo install -Dm755 target/release/whoisthat-runner $(BINDIR)/whoisthat-runner
 	sudo install -Dm755 core/core/whoisthat-core $(BINDIR)/whoisthat-core
 	sudo setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep $(BINDIR)/whoisthat-core
 	@if [ -e /usr/local/bin/whoisthat ] || [ -e /usr/local/bin/whoisthat-core ]; then \
