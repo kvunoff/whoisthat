@@ -465,6 +465,7 @@ fn run_foreground(stream: &mut UnixStream, writer: &Writer, spawn: &Spawn) -> io
             }
         }
     });
+    let mut stdin_tx = Some(stdin_tx);
 
     stream.set_read_timeout(Some(IDLE_POLL))?;
     loop {
@@ -472,10 +473,13 @@ fn run_foreground(stream: &mut UnixStream, writer: &Writer, spawn: &Spawn) -> io
             Ok((kind, payload)) => match kind {
                 proto::kind::STDIN => {
                     if payload.is_empty() {
-                        break;
-                    }
-                    if stdin_tx.send(payload).is_err() {
-                        break;
+                        // EOF on stdin: close the child's stdin, keep the
+                        // session alive so the app can finish and report EXIT.
+                        stdin_tx = None;
+                    } else if let Some(tx) = &stdin_tx
+                        && tx.send(payload).is_err()
+                    {
+                        stdin_tx = None;
                     }
                 }
                 proto::kind::SIGNAL => {
@@ -519,19 +523,6 @@ fn run_foreground(stream: &mut UnixStream, writer: &Writer, spawn: &Spawn) -> io
             return Ok(());
         }
     }
-
-    drop(stdin_tx);
-    let _ = stdin_thread.join();
-
-    // Client closed stdin: stop the process group and drain its output.
-    unsafe {
-        libc::kill(-pid, libc::SIGHUP);
-    }
-    let _ = wait_for(pid, Duration::from_secs(2));
-    let _ = out_thread.join();
-    let _ = err_thread.join();
-    register_pid(pid, false);
-    Ok(())
 }
 
 fn run_detached(stream: &mut UnixStream, writer: &Writer, spawn: &Spawn) -> io::Result<()> {
