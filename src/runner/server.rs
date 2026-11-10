@@ -18,6 +18,7 @@ use std::time::Duration;
 use std::os::unix::fs::OpenOptionsExt;
 
 use super::proto::{self, Control, ExitStatus, Spawn};
+use super::pty;
 
 const MAX_CONNECTIONS: usize = 64;
 const FIRST_FRAME_TIMEOUT: Duration = Duration::from_secs(10);
@@ -262,15 +263,10 @@ fn handle(mut stream: UnixStream, uid: u32) -> io::Result<()> {
         send_error(&mut stream, &message);
         return Ok(());
     }
-    if spawn.tty {
-        send_error(
-            &mut stream,
-            "interactive (tty) launches are not available in this build; PTY support is phase R2",
-        );
-        return Ok(());
-    }
-
     let writer: Writer = Arc::new(Mutex::new(stream.try_clone()?));
+    if spawn.tty {
+        return run_foreground_tty(&mut stream, &writer, &spawn);
+    }
     if spawn.detach {
         return run_detached(&mut stream, &writer, &spawn);
     }
@@ -522,6 +518,176 @@ fn run_foreground(stream: &mut UnixStream, writer: &Writer, spawn: &Spawn) -> io
             register_pid(pid, false);
             return Ok(());
         }
+    }
+}
+
+fn run_foreground_tty(stream: &mut UnixStream, writer: &Writer, spawn: &Spawn) -> io::Result<()> {
+    let command = match Command::build(spawn) {
+        Ok(command) => command,
+        Err(e) => {
+            send_error(stream, &e.to_string());
+            return Ok(());
+        }
+    };
+    let pty = match pty::open(spawn.rows, spawn.cols) {
+        Ok(pty) => pty,
+        Err(e) => {
+            send_error(stream, &format!("cannot allocate a pty: {e}"));
+            return Ok(());
+        }
+    };
+    let (status_read, status_write) = pipe()?;
+
+    let pid = unsafe { libc::fork() };
+    if pid < 0 {
+        send_error(
+            stream,
+            &format!("fork failed: {}", io::Error::last_os_error()),
+        );
+        return Ok(());
+    }
+    if pid == 0 {
+        child_exec_tty(
+            &command,
+            spawn,
+            pty.slave.as_raw_fd(),
+            status_write.as_raw_fd(),
+        );
+    }
+
+    drop(pty.slave);
+    drop(status_write);
+    register_pid(pid, true);
+
+    let mut status = Vec::new();
+    {
+        let mut file = fs::File::from(status_read);
+        let _ = file.read_to_end(&mut status);
+    }
+    if status.len() >= 4 {
+        let errno = i32::from_ne_bytes([status[0], status[1], status[2], status[3]]);
+        send_error(
+            stream,
+            &format!(
+                "cannot start {}: {}",
+                spawn.argv[0],
+                io::Error::from_raw_os_error(errno)
+            ),
+        );
+        reap(pid);
+        register_pid(pid, false);
+        return Ok(());
+    }
+
+    send_control(
+        writer,
+        &Control::Started {
+            pid,
+            protocol: proto::PROTOCOL,
+        },
+    )?;
+
+    let master_read = pty.master;
+    let master_write = master_read.try_clone()?;
+    let out_writer = writer.clone();
+    let out_thread =
+        thread::spawn(move || copy_frames(master_read, out_writer, proto::kind::STDOUT));
+
+    stream.set_read_timeout(Some(IDLE_POLL))?;
+    loop {
+        match proto::read_frame(stream) {
+            Ok((kind, payload)) => match kind {
+                proto::kind::STDIN => {
+                    if !payload.is_empty() {
+                        write_fd(master_write.as_raw_fd(), &payload);
+                    }
+                }
+                proto::kind::RESIZE => {
+                    if let Ok(size) = serde_json::from_slice::<proto::Resize>(&payload) {
+                        pty::resize(master_write.as_raw_fd(), size.rows, size.cols);
+                    }
+                }
+                proto::kind::SIGNAL => {
+                    if let Ok(signal) = serde_json::from_slice::<proto::Signal>(&payload)
+                        && (1..=64).contains(&signal.signal)
+                    {
+                        unsafe {
+                            libc::kill(-pid, signal.signal);
+                        }
+                    }
+                }
+                _ => {}
+            },
+            Err(e)
+                if e.kind() == io::ErrorKind::WouldBlock || e.kind() == io::ErrorKind::TimedOut => {
+            }
+            Err(_) => {
+                unsafe {
+                    libc::kill(-pid, libc::SIGHUP);
+                }
+                let exited = wait_for(pid, Duration::from_secs(2))?;
+                if !exited {
+                    unsafe {
+                        libc::kill(-pid, libc::SIGKILL);
+                    }
+                }
+                let _ = out_thread.join();
+                register_pid(pid, false);
+                return Ok(());
+            }
+        }
+        if let Some(status) = try_wait(pid)? {
+            let _ = out_thread.join();
+            let payload = serde_json::to_vec(&status).unwrap_or_default();
+            let mut stream = writer.lock().expect("writer lock");
+            let _ = proto::write_frame(&mut *stream, proto::kind::EXIT, &payload);
+            register_pid(pid, false);
+            return Ok(());
+        }
+    }
+}
+
+fn write_fd(fd: i32, mut data: &[u8]) {
+    while !data.is_empty() {
+        let written = unsafe { libc::write(fd, data.as_ptr() as *const libc::c_void, data.len()) };
+        if written <= 0 {
+            return;
+        }
+        data = &data[written as usize..];
+    }
+}
+
+fn child_exec_tty(command: &Command, spawn: &Spawn, slave_fd: i32, status_fd: i32) -> ! {
+    unsafe {
+        // setsid makes this process a session leader; TIOCSCTTY then gives it
+        // the slave as its controlling terminal.
+        libc::setsid();
+        if libc::ioctl(slave_fd, libc::TIOCSCTTY, 0) < 0 {
+            write_errno(status_fd);
+            libc::_exit(127);
+        }
+        if libc::chdir(command.cwd.as_ptr()) != 0 {
+            write_errno(status_fd);
+            libc::_exit(127);
+        }
+        libc::umask(spawn.umask as libc::mode_t);
+        if libc::dup2(slave_fd, 0) < 0 || libc::dup2(slave_fd, 1) < 0 || libc::dup2(slave_fd, 2) < 0
+        {
+            write_errno(status_fd);
+            libc::_exit(127);
+        }
+        if libc::dup2(status_fd, 3) < 0 {
+            libc::_exit(127);
+        }
+        libc::fcntl(3, libc::F_SETFD, libc::FD_CLOEXEC);
+        close_from(4);
+        libc::execve(
+            command.program.as_ptr(),
+            command.argv.as_ptr(),
+            command.envp.as_ptr(),
+        );
+        write_errno(3);
+        libc::_exit(127);
     }
 }
 

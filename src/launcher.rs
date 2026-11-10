@@ -26,8 +26,13 @@ const START_TIMEOUT: Duration = Duration::from_secs(10);
 const RUNNER_SOCKET: &str = "runner.sock";
 
 static PENDING_SIGNAL: AtomicI32 = AtomicI32::new(0);
+static RESIZED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 extern "C" fn on_signal(signal: libc::c_int) {
+    if signal == libc::SIGWINCH {
+        RESIZED.store(true, Ordering::SeqCst);
+        return;
+    }
     PENDING_SIGNAL.store(signal, Ordering::SeqCst);
 }
 
@@ -143,15 +148,26 @@ fn run_via_runner(target_args: &[String], detach: bool) -> i32 {
         }
     };
 
+    let interactive = !detach && std::io::stdin().is_terminal();
+    let (mut cols, mut rows) = if interactive {
+        crossterm::terminal::size().unwrap_or((80, 24))
+    } else {
+        (0, 0)
+    };
+    if interactive && (cols == 0 || rows == 0) {
+        cols = 80;
+        rows = 24;
+    }
+
     let request = Spawn {
         protocol: proto::PROTOCOL,
         argv: target_args.to_vec(),
         env: forwarded_env(),
         cwd: current_cwd(),
         umask: current_umask(),
-        rows: 0,
-        cols: 0,
-        tty: false,
+        rows,
+        cols,
+        tty: interactive,
         detach,
     };
 
@@ -204,11 +220,18 @@ fn run_via_runner(target_args: &[String], detach: bool) -> i32 {
     if detach {
         return 0;
     }
-    if std::io::stdin().is_terminal() || std::io::stdout().is_terminal() {
-        eprintln!(
-            "whoisthat run: note: full-screen/interactive programs need PTY support (phase R2)"
-        );
-    }
+
+    let _raw = if interactive {
+        match enable_raw_mode() {
+            Ok(()) => Some(RawModeGuard),
+            Err(e) => {
+                eprintln!("whoisthat run: cannot enter raw terminal mode: {e}");
+                return 1;
+            }
+        }
+    } else {
+        None
+    };
 
     let writer = Arc::new(Mutex::new(writer_stream));
     let (exit_tx, exit_rx) = mpsc::channel::<Option<ExitStatus>>();
@@ -220,7 +243,7 @@ fn run_via_runner(target_args: &[String], detach: bool) -> i32 {
     install_signal_handler();
     let _ = pid;
 
-    let stdin_thread = {
+    let _stdin_thread = {
         let writer = Arc::clone(&writer);
         thread::spawn(move || forward_stdin(&writer))
     };
@@ -228,12 +251,10 @@ fn run_via_runner(target_args: &[String], detach: bool) -> i32 {
     loop {
         match exit_rx.recv_timeout(Duration::from_millis(100)) {
             Ok(Some(status)) => {
-                let _ = stdin_thread.join();
                 let _ = reader.join();
                 return exit_code(status);
             }
             Ok(None) => {
-                let _ = stdin_thread.join();
                 let _ = reader.join();
                 return 1;
             }
@@ -242,6 +263,13 @@ fn run_via_runner(target_args: &[String], detach: bool) -> i32 {
                 if signal != 0 {
                     let payload = serde_json::to_vec(&Signal { signal }).unwrap_or_default();
                     let _ = send_frame(&writer, proto::kind::SIGNAL, &payload);
+                }
+                if RESIZED.swap(false, Ordering::SeqCst)
+                    && let Ok((cols, rows)) = crossterm::terminal::size()
+                {
+                    let payload =
+                        serde_json::to_vec(&proto::Resize { rows, cols }).unwrap_or_default();
+                    let _ = send_frame(&writer, proto::kind::RESIZE, &payload);
                 }
             }
             Err(mpsc::RecvTimeoutError::Disconnected) => return 1,
@@ -343,6 +371,17 @@ fn install_signal_handler() {
         libc::sigemptyset(&mut action.sa_mask);
         libc::sigaction(libc::SIGINT, &action, std::ptr::null_mut());
         libc::sigaction(libc::SIGTERM, &action, std::ptr::null_mut());
+        libc::sigaction(libc::SIGWINCH, &action, std::ptr::null_mut());
+    }
+}
+
+use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
+
+struct RawModeGuard;
+
+impl Drop for RawModeGuard {
+    fn drop(&mut self) {
+        let _ = disable_raw_mode();
     }
 }
 

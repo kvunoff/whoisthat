@@ -4,6 +4,8 @@
 #[allow(dead_code)]
 #[path = "../runner/proto.rs"]
 mod proto;
+#[path = "../runner/pty.rs"]
+mod pty;
 #[path = "../runner/server.rs"]
 mod server;
 
