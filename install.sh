@@ -449,6 +449,9 @@ uninstall_whoisthat() {
     # Stop the daemon and the user unit before deleting the binaries they run.
     # systemctl --user must go through as_target: under sudo it would talk to
     # root's session bus instead of the user's.
+    if [ -x "$BIN_DIR/whoisthat" ]; then
+        as_target "$BIN_DIR/whoisthat" autostart disable >/dev/null 2>&1 || true
+    fi
     if command -v systemctl >/dev/null 2>&1; then
         as_target systemctl --user disable --now whoisthat-core.service >/dev/null 2>&1 || true
     fi
@@ -459,6 +462,11 @@ uninstall_whoisthat() {
     fi
     if command -v pkill >/dev/null 2>&1; then
         pkill -TERM -u "$TARGET_USER" -x whoisthat-core >/dev/null 2>&1 || true
+    fi
+
+    if [ -x /usr/lib/whoisthat/install-init ]; then
+        $SUDO /usr/lib/whoisthat/install-init remove >/dev/null 2>&1 \
+            || warn "could not remove the init services (install-init remove)"
     fi
 
     # A graceful stop deliberately leaves the kill-switch armed. Removing the
@@ -542,7 +550,7 @@ uninstall_whoisthat() {
 
     local removed=0 dir bin
     for dir in "$BIN_DIR" "$LEGACY_BIN_DIR"; do
-        for bin in whoisthat whoisthat-core whoisthat-parser; do
+        for bin in whoisthat whoisthat-core whoisthat-runner whoisthat-parser; do
             if [ -f "$dir/$bin" ]; then
                 if package_owns "$dir/$bin"; then
                     info "Leaving package-owned $dir/$bin in place"
@@ -559,6 +567,11 @@ uninstall_whoisthat() {
         info "No WhoisThat binaries were found in $BIN_DIR or $LEGACY_BIN_DIR."
     else
         info "WhoisThat binaries removed successfully."
+    fi
+
+    if [ -d /usr/lib/whoisthat ] && ! package_owns /usr/lib/whoisthat/cgroup-setup; then
+        $SUDO rm -rf /usr/lib/whoisthat
+        info "Removed /usr/lib/whoisthat"
     fi
 
     echo
@@ -890,15 +903,22 @@ build_whoisthat() {
     ( cd "$src_dir/core/core" && as_target go build -o whoisthat-core )
     [ -f "$src_dir/core/core/whoisthat-core" ] || { err "whoisthat-core build failed"; exit 1; }
 
-    # 2. whoisthat TUI (Rust)
-    info "2/2 Building whoisthat TUI..."
+    # 2. whoisthat TUI (Rust) and the per-user runner (same workspace)
+    info "2/2 Building whoisthat TUI and runner..."
     ( cd "$src_dir" && as_target cargo build --release --locked )
     [ -f "$src_dir/target/release/whoisthat" ] || { err "whoisthat TUI build failed"; exit 1; }
+    [ -f "$src_dir/target/release/whoisthat-runner" ] || { err "whoisthat-runner build failed"; exit 1; }
 
     mkdir -p "$ARTIFACT_DIR"
     cp "$src_dir/target/release/whoisthat" "$ARTIFACT_DIR/whoisthat"
+    cp "$src_dir/target/release/whoisthat-runner" "$ARTIFACT_DIR/whoisthat-runner"
     cp "$src_dir/core/core/whoisthat-core" "$ARTIFACT_DIR/whoisthat-core"
     cp "$src_dir/pkg/whoisthat.desktop" "$ARTIFACT_DIR/whoisthat.desktop"
+    mkdir -p "$ARTIFACT_DIR/lib/whoisthat"
+    for helper in cgroup-setup run-runner run-core install-init init-hook; do
+        [ -f "$src_dir/scripts/$helper" ] && cp "$src_dir/scripts/$helper" "$ARTIFACT_DIR/lib/whoisthat/$helper"
+    done
+    [ -d "$src_dir/pkg/init" ] && cp -R "$src_dir/pkg/init" "$ARTIFACT_DIR/lib/whoisthat/init"
     # Tags released before the two-entry desktop integration lack these files.
     [ -f "$src_dir/pkg/whoisthat-url.desktop" ] &&
         cp "$src_dir/pkg/whoisthat-url.desktop" "$ARTIFACT_DIR/whoisthat-url.desktop"
@@ -940,7 +960,8 @@ install_binaries() {
 
     # A distro package owns these paths; overwriting them would break dpkg/rpm
     # verification and the next package upgrade.
-    if package_owns "$BIN_DIR/whoisthat" || package_owns "$BIN_DIR/whoisthat-core"; then
+    if package_owns "$BIN_DIR/whoisthat" || package_owns "$BIN_DIR/whoisthat-core" \
+        || package_owns "$BIN_DIR/whoisthat-runner"; then
         err "WhoisThat is installed by a distribution package."
         err "Upgrade it with your package manager, or remove the package first."
         exit 1
@@ -949,9 +970,14 @@ install_binaries() {
     # Stage both binaries as hidden files first: the pair is swapped only after
     # the new core has capabilities, so an interrupted or failed install never
     # leaves a new TUI next to an old, incompatible core.
-    info "Installing whoisthat and whoisthat-core..."
+    info "Installing whoisthat, whoisthat-core and whoisthat-runner..."
     $SUDO install -Dm755 "$ARTIFACT_DIR/whoisthat" "$BIN_DIR/.whoisthat.new"
     $SUDO install -Dm755 "$ARTIFACT_DIR/whoisthat-core" "$BIN_DIR/.whoisthat-core.new"
+    if [ -f "$ARTIFACT_DIR/whoisthat-runner" ]; then
+        $SUDO install -Dm755 "$ARTIFACT_DIR/whoisthat-runner" "$BIN_DIR/.whoisthat-runner.new"
+    else
+        warn "Release archive has no whoisthat-runner (old release); split-tunnel launching will be unavailable."
+    fi
 
     info "Granting network capabilities to whoisthat-core..."
     if $SUDO setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep "$BIN_DIR/.whoisthat-core.new" 2>/dev/null; then
@@ -963,10 +989,13 @@ install_binaries() {
 
     $SUDO mv -f "$BIN_DIR/.whoisthat.new" "$BIN_DIR/whoisthat"
     $SUDO mv -f "$BIN_DIR/.whoisthat-core.new" "$BIN_DIR/whoisthat-core"
+    if [ -f "$BIN_DIR/.whoisthat-runner.new" ]; then
+        $SUDO mv -f "$BIN_DIR/.whoisthat-runner.new" "$BIN_DIR/whoisthat-runner"
+    fi
 
     # Remove binaries from the old canonical location so PATH order can never
     # pick a stale copy over the new /usr/bin install.
-    for bin in whoisthat whoisthat-core whoisthat-parser; do
+    for bin in whoisthat whoisthat-core whoisthat-runner whoisthat-parser; do
         if [ -f "$LEGACY_BIN_DIR/$bin" ]; then
             $SUDO rm -f "$LEGACY_BIN_DIR/$bin"
             info "Removed legacy $LEGACY_BIN_DIR/$bin"
@@ -1007,7 +1036,47 @@ install_binaries() {
         warn "Could not refresh per-user desktop entries; run 'whoisthat link register'."
     fi
 
-    install_shell_integration
+install_shell_integration
+    install_system_helpers
+    enable_init_services
+}
+
+# Root-owned helpers and init templates shipped inside the release archive
+# under lib/whoisthat/. Older releases do not have them; that is a warning.
+install_system_helpers() {
+    local src="$ARTIFACT_DIR/lib/whoisthat"
+    if [ ! -d "$src" ]; then
+        warn "Release archive has no split-tunnel helpers (old release); skipping."
+        return 0
+    fi
+    local lib=/usr/lib/whoisthat
+    $SUDO mkdir -p "$lib"
+    $SUDO cp -a "$src/." "$lib/"
+    $SUDO chown -R root:root "$lib"
+    $SUDO find "$lib" -maxdepth 1 -type f -exec chmod 755 {} +
+    $SUDO find "$lib/init/openrc" "$lib/init/runit" -type f -exec chmod 755 {} + 2>/dev/null || true
+    $SUDO find "$lib/init/dinit" -type f -exec chmod 644 {} + 2>/dev/null || true
+}
+
+# On systemd hosts the TUI creates its unit. Elsewhere install-init sets up the
+# cgroup hook, the per-user runner and the core service once, as root.
+enable_init_services() {
+    [ -d /run/systemd/system ] && return 0
+    local user="${TARGET_USER:-}"
+    [ -n "$user" ] || return 0
+    local uid
+    uid=$(id -u "$user" 2>/dev/null) || return 0
+    [ "$uid" -ge 1000 ] || return 0
+    local lib=/usr/lib/whoisthat
+    [ -x "$lib/install-init" ] || return 0
+    if [ -x "$lib/cgroup-setup" ]; then
+        "$lib/cgroup-setup" "$user" || warn "cgroup-setup failed; split tunnelling may be unavailable"
+    fi
+    "$lib/install-init" cgroup enable || warn "could not install the cgroup boot hook"
+    "$lib/install-init" runner enable "$user" "$TARGET_HOME" \
+        || warn "could not install whoisthat-runner"
+    "$lib/install-init" core enable "$user" "$TARGET_HOME" \
+        || warn "could not install the whoisthat-core service"
 }
 
 # --- Xray archive verification ------------------------------------------------
