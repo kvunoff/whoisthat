@@ -1,33 +1,34 @@
-//! `whoisthat run [-d|--detach|-b|--background] <app> [args...]` — launch an application
-//! inside the split-tunnel cgroup so the core's nftables rules route it separately.
+//! `whoisthat run [-d|--detach|-b|--background] <app> [args...]` — launch an
+//! application inside the split-tunnel cgroup.
 //!
 //! With systemd we keep using a transient `systemd-run --user` scope/service
-//! under `whoisthat_split.slice` (the user manager owns the cgroup tree).
+//! under `whoisthat_split.slice`.
 //!
-//! Without systemd the root helper `cgroup-run` moves the child into the native
-//! cgroup `/sys/fs/cgroup/whoisthat-<uid>` and drops back to the user. A normal
-//! process cannot migrate itself there: the kernel also requires write access
-//! to the source cgroup, which is root-owned on non-systemd hosts. The helper is
-//! invoked through sudo, so a delegated-cgroup setup still works without it (the
-//! built-in `pre_exec` path is kept as a fallback).
-//!
-//! In foreground mode (default) the app runs in the foreground and its exit code
-//! is propagated. `-d` detaches it from the terminal.
+//! Without systemd the command is sent to the per-user `whoisthat-runner`
+//! (`/run/whoisthat/<uid>/whoisthat/runner.sock`). The runner lives inside
+//! `/sys/fs/cgroup/whoisthat-<uid>`, so forked applications inherit the cgroup;
+//! no sudo and no PID migration are involved.
 
-use std::fs::File;
-use std::io;
-use std::os::fd::AsRawFd;
-use std::os::unix::process::CommandExt;
+use std::io::{self, IsTerminal, Read, Write};
+use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
+use std::process::Command;
+use std::sync::atomic::{AtomicI32, Ordering};
+use std::sync::mpsc;
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::Duration;
+
+use crate::proto::{self, Control, ExitStatus, Signal, Spawn};
 
 const SLICE: &str = "whoisthat_split.slice";
+const START_TIMEOUT: Duration = Duration::from_secs(10);
+const RUNNER_SOCKET: &str = "runner.sock";
 
-unsafe extern "C" {
-    #[link_name = "setsid"]
-    fn libc_setsid() -> i32;
-    #[link_name = "write"]
-    fn libc_write(fd: i32, buf: *const u8, count: usize) -> isize;
+static PENDING_SIGNAL: AtomicI32 = AtomicI32::new(0);
+
+extern "C" fn on_signal(signal: libc::c_int) {
+    PENDING_SIGNAL.store(signal, Ordering::SeqCst);
 }
 
 /// Handle the `run` subcommand. `args` are everything after `run` (flags, the target
@@ -51,7 +52,7 @@ pub fn run_in_split_slice(args: &[String]) -> i32 {
         eprintln!();
         eprintln!("Launches <application> inside the split-tunnel cgroup:");
         eprintln!("  systemd hosts: whoisthat_split.slice (via systemd-run)");
-        eprintln!("  other hosts:   /sys/fs/cgroup/whoisthat-<uid> (native cgroup)");
+        eprintln!("  other hosts:   /sys/fs/cgroup/whoisthat-<uid> (whoisthat-runner)");
         eprintln!("Its traffic is routed per the current split mode:");
         eprintln!("  exclude — bypass tunnel (direct physical gateway)");
         eprintln!("  include — only these apps use the tunnel");
@@ -73,7 +74,7 @@ pub fn run_in_split_slice(args: &[String]) -> i32 {
     if crate::platform::has_systemd() {
         return run_via_systemd(target_args, detach);
     }
-    run_native(target_args, detach)
+    run_via_runner(target_args, detach)
 }
 
 fn run_via_systemd(target_args: &[String], detach: bool) -> i32 {
@@ -110,127 +111,238 @@ fn run_via_systemd(target_args: &[String], detach: bool) -> i32 {
     }
 }
 
-pub(crate) fn split_cgroup_dir(uid: u32) -> PathBuf {
-    PathBuf::from(format!("/sys/fs/cgroup/whoisthat-{uid}"))
-}
-
-/// The native cgroup is usable when the user can write `cgroup.procs`. Opening
-/// it for writing does not change any state; the PID is written later in
-/// `pre_exec`.
-fn pick_writable_cgroup(uid: u32) -> Option<PathBuf> {
-    let dir = split_cgroup_dir(uid);
-    File::options()
-        .write(true)
-        .open(dir.join("cgroup.procs"))
-        .ok()
-        .map(|_| dir)
-}
-
-fn run_native(target_args: &[String], detach: bool) -> i32 {
-    let uid = crate::config::uid();
-    if let Some(helper) = helper_path() {
-        return run_via_helper(&helper, uid, target_args, detach);
+fn runner_socket() -> PathBuf {
+    if std::env::var("WHOISTHAT_TEST_MODE").as_deref() == Ok("1")
+        && let Ok(path) = std::env::var("WHOISTHAT_RUNNER_SOCKET")
+    {
+        return PathBuf::from(path);
     }
+    crate::config::runtime_dir().join(RUNNER_SOCKET)
+}
 
-    let Some(dir) = pick_writable_cgroup(uid) else {
-        eprintln!(
-            "whoisthat run: cgroup not found; run: sudo /usr/lib/whoisthat/cgroup-setup $USER"
-        );
-        return 1;
-    };
+fn runner_start_hint() -> &'static str {
+    match crate::platform::detect_init() {
+        crate::platform::InitSystem::OpenRC => "sudo rc-service whoisthat-runner start",
+        crate::platform::InitSystem::Dinit => "sudo dinitctl start whoisthat-runner",
+        crate::platform::InitSystem::Runit => "sudo sv start whoisthat-runner",
+        _ => "start the whoisthat-runner service",
+    }
+}
 
-    let procs = match File::options().write(true).open(dir.join("cgroup.procs")) {
-        Ok(file) => file,
+fn run_via_runner(target_args: &[String], detach: bool) -> i32 {
+    let socket = runner_socket();
+    let mut stream = match UnixStream::connect(&socket) {
+        Ok(stream) => stream,
         Err(e) => {
             eprintln!(
-                "whoisthat run: cannot open {}/cgroup.procs: {e}",
-                dir.display()
+                "whoisthat run: split-tunnel runner is not running ({}: {e}); {}",
+                socket.display(),
+                runner_start_hint()
             );
             return 1;
         }
     };
-    let fd = procs.as_raw_fd();
 
-    let mut cmd = Command::new(&target_args[0]);
-    cmd.args(&target_args[1..]);
-    if detach {
-        cmd.stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null());
-    }
-    unsafe {
-        cmd.pre_exec(move || {
-            // Async-signal-safe only: no allocations, no std::fs.
-            if detach && libc_setsid() < 0 {
-                return Err(io::Error::last_os_error());
-            }
-            // "0" means "move the current process" into the cgroup.
-            if libc_write(fd, b"0".as_ptr(), 1) < 0 {
-                return Err(io::Error::last_os_error());
-            }
-            Ok(())
-        });
-    }
-
-    if detach {
-        match cmd.spawn() {
-            Ok(_) => 0,
-            Err(e) => {
-                report_native_error(&e);
-                1
-            }
-        }
-    } else {
-        match cmd.status() {
-            Ok(status) => status.code().unwrap_or(1),
-            Err(e) => {
-                report_native_error(&e);
-                1
-            }
-        }
-    }
-}
-
-const CGROUP_RUN_HELPER: &str = "/usr/lib/whoisthat/cgroup-run";
-
-fn helper_path() -> Option<String> {
-    std::path::Path::new(CGROUP_RUN_HELPER)
-        .is_file()
-        .then(|| CGROUP_RUN_HELPER.to_string())
-}
-
-fn run_via_helper(helper: &str, uid: u32, target_args: &[String], detach: bool) -> i32 {
-    let Some(sudo) = which("sudo") else {
-        eprintln!(
-            "whoisthat run: sudo not found; the cgroup helper runs through sudo (or configure a delegated cgroup)"
-        );
-        return 1;
+    let request = Spawn {
+        protocol: proto::PROTOCOL,
+        argv: target_args.to_vec(),
+        env: forwarded_env(),
+        cwd: current_cwd(),
+        umask: current_umask(),
+        rows: 0,
+        cols: 0,
+        tty: false,
+        detach,
     };
-    let mut cmd = Command::new(sudo);
-    cmd.arg(helper).arg(uid.to_string());
-    if detach {
-        cmd.arg("--detach");
-    }
-    cmd.arg("--").args(target_args);
 
-    match cmd.status() {
-        Ok(status) if status.success() => 0,
-        Ok(status) => status.code().unwrap_or(1),
+    let mut writer_stream = match stream.try_clone() {
+        Ok(stream) => stream,
         Err(e) => {
-            eprintln!("whoisthat run: failed to start {helper} via sudo: {e}");
-            1
+            eprintln!("whoisthat run: cannot clone runner connection: {e}");
+            return 1;
+        }
+    };
+    if writer_stream
+        .set_write_timeout(Some(Duration::from_secs(10)))
+        .is_err()
+    {
+        log::warn!("cannot set runner write timeout");
+    }
+
+    let payload = match serde_json::to_vec(&request) {
+        Ok(payload) => payload,
+        Err(e) => {
+            eprintln!("whoisthat run: cannot encode request: {e}");
+            return 1;
+        }
+    };
+    if let Err(e) = proto::write_frame(&mut writer_stream, proto::kind::CONTROL, &payload) {
+        eprintln!("whoisthat run: cannot send request to runner: {e}");
+        return 1;
+    }
+
+    stream.set_read_timeout(Some(START_TIMEOUT)).ok();
+    let started = match proto::read_frame(&mut stream) {
+        Ok((kind, payload)) if kind == proto::kind::CONTROL => {
+            match serde_json::from_slice::<Control>(&payload) {
+                Ok(Control::Started { pid, .. }) => Ok(pid),
+                Ok(Control::Error { message }) => Err(message),
+                Err(e) => Err(format!("invalid runner response: {e}")),
+            }
+        }
+        Ok(_) => Err("unexpected runner frame".into()),
+        Err(e) => Err(format!("runner did not answer: {e}")),
+    };
+    let pid = match started {
+        Ok(pid) => pid,
+        Err(message) => {
+            eprintln!("whoisthat run: {message}");
+            return 1;
+        }
+    };
+
+    if detach {
+        return 0;
+    }
+    if std::io::stdin().is_terminal() || std::io::stdout().is_terminal() {
+        eprintln!(
+            "whoisthat run: note: full-screen/interactive programs need PTY support (phase R2)"
+        );
+    }
+
+    let writer = Arc::new(Mutex::new(writer_stream));
+    let (exit_tx, exit_rx) = mpsc::channel::<Option<ExitStatus>>();
+    let reader = thread::spawn(move || {
+        let result = read_output(&mut stream);
+        let _ = exit_tx.send(result);
+    });
+
+    install_signal_handler();
+    let _ = pid;
+
+    let stdin_thread = {
+        let writer = Arc::clone(&writer);
+        thread::spawn(move || forward_stdin(&writer))
+    };
+
+    loop {
+        match exit_rx.recv_timeout(Duration::from_millis(100)) {
+            Ok(Some(status)) => {
+                let _ = stdin_thread.join();
+                let _ = reader.join();
+                return exit_code(status);
+            }
+            Ok(None) => {
+                let _ = stdin_thread.join();
+                let _ = reader.join();
+                return 1;
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                let signal = PENDING_SIGNAL.swap(0, Ordering::SeqCst);
+                if signal != 0 {
+                    let payload = serde_json::to_vec(&Signal { signal }).unwrap_or_default();
+                    let _ = send_frame(&writer, proto::kind::SIGNAL, &payload);
+                }
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => return 1,
         }
     }
 }
 
-fn report_native_error(e: &io::Error) {
-    if matches!(e.raw_os_error(), Some(1 | 13)) {
-        eprintln!(
-            "whoisthat run: cgroup migration denied by the kernel (the source cgroup is root-owned); \
-             install /usr/lib/whoisthat/cgroup-run or use a delegated cgroup"
-        );
-    } else {
-        eprintln!("whoisthat run: failed to start application: {e}");
+fn read_output(stream: &mut UnixStream) -> Option<ExitStatus> {
+    loop {
+        match proto::read_frame(stream) {
+            Ok((kind, payload)) => match kind {
+                proto::kind::STDOUT => {
+                    let _ = io::stdout().write_all(&payload);
+                    let _ = io::stdout().flush();
+                }
+                proto::kind::STDERR => {
+                    let _ = io::stderr().write_all(&payload);
+                    let _ = io::stderr().flush();
+                }
+                proto::kind::EXIT => {
+                    return serde_json::from_slice::<ExitStatus>(&payload).ok();
+                }
+                _ => {}
+            },
+            Err(_) => return None,
+        }
+    }
+}
+
+fn forward_stdin(writer: &Arc<Mutex<UnixStream>>) {
+    let mut stdin = io::stdin().lock();
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        match stdin.read(&mut buffer) {
+            Ok(0) => {
+                let _ = send_frame(writer, proto::kind::STDIN, &[]);
+                return;
+            }
+            Ok(n) => {
+                if send_frame(writer, proto::kind::STDIN, &buffer[..n]).is_err() {
+                    return;
+                }
+            }
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+            Err(_) => return,
+        }
+    }
+}
+
+fn send_frame(writer: &Arc<Mutex<UnixStream>>, kind: u8, payload: &[u8]) -> io::Result<()> {
+    let mut stream = writer.lock().expect("writer lock");
+    proto::write_frame(&mut *stream, kind, payload)
+}
+
+fn exit_code(status: ExitStatus) -> i32 {
+    if let Some(code) = status.code {
+        return code;
+    }
+    if let Some(signal) = status.signal {
+        return 128 + signal;
+    }
+    1
+}
+
+fn forwarded_env() -> Vec<(String, String)> {
+    std::env::vars_os()
+        .filter_map(|(key, value)| {
+            let key = key.into_string().ok()?;
+            let value = match value.into_string() {
+                Ok(value) => value,
+                Err(value) => {
+                    log::debug!("runner env {key}: non-UTF8 value passed lossy");
+                    value.to_string_lossy().into_owned()
+                }
+            };
+            Some((key, value))
+        })
+        .collect()
+}
+
+fn current_cwd() -> String {
+    std::env::current_dir()
+        .map(|path| path.to_string_lossy().into_owned())
+        .unwrap_or_else(|_| "/".into())
+}
+
+fn current_umask() -> u32 {
+    unsafe {
+        let previous = libc::umask(0);
+        libc::umask(previous);
+        previous as u32
+    }
+}
+
+fn install_signal_handler() {
+    unsafe {
+        let mut action: libc::sigaction = std::mem::zeroed();
+        action.sa_sigaction = on_signal as *const () as usize;
+        libc::sigemptyset(&mut action.sa_mask);
+        libc::sigaction(libc::SIGINT, &action, std::ptr::null_mut());
+        libc::sigaction(libc::SIGTERM, &action, std::ptr::null_mut());
     }
 }
 
@@ -253,7 +365,6 @@ mod tests {
 
     #[test]
     fn empty_args_returns_usage_code() {
-        // No target program → usage error, never touches systemd or cgroups.
         assert_eq!(run_in_split_slice(&[]), 2);
     }
 
@@ -268,22 +379,12 @@ mod tests {
 
     #[test]
     fn which_finds_sh_but_not_bogus_binary() {
-        // `sh` is present on every POSIX system the TUI runs on.
         assert!(which("sh").is_some());
         assert!(which("whoisthat-nonexistent-binary-xyz").is_none());
     }
 
     #[test]
-    fn native_cgroup_path_is_per_uid() {
-        assert_eq!(
-            split_cgroup_dir(1000),
-            PathBuf::from("/sys/fs/cgroup/whoisthat-1000")
-        );
-    }
-
-    #[test]
-    fn missing_native_cgroup_is_not_writable() {
-        // uid 999 is never used by the helper, so this path must not exist.
-        assert!(pick_writable_cgroup(999).is_none());
+    fn socket_defaults_to_runtime_dir() {
+        assert!(runner_socket().ends_with(RUNNER_SOCKET));
     }
 }
