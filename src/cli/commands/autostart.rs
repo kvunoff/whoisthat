@@ -109,6 +109,13 @@ async fn status(g: &GlobalArgs, forced: Option<Backend>) -> Result<(), CliError>
         status.backend = Some(backend);
         status.enabled = autostart::is_enabled(backend);
         status.path = Some(autostart::artifact_path(backend));
+        if let Some(warning) = &status.warning {
+            let irrelevant = (backend != Backend::Init && warning.starts_with("core is stopped"))
+                || (backend != Backend::Desktop && warning.starts_with("desktop autostart"));
+            if irrelevant {
+                status.warning = None;
+            }
+        }
     }
     let systemd = crate::platform::has_systemd();
     let linger = systemd && crate::systemd::linger_is_enabled();

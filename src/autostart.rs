@@ -117,6 +117,9 @@ pub fn status() -> Status {
             selected.name()
         ));
     }
+    if backend == Some(Backend::Init) && lifecycle::marker_path("core-stop").exists() {
+        warning = Some("core is stopped until 'whoisthat core start' (or reboot)".to_string());
+    }
     Status {
         available,
         backend,
