@@ -1,0 +1,14 @@
+#!/sbin/openrc-run
+# shellcheck shell=sh
+# shellcheck disable=SC2034
+description="WhoisThat split-tunnel runner (uid @UID@)"
+
+depend() {
+    need whoisthat-cgroup
+}
+
+command="/usr/lib/whoisthat/run-runner"
+command_args="@UID@ @GID@ @HOME@ @SOCKET@"
+supervisor="supervise-daemon"
+respawn_delay=5
+respawn_max=0

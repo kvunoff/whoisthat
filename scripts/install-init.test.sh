@@ -85,6 +85,16 @@ run core disable "$user" || fail "openrc core disable failed"
 [ ! -e "$marker" ] || fail "marker not removed on disable"
 pass "core disable removes service and marker"
 
+run runner enable "$user" "$root/home" || fail "openrc runner enable failed"
+runner_service="$root/etc/init.d/whoisthat-runner"
+[ -x "$runner_service" ] || fail "runner service missing"
+grep -q "command_args=\"$uid $gid $root/home /run/whoisthat/$uid/whoisthat/runner.sock\"" "$runner_service" \
+    || fail "runner command_args wrong"
+grep -q "rc-update add whoisthat-runner default" "$cmdlog" || fail "runner not enabled"
+run runner disable "$user" || fail "runner disable failed"
+[ ! -e "$runner_service" ] || fail "runner service survived disable"
+pass "openrc runner service installed and removed"
+
 rm -f "$cmdlog"
 export WHOISTHAT_INIT=dinit
 run cgroup enable || fail "dinit cgroup enable failed"
@@ -98,6 +108,12 @@ grep -q "^restart = false" "$dinit_core" || fail "dinit must not restart-loop"
 grep -q "dinitctl enable whoisthat-core" "$cmdlog" || fail "dinit core not enabled"
 pass "dinit templates rendered"
 
+run runner enable "$user" "$root/home" || fail "dinit runner enable failed"
+grep -q "depends-on = whoisthat-cgroup" "$root/etc/dinit.d/whoisthat-runner" \
+    || fail "dinit runner dependency missing"
+grep -q "^restart = true" "$root/etc/dinit.d/whoisthat-runner" || fail "dinit runner restart"
+pass "dinit runner rendered"
+
 rm -rf "${root:?}/etc"
 export WHOISTHAT_INIT=runit
 run cgroup enable || fail "runit cgroup enable failed"
@@ -107,16 +123,22 @@ runfile="$root/etc/runit/sv/whoisthat-core/run"
 [ -x "$runfile" ] || fail "runit run script missing"
 grep -q "chpst -u \"$uid:$gid\"" "$runfile" || fail "runit chpst args wrong"
 [ -L "$root/etc/runit/runsvdir/default/whoisthat-core" ] || fail "runit service not linked"
+run runner enable "$user" "$root/home" || fail "runit runner enable failed"
+runner_run="$root/etc/runit/sv/whoisthat-runner/run"
+[ -x "$runner_run" ] || fail "runit runner run missing"
+[ -L "$root/etc/runit/runsvdir/default/whoisthat-runner" ] || fail "runit runner not linked"
 pass "runit templates rendered and linked"
 
 export WHOISTHAT_INIT=openrc
 rm -rf "${root:?}/etc"
 run cgroup enable
 run core enable "$user" "$root/home"
+run runner enable "$user" "$root/home"
 run remove || fail "remove failed"
 [ ! -e "$root/etc/init.d/whoisthat-core" ] || fail "service survived remove"
 [ ! -e "$root/etc/init.d/whoisthat-cgroup" ] || fail "cgroup hook survived remove"
+[ ! -e "$root/etc/init.d/whoisthat-runner" ] || fail "runner survived remove"
 [ ! -e "$marker" ] || fail "marker survived remove"
-pass "remove cleans services, hooks and markers"
+pass "remove cleans services, hooks, runner and markers"
 
 echo "install-init tests passed"

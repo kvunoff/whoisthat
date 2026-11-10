@@ -30,6 +30,7 @@ test-rust:
 test-shell:
 	./scripts/cgroup-setup.test.sh
 	./scripts/cgroup-run.test.sh
+	./scripts/run-runner.test.sh
 	./scripts/run-core.test.sh
 	./scripts/install-init.test.sh
 

@@ -181,6 +181,17 @@ create_user() {
     mkdir -p "$run_dir" || { warn "cannot create $run_dir"; return 1; }
     chown "$uid:$gid" "$run_dir"
     chmod 0700 "$run_dir"
+
+    # The runner starts before the core, so its socket directory must already
+    # exist. The core reuses the same directory.
+    whoisthat_dir="$run_dir/whoisthat"
+    if [ -L "$whoisthat_dir" ]; then
+        warn "refusing symlinked runtime dir: $whoisthat_dir"
+        return 1
+    fi
+    mkdir -p "$whoisthat_dir" || { warn "cannot create $whoisthat_dir"; return 1; }
+    chown "$uid:$gid" "$whoisthat_dir"
+    chmod 0700 "$whoisthat_dir"
     return 0
 }
 

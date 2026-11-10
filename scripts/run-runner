@@ -1,0 +1,93 @@
+#!/bin/sh
+# Root wrapper for the per-user split-tunnel runner.
+#
+#   run-runner <uid> <gid> <home> <socket>
+#
+# Started by init as root. It places the runner inside
+# /sys/fs/cgroup/whoisthat-<uid> and drops to the user; the runner itself never
+# has root privileges. Restarts the runner on exit (init restarts the wrapper).
+set -eu
+
+if [ "$(id -u)" -ne 0 ] && [ "${WHOISTHAT_TEST_MODE:-}" != 1 ]; then
+    echo "run-runner: must be started by init as root" >&2
+    exit 2
+fi
+if [ "$#" -ne 4 ]; then
+    echo "usage: run-runner <uid> <gid> <home> <socket>" >&2
+    exit 2
+fi
+
+uid=$1
+gid=$2
+home=$3
+socket=$4
+
+case "$uid" in
+    ''|*[!0-9]*) echo "run-runner: invalid uid" >&2; exit 2 ;;
+esac
+case "$gid" in
+    ''|*[!0-9]*) echo "run-runner: invalid gid" >&2; exit 2 ;;
+esac
+[ "$uid" -ge 1000 ] || { echo "run-runner: uid must be >= 1000" >&2; exit 2; }
+case "$home" in
+    /*) ;;
+    *) echo "run-runner: home must be absolute" >&2; exit 2 ;;
+esac
+
+entry=$(getent passwd "$uid" 2>/dev/null || true)
+[ -n "$entry" ] || { echo "run-runner: unknown uid $uid" >&2; exit 2; }
+[ "$(printf '%s\n' "$entry" | cut -d: -f4)" = "$gid" ] || {
+    echo "run-runner: gid $gid does not match passwd for uid $uid" >&2
+    exit 2
+}
+
+socket_dir=$(dirname "$socket")
+[ -d "$socket_dir" ] || {
+    echo "run-runner: socket directory missing: $socket_dir" >&2
+    exit 2
+}
+
+setpriv --reuid 0 --regid 0 --clear-groups true >/dev/null 2>&1 || {
+    echo "run-runner: util-linux setpriv is required" >&2
+    exit 2
+}
+
+HOME=$home
+export HOME
+
+CGROUP_ROOT=/sys/fs/cgroup
+CORE_BIN=/usr/bin/whoisthat-runner
+if [ "${WHOISTHAT_TEST_MODE:-}" = 1 ]; then
+    [ -n "${WHOISTHAT_CGROUP_ROOT:-}" ] && CGROUP_ROOT=$WHOISTHAT_CGROUP_ROOT
+    [ -n "${WHOISTHAT_RUNNER_BIN:-}" ] && CORE_BIN=$WHOISTHAT_RUNNER_BIN
+fi
+cgroup=$CGROUP_ROOT/whoisthat-$uid
+
+child=
+trap 'if [ -n "$child" ]; then kill "$child" 2>/dev/null || true; fi; exit 0' TERM INT
+
+last_warn=0
+while :; do
+    if [ ! -d "$cgroup" ]; then
+        now=$(date +%s 2>/dev/null || echo 0)
+        if [ "$last_warn" = 0 ] || [ $((now - last_warn)) -ge 30 ]; then
+            echo "run-runner: $cgroup missing; run: sudo /usr/lib/whoisthat/cgroup-setup $uid" >&2
+            last_warn=$now
+        fi
+        sleep 2
+        continue
+    fi
+    # $$ inside a plain ( ) subshell is the parent's pid, so use a fresh sh -c:
+    # its $$ is the process that moves into the cgroup, and setpriv/runner
+    # inherit the membership.
+    sh -c 'set -eu; echo $$ > "$1" || exit 1; shift; exec "$@"' sh \
+        "$cgroup/cgroup.procs" \
+        setpriv --reuid "$uid" --regid "$gid" --init-groups -- \
+        "$CORE_BIN" --uid "$uid" --socket "$socket" &
+    child=$!
+    rc=0
+    wait "$child" || rc=$?
+    child=
+    echo "run-runner: runner exited (rc=$rc); restarting in 2s" >&2
+    sleep 2
+done
