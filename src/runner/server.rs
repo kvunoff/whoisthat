@@ -365,7 +365,14 @@ fn write_errno(fd: i32) {
 }
 
 fn close_from(first: i32) {
-    let rc = unsafe { libc::close_range(first as u32, u32::MAX, 0) };
+    let rc = unsafe {
+        libc::syscall(
+            libc::SYS_close_range as libc::c_long,
+            first as libc::c_uint,
+            libc::c_uint::MAX,
+            0 as libc::c_uint,
+        )
+    };
     if rc == 0 {
         return;
     }
