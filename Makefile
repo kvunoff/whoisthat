@@ -29,6 +29,7 @@ test-rust:
 # Root helpers: fake init systems and fake core, no root required.
 test-shell:
 	./scripts/cgroup-setup.test.sh
+	./scripts/cgroup-run.test.sh
 	./scripts/run-core.test.sh
 	./scripts/install-init.test.sh
 

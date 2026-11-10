@@ -4,9 +4,12 @@
 //! With systemd we keep using a transient `systemd-run --user` scope/service
 //! under `whoisthat_split.slice` (the user manager owns the cgroup tree).
 //!
-//! Without systemd we use the root-created native cgroup
-//! `/sys/fs/cgroup/whoisthat-<uid>` and move the child into it in `pre_exec`
-//! before it execs, so no socket can be opened outside the cgroup.
+//! Without systemd the root helper `cgroup-run` moves the child into the native
+//! cgroup `/sys/fs/cgroup/whoisthat-<uid>` and drops back to the user. A normal
+//! process cannot migrate itself there: the kernel also requires write access
+//! to the source cgroup, which is root-owned on non-systemd hosts. The helper is
+//! invoked through sudo, so a delegated-cgroup setup still works without it (the
+//! built-in `pre_exec` path is kept as a fallback).
 //!
 //! In foreground mode (default) the app runs in the foreground and its exit code
 //! is propagated. `-d` detaches it from the terminal.
@@ -125,6 +128,10 @@ fn pick_writable_cgroup(uid: u32) -> Option<PathBuf> {
 
 fn run_native(target_args: &[String], detach: bool) -> i32 {
     let uid = crate::config::uid();
+    if let Some(helper) = helper_path() {
+        return run_via_helper(&helper, uid, target_args, detach);
+    }
+
     let Some(dir) = pick_writable_cgroup(uid) else {
         eprintln!(
             "whoisthat run: cgroup not found; run: sudo /usr/lib/whoisthat/cgroup-setup $USER"
@@ -184,11 +191,43 @@ fn run_native(target_args: &[String], detach: bool) -> i32 {
     }
 }
 
-fn report_native_error(e: &io::Error) {
-    if e.raw_os_error() == Some(1) {
+const CGROUP_RUN_HELPER: &str = "/usr/lib/whoisthat/cgroup-run";
+
+fn helper_path() -> Option<String> {
+    std::path::Path::new(CGROUP_RUN_HELPER)
+        .is_file()
+        .then(|| CGROUP_RUN_HELPER.to_string())
+}
+
+fn run_via_helper(helper: &str, uid: u32, target_args: &[String], detach: bool) -> i32 {
+    let Some(sudo) = which("sudo") else {
         eprintln!(
-            "whoisthat run: cgroup migration denied; check cgroup ownership/permissions \
-             (sudo /usr/lib/whoisthat/cgroup-setup $USER)"
+            "whoisthat run: sudo not found; the cgroup helper runs through sudo (or configure a delegated cgroup)"
+        );
+        return 1;
+    };
+    let mut cmd = Command::new(sudo);
+    cmd.arg(helper).arg(uid.to_string());
+    if detach {
+        cmd.arg("--detach");
+    }
+    cmd.arg("--").args(target_args);
+
+    match cmd.status() {
+        Ok(status) if status.success() => 0,
+        Ok(status) => status.code().unwrap_or(1),
+        Err(e) => {
+            eprintln!("whoisthat run: failed to start {helper} via sudo: {e}");
+            1
+        }
+    }
+}
+
+fn report_native_error(e: &io::Error) {
+    if matches!(e.raw_os_error(), Some(1 | 13)) {
+        eprintln!(
+            "whoisthat run: cgroup migration denied by the kernel (the source cgroup is root-owned); \
+             install /usr/lib/whoisthat/cgroup-run or use a delegated cgroup"
         );
     } else {
         eprintln!("whoisthat run: failed to start application: {e}");
