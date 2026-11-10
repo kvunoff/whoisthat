@@ -2608,6 +2608,7 @@ dependencies = [
  "clap_mangen",
  "crossterm",
  "directories",
+ "libc",
  "log",
  "ratatui",
  "serde",

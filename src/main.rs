@@ -16,6 +16,9 @@ mod logger;
 mod net_info;
 mod platform;
 mod popups;
+#[allow(dead_code)]
+#[path = "runner/proto.rs"]
+mod proto;
 mod shell_integration;
 mod systemd;
 mod terminal;
