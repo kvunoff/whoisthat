@@ -153,6 +153,7 @@ pub(super) fn check_capabilities() -> CheckCategory {
             }
         } else {
             check_native_cgroup(&mut items, &paths, uid, &setup_hint);
+            check_runner(&mut items, uid);
         }
     }
 
@@ -190,6 +191,32 @@ fn owner_writable_dir(path: &Path, uid: u32) -> bool {
     fs::metadata(path)
         .map(|meta| meta.is_dir() && meta.uid() == uid && meta.permissions().mode() & 0o200 != 0)
         .unwrap_or(false)
+}
+
+fn check_runner(items: &mut Vec<CheckItem>, uid: u32) {
+    let socket = crate::config::runtime_dir().join("runner.sock");
+    let healthy = std::os::unix::net::UnixStream::connect(&socket).is_ok();
+    if healthy {
+        items.push(CheckItem::pass(
+            "split runner",
+            format!("{} (uid {uid})", socket.display()),
+        ));
+        return;
+    }
+    let hint = match platform::detect_init() {
+        platform::InitSystem::OpenRC => "sudo rc-service whoisthat-runner start",
+        platform::InitSystem::Dinit => "sudo dinitctl start whoisthat-runner",
+        platform::InitSystem::Runit => "sudo sv start whoisthat-runner",
+        _ => "start the whoisthat-runner service",
+    };
+    items.push(CheckItem::warn(
+        "split runner",
+        format!(
+            "{} is not reachable — 'whoisthat run' will not work",
+            socket.display()
+        ),
+        Some(hint.to_string()),
+    ));
 }
 
 /// Native (non-systemd) split path: a root-created per-uid cgroup plus the
