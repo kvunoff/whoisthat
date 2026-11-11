@@ -24,7 +24,7 @@ pub fn open(rows: u16, cols: u16) -> io::Result<Pty> {
         return Err(io::Error::last_os_error());
     }
 
-    let mut name = [0i8; 128];
+    let mut name = [0 as libc::c_char; 128];
     if unsafe { libc::ptsname_r(master.as_raw_fd(), name.as_mut_ptr(), name.len()) } != 0 {
         return Err(io::Error::last_os_error());
     }
