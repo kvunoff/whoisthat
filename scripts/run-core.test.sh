@@ -17,6 +17,7 @@ export WHOISTHAT_CORE="$root/fake-core"
 export MODE_FILE="$root/mode"
 export RUNS="$root/runs"
 export PIDS="$root/pids"
+unset XDG_CONFIG_HOME XDG_DATA_HOME
 
 mkdir -p "$WHOISTHAT_RUN_ROOT"
 uid=$(id -u)
@@ -55,14 +56,6 @@ fail() {
     echo "FAIL: $*" >&2
     if [ -f "$root/wrapper.log" ]; then
         sed 's/^/wrapper: /' "$root/wrapper.log" >&2
-    fi
-    if [ -x "$wrapper" ]; then
-        echo "debug: run dirs" >&2
-        ls -la "$conf" "$WHOISTHAT_RUN_ROOT/$test_uid" >&2 || true
-        echo "debug: runs" >&2
-        cat "$RUNS" >&2 || true
-        echo "debug: wrapper trace" >&2
-        timeout 3 sh -x "$wrapper" "$HOME" >&2 2>&1 || true
     fi
     exit 1
 }
