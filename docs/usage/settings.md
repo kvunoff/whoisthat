@@ -39,7 +39,7 @@ in the interactive Settings tab (set it from the CLI or `config.toml`).
 | **HWID Enabled** | `on` / `off` | `on` | Send hardware identification headers (`x-hwid`) during subscription fetches. |
 | **HWID** | Read-only hex | Auto | 16-character hexadecimal device fingerprint. |
 | **Reset HWID** | Action button | — | Generates a new random hardware identifier. |
-| **User-Agent** | Editable text | `whoisthat/v0.5.3` | Custom HTTP User-Agent header sent with subscription requests. |
+| **User-Agent** | Editable text | `whoisthat/v0.5.4` | Custom HTTP User-Agent header sent with subscription requests. |
 | **Check for updates** | `on` / `off` | `on` | Checks GitHub for a newer stable release at startup (at most once a day) and shows a popup with a copyable update command. |
 
 `RUST_LOG` or `WHOISTHAT_LOG_LEVEL` (for example `WHOISTHAT_LOG_LEVEL=debug whoisthat`) overrides **Verbose TUI log** and **Log Level** for that session and is never written to `config.toml`; `RUST_LOG` wins when both are set.
