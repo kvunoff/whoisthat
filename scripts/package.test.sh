@@ -180,10 +180,13 @@ export FAKE_DPUT_LOG="$TMP/dput.log"
 
 DIST="$TMP/dist"
 mkdir -p "$DIST" "$TMP/artifact"
-for file in whoisthat whoisthat-core whoisthat.desktop whoisthat-url.desktop \
+for file in whoisthat whoisthat-core whoisthat-runner whoisthat.desktop whoisthat-url.desktop \
     whoisthat.svg LICENSE whoisthat.bash _whoisthat whoisthat.fish whoisthat.1; do
     printf 'fixture\n' > "$TMP/artifact/$file"
 done
+mkdir -p "$TMP/artifact/lib/whoisthat/init/openrc"
+printf 'fixture\n' > "$TMP/artifact/lib/whoisthat/cgroup-setup"
+printf 'fixture\n' > "$TMP/artifact/lib/whoisthat/init/openrc/whoisthat-core"
 tar -czf "$DIST/whoisthat-linux-amd64.tar.gz" -C "$TMP/artifact" .
 tar -czf "$DIST/whoisthat-linux-arm64.tar.gz" -C "$TMP/artifact" .
 
