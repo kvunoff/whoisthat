@@ -31,8 +31,8 @@ fi
 set -euo pipefail
 
 # --- version constants -------------------------------------------------------
-GO_MIN_VERSION="1.26.10"
-GO_INSTALL_VERSION="1.26.10"
+GO_MIN_VERSION="1.26.11"
+GO_INSTALL_VERSION="1.26.11"
 XRAY_VERSION="v26.10.31"
 
 # Canonical install location. /usr/local/bin is kept only as a legacy cleanup
