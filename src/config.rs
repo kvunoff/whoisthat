@@ -199,9 +199,8 @@ pub(crate) fn runtime_base_error() -> Option<String> {
                 Some(format!("{} is not a directory", base.display()))
             } else if meta.uid() != uid {
                 Some(format!(
-                    "{} is owned by uid {}, expected {uid}",
-                    base.display(),
-                    meta.uid()
+                    "{} is owned by another user; expected the current user",
+                    base.display()
                 ))
             } else if meta.permissions().mode() & 0o777 != 0o700 {
                 Some(format!("{} must be mode 0700", base.display()))
