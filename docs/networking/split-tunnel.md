@@ -45,7 +45,13 @@ When the split mode changes while TUN is active, the hijack is reconciled togeth
 
 ## Launching Applications (`whoisthat run`)
 
-The `whoisthat run` CLI command supports two execution styles:
+The `whoisthat run` CLI command supports two execution styles.
+
+On systemd hosts the application is placed in `whoisthat_split.slice` with
+`systemd-run --user`. On other systems a per-user `whoisthat-runner` service
+(forks inside `/sys/fs/cgroup/whoisthat-<uid>`) does the same without sudo; see
+[Non-systemd systems](/guide/non-systemd). In both cases the application's exit
+code, environment and working directory are preserved.
 
 ### A. Background / Detached Mode (`-d`, `--detach`, `-b`)
 
@@ -63,7 +69,7 @@ whoisthat run -b telegram-desktop
 ```
 
 #### How Detached Mode Works:
-* Spawns the process inside a transient systemd user service (`systemd-run --user --slice=whoisthat_split.slice --same-dir`).
+* On systemd, spawns the process inside a transient systemd user service (`systemd-run --user --slice=whoisthat_split.slice --same-dir`); elsewhere it asks `whoisthat-runner` to fork it into `/sys/fs/cgroup/whoisthat-<uid>`.
 * Automatically forwards your graphical session variables (`DISPLAY`, `WAYLAND_DISPLAY`, `XDG_CURRENT_DESKTOP`).
 * **The application keeps running even after you close your terminal or log out of the shell.**
 
@@ -79,7 +85,7 @@ whoisthat run curl 2ip.io
 whoisthat run mpv "https://example.com/video.mp4"
 ```
 
-* Runs inside a transient systemd user scope (`systemd-run --user --scope --slice=whoisthat_split.slice`).
+* On systemd, runs inside a transient systemd user scope (`systemd-run --user --scope --slice=whoisthat_split.slice`); elsewhere the per-user runner provides a PTY and forwards stdin/stdout, signals and window size.
 * Attaches directly to your terminal standard I/O (stdin, stdout, stderr) and returns the program's real exit code.
 
 ---

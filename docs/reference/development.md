@@ -55,7 +55,9 @@ whoisthat/
 │   │   ├── client.rs   ← Session (request-id correlation, spawn policy, timeouts)
 │   │   ├── resolve.rs  ← group/profile/routing-profile selectors
 │   │   ├── output.rs   ← JSON/human output, masking, tables
-│   │   └── commands/   ← status, connection, core, profiles, subs, routing, tests, settings, logs, hwid, systemd, links, doctor
+│   │   └── commands/   ← status, connection, core, profiles, subs, routing, tests, settings, logs, hwid, autostart, links, doctor
+│   ├── runner/         ← per-user fork server: frame protocol, socket server, PTY helpers
+│   ├── bin/whoisthat-runner.rs ← runner entry point (separate binary)
 │   ├── doctor/         ← System & capability diagnostics (`whoisthat doctor`)
 │   │   ├── mod.rs      ← Module entry point
 │   │   ├── types.rs    ← Diagnostic models, pass/warn/fail statuses, reports
@@ -68,11 +70,14 @@ whoisthat/
 │   ├── text_edit.rs    ← edit_text_field line editor + clipboard paste + UTF-8/Cyrillic support
 │   ├── logger.rs       ← FileLogger (custom) + init/configure logger
 │   ├── core_spawn.rs   ← spawn_core, find_core_binary, ensure_core_caps (pkexec fallback)
+│   ├── autostart.rs    ← systemd / init / desktop autostart backends (status, enable, disable)
+│   ├── lifecycle.rs    ← backend selection + session-scoped core markers (core-start/stop/restart/run)
+│   ├── platform.rs     ← init detection, init-service state, privilege-wrapper check
 │   ├── systemd.rs      ← Unit-file generation, linger, enable/disable service
 │   ├── net_info.rs     ← fetch_public_ip / fetch_public_ipv6 (HTTPS via ureq to ipify)
 │   ├── update_check.rs ← GitHub release check, install-source detection, update command
 │   ├── deeplink/       ← wit:// parser, imports, and desktop entry/icon registration (parse, actions, desktop)
-│   ├── launcher.rs     ← `whoisthat run <app>` — launch into split-tunnel slice (foreground/background)
+│   ├── launcher.rs     ← `whoisthat run` — systemd-run or whoisthat-runner, foreground/background
 │   ├── terminal.rs     ← Re-exec the TUI in a terminal when launched without a tty
 │   ├── config.rs       ← Config loader (~/.config/whoisthat/config.toml)
 │   ├── core_client/    ← IPC client for the Go core (Unix domain socket / TCP)
@@ -215,6 +220,30 @@ make test-e2e
 ```
 
 It refuses to run as root.
+
+---
+
+## Non-systemd manual checklist (Artix/OpenRC VM)
+
+CI has no non-systemd runner, so this is the release checklist:
+
+```sh
+sudo /usr/lib/whoisthat/cgroup-setup "$USER"
+sudo /usr/lib/whoisthat/install-init cgroup enable
+sudo /usr/lib/whoisthat/install-init runner enable "$USER" "$HOME"
+sudo /usr/lib/whoisthat/install-init core enable "$USER" "$HOME"
+
+whoisthat doctor
+whoisthat run /bin/sh -c 'cat /proc/self/cgroup'   # /whoisthat-<uid>
+whoisthat run vim /tmp/x                            # full-screen, Ctrl-C, resize
+whoisthat core stop; whoisthat core start; whoisthat core restart
+whoisthat autostart status --json
+```
+
+Reboot once and repeat: the cgroup hook must recreate
+`/sys/fs/cgroup/whoisthat-<uid>`, clear `core-stop`/`core-*` markers, and start
+the core before login. Then check `whoisthat autostart enable --backend init`
+survives a reboot and `disable` stops the core after it exits.
 
 ---
 

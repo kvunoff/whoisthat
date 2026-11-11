@@ -83,7 +83,7 @@ flowchart TD
    * Kernel policy rule `ip rule fwmark 1 table 100` directs the marked packet to Table 100, routing it directly through your physical gateway without looping back into the TUN adapter!
 
 ### 3. In Split Tunnel Mode (`whoisthat run`)
-1. Target processes are launched inside `whoisthat_split.slice` using systemd cgroup v2.
-2. The `inet whoisthat_split` nftables table detects sockets originating from level 4 of this cgroup slice.
+1. Target processes are launched inside the split-tunnel cgroup: `whoisthat_split.slice` under systemd, or `/sys/fs/cgroup/whoisthat-<uid>` via the per-user runner elsewhere.
+2. The `inet whoisthat_split` nftables table detects sockets originating from level 4 of this cgroup slice (or level 1 of `whoisthat-<uid>`).
 3. Sockets are marked (`fwmark 1` for exclude, `fwmark 2` for include), triggering kernel route lookup in Table 100 or Table 200.
 4. Egress NAT postrouting masquerades the source IP to match the physical interface address.

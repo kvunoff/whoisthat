@@ -23,8 +23,8 @@ in the interactive Settings tab (set it from the CLI or `config.toml`).
 | **Theme** | 4 palettes | `graphite-dark` | Visual color palette with live preview (Graphite Dark, Graphite Light, Tokyo Night, Dracula). |
 | **Show IP** | `on` / `off` | `on` | Display public IPv4/IPv6 in the top status bar; refreshed on startup and whenever the connection state changes. |
 | **Autoconnect** | `on` / `off` | `off` | Automatically connect to the last used profile when the core daemon initializes. |
-| **Autostart Mode** | `proxy` / `tun` | `proxy` | Connection mode applied when autoconnect triggers (`proxy` = local SOCKS5/HTTP, `tun` = full system VPN). |
-| **Systemd Autostart**| `on` / `off` | `off` | Enables `whoisthat-core.service` user unit and configures user lingering to run at boot before login. |
+| **Autoconnect Mode** | `proxy` / `tun` | `proxy` | Connection mode applied when autoconnect triggers (`proxy` = local SOCKS5/HTTP, `tun` = full system VPN). |
+| **Autostart** | `off`, `systemd`, `init`, `desktop` (available backends are cycled) | `off` | Enables the selected autostart backend. `systemd` uses a user unit plus lingering; `init` writes the per-user marker for the init service; `desktop` creates `~/.config/autostart/whoisthat-core.desktop`. |
 | **Verbose TUI log** | `on` / `off` | `off` | `off` caps the TUI at `warn`: errors are always written, warnings unless Log Level is `error`; `on` writes the configured level (including `info`/`debug`). |
 | **Log Level** | `error`, `warn`, `info`, `debug`, `trace` | `warn` | Threshold for both components. Applied to the TUI immediately and to the running core over IPC (`set-log-level`); `trace` is treated as `debug` by the core. When **Verbose TUI log** is off, the TUI caps this at `warn`. |
 | **Test Method** | `tcp`, `http-get`, `http-head` | `http-get` | Latency testing strategy. `http-get` routes via SOCKS5 proxy to measure real round-trip times. |

@@ -36,7 +36,7 @@ pub fn settings_layout() -> Vec<SettingsRow> {
             kind: SettingsKind::Toggle,
         },
         SettingsRow::Item {
-            label: "Autostart mode",
+            label: "Autoconnect mode",
             kind: SettingsKind::Cycle,
         },
         SettingsRow::Item {
