@@ -99,11 +99,11 @@ rm -f "$cmdlog"
 export WHOISTHAT_INIT=dinit
 run cgroup enable || fail "dinit cgroup enable failed"
 dinit_cgroup="$root/etc/dinit.d/whoisthat-cgroup"
-grep -q "^type = oneshot" "$dinit_cgroup" || fail "dinit cgroup must be oneshot"
+grep -q "^type = scripted" "$dinit_cgroup" || fail "dinit cgroup must be scripted"
 run core enable "$user" "$root/home" || fail "dinit core enable failed"
 dinit_core="$root/etc/dinit.d/whoisthat-core"
 grep -q "^type = process" "$dinit_core" || fail "dinit core must be a process"
-grep -q "^run-as = $uid:$gid" "$dinit_core" || fail "dinit run-as wrong"
+grep -q "^run-as = $user" "$dinit_core" || fail "dinit run-as wrong"
 grep -q "^restart = false" "$dinit_core" || fail "dinit must not restart-loop"
 grep -q "dinitctl enable whoisthat-core" "$cmdlog" || fail "dinit core not enabled"
 pass "dinit templates rendered"
@@ -111,6 +111,8 @@ pass "dinit templates rendered"
 run runner enable "$user" "$root/home" || fail "dinit runner enable failed"
 grep -q "depends-on = whoisthat-cgroup" "$root/etc/dinit.d/whoisthat-runner" \
     || fail "dinit runner dependency missing"
+grep -q "^command = /usr/lib/whoisthat/run-runner $uid $gid $root/home" "$root/etc/dinit.d/whoisthat-runner" \
+    || fail "dinit runner command/args wrong"
 grep -q "^restart = true" "$root/etc/dinit.d/whoisthat-runner" || fail "dinit runner restart"
 pass "dinit runner rendered"
 

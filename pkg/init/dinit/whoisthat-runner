@@ -1,5 +1,4 @@
 type = process
-command = /usr/lib/whoisthat/run-runner
-args = @UID@ @GID@ @HOME@ @SOCKET@
+command = /usr/lib/whoisthat/run-runner @UID@ @GID@ @HOME@ @SOCKET@
 restart = true
 depends-on = whoisthat-cgroup

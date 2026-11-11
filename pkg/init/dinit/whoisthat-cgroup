@@ -1,2 +1,2 @@
-type = oneshot
+type = scripted
 command = /usr/lib/whoisthat/init-hook

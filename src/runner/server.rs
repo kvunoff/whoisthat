@@ -173,17 +173,22 @@ fn install_signal_handler() {
 }
 
 fn stop_active() {
-    if let Ok(pids) = ACTIVE_PIDS.lock() {
-        for pid in pids.iter() {
-            unsafe {
-                libc::kill(-*pid, libc::SIGTERM);
-            }
+    let pids = match ACTIVE_PIDS.lock() {
+        Ok(pids) => pids.clone(),
+        Err(_) => return,
+    };
+    if pids.is_empty() {
+        return;
+    }
+    for pid in &pids {
+        unsafe {
+            libc::kill(-*pid, libc::SIGTERM);
         }
-        thread::sleep(Duration::from_secs(3));
-        for pid in pids.iter() {
-            unsafe {
-                libc::kill(-*pid, libc::SIGKILL);
-            }
+    }
+    thread::sleep(Duration::from_secs(3));
+    for pid in &pids {
+        unsafe {
+            libc::kill(-*pid, libc::SIGKILL);
         }
     }
 }
