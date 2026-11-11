@@ -2,6 +2,7 @@ package tunmode
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	appconfig "whoisthat-core/lib/AppConfig"
 	"whoisthat-core/lib/logger"
@@ -34,15 +35,33 @@ const (
 )
 
 // splitCgroupRelPaths returns the candidate cgroup v2 paths (relative to the
-// cgroup root) where systemd may place apps launched by `whoisthat run`:
+// cgroup root) where apps launched by `whoisthat run` may end up:
 // 1. whoisthat_split.slice (level 4, no hyphens, directly under user@<uid>.service)
 // 2. whoisthat-split.slice (level 5, systemd treats hyphens as sub-slice hierarchy: whoisthat.slice/whoisthat-split.slice)
-// We install rules for both so both slice naming conventions work transparently.
+// 3. whoisthat-<uid> (level 1, the native root-created cgroup used without systemd)
+// We install rules for every path that exists so both slice naming conventions
+// and the native backend work transparently.
 func splitCgroupRelPaths(uid int) []string {
 	return []string{
 		fmt.Sprintf("user.slice/user-%d.slice/user@%d.service/%s", uid, uid, splitSliceNameUnderscore),
 		fmt.Sprintf("user.slice/user-%d.slice/user@%d.service/whoisthat.slice/%s", uid, uid, splitSliceNameHyphen),
+		fmt.Sprintf("whoisthat-%d", uid),
 	}
+}
+
+// splitRunScript is a seam so tests can observe/inject script execution.
+var splitRunScript = runScriptWithSh
+
+// cgroupRoot returns the cgroup v2 mount point. The override is test-only: in
+// normal operation an environment variable must not be able to redirect root
+// file operations (mkdir) outside the real cgroup tree.
+func cgroupRoot() string {
+	if os.Getenv("WHOISTHAT_TEST_MODE") == "1" {
+		if root := os.Getenv("WHOISTHAT_CGROUP_ROOT"); root != "" {
+			return root
+		}
+	}
+	return "/sys/fs/cgroup"
 }
 
 // splitCgroupLevel is the nftables cgroupv2 "level" of relPath: the depth of the
@@ -79,12 +98,23 @@ func buildSplitSetupScript(mode string, uid int, tunName, physIface, physGateway
 
 	var b strings.Builder
 	b.WriteString("set -e\n")
+	// Fail before touching nft when split cannot possibly work, so the TUN
+	// start gets an actionable error instead of a half-installed ruleset.
+	fmt.Fprintf(&b, "root=%q\n", cgroupRoot())
+	b.WriteString("[ -f \"$root/cgroup.controllers\" ] || { echo \"whoisthat: cgroup v2 not mounted; split-tunnel unavailable\" >&2; exit 1; }\n")
 	// Pre-create the slice cgroups so nft rules can reference them before any app
 	// has been launched into them. systemd-run --user --slice adopts them later.
+	b.WriteString("for rel in")
 	for _, rel := range paths {
-		abs := "/sys/fs/cgroup/" + rel
-		fmt.Fprintf(&b, "mkdir -p %q 2>/dev/null || true\n", abs)
+		fmt.Fprintf(&b, " %q", rel)
 	}
+	b.WriteString("; do mkdir -p \"$root/$rel\" 2>/dev/null || true; done\n")
+	b.WriteString("ok=0\nfor rel in")
+	for _, rel := range paths {
+		fmt.Fprintf(&b, " %q", rel)
+	}
+	b.WriteString("; do [ -d \"$root/$rel\" ] && ok=1; done\n")
+	b.WriteString("[ \"$ok\" = 1 ] || { echo \"whoisthat: split cgroup not available; run: sudo /usr/lib/whoisthat/cgroup-setup $USER\" >&2; exit 1; }\n")
 
 	// Mark packets from sockets in the split slice (and its descendant scopes).
 	// A `route` hook is required so setting the mark triggers a re-route of
@@ -94,7 +124,10 @@ func buildSplitSetupScript(mode string, uid int, tunName, physIface, physGateway
 	b.WriteString("nft flush chain inet whoisthat_split output\n")
 	for _, rel := range paths {
 		level := splitCgroupLevel(rel)
-		fmt.Fprintf(&b, "nft 'add rule inet whoisthat_split output socket cgroupv2 level %d \"%s\" meta mark set %d'\n", level, rel, mark)
+		// nft resolves the cgroup path when the rule is added: a rule for a
+		// path that does not exist aborts the whole script, so only reference
+		// directories that are really there.
+		fmt.Fprintf(&b, "[ -d \"$root/%s\" ] && nft 'add rule inet whoisthat_split output socket cgroupv2 level %d \"%s\" meta mark set %d'\n", rel, level, rel, mark)
 	}
 
 	// Sockets bound to the wrong source IP before output routing must be
@@ -160,18 +193,35 @@ func buildSplitTeardownScript(physV6 bool) string {
 	return b.String()
 }
 
+// ValidateSplitUid rejects split configs that cannot work. A non-positive uid
+// used to be skipped with a warning while the TUN still came up: in include
+// mode that sent every app through the tunnel and in exclude mode none, which
+// is silently wrong. Callers may validate before persisting the mode.
+func ValidateSplitUid(mode string, uid int) error {
+	if mode == "" || mode == "off" {
+		return nil
+	}
+	if uid <= 0 {
+		return fmt.Errorf("split: no real login user detected; split tunnel needs a user session")
+	}
+	return nil
+}
+
 func (t *TunModeManager) applySplitRules() error {
-	cfg := appconfig.GetConfig().SplitTunnel
-	if cfg.Mode == "" || cfg.Mode == "off" {
+	return t.applySplitRulesFor(appconfig.GetConfig().SplitTunnel.Mode)
+}
+
+func (t *TunModeManager) applySplitRulesFor(mode string) error {
+	if mode == "" || mode == "off" {
 		return nil
 	}
 	uid := utils.RealUserUid()
-	if uid <= 0 {
-		logger.Warn("split: no real login user detected; split tunnel needs a user session (skipping)")
-		return nil
+	if err := ValidateSplitUid(mode, uid); err != nil {
+		logger.Warn(err.Error())
+		return err
 	}
 	script := buildSplitSetupScript(
-		cfg.Mode,
+		mode,
 		uid,
 		t.tun_name,
 		t.default_interface,
@@ -182,13 +232,22 @@ func (t *TunModeManager) applySplitRules() error {
 	if script == "" {
 		return nil
 	}
-	logger.Infof("split: applying %q mode rules (uid=%d)", cfg.Mode, uid)
-	_, err := runScriptWithSh(script)
+	logger.Infof("split: applying %q mode rules (uid=%d)", mode, uid)
+	_, err := splitRunScript(script)
+	if err != nil {
+		// The stderr text carries the actionable reason (cgroup missing, nft
+		// unsupported). Log its first line: the rest is shell noise.
+		reason := strings.TrimSpace(err.Error())
+		if idx := strings.IndexByte(reason, '\n'); idx >= 0 {
+			reason = reason[:idx]
+		}
+		logger.Warn("split: failed to apply rules:", reason)
+	}
 	return err
 }
 
 func (t *TunModeManager) removeSplitRules() error {
-	_, err := runScriptWithSh(buildSplitTeardownScript(t.default_interface_ipv6 != ""))
+	_, err := splitRunScript(buildSplitTeardownScript(t.default_interface_ipv6 != ""))
 	return err
 }
 
@@ -196,15 +255,36 @@ func (t *TunModeManager) removeSplitRules() error {
 // is running. It is a no-op when TUN is down (the new config applies on the next
 // Start). Because include mode removes the system-wide default TUN route while
 // exclude/off keep it, this also toggles that route to match the new mode.
-func (t *TunModeManager) ReapplySplit() error {
+//
+// oldMode is the mode that was active before the config change. If the new mode
+// cannot be applied, routing is restored to oldMode; if even that fails the TUN
+// is stopped, because half-applied split rules leak traffic.
+func (t *TunModeManager) ReapplySplit(oldMode string) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if !t.IsEnabled {
 		return nil
 	}
-	t.removeSplitRules()
 
 	mode := appconfig.GetConfig().SplitTunnel.Mode
+	if err := t.reapplySplitLocked(mode); err != nil {
+		if restoreErr := t.reapplySplitLocked(oldMode); restoreErr != nil {
+			logger.Warn("split: cannot restore previous routing, stopping TUN:", restoreErr)
+			t.stopLocked()
+			return fmt.Errorf("split: apply failed (%v) and restore failed (%v); tun disabled", err, restoreErr)
+		}
+		return err
+	}
+	return nil
+}
+
+func (t *TunModeManager) reapplySplitLocked(mode string) error {
+	// Teardown is idempotent; its failure must not prevent the new rules from
+	// being installed.
+	if err := t.removeSplitRules(); err != nil {
+		logger.Warn("split: failed to remove old rules:", err)
+	}
+
 	if mode == "include" {
 		deleteTunIpRoute(t.tun_name, t.tun_ip)
 		if t.tun_ipv6 != "" {
@@ -223,5 +303,13 @@ func (t *TunModeManager) ReapplySplit() error {
 			setupTunIpRoute6(t.tun_name, t.tun_ipv6)
 		}
 	}
-	return t.applySplitRules()
+	return t.applySplitRulesFor(mode)
+}
+
+// stopLocked is Stop() without taking t.mu (callers already hold it).
+func (t *TunModeManager) stopLocked() {
+	_ = t.clearNetworkRules()
+	t.dnsHijack = DnsHijack{}
+	t.IsEnabled = false
+	t.StatusChanged <- t.IsEnabled
 }

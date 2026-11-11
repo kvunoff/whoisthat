@@ -1,0 +1,4 @@
+#!/bin/sh
+export HOME="@HOME@"
+@XDG_ENV@
+exec chpst -u "@UID@:@GID@" /usr/lib/whoisthat/run-core "@HOME@"

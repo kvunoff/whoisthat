@@ -2,12 +2,17 @@
 
 WhoisThat Core can run as a persistent **systemd user service**, allowing the VPN daemon to launch automatically upon system boot—even before you log in graphically—via systemd user lingering.
 
+This is one of three autostart backends. On systems without systemd use the
+`init` service or a desktop entry; see
+[Non-systemd systems](/guide/non-systemd). The legacy `whoisthat systemd …`
+command still forces this backend.
+
 ---
 
 ## Unit File Configuration
 
-When you toggle **Systemd autostart** in Settings (or run `whoisthat systemd enable`; the legacy
-`whoisthat --systemd-on` alias still works), WhoisThat generates and enables the following unit file. The `ExecStart` path is filled in from the resolved core binary. The log level is not pinned in the unit: the daemon starts at `info` and the TUI applies the current Settings value over IPC as soon as it connects.
+When you toggle **Autostart** in Settings (or run `whoisthat autostart enable --backend systemd`; the legacy
+`whoisthat systemd enable` and `whoisthat --systemd-on` aliases still work), WhoisThat generates and enables the following unit file. The `ExecStart` path is filled in from the resolved core binary. The log level is not pinned in the unit: the daemon starts at `info` and the TUI applies the current Settings value over IPC as soon as it connects.
 
 **Location**: `~/.config/systemd/user/whoisthat-core.service`
 
@@ -47,7 +52,7 @@ sudo loginctl enable-linger $USER
 ```
 
 ::: tip Automated by the TUI
-When toggling **Systemd autostart** inside the TUI Settings tab, WhoisThat checks your linger status and automatically prompts for polkit authentication to run `loginctl enable-linger` if required.
+When toggling **Autostart** inside the TUI Settings tab, WhoisThat checks your linger status and automatically prompts for polkit authentication to run `loginctl enable-linger` if required.
 :::
 
 ---

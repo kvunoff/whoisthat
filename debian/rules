@@ -20,6 +20,9 @@ override_dh_auto_install:
 	esac
 	install -Dm755 dist/$(DEB_HOST_ARCH)/whoisthat debian/whoisthat/usr/bin/whoisthat
 	install -Dm755 dist/$(DEB_HOST_ARCH)/whoisthat-core debian/whoisthat/usr/bin/whoisthat-core
+	install -Dm755 dist/$(DEB_HOST_ARCH)/whoisthat-runner debian/whoisthat/usr/bin/whoisthat-runner
+	install -d debian/whoisthat/usr/lib
+	cp -a dist/$(DEB_HOST_ARCH)/lib/whoisthat debian/whoisthat/usr/lib/
 	install -Dm644 dist/$(DEB_HOST_ARCH)/whoisthat.desktop debian/whoisthat/usr/share/applications/whoisthat.desktop
 	install -Dm644 dist/$(DEB_HOST_ARCH)/whoisthat-url.desktop debian/whoisthat/usr/share/applications/whoisthat-url.desktop
 	install -Dm644 dist/$(DEB_HOST_ARCH)/whoisthat.svg debian/whoisthat/usr/share/icons/hicolor/scalable/apps/whoisthat.svg

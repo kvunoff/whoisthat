@@ -77,6 +77,7 @@ export default withMermaid(defineConfig({
         items: [
           { text: 'Introduction', link: '/' },
           { text: 'Installation', link: '/guide/installation' },
+          { text: 'Non-systemd systems', link: '/guide/non-systemd' },
           { text: 'Quick Start', link: '/guide/quick-start' },
           { text: 'Recipes & Common Setups', link: '/guide/recipes' },
           { text: 'Upgrading & Uninstalling', link: '/guide/upgrading' },

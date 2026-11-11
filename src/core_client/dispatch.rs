@@ -123,12 +123,20 @@ pub fn spawn_read_loop(
 
             let mut recovered = false;
 
-            // (1) Try reconnecting to a still-alive core.
-            for attempt in 1..=5 {
+            // (1) Try reconnecting to a still-alive core. The init wrapper
+            // needs longer than the systemd path: it sleeps 2 s between
+            // restarts, so the default 2.5 s window is far too short.
+            let attempts =
+                if crate::lifecycle::effective_backend() == crate::lifecycle::Backend::Init {
+                    60
+                } else {
+                    5
+                };
+            for attempt in 1..=attempts {
                 tokio::time::sleep(Duration::from_millis(500)).await;
                 let Ok((read_half, write_half)) = CoreConnection::connect_split(&endpoint).await
                 else {
-                    log::info!("reconnect attempt {attempt}/5 failed (core connect)");
+                    log::info!("reconnect attempt {attempt}/{attempts} failed (core connect)");
                     continue;
                 };
                 client.replace_writer(write_half).await;

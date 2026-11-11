@@ -1,0 +1,17 @@
+#!/sbin/openrc-run
+# shellcheck shell=sh
+# shellcheck disable=SC2034
+description="WhoisThat VPN core (user @USER@)"
+
+depend() {
+    need whoisthat-cgroup
+    after network
+}
+
+command="/usr/lib/whoisthat/run-core"
+command_args="@HOME@"
+command_user="@UID@:@GID@"
+command_background="yes"
+pidfile="/run/whoisthat-core-@UID@.pid"
+
+@XDG_ENV@

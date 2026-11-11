@@ -6,10 +6,11 @@ pkgdesc="Modern terminal-based VPN client with Xray-core backend (prebuilt binar
 arch=('x86_64' 'aarch64')
 url="https://github.com/kvunoff/whoisthat"
 license=('MIT')
-depends=('iproute2' 'nftables' 'libcap' 'systemd')
+depends=('iproute2' 'nftables' 'libcap')
 optdepends=(
     'iptables: legacy firewall backend for TUN mode'
     'polkit: pkexec-based capability setup from the TUI'
+    'systemd: autostart via user unit and linger'
     'xray: system Xray-core binary (managed runtime used automatically if absent)'
 )
 provides=('whoisthat')
@@ -34,6 +35,9 @@ package() {
     tar -xzf "${srcdir}/${src}" -C "${srcdir}"
     install -Dm755 "${srcdir}/whoisthat"                 "${pkgdir}/usr/bin/whoisthat"
     install -Dm755 "${srcdir}/whoisthat-core"            "${pkgdir}/usr/bin/whoisthat-core"
+    install -Dm755 "${srcdir}/whoisthat-runner"          "${pkgdir}/usr/bin/whoisthat-runner"
+    install -d "${pkgdir}/usr/lib"
+    cp -a "${srcdir}/lib/whoisthat" "${pkgdir}/usr/lib/"
     install -Dm644 "${srcdir}/whoisthat.desktop"         "${pkgdir}/usr/share/applications/whoisthat.desktop"
     install -Dm644 "${srcdir}/whoisthat-url.desktop"     "${pkgdir}/usr/share/applications/whoisthat-url.desktop"
     install -Dm644 "${srcdir}/whoisthat.svg"             "${pkgdir}/usr/share/icons/hicolor/scalable/apps/whoisthat.svg"

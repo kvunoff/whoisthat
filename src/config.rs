@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::fs;
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
@@ -140,24 +142,102 @@ impl Default for AppConfig {
     }
 }
 
+/// XDG runtime base: the parent of the whoisthat directory. The core is spawned
+/// with `XDG_RUNTIME_DIR` set to this path and appends `/whoisthat` itself.
+/// Must stay in sync with Go's `utils.RuntimeBase()`.
+pub(crate) fn runtime_base() -> PathBuf {
+    let uid = uid();
+    let canonical = PathBuf::from(format!("/run/whoisthat/{uid}"));
+    // The init backend has no fallback: the boot wrapper and the client must
+    // agree on one socket path or a second core would tear down the first
+    // core's rules.
+    if crate::lifecycle::effective_backend() == crate::lifecycle::Backend::Init {
+        return canonical;
+    }
+    if valid_private_dir(&canonical, uid) {
+        return canonical;
+    }
+    if let Ok(dir) = std::env::var("XDG_RUNTIME_DIR") {
+        let path = PathBuf::from(&dir);
+        if !dir.is_empty() && path.is_absolute() {
+            return path;
+        }
+    }
+    PathBuf::from(format!("/tmp/whoisthat-{uid}"))
+}
+
+/// WhoisThat's own runtime directory (socket, lock, token).
+pub(crate) fn runtime_dir() -> PathBuf {
+    runtime_base().join("whoisthat")
+}
+
+fn valid_private_dir(path: &Path, uid: u32) -> bool {
+    fs::symlink_metadata(path)
+        .map(|meta| {
+            meta.is_dir()
+                && !meta.file_type().is_symlink()
+                && meta.uid() == uid
+                && meta.permissions().mode() & 0o777 == 0o700
+        })
+        .unwrap_or(false)
+}
+
+/// Why the runtime base cannot be used, if it cannot. Only the init backend is
+/// strict; the other paths are created on demand by the core.
+pub(crate) fn runtime_base_error() -> Option<String> {
+    let base = runtime_base();
+    let uid = uid();
+    let init = crate::lifecycle::effective_backend() == crate::lifecycle::Backend::Init;
+    match fs::symlink_metadata(&base) {
+        Ok(meta) => {
+            if meta.file_type().is_symlink() {
+                Some(format!(
+                    "{} is a symlink; refusing to use it as XDG_RUNTIME_DIR",
+                    base.display()
+                ))
+            } else if !meta.is_dir() {
+                Some(format!("{} is not a directory", base.display()))
+            } else if meta.uid() != uid {
+                Some(format!(
+                    "{} is owned by another user; expected the current user",
+                    base.display()
+                ))
+            } else if meta.permissions().mode() & 0o777 != 0o700 {
+                Some(format!("{} must be mode 0700", base.display()))
+            } else {
+                None
+            }
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            if init {
+                Some(format!(
+                    "runtime dir {} is missing; run: sudo /usr/lib/whoisthat/cgroup-setup $USER",
+                    base.display()
+                ))
+            } else {
+                None
+            }
+        }
+        Err(e) => Some(format!("cannot read {}: {e}", base.display())),
+    }
+}
+
 /// The default Unix domain socket path. Must stay in sync with the core's
 /// AppConfig.DefaultSocketPath() in Go so the two agree without a handshake.
 pub fn default_socket_path() -> String {
-    let uid = unsafe { libc_getuid() };
-    match std::env::var("XDG_RUNTIME_DIR") {
-        Ok(dir) if !dir.is_empty() => format!("{}/whoisthat/core.sock", dir),
-        _ => format!("/tmp/whoisthat-{}/core.sock", uid),
-    }
+    runtime_dir()
+        .join("core.sock")
+        .to_string_lossy()
+        .into_owned()
 }
 
 /// Shared secret for the opt-in TCP transport. Must stay in sync with
 /// `AppConfig.IPCTokenPath()` in the Go core.
 pub fn ipc_token_path() -> String {
-    let uid = unsafe { libc_getuid() };
-    match std::env::var("XDG_RUNTIME_DIR") {
-        Ok(dir) if !dir.is_empty() => format!("{}/whoisthat/ipc.token", dir),
-        _ => format!("/tmp/whoisthat-{}/ipc.token", uid),
-    }
+    runtime_dir()
+        .join("ipc.token")
+        .to_string_lossy()
+        .into_owned()
 }
 
 /// Effective user for log paths. Matches Go's `utils.RealUserUid()`: when the
@@ -171,6 +251,12 @@ pub(crate) fn uid() -> u32 {
             return uid;
         }
     }
+    unsafe { libc_getuid() }
+}
+
+/// Effective uid of this process. `uid()` above is the *real* user, so the two
+/// differ exactly when we were started through sudo/pkexec.
+pub(crate) fn effective_uid() -> u32 {
     unsafe { libc_getuid() }
 }
 

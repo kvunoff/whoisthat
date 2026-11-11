@@ -1,3 +1,4 @@
+pub mod autostart;
 pub mod completions;
 pub mod connection;
 pub mod core;
@@ -11,5 +12,4 @@ pub mod routing;
 pub mod settings;
 pub mod status;
 pub mod subs;
-pub mod systemd;
 pub mod tests;

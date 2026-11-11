@@ -3,15 +3,19 @@ use std::process::Command;
 const SYSTEMD_SERVICE_NAME: &str = "whoisthat-core.service";
 
 pub(crate) fn systemd_service_path() -> std::path::PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
-    std::path::PathBuf::from(home)
-        .join(".config")
+    crate::config::config_dir()
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| std::path::PathBuf::from("/tmp"))
         .join("systemd")
         .join("user")
         .join(SYSTEMD_SERVICE_NAME)
 }
 
 pub(crate) fn systemd_is_enabled() -> bool {
+    if !crate::platform::has_systemd() {
+        return false;
+    }
     Command::new("systemctl")
         .arg("--user")
         .arg("is-enabled")
@@ -22,6 +26,9 @@ pub(crate) fn systemd_is_enabled() -> bool {
 }
 
 pub(crate) fn linger_is_enabled() -> bool {
+    if !crate::platform::has_systemd() {
+        return false;
+    }
     let user = std::env::var("USER").unwrap_or_default();
     if user.is_empty() {
         return false;

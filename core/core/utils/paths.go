@@ -7,6 +7,8 @@ import (
 	osuser "os/user"
 	"path/filepath"
 	"strconv"
+	"strings"
+	"syscall"
 	"time"
 )
 
@@ -45,13 +47,56 @@ func DataDir() string {
 	return filepath.Join(home, ".local", "share", "whoisthat")
 }
 
+// RuntimeBase returns the XDG runtime base directory (the parent of the
+// whoisthat directory). Mirrors the Rust client's config::runtime_base():
+// $XDG_RUNTIME_DIR/whoisthat is derived from it on both sides.
+func RuntimeBase() string {
+	uid := runtimeUid()
+	canonical := filepath.Join("/run/whoisthat", strconv.Itoa(uid))
+	// The init backend has no fallback: the boot wrapper and the client must
+	// agree on one socket path.
+	if initBackendSelected() {
+		return canonical
+	}
+	if validPrivateDir(canonical, uid) {
+		return canonical
+	}
+	if dir := os.Getenv("XDG_RUNTIME_DIR"); dir != "" && filepath.IsAbs(dir) {
+		return dir
+	}
+	return filepath.Join("/tmp", fmt.Sprintf("whoisthat-%d", uid))
+}
+
 // RuntimeDir returns the XDG runtime directory for WhoisThat, used for the
 // IPC socket, token and ephemeral state.
 func RuntimeDir() string {
-	if dir := os.Getenv("XDG_RUNTIME_DIR"); dir != "" && filepath.IsAbs(dir) {
-		return filepath.Join(dir, "whoisthat")
+	return filepath.Join(RuntimeBase(), "whoisthat")
+}
+
+func runtimeUid() int {
+	if uid := RealUserUid(); uid > 0 {
+		return uid
 	}
-	return filepath.Join("/tmp", fmt.Sprintf("whoisthat-%d", os.Getuid()))
+	// The environment is broken; fall back to the process uid so the daemon
+	// still starts, but never silently keep uid 0 from a sudo shell.
+	return os.Getuid()
+}
+
+func initBackendSelected() bool {
+	data, err := os.ReadFile(filepath.Join(ConfigDir(), "autostart-backend"))
+	return err == nil && strings.TrimSpace(string(data)) == "init"
+}
+
+func validPrivateDir(path string, uid int) bool {
+	info, err := os.Lstat(path)
+	if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+		return false
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || int(stat.Uid) != uid {
+		return false
+	}
+	return info.Mode().Perm() == 0700
 }
 
 // SocketIsLive reports whether something is accepting connections on the unix

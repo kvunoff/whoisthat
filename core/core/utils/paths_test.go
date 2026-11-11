@@ -2,7 +2,9 @@ package utils
 
 import (
 	"net"
+	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 )
 
@@ -67,5 +69,35 @@ func TestSocketIsLive(t *testing.T) {
 
 	if !SocketIsLive(sock) {
 		t.Fatal("live socket reported as dead")
+	}
+}
+
+func TestRuntimeBaseInitBackendHasNoFallback(t *testing.T) {
+	configHome := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", configHome)
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+
+	conf := filepath.Join(configHome, "whoisthat")
+	if err := os.MkdirAll(conf, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(conf, "autostart-backend"), []byte("init\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	want := filepath.Join("/run/whoisthat", strconv.Itoa(runtimeUid()))
+	if got := RuntimeBase(); got != want {
+		t.Errorf("RuntimeBase() = %q, want %q (init backend must not fall back)", got, want)
+	}
+}
+
+func TestRuntimeBaseFallsBackToXDG(t *testing.T) {
+	configHome := t.TempDir()
+	runtimeDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", configHome)
+	t.Setenv("XDG_RUNTIME_DIR", runtimeDir)
+
+	if got := RuntimeBase(); got != runtimeDir {
+		t.Errorf("RuntimeBase() = %q, want %q", got, runtimeDir)
 	}
 }

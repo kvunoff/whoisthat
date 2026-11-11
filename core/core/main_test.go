@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"regexp"
 	"testing"
 )
@@ -8,23 +10,26 @@ import (
 func TestAcquireInstanceLock(t *testing.T) {
 	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
 
-	ok, err := acquireInstanceLock()
+	ok, dir, err := acquireInstanceLock()
 	if err != nil || !ok {
 		t.Fatalf("first lock: ok=%v err=%v", ok, err)
 	}
+	if want := filepath.Join(os.Getenv("XDG_RUNTIME_DIR"), "whoisthat"); dir != want {
+		t.Fatalf("lock dir = %q, want %q", dir, want)
+	}
 
-	ok, err = acquireInstanceLock()
+	ok, dir, err = acquireInstanceLock()
 	if err != nil {
 		t.Fatalf("second lock returned an I/O error: %v", err)
 	}
 	if ok {
-		t.Fatal("second lock acquired; expected (false, nil)")
+		t.Fatalf("second lock acquired in %q; expected (false, _, nil)", dir)
 	}
 
 	instanceLock.Close()
 	instanceLock = nil
 
-	ok, err = acquireInstanceLock()
+	ok, _, err = acquireInstanceLock()
 	if err != nil || !ok {
 		t.Fatalf("lock after release: ok=%v err=%v", ok, err)
 	}

@@ -271,9 +271,10 @@ func TestDefaultSocketPathHonorsXDG(t *testing.T) {
 func TestDefaultSocketPathFallsBackToTmp(t *testing.T) {
 	t.Setenv("XDG_RUNTIME_DIR", "")
 	got := DefaultSocketPath()
-	// uid varies by test runner; assert the shape only.
-	if !regexp.MustCompile(`^/tmp/whoisthat-\d+/core\.sock$`).MatchString(got) {
-		t.Errorf("DefaultSocketPath() = %q, want /tmp/whoisthat-<uid>/core.sock", got)
+	// uid varies by test runner; assert the shape only. RuntimeDir() appends
+	// whoisthat to the base, so the /tmp fallback is nested one level deeper.
+	if !regexp.MustCompile(`^/tmp/whoisthat-\d+/whoisthat/core\.sock$`).MatchString(got) {
+		t.Errorf("DefaultSocketPath() = %q, want /tmp/whoisthat-<uid>/whoisthat/core.sock", got)
 	}
 }
 

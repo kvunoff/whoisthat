@@ -8,6 +8,7 @@ use crate::config::AppConfig;
 use crate::core_client::connection::{CoreConnection, Endpoint};
 use crate::core_client::protocol::*;
 use crate::doctor::types::{CheckCategory, CheckItem};
+use crate::platform::{self, InitServiceState};
 
 pub(super) async fn check_ipc_and_daemon(cfg: &AppConfig) -> CheckCategory {
     let mut items = Vec::new();
@@ -149,35 +150,56 @@ pub(super) async fn check_ipc_and_daemon(cfg: &AppConfig) -> CheckCategory {
         _ => {
             items.push(CheckItem::info(
                 "daemon connection",
-                "core is not running (start with 'whoisthat' or 'systemctl --user start whoisthat-core')",
+                "core is not running (start with 'whoisthat')",
             ));
         }
     }
 
-    // 4. Systemd user service
-    let s_active = Command::new("systemctl")
-        .arg("--user")
-        .arg("is-active")
-        .arg("whoisthat-core.service")
-        .output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .unwrap_or_else(|_| "unknown".to_string());
+    // 4. Autostart backend. Never call systemctl/loginctl on a host without a
+    // running systemd: Artix and friends may still ship the binary.
+    if platform::has_systemd() {
+        let s_active = Command::new("systemctl")
+            .arg("--user")
+            .arg("is-active")
+            .arg("whoisthat-core.service")
+            .output()
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+            .unwrap_or_else(|_| "unknown".to_string());
 
-    let s_enabled = Command::new("systemctl")
-        .arg("--user")
-        .arg("is-enabled")
-        .arg("whoisthat-core.service")
-        .output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .unwrap_or_else(|_| "unknown".to_string());
+        let s_enabled = Command::new("systemctl")
+            .arg("--user")
+            .arg("is-enabled")
+            .arg("whoisthat-core.service")
+            .output()
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+            .unwrap_or_else(|_| "unknown".to_string());
 
-    items.push(CheckItem::info(
-        "systemd user service",
-        format!(
-            "whoisthat-core.service (status: {}, autostart: {})",
-            s_active, s_enabled
-        ),
-    ));
+        items.push(CheckItem::info(
+            "systemd user service",
+            format!(
+                "whoisthat-core.service (status: {}, autostart: {})",
+                s_active, s_enabled
+            ),
+        ));
+    } else {
+        let uid = crate::config::uid();
+        let state = match platform::init_service_state(uid) {
+            InitServiceState::Configured => "configured".to_string(),
+            InitServiceState::NotConfigured => "not configured".to_string(),
+            InitServiceState::Unknown(reason) => format!("unknown ({reason})"),
+        };
+        let running = platform::init_service_running(uid);
+        items.push(CheckItem::info(
+            "autostart",
+            format!(
+                "systemd not detected; desktop autostart only until the init backend is set up \
+                 (init: {}, whoisthat init service: {}, {})",
+                platform::detect_init().name(),
+                state,
+                if running { "running" } else { "not running" }
+            ),
+        ));
+    }
 
     CheckCategory::new("IPC & Daemon", items)
 }

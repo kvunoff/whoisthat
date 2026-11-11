@@ -3,7 +3,8 @@ use std::time::Duration;
 
 use crate::config;
 use crate::core_client::connection::CoreConnection;
-use crate::systemd;
+use crate::lifecycle::{self, Backend};
+use crate::{platform, systemd};
 
 use super::super::args::{CoreCmd, GlobalArgs};
 use super::super::client::{Reply, Session, endpoint};
@@ -113,6 +114,14 @@ async fn start(g: &GlobalArgs) -> Result<(), CliError> {
         );
         return Ok(());
     }
+    let backend = lifecycle::effective_backend();
+    if backend == Backend::Init && !platform::init_service_running(config::uid()) {
+        return Err(CliError::Offline(
+            "init backend is selected but the whoisthat-core service is not running; run: \
+             sudo /usr/lib/whoisthat/install-init core enable $USER $HOME"
+                .into(),
+        ));
+    }
     let cfg = config::load_config();
     crate::core_spawn::spawn_core(&cfg.log_level)
         .map_err(|e| CliError::Offline(format!("failed to start whoisthat-core: {e}")))?;
@@ -127,9 +136,28 @@ async fn start(g: &GlobalArgs) -> Result<(), CliError> {
 
 async fn stop(g: &GlobalArgs) -> Result<(), CliError> {
     let out = Out::new(g);
+    let init = lifecycle::effective_backend() == Backend::Init;
+    if init {
+        // The wrapper must not restart the core after this exit; the boot hook
+        // clears core-stop on the next boot.
+        lifecycle::remove_marker("core-run");
+        lifecycle::write_marker("core-stop")
+            .map_err(|e| CliError::Core(format!("cannot write core-stop: {e}")))?;
+    } else {
+        lifecycle::remove_marker("core-stop");
+    }
+
     let mut session = match Session::open(g).await {
         Ok(s) => s,
         Err(_) => {
+            if init {
+                terminate_core_pidfile().await;
+                out.ok(
+                    "Core is not running; init wrapper will not start it.",
+                    serde_json::json!({"running": false}),
+                );
+                return Ok(());
+            }
             out.ok(
                 "Core is not running.",
                 serde_json::json!({"running": false}),
@@ -158,15 +186,46 @@ async fn stop(g: &GlobalArgs) -> Result<(), CliError> {
         tokio::time::sleep(Duration::from_millis(100)).await;
         if CoreConnection::connect_endpoint(&ep).await.is_err() {
             out.ok("Core stopped.", serde_json::json!({"running": false}));
-            out.note("note: an open TUI may respawn the core automatically");
+            if !init {
+                out.note("note: an open TUI may respawn the core automatically");
+            }
             return Ok(());
         }
+    }
+    if init {
+        // Hunched core: the wrapper waits on the child, so TERM/KILL by pidfile
+        // is the only way out.
+        terminate_core_pidfile().await;
+        return Ok(());
     }
     Err(CliError::Timeout("core did not stop within 10s".into()))
 }
 
 async fn restart(g: &GlobalArgs) -> Result<(), CliError> {
     let out = Out::new(g);
+    if lifecycle::effective_backend() == Backend::Init {
+        if !platform::init_service_running(config::uid()) {
+            return Err(CliError::Offline(
+                "init backend is selected but the whoisthat-core service is not running; run: \
+                 sudo /usr/lib/whoisthat/install-init core enable $USER $HOME"
+                    .into(),
+            ));
+        }
+        lifecycle::remove_marker("core-stop");
+        lifecycle::write_marker("core-restart")
+            .map_err(|e| CliError::Core(format!("cannot write core-restart: {e}")))?;
+        if let Ok(mut session) = Session::open(g).await {
+            let _ = session.send("die", &serde_json::json!({})).await;
+        }
+        let mut session = wait_for_core(g).await?;
+        let state = session.state().await?;
+        out.ok(
+            format!("Core restarted (v{}).", state.core_version),
+            serde_json::json!({"running": true, "version": state.core_version}),
+        );
+        return Ok(());
+    }
+
     if systemd::systemd_is_enabled() {
         out.note("Restarting whoisthat-core.service via systemd...");
         let status = std::process::Command::new("systemctl")
@@ -187,6 +246,36 @@ async fn restart(g: &GlobalArgs) -> Result<(), CliError> {
 
     let _ = stop(g).await;
     start(g).await
+}
+
+/// TERM (then KILL) the pid recorded by the init wrapper. The comm check keeps
+/// a recycled PID from killing an unrelated process.
+async fn terminate_core_pidfile() {
+    let path = lifecycle::marker_path("core.pid");
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return;
+    };
+    let Ok(pid) = text.trim().parse::<u32>() else {
+        return;
+    };
+    let comm = std::fs::read_to_string(format!("/proc/{pid}/comm")).unwrap_or_default();
+    if comm.trim() != "whoisthat-core" {
+        return;
+    }
+    let _ = std::process::Command::new("kill")
+        .arg("-TERM")
+        .arg(pid.to_string())
+        .status();
+    for _ in 0..50 {
+        if !Path::new(&format!("/proc/{pid}")).exists() {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let _ = std::process::Command::new("kill")
+        .arg("-KILL")
+        .arg(pid.to_string())
+        .status();
 }
 
 async fn wait_for_core(g: &GlobalArgs) -> Result<Session, CliError> {

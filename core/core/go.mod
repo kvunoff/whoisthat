@@ -1,6 +1,6 @@
 module whoisthat-core
 
-go 1.26.10
+go 1.26.11
 
 require (
 	github.com/matoous/go-nanoid/v2 v2.1.0

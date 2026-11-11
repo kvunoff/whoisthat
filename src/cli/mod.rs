@@ -55,6 +55,13 @@ pub async fn run(raw_args: &[String]) -> Outcome {
         return Outcome::Exit(2);
     };
 
+    if crate::platform::started_via_privilege_wrapper() && !is_read_only(&cmd) {
+        eprintln!(
+            "whoisthat: run as your normal user, not via sudo/pkexec (root-owned config, lifecycle markers and cgroup state would break)"
+        );
+        return Outcome::Exit(1);
+    }
+
     if let Command::Run(args) = cmd {
         let mut argv = Vec::new();
         if args.detach {
@@ -114,7 +121,8 @@ async fn dispatch(cmd: Command, g: &GlobalArgs) -> Result<(), CliError> {
         Command::Settings(a) => commands::settings::dispatch(g, a).await,
         Command::Hwid(a) => commands::hwid::dispatch(g, a.cmd).await,
         Command::Logs(a) => commands::logs::run(g, a).await,
-        Command::Systemd(a) => commands::systemd::dispatch(g, a.cmd).await,
+        Command::Systemd(a) => commands::autostart::dispatch_legacy(g, a.cmd).await,
+        Command::Autostart(a) => commands::autostart::dispatch(g, a.cmd).await,
         Command::Link(a) => match a.cmd {
             LinkCmd::Handle(x) => commands::links::handle(g, &x.url, x.group.as_deref()).await,
             LinkCmd::Register => commands::links::register(g).await,
@@ -126,6 +134,21 @@ async fn dispatch(cmd: Command, g: &GlobalArgs) -> Result<(), CliError> {
         Command::Man => commands::man::run(),
         Command::Run(_) => unreachable!("run is handled in cli::run"),
     }
+}
+
+/// Read-only diagnostics keep working under sudo; anything that writes config,
+/// lifecycle markers or cgroup state must run as the real user.
+fn is_read_only(cmd: &Command) -> bool {
+    matches!(
+        cmd,
+        Command::Status(_)
+            | Command::Logs(_)
+            | Command::Doctor(_)
+            | Command::Ip
+            | Command::Version
+            | Command::Completions(_)
+            | Command::Man
+    )
 }
 
 fn finish(result: Result<(), CliError>) -> Outcome {
@@ -172,10 +195,14 @@ fn normalize_legacy(args: &[String]) -> Vec<String> {
         "-mt" | "--mode-toggle" | "toggle-tun" | "toggle-mode" => Some(&["mode", "toggle"]),
         "--mode-tun" | "--tun" => Some(&["mode", "tun"]),
         "--mode-proxy" | "--proxy" => Some(&["mode", "proxy"]),
-        "-st" | "--systemd-toggle" => Some(&["systemd", "toggle"]),
-        "--systemd-on" | "--systemd-enable" | "--enable" => Some(&["systemd", "enable"]),
-        "--systemd-off" | "--systemd-disable" | "--disable" => Some(&["systemd", "disable"]),
-        "--systemd-status" => Some(&["systemd", "status"]),
+        "-st" | "--systemd-toggle" => Some(&["autostart", "toggle", "--backend", "systemd"]),
+        "--systemd-on" | "--systemd-enable" | "--enable" => {
+            Some(&["autostart", "enable", "--backend", "systemd"])
+        }
+        "--systemd-off" | "--systemd-disable" | "--disable" => {
+            Some(&["autostart", "disable", "--backend", "systemd"])
+        }
+        "--systemd-status" => Some(&["autostart", "status", "--backend", "systemd"]),
         "-kt" | "--killswitch-toggle" => Some(&["settings", "toggle", "kill-switch"]),
         "--killswitch-on" => Some(&["settings", "set", "kill-switch=true"]),
         "--killswitch-off" => Some(&["settings", "set", "kill-switch=false"]),

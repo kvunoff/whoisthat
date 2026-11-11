@@ -155,7 +155,7 @@ curl -fsSL https://raw.githubusercontent.com/kvunoff/whoisthat/main/install.sh |
 
 Ensure you have the following installed on your machine:
 * **Rust**: `1.88` or newer with edition 2024 support ([rustup.rs](https://rustup.rs/))
-* **Go**: `1.26.10+` ([go.dev](https://go.dev/))
+* **Go**: `1.26.11+` ([go.dev](https://go.dev/))
 * **Git**, **curl**, and a C compiler (`gcc` or `clang`)
 * **iproute2** and either **nftables** or **iptables**
 
@@ -167,7 +167,7 @@ Runtime requirements for the full feature set:
 | `nftables` (recommended) | Split tunneling, kill-switch, DNS hijack |
 | `iptables` | Legacy fallback for kill-switch and DNS hijack (split tunneling still needs `nftables`) |
 | cgroup v2 (`/sys/fs/cgroup/cgroup.controllers`) | Split tunneling (`whoisthat run`) |
-| systemd user manager | Split-tunnel scopes and the user service |
+| systemd user manager **or** OpenRC/dinit/runit | Autostart and split-tunnel launching (see [Non-systemd systems](/guide/non-systemd)) |
 | `libcap` (`setcap`/`getcap`) | Rootless TUN via file capabilities |
 | `x86_64` or `aarch64` | Prebuilt Xray runtime |
 

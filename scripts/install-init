@@ -1,0 +1,468 @@
+#!/bin/sh
+# Root helper: install/remove WhoisThat init files on non-systemd hosts.
+#
+#   install-init cgroup enable|disable
+#   install-init runner enable <user> <home>
+#   install-init runner disable <user>
+#   install-init core enable <user> <home>
+#   install-init core disable <user>
+#   install-init remove
+#
+# Templates are read from <libdir>/init/<init>/ (installed by the package or
+# copied next to the helpers). Helpers cgroup-setup, run-core, run-runner and
+# init-hook are expected in <libdir> too.
+set -eu
+umask 022
+
+SYSDIR=/etc
+ETCDIR=/etc
+LIBDIR=/usr/lib/whoisthat
+INIT=
+target_user=
+target_group=
+target_uid=
+target_gid=
+target_home=
+xdg_env=
+
+warn() { echo "whoisthat: $*" >&2; }
+die() { echo "whoisthat: $*" >&2; exit 1; }
+
+if [ "${WHOISTHAT_TEST_MODE:-}" = 1 ]; then
+    [ -n "${WHOISTHAT_SYSDIR:-}" ] && SYSDIR=$WHOISTHAT_SYSDIR
+    [ -n "${WHOISTHAT_ETCDIR:-}" ] && ETCDIR=$WHOISTHAT_ETCDIR
+    [ -n "${WHOISTHAT_LIBDIR:-}" ] && LIBDIR=$WHOISTHAT_LIBDIR
+    INIT=${WHOISTHAT_INIT:-}
+fi
+
+detect_init() {
+    if [ -n "$INIT" ]; then
+        echo "$INIT"
+        return
+    fi
+    if [ -d /run/systemd/system ]; then
+        echo systemd
+    elif [ -d /run/openrc ] || command -v openrc-run >/dev/null 2>&1; then
+        echo openrc
+    elif [ -d /run/dinitctl ] || [ -d /run/dinitctl/socket ] || command -v dinitctl >/dev/null 2>&1; then
+        echo dinit
+    elif [ -d /run/runit ] || [ -d /run/runit/service ] || [ -d /run/runit/supervise ] \
+        || command -v runsvdir >/dev/null 2>&1; then
+        echo runit
+    else
+        echo unknown
+    fi
+}
+
+usage() {
+    sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'
+}
+
+validate_uid() {
+    case "$1" in
+        ''|*[!0-9]*) die "invalid uid: $1" ;;
+    esac
+    [ "$1" -ge 1000 ] || die "refusing uid $1 (must be >= 1000)"
+}
+
+validate_user() {
+    user_uid=$(id -u -- "$1" 2>/dev/null) || die "no such user: $1"
+    validate_uid "$user_uid"
+}
+
+validate_home() {
+    case "$1" in
+        /*) ;;
+        *) die "home must be an absolute path: $1" ;;
+    esac
+    case "$1" in
+        *"
+"*|*"	"*|*" "*|*'"'*|*'$'*|*'`'*|*'&'*|*'\'*|*'|'*)
+            die "home contains unsupported characters: $1"
+            ;;
+    esac
+}
+
+validate_xdg() {
+    [ -z "$1" ] && return 0
+    case "$1" in
+        /*) ;;
+        *) die "XDG path must be absolute: $1" ;;
+    esac
+    case "$1" in
+        *"
+"*|*"	"*|*" "*|*'"'*|*'$'*|*'`'*|*'&'*|*'\\'*|*'|'*)
+            die "XDG path contains unsupported characters: $1"
+            ;;
+    esac
+    return 0
+}
+
+render() { # template destination mode
+    template=$1
+    destination=$2
+    mode=$3
+    [ -f "$template" ] || die "init templates not installed: $template"
+    sed \
+        -e "s|@USER@|$target_user|g" \
+        -e "s|@GROUP@|$target_group|g" \
+        -e "s|@UID@|$target_uid|g" \
+        -e "s|@GID@|$target_gid|g" \
+        -e "s|@HOME@|$target_home|g" \
+        -e "s|@SOCKET@|/run/whoisthat/$target_uid/whoisthat/runner.sock|g" \
+        -e "s|@LIBDIR@|$LIBDIR|g" \
+        -e "s|@XDG_ENV@|$xdg_env|g" \
+        "$template" > "$destination"
+    chmod "$mode" "$destination"
+}
+
+xdg_lines() { # style: shell|dinit
+    style=$1
+    xdg_env=
+    if [ -n "${XDG_CONFIG_HOME:-}" ]; then
+        if [ "$style" = dinit ]; then
+            xdg_env="env = XDG_CONFIG_HOME=$XDG_CONFIG_HOME"
+        else
+            xdg_env="export XDG_CONFIG_HOME=\"$XDG_CONFIG_HOME\""
+        fi
+    fi
+    if [ -n "${XDG_DATA_HOME:-}" ]; then
+        if [ "$style" = dinit ]; then
+            if [ -n "$xdg_env" ]; then
+                xdg_env="$xdg_env
+env = XDG_DATA_HOME=$XDG_DATA_HOME"
+            else
+                xdg_env="env = XDG_DATA_HOME=$XDG_DATA_HOME"
+            fi
+        else
+            xdg_env="$xdg_env
+export XDG_DATA_HOME=\"$XDG_DATA_HOME\""
+        fi
+    fi
+}
+
+marker_path() { echo "$ETCDIR/whoisthat/init-user-$1"; }
+
+write_marker() { # uid
+    mkdir -p "$ETCDIR/whoisthat"
+    chmod 0755 "$ETCDIR/whoisthat"
+    printf '%s\n' "$1" > "$(marker_path "$1")"
+    chmod 0644 "$(marker_path "$1")"
+}
+
+remove_marker() { # uid
+    rm -f "$(marker_path "$1")"
+}
+
+enable_cgroup() {
+    case "$1" in
+        systemd)
+            warn "systemd detected; native cgroup hooks are not needed"
+            return 0
+            ;;
+        openrc)
+            mkdir -p "$SYSDIR/init.d"
+            render "$LIBDIR/init/openrc/whoisthat-cgroup" "$SYSDIR/init.d/whoisthat-cgroup" 0755
+            rc-update add whoisthat-cgroup boot >/dev/null 2>&1 \
+                || warn "rc-update add whoisthat-cgroup failed"
+            ;;
+        dinit)
+            mkdir -p "$SYSDIR/dinit.d"
+            render "$LIBDIR/init/dinit/whoisthat-cgroup" "$SYSDIR/dinit.d/whoisthat-cgroup" 0644
+            dinitctl enable whoisthat-cgroup >/dev/null 2>&1 \
+                || warn "dinitctl enable whoisthat-cgroup failed"
+            ;;
+        runit)
+            mkdir -p "$SYSDIR/runit/core-services"
+            render "$LIBDIR/init/runit/core-services/10-whoisthat-cgroup.sh" \
+                "$SYSDIR/runit/core-services/10-whoisthat-cgroup.sh" 0755
+            ;;
+        unknown)
+            die "cannot detect the init system; install the cgroup hook manually"
+            ;;
+    esac
+}
+
+disable_cgroup() {
+    case "$1" in
+        openrc)
+            rc-update del whoisthat-cgroup boot >/dev/null 2>&1 || true
+            rm -f "$SYSDIR/init.d/whoisthat-cgroup"
+            ;;
+        dinit)
+            dinitctl disable whoisthat-cgroup >/dev/null 2>&1 || true
+            rm -f "$SYSDIR/dinit.d/whoisthat-cgroup"
+            ;;
+        runit)
+            rm -f "$SYSDIR/runit/core-services/10-whoisthat-cgroup.sh"
+            ;;
+    esac
+}
+
+runit_service_dir() {
+    if [ -d "$SYSDIR/runit/service" ]; then
+        echo "$SYSDIR/runit/service"
+    else
+        echo "$SYSDIR/runit/runsvdir/default"
+    fi
+}
+
+enable_core() {
+    target_user=$1
+    target_home=$2
+    validate_user "$target_user"
+    validate_home "$target_home"
+    target_uid=$user_uid
+    target_gid=$(id -g -- "$target_user")
+    target_group=$(id -gn -- "$target_user")
+    validate_uid "$target_uid"
+
+    validate_xdg "${XDG_CONFIG_HOME:-}"
+    validate_xdg "${XDG_DATA_HOME:-}"
+
+    init=$(detect_init)
+    case "$init" in
+        systemd)
+            warn "systemd detected; use the systemd user unit instead"
+            return 0
+            ;;
+        openrc|runit) xdg_lines shell ;;
+        dinit) xdg_lines dinit ;;
+        unknown) die "cannot detect the init system" ;;
+    esac
+
+    case "$init" in
+        openrc)
+            mkdir -p "$SYSDIR/init.d"
+            render "$LIBDIR/init/openrc/whoisthat-core" "$SYSDIR/init.d/whoisthat-core" 0755
+            rc-update add whoisthat-core default >/dev/null 2>&1 \
+                || warn "rc-update add whoisthat-core failed"
+            rc-service whoisthat-core start >/dev/null 2>&1 \
+                || warn "rc-service whoisthat-core start failed"
+            ;;
+        dinit)
+            mkdir -p "$SYSDIR/dinit.d"
+            render "$LIBDIR/init/dinit/whoisthat-core" "$SYSDIR/dinit.d/whoisthat-core" 0644
+            dinitctl enable whoisthat-core >/dev/null 2>&1 \
+                || warn "dinitctl enable whoisthat-core failed"
+            dinitctl start whoisthat-core >/dev/null 2>&1 \
+                || warn "dinitctl start whoisthat-core failed"
+            ;;
+        runit)
+            svdir="$SYSDIR/runit/sv/whoisthat-core"
+            mkdir -p "$svdir"
+            render "$LIBDIR/init/runit/whoisthat-core/run" "$svdir/run" 0755
+            service_dir=$(runit_service_dir)
+            mkdir -p "$service_dir"
+            ln -sfn "$svdir" "$service_dir/whoisthat-core"
+            ;;
+    esac
+
+    write_marker "$target_uid"
+
+    if [ -n "${XDG_CONFIG_HOME:-}" ] || [ -n "${XDG_DATA_HOME:-}" ]; then
+        warn "custom XDG dirs were written into the service; pass them again if they change"
+    fi
+}
+
+disable_core() {
+    target_user=$1
+    validate_user "$target_user"
+    target_uid=$user_uid
+    init=$(detect_init)
+    case "$init" in
+        openrc)
+            rc-service whoisthat-core stop >/dev/null 2>&1 || true
+            rc-update del whoisthat-core default >/dev/null 2>&1 || true
+            rm -f "$SYSDIR/init.d/whoisthat-core"
+            ;;
+        dinit)
+            dinitctl stop whoisthat-core >/dev/null 2>&1 || true
+            dinitctl disable whoisthat-core >/dev/null 2>&1 || true
+            rm -f "$SYSDIR/dinit.d/whoisthat-core"
+            ;;
+        runit)
+            service_dir=$(runit_service_dir)
+            rm -f "$service_dir/whoisthat-core"
+            rm -rf "$SYSDIR/runit/sv/whoisthat-core"
+            ;;
+    esac
+    remove_marker "$target_uid"
+}
+
+enable_runner() {
+    target_user=$1
+    target_home=$2
+    validate_user "$target_user"
+    validate_home "$target_home"
+    target_uid=$user_uid
+    target_gid=$(id -g -- "$target_user")
+    target_group=$(id -gn -- "$target_user")
+
+    init=$(detect_init)
+    case "$init" in
+        systemd)
+            warn "systemd detected; the split-tunnel runner is not installed there"
+            return 0
+            ;;
+        unknown) die "cannot detect the init system" ;;
+    esac
+
+    case "$init" in
+        openrc)
+            mkdir -p "$SYSDIR/init.d"
+            render "$LIBDIR/init/openrc/whoisthat-runner" "$SYSDIR/init.d/whoisthat-runner" 0755
+            rc-update add whoisthat-runner default >/dev/null 2>&1 \
+                || warn "rc-update add whoisthat-runner failed"
+            rc-service whoisthat-runner start >/dev/null 2>&1 \
+                || warn "rc-service whoisthat-runner start failed"
+            ;;
+        dinit)
+            mkdir -p "$SYSDIR/dinit.d"
+            render "$LIBDIR/init/dinit/whoisthat-runner" "$SYSDIR/dinit.d/whoisthat-runner" 0644
+            dinitctl enable whoisthat-runner >/dev/null 2>&1 \
+                || warn "dinitctl enable whoisthat-runner failed"
+            dinitctl start whoisthat-runner >/dev/null 2>&1 \
+                || warn "dinitctl start whoisthat-runner failed"
+            ;;
+        runit)
+            svdir="$SYSDIR/runit/sv/whoisthat-runner"
+            mkdir -p "$svdir"
+            render "$LIBDIR/init/runit/whoisthat-runner/run" "$svdir/run" 0755
+            service_dir=$(runit_service_dir)
+            mkdir -p "$service_dir"
+            ln -sfn "$svdir" "$service_dir/whoisthat-runner"
+            ;;
+    esac
+}
+
+disable_runner() {
+    target_user=$1
+    validate_user "$target_user"
+    init=$(detect_init)
+    case "$init" in
+        openrc)
+            rc-service whoisthat-runner stop >/dev/null 2>&1 || true
+            rc-update del whoisthat-runner default >/dev/null 2>&1 || true
+            rm -f "$SYSDIR/init.d/whoisthat-runner"
+            ;;
+        dinit)
+            dinitctl stop whoisthat-runner >/dev/null 2>&1 || true
+            dinitctl disable whoisthat-runner >/dev/null 2>&1 || true
+            rm -f "$SYSDIR/dinit.d/whoisthat-runner"
+            ;;
+        runit)
+            rm -f "$(runit_service_dir)/whoisthat-runner"
+            rm -rf "$SYSDIR/runit/sv/whoisthat-runner"
+            ;;
+    esac
+}
+
+remove_runner_all() {
+    init=$(detect_init)
+    case "$init" in
+        openrc)
+            rc-service whoisthat-runner stop >/dev/null 2>&1 || true
+            rc-update del whoisthat-runner default >/dev/null 2>&1 || true
+            rm -f "$SYSDIR/init.d/whoisthat-runner"
+            ;;
+        dinit)
+            dinitctl stop whoisthat-runner >/dev/null 2>&1 || true
+            dinitctl disable whoisthat-runner >/dev/null 2>&1 || true
+            rm -f "$SYSDIR/dinit.d/whoisthat-runner"
+            ;;
+        runit)
+            rm -f "$(runit_service_dir)/whoisthat-runner"
+            rm -rf "$SYSDIR/runit/sv/whoisthat-runner"
+            ;;
+    esac
+}
+
+remove_all() {
+    init=$(detect_init)
+    disable_cgroup "$init"
+    remove_runner_all
+
+    if [ -d "$ETCDIR/whoisthat" ]; then
+        for marker in "$ETCDIR/whoisthat"/init-user-*; do
+            [ -e "$marker" ] || continue
+            uid=${marker##*init-user-}
+            case "$uid" in
+                ''|*[!0-9]*) continue ;;
+            esac
+            remove_marker "$uid"
+        done
+    fi
+
+    case "$init" in
+        openrc)
+            rc-service whoisthat-core stop >/dev/null 2>&1 || true
+            rc-update del whoisthat-core default >/dev/null 2>&1 || true
+            rm -f "$SYSDIR/init.d/whoisthat-core"
+            ;;
+        dinit)
+            dinitctl stop whoisthat-core >/dev/null 2>&1 || true
+            dinitctl disable whoisthat-core >/dev/null 2>&1 || true
+            rm -f "$SYSDIR/dinit.d/whoisthat-core"
+            ;;
+        runit)
+            rm -f "$(runit_service_dir)/whoisthat-core"
+            rm -rf "$SYSDIR/runit/sv/whoisthat-core"
+            ;;
+    esac
+
+    if [ -x "$LIBDIR/cgroup-setup" ]; then
+        "$LIBDIR/cgroup-setup" --remove --all-users >/dev/null 2>&1 || true
+    fi
+    rmdir "$ETCDIR/whoisthat" 2>/dev/null || true
+}
+
+[ "$#" -ge 1 ] || { usage; exit 2; }
+
+case "$1" in
+    cgroup)
+        [ "$#" -ge 2 ] || die "install-init cgroup enable|disable"
+        case "$2" in
+            enable) enable_cgroup "$(detect_init)" ;;
+            disable) disable_cgroup "$(detect_init)" ;;
+            *) die "unknown cgroup action: $2" ;;
+        esac
+        ;;
+    runner)
+        [ "$#" -ge 2 ] || die "install-init runner enable|disable ..."
+        case "$2" in
+            enable)
+                [ "$#" -ge 4 ] || die "install-init runner enable <user> <home>"
+                enable_runner "$3" "$4"
+                ;;
+            disable)
+                [ "$#" -ge 3 ] || die "install-init runner disable <user>"
+                disable_runner "$3"
+                ;;
+            *) die "unknown runner action: $2" ;;
+        esac
+        ;;
+    core)
+        [ "$#" -ge 2 ] || die "install-init core enable|disable ..."
+        case "$2" in
+            enable)
+                [ "$#" -ge 4 ] || die "install-init core enable <user> <home>"
+                enable_core "$3" "$4"
+                ;;
+            disable)
+                [ "$#" -ge 3 ] || die "install-init core disable <user>"
+                disable_core "$3"
+                ;;
+            *) die "unknown core action: $2" ;;
+        esac
+        ;;
+    remove)
+        remove_all
+        ;;
+    -h|--help|help)
+        usage
+        ;;
+    *)
+        die "unknown command: $1"
+        ;;
+esac

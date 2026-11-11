@@ -9,7 +9,7 @@ Homepage: https://github.com/kvunoff/whoisthat
 
 Package: whoisthat
 Architecture: amd64 arm64
-Depends: ${misc:Depends}, iproute2, nftables, libcap2-bin, systemd
+Depends: ${misc:Depends}, iproute2, nftables, libcap2-bin
 Recommends: polkitd | policykit-1
 Description: Modern terminal-based VPN client with Xray-core backend
  WhoisThat is a terminal UI and CLI that drives a local Xray-core daemon

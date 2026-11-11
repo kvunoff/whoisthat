@@ -1,0 +1,40 @@
+#!/bin/sh
+# Boot hook for non-systemd hosts: prepares the native cgroups and clears the
+# previous session's lifecycle markers. Runs as root before the core service.
+set -u
+
+LIBDIR=/usr/lib/whoisthat
+if [ "${WHOISTHAT_TEST_MODE:-}" = 1 ] && [ -n "${WHOISTHAT_LIBDIR:-}" ]; then
+    LIBDIR=$WHOISTHAT_LIBDIR
+fi
+
+if [ -x "$LIBDIR/cgroup-setup" ]; then
+    if ! "$LIBDIR/cgroup-setup" --all-users; then
+        echo "whoisthat: cgroup-setup failed; split tunnel will be unavailable" >&2
+    fi
+else
+    echo "whoisthat: cgroup-setup not installed" >&2
+fi
+
+# core-stop/core-start/core-restart/core-run/core.pid are session-scoped: the
+# new boot starts from a clean slate. autostart and autostart-backend are the
+# user's persistent choice and must survive.
+passwd_file=/etc/passwd
+if [ -n "${WHOISTHAT_PASSWD_FILE:-}" ]; then
+    passwd_file=$WHOISTHAT_PASSWD_FILE
+fi
+if command -v getent >/dev/null 2>&1; then
+    entries=$(getent passwd 2>/dev/null || true)
+else
+    entries=$(cat "$passwd_file" 2>/dev/null || true)
+fi
+
+for entry in $(printf '%s\n' "$entries" | awk -F: '$3 >= 1000 && $3 < 60000 { print $6 }'); do
+    [ -n "$entry" ] || continue
+    conf="$entry/.config/whoisthat"
+    [ -d "$conf" ] || continue
+    rm -f "$conf/core-stop" "$conf/core-start" "$conf/core-restart" \
+        "$conf/core-run" "$conf/core.pid"
+done
+
+exit 0

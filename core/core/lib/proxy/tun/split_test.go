@@ -1,6 +1,9 @@
 package tunmode
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -10,8 +13,8 @@ import (
 // components. If the layout changes, level must track it automatically.
 func TestSplitCgroupLevelMatchesPathDepth(t *testing.T) {
 	paths := splitCgroupRelPaths(1000)
-	if len(paths) != 2 {
-		t.Fatalf("expected 2 split cgroup candidate paths, got %d", len(paths))
+	if len(paths) != 3 {
+		t.Fatalf("expected 3 split cgroup candidate paths, got %d", len(paths))
 	}
 
 	// 1. whoisthat_split.slice (level 4, no hyphens, top-level user slice)
@@ -26,6 +29,15 @@ func TestSplitCgroupLevelMatchesPathDepth(t *testing.T) {
 	wantComponentsHyphen := strings.Count(relHyphen, "/") + 1
 	if got := splitCgroupLevel(relHyphen); got != wantComponentsHyphen || got != 5 {
 		t.Errorf("splitCgroupLevel(%q) = %d, want %d (level 5)", relHyphen, got, wantComponentsHyphen)
+	}
+
+	// 3. whoisthat-<uid> (level 1, native backend without systemd)
+	relNative := paths[2]
+	if relNative != "whoisthat-1000" {
+		t.Errorf("native cgroup path = %q, want whoisthat-1000", relNative)
+	}
+	if got := splitCgroupLevel(relNative); got != 1 {
+		t.Errorf("splitCgroupLevel(%q) = %d, want 1", relNative, got)
 	}
 }
 
@@ -175,5 +187,128 @@ func TestSplitTeardownKeepsXrayV6Route(t *testing.T) {
 	script := buildSplitTeardownScript(true)
 	if strings.Contains(script, "table 100") {
 		t.Errorf("teardown must not touch table 100 when physV6=true, script: %s", script)
+	}
+}
+
+// A cgroup v1 host or a missing root-created cgroup must stop the script with
+// an actionable message instead of silently installing no rules.
+func TestSplitScriptFailsWithActionableMessage(t *testing.T) {
+	script := buildSplitSetupScript("exclude", 1000, "whoisthattun", "wlan0", "192.168.3.1", true, true)
+	for _, want := range []string{
+		"cgroup.controllers",
+		"split cgroup not available; run: sudo /usr/lib/whoisthat/cgroup-setup $USER",
+		`[ -d "$root/whoisthat-1000" ] && nft`,
+	} {
+		if !strings.Contains(script, want) {
+			t.Errorf("split script missing %q: %s", want, script)
+		}
+	}
+}
+
+// The native cgroup override is test-only: an environment variable must not
+// redirect normal operation outside the real cgroup tree.
+func TestCgroupRootOverrideOnlyInTestMode(t *testing.T) {
+	t.Setenv("WHOISTHAT_TEST_MODE", "")
+	t.Setenv("WHOISTHAT_CGROUP_ROOT", "/tmp/whoisthat-evil")
+	if got := cgroupRoot(); got != "/sys/fs/cgroup" {
+		t.Errorf("cgroupRoot() = %q without test mode, want /sys/fs/cgroup", got)
+	}
+
+	t.Setenv("WHOISTHAT_TEST_MODE", "1")
+	if got := cgroupRoot(); got != "/tmp/whoisthat-evil" {
+		t.Errorf("cgroupRoot() = %q in test mode, want the override", got)
+	}
+}
+
+func TestValidateSplitUid(t *testing.T) {
+	for _, mode := range []string{"include", "exclude"} {
+		if err := ValidateSplitUid(mode, 0); err == nil {
+			t.Errorf("mode %q with uid 0 must fail", mode)
+		}
+		if err := ValidateSplitUid(mode, 1000); err != nil {
+			t.Errorf("mode %q with uid 1000 must pass: %v", mode, err)
+		}
+	}
+	for _, mode := range []string{"", "off"} {
+		if err := ValidateSplitUid(mode, 0); err != nil {
+			t.Errorf("mode %q must be a no-op: %v", mode, err)
+		}
+	}
+}
+
+func TestReapplySplitNoopWhenTunDown(t *testing.T) {
+	manager := &TunModeManager{}
+	if err := manager.ReapplySplit("off"); err != nil {
+		t.Errorf("ReapplySplit on a stopped TUN must be a no-op: %v", err)
+	}
+}
+
+func writeStub(t *testing.T, dir, name, logPath string) {
+	t.Helper()
+	body := "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"" + logPath + "\"\nexit 0\n"
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// The script must only reference cgroups that exist: nft resolves the path at
+// rule-add time and aborts the whole script otherwise.
+func TestSplitScriptRunsAgainstFakeCgroupRoot(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "cgroup.controllers"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	logPath := filepath.Join(t.TempDir(), "commands.log")
+	writeStub(t, bin, "nft", logPath)
+	writeStub(t, bin, "ip", logPath)
+
+	t.Setenv("WHOISTHAT_TEST_MODE", "1")
+	t.Setenv("WHOISTHAT_CGROUP_ROOT", root)
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	script := buildSplitSetupScript("exclude", 1000, "whoisthattun", "wlan0", "192.168.3.1", true, true)
+	if out, err := exec.Command("sh", "-c", script).CombinedOutput(); err != nil {
+		t.Fatalf("script failed: %v\n%s", err, out)
+	}
+
+	logged, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rules := 0
+	for _, line := range strings.Split(string(logged), "\n") {
+		if strings.HasPrefix(line, "add rule inet whoisthat_split output") {
+			rules++
+		}
+	}
+	if rules != 3 {
+		t.Errorf("expected one cgroup rule per path (3), got %d:\n%s", rules, logged)
+	}
+}
+
+func TestSplitScriptFailsWithoutCgroupDirs(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores the read-only temp dir this test relies on")
+	}
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "cgroup.controllers"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(root, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(root, 0o700) })
+
+	t.Setenv("WHOISTHAT_TEST_MODE", "1")
+	t.Setenv("WHOISTHAT_CGROUP_ROOT", root)
+
+	script := buildSplitSetupScript("exclude", 1000, "whoisthattun", "wlan0", "192.168.3.1", true, true)
+	out, err := exec.Command("sh", "-c", script).CombinedOutput()
+	if err == nil {
+		t.Fatalf("script must fail when no cgroup dir can be created: %s", out)
+	}
+	if !strings.Contains(string(out), "split cgroup not available") {
+		t.Errorf("unexpected error output: %s", out)
 	}
 }

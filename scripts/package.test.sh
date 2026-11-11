@@ -180,10 +180,13 @@ export FAKE_DPUT_LOG="$TMP/dput.log"
 
 DIST="$TMP/dist"
 mkdir -p "$DIST" "$TMP/artifact"
-for file in whoisthat whoisthat-core whoisthat.desktop whoisthat-url.desktop \
+for file in whoisthat whoisthat-core whoisthat-runner whoisthat.desktop whoisthat-url.desktop \
     whoisthat.svg LICENSE whoisthat.bash _whoisthat whoisthat.fish whoisthat.1; do
     printf 'fixture\n' > "$TMP/artifact/$file"
 done
+mkdir -p "$TMP/artifact/lib/whoisthat/init/openrc"
+printf 'fixture\n' > "$TMP/artifact/lib/whoisthat/cgroup-setup"
+printf 'fixture\n' > "$TMP/artifact/lib/whoisthat/init/openrc/whoisthat-core"
 tar -czf "$DIST/whoisthat-linux-amd64.tar.gz" -C "$TMP/artifact" .
 tar -czf "$DIST/whoisthat-linux-arm64.tar.gz" -C "$TMP/artifact" .
 
@@ -277,6 +280,19 @@ grep -q 'dist/$(DEB_HOST_ARCH)/whoisthat' debian/rules &&
 [ -x debian/postinst ] && ok "postinst executable" || bad "postinst missing"
 grep -q 'postinstall: debian/postinst' pkg/nfpm.yaml &&
     ok "nfpm postinst path" || bad "nfpm postinst path"
+
+echo "runner integration packaging"
+grep -q 'whoisthat-runner' pkg/nfpm.yaml && ok "nfpm ships runner" || bad "nfpm misses runner"
+grep -q 'lib/whoisthat' pkg/nfpm.yaml && ok "nfpm ships helpers" || bad "nfpm misses helpers"
+grep -q 'whoisthat-runner' debian/rules && ok "deb ships runner" || bad "deb misses runner"
+grep -q 'lib/whoisthat' debian/rules && ok "deb ships helpers" || bad "deb misses helpers"
+for file in pkg/aur/PKGBUILD pkg/aur-bin/PKGBUILD; do
+    grep -q 'whoisthat-runner' "$file" && ok "$file ships runner" || bad "$file misses runner"
+    grep -q 'lib/whoisthat' "$file" && ok "$file ships helpers" || bad "$file misses helpers"
+done
+for file in pkg/aur/whoisthat.install pkg/aur-bin/whoisthat-bin.install; do
+    grep -q 'install-init remove' "$file" && ok "$file removes services" || bad "$file misses pre_remove"
+done
 
 echo "shell integration packaging"
 for file in pkg/nfpm.yaml debian/rules pkg/aur/PKGBUILD pkg/aur-bin/PKGBUILD; do

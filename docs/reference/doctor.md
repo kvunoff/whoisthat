@@ -52,6 +52,7 @@ The diagnostic engine performs comprehensive, non-destructive system inspections
 * **`/dev/net/tun` Device**: Confirms `/dev/net/tun` exists and is a valid character device with read/write access.
 * **Firewall Backend**: Detects whether modern **nftables** or legacy **iptables** is active. Warns if neither is available.
 * **cgroup v2 Controller**: Checks for `/sys/fs/cgroup/cgroup.controllers`. Confirms the unified cgroup v2 hierarchy is active for application split tunneling (`whoisthat run`).
+* **Split runner**: On non-systemd hosts, checks that `runner.sock` is reachable; without it `whoisthat run` cannot launch applications.
 
 ### 3. Polkit & User Permissions
 * **Polkit Daemon**: Checks if `polkit.service` is active via `systemctl is-active`.

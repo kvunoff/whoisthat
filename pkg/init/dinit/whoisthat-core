@@ -1,0 +1,7 @@
+type = process
+command = /usr/lib/whoisthat/run-core @HOME@
+run-as = @USER@
+restart = false
+depends-on = whoisthat-cgroup
+
+@XDG_ENV@

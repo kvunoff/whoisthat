@@ -126,10 +126,16 @@ jobs:
           ( cd core/core && CGO_ENABLED=0 go build -trimpath -ldflags '-s -w' -o "$GITHUB_WORKSPACE/dist/whoisthat-core" )
           cargo build --release --locked --target "$TARGET"
           cp "target/$TARGET/release/whoisthat" dist/whoisthat
+          cp "target/$TARGET/release/whoisthat-runner" dist/whoisthat-runner
           cp pkg/whoisthat.desktop dist/
           cp pkg/whoisthat-url.desktop dist/
           cp docs/public/logo.svg dist/whoisthat.svg
           cp LICENSE dist/
+
+          mkdir -p dist/lib/whoisthat
+          cp scripts/cgroup-setup scripts/run-runner scripts/run-core \
+            scripts/install-init scripts/init-hook dist/lib/whoisthat/
+          cp -R pkg/init dist/lib/whoisthat/init
 
           check_static() {
             if readelf -l "$1" | grep -q 'INTERP'; then
@@ -138,6 +144,7 @@ jobs:
             fi
           }
           check_static dist/whoisthat
+          check_static dist/whoisthat-runner
           check_static dist/whoisthat-core
 
           # Generated from the native-arch binary, before packaging.
@@ -152,12 +159,14 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p stage/bundle stage/core
-          cp dist/whoisthat dist/whoisthat-core dist/whoisthat.desktop \
+          cp dist/whoisthat dist/whoisthat-core dist/whoisthat-runner dist/whoisthat.desktop \
             dist/whoisthat-url.desktop dist/whoisthat.svg dist/LICENSE \
             dist/whoisthat.bash dist/_whoisthat dist/whoisthat.fish dist/whoisthat.1 stage/bundle/
+          mkdir -p stage/bundle/lib
+          cp -R dist/lib/whoisthat stage/bundle/lib/
           cp dist/whoisthat-core dist/LICENSE stage/core/
           tar -czf "dist/whoisthat-linux-${ARCH}.tar.gz" -C stage/bundle \
-            whoisthat whoisthat-core whoisthat.desktop whoisthat-url.desktop whoisthat.svg LICENSE \
+            whoisthat whoisthat-core whoisthat-runner lib whoisthat.desktop whoisthat-url.desktop whoisthat.svg LICENSE \
             whoisthat.bash _whoisthat whoisthat.fish whoisthat.1
           tar -czf "dist/whoisthat-core-linux-${ARCH}.tar.gz" -C stage/core \
             whoisthat-core LICENSE

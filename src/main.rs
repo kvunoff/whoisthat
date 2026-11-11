@@ -1,3 +1,4 @@
+mod autostart;
 mod cli;
 mod config;
 mod core_client;
@@ -9,11 +10,16 @@ mod event_loop;
 mod input;
 mod keymap;
 mod launcher;
+mod lifecycle;
 mod logfile;
 mod logfmt;
 mod logger;
 mod net_info;
+mod platform;
 mod popups;
+#[allow(dead_code)]
+#[path = "runner/proto.rs"]
+mod proto;
 mod shell_integration;
 mod systemd;
 mod terminal;
@@ -71,10 +77,21 @@ async fn main() -> io::Result<()> {
         cli::Outcome::Exit(code) => std::process::exit(code),
     }
 
+    if platform::started_via_privilege_wrapper() {
+        eprintln!(
+            "whoisthat: run as your normal user, not via sudo/pkexec (root-owned config and cgroup state break split tunnelling)"
+        );
+        std::process::exit(1);
+    }
+
     let logger = init_logger();
     install_panic_hook(logger);
 
     let mut cfg = config::load_config();
+    if let Some(err) = config::runtime_base_error() {
+        eprintln!("whoisthat: {err}");
+        std::process::exit(1);
+    }
     // Desktop entries start the TUI without a tty: re-exec it inside a terminal.
     if !io::stdin().is_terminal() && !io::stdout().is_terminal() {
         terminal::relaunch(&cfg.terminal);
@@ -141,6 +158,21 @@ async fn main() -> io::Result<()> {
                     let _ = conn.send("die", &DieData {}).await;
                 }
                 tokio::time::sleep(Duration::from_millis(500)).await;
+                // systemd units restart only on failure; a clean `die` needs an
+                // explicit restart. The init wrapper restarts on core-restart.
+                match crate::lifecycle::effective_backend() {
+                    crate::lifecycle::Backend::Init => {
+                        if let Err(e) = crate::lifecycle::write_marker("core-restart") {
+                            log::warn!("cannot write core-restart: {e}");
+                        }
+                    }
+                    crate::lifecycle::Backend::Systemd if systemd_is_enabled() => {
+                        let _ = std::process::Command::new("systemctl")
+                            .args(["--user", "restart", "whoisthat-core.service"])
+                            .status();
+                    }
+                    _ => {}
+                }
             }
         }
         None => {
@@ -219,7 +251,10 @@ async fn main() -> io::Result<()> {
             auto_test_on_subscribe: cfg.auto_test_on_subscribe,
         },
     );
-    app.systemd_enabled = systemd_is_enabled();
+    let autostart = autostart::status();
+    app.autostart_backend = autostart.backend.map(|b| b.name().to_string());
+    app.autostart_enabled = autostart.enabled;
+    app.autostart_available = !autostart.available.is_empty();
     app.check_updates = cfg.check_updates;
 
     if let Some(warning) = check_sudo_env() {

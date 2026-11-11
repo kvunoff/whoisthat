@@ -1,0 +1,2 @@
+#!/bin/sh
+exec /usr/lib/whoisthat/run-runner @UID@ @GID@ "@HOME@" "@SOCKET@"
