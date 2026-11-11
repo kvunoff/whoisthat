@@ -110,16 +110,21 @@ jobs:
           go-version-file: core/core/go.mod
           cache-dependency-path: core/core/go.sum
 
+      - name: Install musl toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+
       - name: Build static binaries
         env:
           TARGET: ${{ matrix.target }}
+          CC_x86_64_unknown_linux_musl: musl-gcc
+          CC_aarch64_unknown_linux_musl: musl-gcc
         run: |
           set -euo pipefail
           mkdir -p dist
           ( cd core/core && CGO_ENABLED=0 go build -trimpath -ldflags '-s -w' -o "$GITHUB_WORKSPACE/dist/whoisthat-core" )
-          # rust-lld is bundled with the toolchain; no apt/musl-gcc dependency.
-          cargo build --release --locked --target "$TARGET" \
-            --config "target.$TARGET.linker=\"rust-lld\""
+          cargo build --release --locked --target "$TARGET"
           cp "target/$TARGET/release/whoisthat" dist/whoisthat
           cp "target/$TARGET/release/whoisthat-runner" dist/whoisthat-runner
           cp pkg/whoisthat.desktop dist/
