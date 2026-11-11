@@ -21,9 +21,48 @@ contents:
   - src: ${ARTIFACT_DIR}/whoisthat-runner
     dst: /usr/bin/whoisthat-runner
     expand: true
-  - src: ${ARTIFACT_DIR}/lib/whoisthat
-    dst: /usr/lib/whoisthat
-    type: tree
+  - src: ${ARTIFACT_DIR}/lib/whoisthat/cgroup-setup
+    dst: /usr/lib/whoisthat/cgroup-setup
+    expand: true
+  - src: ${ARTIFACT_DIR}/lib/whoisthat/run-runner
+    dst: /usr/lib/whoisthat/run-runner
+    expand: true
+  - src: ${ARTIFACT_DIR}/lib/whoisthat/run-core
+    dst: /usr/lib/whoisthat/run-core
+    expand: true
+  - src: ${ARTIFACT_DIR}/lib/whoisthat/install-init
+    dst: /usr/lib/whoisthat/install-init
+    expand: true
+  - src: ${ARTIFACT_DIR}/lib/whoisthat/init-hook
+    dst: /usr/lib/whoisthat/init-hook
+    expand: true
+  - src: ${ARTIFACT_DIR}/lib/whoisthat/init/openrc/whoisthat-cgroup
+    dst: /usr/lib/whoisthat/init/openrc/whoisthat-cgroup
+    expand: true
+  - src: ${ARTIFACT_DIR}/lib/whoisthat/init/openrc/whoisthat-core
+    dst: /usr/lib/whoisthat/init/openrc/whoisthat-core
+    expand: true
+  - src: ${ARTIFACT_DIR}/lib/whoisthat/init/openrc/whoisthat-runner
+    dst: /usr/lib/whoisthat/init/openrc/whoisthat-runner
+    expand: true
+  - src: ${ARTIFACT_DIR}/lib/whoisthat/init/dinit/whoisthat-cgroup
+    dst: /usr/lib/whoisthat/init/dinit/whoisthat-cgroup
+    expand: true
+  - src: ${ARTIFACT_DIR}/lib/whoisthat/init/dinit/whoisthat-core
+    dst: /usr/lib/whoisthat/init/dinit/whoisthat-core
+    expand: true
+  - src: ${ARTIFACT_DIR}/lib/whoisthat/init/dinit/whoisthat-runner
+    dst: /usr/lib/whoisthat/init/dinit/whoisthat-runner
+    expand: true
+  - src: ${ARTIFACT_DIR}/lib/whoisthat/init/runit/core-services/10-whoisthat-cgroup.sh
+    dst: /usr/lib/whoisthat/init/runit/core-services/10-whoisthat-cgroup.sh
+    expand: true
+  - src: ${ARTIFACT_DIR}/lib/whoisthat/init/runit/whoisthat-core/run
+    dst: /usr/lib/whoisthat/init/runit/whoisthat-core/run
+    expand: true
+  - src: ${ARTIFACT_DIR}/lib/whoisthat/init/runit/whoisthat-runner/run
+    dst: /usr/lib/whoisthat/init/runit/whoisthat-runner/run
+    expand: true
   - src: ${ARTIFACT_DIR}/whoisthat.desktop
     dst: /usr/share/applications/whoisthat.desktop
     expand: true
