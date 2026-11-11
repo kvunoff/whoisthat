@@ -20,8 +20,16 @@ export PIDS="$root/pids"
 
 mkdir -p "$WHOISTHAT_RUN_ROOT"
 uid=$(id -u)
-mkdir -p "$WHOISTHAT_RUN_ROOT/$uid"
-chmod 0700 "$WHOISTHAT_RUN_ROOT/$uid"
+test_uid=$uid
+if [ "$uid" -eq 0 ]; then
+    test_uid=1000
+fi
+export WHOISTHAT_TEST_UID=$test_uid
+mkdir -p "$WHOISTHAT_RUN_ROOT/$test_uid"
+chmod 0700 "$WHOISTHAT_RUN_ROOT/$test_uid"
+if [ "$uid" -eq 0 ]; then
+    chown "$test_uid" "$WHOISTHAT_RUN_ROOT/$test_uid"
+fi
 
 cat > "$WHOISTHAT_CORE" <<'EOF'
 #!/bin/sh
@@ -43,7 +51,13 @@ conf="$home/.config/whoisthat"
 mkdir -p "$conf"
 pidfile="$conf/core.pid"
 
-fail() { echo "FAIL: $*" >&2; exit 1; }
+fail() {
+    echo "FAIL: $*" >&2
+    if [ -f "$root/wrapper.log" ]; then
+        sed 's/^/wrapper: /' "$root/wrapper.log" >&2
+    fi
+    exit 1
+}
 pass() { echo "ok    $*"; }
 
 wait_for() { # timeout-in-tenths command...

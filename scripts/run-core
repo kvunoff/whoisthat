@@ -22,6 +22,9 @@ fi
 HOME=$1
 export HOME
 UID_NUM=$(id -u)
+if [ "${WHOISTHAT_TEST_MODE:-}" = 1 ] && [ -n "${WHOISTHAT_TEST_UID:-}" ]; then
+    UID_NUM=$WHOISTHAT_TEST_UID
+fi
 case "$UID_NUM" in
     ''|*[!0-9]*)
         echo "whoisthat: invalid uid" >&2
