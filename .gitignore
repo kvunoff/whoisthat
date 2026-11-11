@@ -6,7 +6,8 @@ cover.out
 .opencode/
 opencode.json
 *.log
-whoisthat-core
+/core/core/whoisthat-core
+/whoisthat-core
 .local/
 .ignore
 node_modules/
