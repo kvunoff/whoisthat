@@ -18,6 +18,12 @@ contents:
   - src: ${ARTIFACT_DIR}/whoisthat-core
     dst: /usr/bin/whoisthat-core
     expand: true
+  - src: ${ARTIFACT_DIR}/whoisthat-runner
+    dst: /usr/bin/whoisthat-runner
+    expand: true
+  - src: ${ARTIFACT_DIR}/lib/whoisthat
+    dst: /usr/lib/whoisthat
+    type: tree
   - src: ${ARTIFACT_DIR}/whoisthat.desktop
     dst: /usr/share/applications/whoisthat.desktop
     expand: true

@@ -32,6 +32,7 @@ test-shell:
 	./scripts/run-runner.test.sh
 	./scripts/run-core.test.sh
 	./scripts/install-init.test.sh
+	./scripts/check-dinit.sh
 
 # Release-driver tests: throwaway clones, local bare origin, fake gh.
 test-bump:

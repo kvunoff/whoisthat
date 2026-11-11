@@ -278,6 +278,19 @@ grep -q 'dist/$(DEB_HOST_ARCH)/whoisthat' debian/rules &&
 grep -q 'postinstall: debian/postinst' pkg/nfpm.yaml &&
     ok "nfpm postinst path" || bad "nfpm postinst path"
 
+echo "runner integration packaging"
+grep -q 'whoisthat-runner' pkg/nfpm.yaml && ok "nfpm ships runner" || bad "nfpm misses runner"
+grep -q 'lib/whoisthat' pkg/nfpm.yaml && ok "nfpm ships helpers" || bad "nfpm misses helpers"
+grep -q 'whoisthat-runner' debian/rules && ok "deb ships runner" || bad "deb misses runner"
+grep -q 'lib/whoisthat' debian/rules && ok "deb ships helpers" || bad "deb misses helpers"
+for file in pkg/aur/PKGBUILD pkg/aur-bin/PKGBUILD; do
+    grep -q 'whoisthat-runner' "$file" && ok "$file ships runner" || bad "$file misses runner"
+    grep -q 'lib/whoisthat' "$file" && ok "$file ships helpers" || bad "$file misses helpers"
+done
+for file in pkg/aur/whoisthat.install pkg/aur-bin/whoisthat-bin.install; do
+    grep -q 'install-init remove' "$file" && ok "$file removes services" || bad "$file misses pre_remove"
+done
+
 echo "shell integration packaging"
 for file in pkg/nfpm.yaml debian/rules pkg/aur/PKGBUILD pkg/aur-bin/PKGBUILD; do
     grep -q 'site-functions/_whoisthat' "$file" &&
