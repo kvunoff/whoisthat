@@ -112,6 +112,7 @@ jobs:
 
       - name: Install musl toolchain
         run: |
+          printf 'Acquire::ForceIPv4 "true";\nAcquire::Retries "5";\n' | sudo tee /etc/apt/apt.conf.d/99whoisthat-net >/dev/null
           sudo apt-get update
           sudo apt-get install -y musl-tools
 
