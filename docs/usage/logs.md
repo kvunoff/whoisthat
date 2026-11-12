@@ -89,10 +89,14 @@ Clearing `core-crash.log` destroys the only post-mortem record of a daemon crash
 
 ## Verbosity
 
+The default depends on who started the process: the TUI log defaults to `warn`
+(capped by **Verbose TUI log**), a TUI-spawned core starts at `warn`, and a
+standalone core starts at `info` unless `WHOISTHAT_LOG_LEVEL` is set.
+
 | Level | What appears |
 | :--- | :--- |
 | `error` | `[ERRO]` / `[FATA]` |
-| `warn` | + `[WARN]` (default) |
+| `warn` | + `[WARN]` (TUI default) |
 | `info` | + `[INFO]` |
 | `debug` | + `[DEBU]` (the core treats `trace` as `debug`) |
 | `trace` | + `[TRAC]` (TUI only) |

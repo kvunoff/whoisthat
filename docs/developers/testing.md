@@ -115,9 +115,28 @@ Reboot once and repeat: the cgroup hook must recreate
 the core before login. Then check `whoisthat autostart enable --backend init`
 survives a reboot and `disable` stops the core after it exits.
 
+## Latency tester internals
+
+The tester does not use ICMP. Each sample simulates application traffic:
+
+- `tcp`: fast direct TCP handshake prefilter.
+- `http-get` (default): starts a temporary Xray instance and performs an HTTP
+  GET over SOCKS5.
+- `http-head`: same path with a lighter HEAD request.
+
+The median of the configured samples is shown in the tree; jitter is
+`max - min`; loss is the share of failed samples. Pending profiles show `…`, and
+the status bar reports `[Testing done/total]`. The core throttles failure
+warnings to one per reason per five seconds.
+
+When **Auto-test on refresh** is enabled, a subscription refresh schedules tests
+for the imported profiles; groups larger than 50 profiles are skipped to avoid a
+test storm.
+
 ---
 
 ## See also
 
 - [Build & Run](/developers/build)
 - [Debugging](/developers/debugging)
+- [Profiles & Subscriptions](/usage/profiles)

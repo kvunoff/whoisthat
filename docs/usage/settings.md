@@ -43,13 +43,20 @@ in the interactive Settings tab (set it from the CLI or `config.toml`).
 | **TUN Name** | Editable text | `whoisthattun` | Interface name for the virtual adapter: must start with a letter and contain only letters, digits, `_` or `-` (max 15 characters). |
 | **Kill Switch** | `on` / `off` | `off` | Installs an independent firewall block to halt non-VPN traffic if the connection drops. |
 | **Split Tunnel** | `off`, `exclude`, `include` | `off` | cgroup v2 application isolation mode. `exclude` = target apps bypass VPN; `include` = only target apps use VPN. |
-| **HWID Enabled** | `on` / `off` | `on` | Send hardware identification headers (`x-hwid`) during subscription fetches. |
+| **HWID Enabled** | `on` / `off` | `on` | Send HWID headers (`x-hwid`, `x-device-os`, `x-ver-os`, `x-device-model`) during subscription fetches. |
 | **HWID** | Read-only hex | Auto | 16-character hexadecimal device fingerprint. |
 | **Reset HWID** | Action button | — | Generates a new random hardware identifier. |
 | **User-Agent** | Editable text | `whoisthat/v0.5.4` | Custom HTTP User-Agent header sent with subscription requests. |
 | **Check for updates** | `on` / `off` | `on` | Checks GitHub for a newer stable release at startup (at most once a day) and shows a popup with a copyable update command. |
 
 `RUST_LOG` or `WHOISTHAT_LOG_LEVEL` (for example `WHOISTHAT_LOG_LEVEL=debug whoisthat`) overrides **Verbose TUI log** and **Log Level** for that session and is never written to `config.toml`; `RUST_LOG` wins when both are set.
+
+::: warning Kill Switch and Split Tunnel include
+`Kill Switch: on` and `Split Tunnel: include` cannot be active together. The
+core rejects enabling either while the other is set and normalizes a hand-edited
+configuration to `kill-switch: false`. Use `exclude` or `off` with the
+kill-switch.
+:::
 
 ---
 
