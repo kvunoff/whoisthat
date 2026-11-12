@@ -126,6 +126,7 @@ export default withMermaid(defineConfig({
         items: [
           { text: 'CLI Reference', link: '/reference/cli' },
           { text: 'Configuration', link: '/reference/configuration' },
+          { text: 'Status JSON', link: '/reference/status-json' },
           { text: 'Routing Precedence', link: '/reference/routing-precedence' },
           { text: 'Happ Format', link: '/reference/happ-format' },
           { text: 'IPC & Wire Protocol', link: '/reference/protocol' },

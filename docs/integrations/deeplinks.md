@@ -7,7 +7,16 @@ type: "reference"
 
 # Deep Links & Browser Integration (`wit://`)
 
-WhoisThat registers the custom desktop URL scheme `wit://`. This enables web dashboards, VPN provider portals, and personal websites to import subscriptions, profiles, and routing policies with a single click in any web browser (Chrome, Firefox, Brave, Edge).
+WhoisThat registers the custom desktop URL scheme `wit://`. This enables web
+dashboards, VPN provider portals, and personal websites to import subscriptions,
+profiles, and routing policies with a single click in any web browser (Chrome,
+Firefox, Brave, Edge).
+
+::: warning Tokens travel in the URL
+A subscription link can contain a token. It may end up in browser history, shell
+history, logs, or a shared screenshot. Prefer the provider's one-click import
+over pasting the full link into a terminal, and avoid sharing `wit://` URLs.
+:::
 
 ---
 
@@ -29,16 +38,27 @@ This writes two entries to `~/.local/share/applications/` and the icon to `~/.lo
 * `whoisthat-url.desktop` — the deep link handler (`Terminal=false`, `NoDisplay=true`), so it stays out of the application list.
 
 The scheme is bound to the hidden handler:
+
 ```bash
 xdg-mime default whoisthat-url.desktop x-scheme-handler/wit
+```
+
+To remove the handler, delete the two `.desktop` files and clear the binding:
+
+```bash
+rm -f ~/.local/share/applications/whoisthat.desktop \
+      ~/.local/share/applications/whoisthat-url.desktop
+xdg-mime default '' x-scheme-handler/wit
 ```
 
 ---
 
 ## Supported URL Schemes & Syntax
 
-### 1. Subscription Ingestion (`sub` / `subscription`)
-Creates a new subscription group and immediately triggers a background profile fetch and latency test:
+### 1. Subscription ingestion (`sub` / `subscription`)
+
+Creates a subscription group and fetches it. Latency tests follow the normal
+**Auto-test on refresh** policy; this is not a silent background connect.
 
 * **Query Parameter Format**:
   ```
@@ -55,7 +75,7 @@ Creates a new subscription group and immediately triggers a background profile f
 
 ---
 
-### 2. Single Profile Import (`import`)
+### 2. Single profile import (`import`)
 Imports an individual server profile into a specified group:
 
 * **Query Parameter Format**:
@@ -72,7 +92,7 @@ Imports an individual server profile into a specified group:
 
 ---
 
-### 3. Happ Routing Ingestion
+### 3. Happ routing ingestion
 Imports a provider Happ routing profile into an existing or auto-detected group:
 
 * **Wrapped Format**:
@@ -86,7 +106,7 @@ Imports a provider Happ routing profile into an existing or auto-detected group:
 
 ---
 
-### 4. Direct Browser Actions
+### 4. Direct browser actions
 Control connection state directly from bookmarks or shell scripts. `connect` takes no query parameters: it connects to the last used profile.
 
 * `wit://connect`
@@ -94,6 +114,30 @@ Control connection state directly from bookmarks or shell scripts. `connect` tak
 * `wit://toggle`
 
 ---
+
+## URL encoding
+
+Query values must be percent-encoded. In particular:
+
+- `#` starts a fragment, so encode it as `%23`;
+- `&` separates parameters, so encode it as `%26`;
+- `:` and `/` in nested URLs are usually encoded as `%3A` and `%2F`.
+
+The direct prefix forms (`wit://vless://...`, `wit://happ://...`) avoid the
+wrapper encoding but still need encoding for characters that would break the
+outer URL.
+
+## Troubleshooting
+
+- **Browser does nothing**: check `xdg-mime query default x-scheme-handler/wit`.
+  If it is empty, run `whoisthat link register`.
+- **Handler opens but import fails**: run the same URL through
+  `xdg-open` and read the TUI/CLI error. A malformed `url` or `uri` parameter is
+  rejected before the daemon sees it.
+- **Wrong group**: pass `group=<name>` explicitly; otherwise the importer uses
+  the provider title or URL host.
+- **Token leaked**: rotate the subscription token with the provider and clear
+  browser/shell history as needed.
 
 ## Testing Deep Links Locally
 
@@ -106,3 +150,9 @@ xdg-open "wit://sub?url=https%3A%2F%2Fexample.com%2Fsub&name=TestGroup"
 # Test action toggle
 xdg-open "wit://toggle"
 ```
+
+## See also
+
+- [CLI Reference](/reference/cli)
+- [Profiles & Subscriptions](/usage/profiles)
+- [Happ Routing Profiles](/networking/happ-routing)

@@ -7,39 +7,68 @@ type: "explanation"
 
 # HWID & Device Fingerprinting
 
-WhoisThat implements the **Hardware ID (HWID)** device identification specification widely adopted by modern subscription providers (including Remnawave and Happ panels).
+WhoisThat implements the Hardware ID (HWID) convention used by many subscription
+providers (including Remnawave and Happ panels) to associate a machine with a
+plan's device limit.
 
----
+## What is sent
 
-## How HWID Works
+When HWID is enabled, subscription requests include:
 
-When updating subscription groups, providers often enforce multi-device limits (e.g. a maximum of 3 concurrent active devices per subscription plan). To associate your Linux machine with your account, `whoisthat-core` sends identification headers with subscription HTTP requests:
-
-| HTTP Header | Example Value | Source |
+| Header | Example | Source |
 | :--- | :--- | :--- |
-| `x-hwid` | `1fb1e0141ab3e35a` | Unique 16-character hexadecimal token auto-generated on first run. |
-| `x-device-os` | `linux` | Go `runtime.GOOS` identifier (lowercase OS name, not architecture). |
-| `x-ver-os` | `6.12.0-arch1-1` | Active Linux kernel release (`uname -r`). |
-| `x-device-model` | `Arch Linux` | Distribution name extracted from `/etc/os-release` (`PRETTY_NAME`). |
-| `user-agent` | `whoisthat/v0.5.4` | Configurable HTTP User-Agent header. |
+| `x-hwid` | `1fb1e0141ab3e35a` | 16-character hexadecimal token generated on first run |
+| `x-device-os` | `linux` | Go `runtime.GOOS` |
+| `x-ver-os` | `6.12.0-arch1-1` | Active kernel release (`uname -r`) |
+| `x-device-model` | `Arch Linux` | `PRETTY_NAME` from `/etc/os-release` |
+| `user-agent` | `whoisthat/v0.5.4` | Configurable, always sent |
 
----
+Disabling HWID omits all four `x-*` headers. The `user-agent` is still sent
+because providers use it to select the subscription format.
 
-## Response Header Handling
+## Response headers
 
-WhoisThat parses the standard `subscription-userinfo` response header (traffic quota, expiry, last update) and `profile-update-interval` (auto-refresh cadence); it also understands body directives for those values. Provider-specific `x-hwid-*` response headers (`x-hwid-max-devices-reached`, `x-hwid-limit`, `x-hwid-not-supported`) are currently **not** interpreted and do not produce an in-app warning; the subscription fetch succeeds or fails based on the HTTP status and body.
+WhoisThat reads `subscription-userinfo` (traffic, expiry, last update) and
+`profile-update-interval` (refresh cadence) from the response, including the
+body equivalents. Provider-specific `x-hwid-*` response headers
+(`x-hwid-max-devices-reached`, `x-hwid-limit`, `x-hwid-not-supported`) are not
+interpreted and do not produce an in-app warning; the fetch succeeds or fails
+based on status and body.
 
----
+## Control HWID
 
-## Privacy & Customization Controls
+In Settings, the row is **HWID Enabled** (`on`/`off`); it is not a separate
+Hardware page. **Reset HWID** generates a new token.
 
-You maintain full control over device tracking in **Settings → Hardware**:
+From the CLI:
 
-### 1. Toggle HWID Off
-If your subscription provider does not require HWID, or if you prefer not to transmit device headers, toggle **HWID: Enabled** to `off`. Subsequent subscription requests will omit all `x-hwid-*` headers.
+```bash
+whoisthat hwid status
+whoisthat hwid disable
+whoisthat hwid enable
+whoisthat hwid reset
+whoisthat hwid user-agent "whoisthat/v0.5.4"
+```
 
-### 2. Reset HWID
-If you migrate accounts or need to clear an old device registration from your provider's dashboard, navigate to **Reset HWID** and press <kbd>Enter</kbd>. A new 16-character cryptographically random token is generated immediately.
+`hwid status` prints the enabled flag, the token, the user-agent and the
+platform/kernel/model values that would be sent.
 
-### 3. Customize User-Agent
-Some subscription servers restrict downloads to specific clients (e.g., Clash, v2rayN, Sing-Box). You can override the default User-Agent string to match any custom client signature.
+## Reset and provider registration
+
+Reset changes the local token immediately. If the provider already registered
+the old token, clear the old device in the provider dashboard or wait for its
+device list to expire; WhoisThat cannot remove a server-side registration. The
+new token is used by the next subscription fetch.
+
+## Privacy
+
+HWID is an identifier, not a secret. It is sent only to the subscription URL,
+not to the VPN server. If a provider does not require it, disable it. Keep
+`user-agent` overrides minimal; a custom value is visible to the provider.
+
+## See also
+
+- [Profiles & Subscriptions](/usage/profiles)
+- [Settings Reference](/usage/settings)
+- [Configuration](/reference/configuration)
+- [CLI Reference](/reference/cli)
