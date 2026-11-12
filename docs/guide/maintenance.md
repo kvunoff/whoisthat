@@ -201,7 +201,8 @@ Status values to look for in `application-state` / `whoisthat doctor`:
 
 ## Manual settings restore
 
-Stop the core/TUI first, then copy the backup back:
+Stop the core/TUI first, then copy the backup back. On non-systemd hosts use
+`whoisthat core stop` instead of `systemctl --user stop`:
 
 ```bash
 systemctl --user stop whoisthat-core 2>/dev/null || pkill -TERM -x whoisthat-core
@@ -241,13 +242,15 @@ recovery phrase.
   database:
 
 ```bash
-systemctl --user stop whoisthat-core 2>/dev/null || pkill -TERM -x whoisthat-core
+systemctl --user stop whoisthat-core 2>/dev/null || whoisthat core stop
 mv ~/.local/share/whoisthat ~/.local/share/whoisthat.old
-# next start generates a new key and empty db
+mv ~/.config/whoisthat/db.key ~/.config/whoisthat/db.key.old
+# next start generates a new key and an empty database
 ```
 
-Re-add subscriptions afterwards. Never delete `db.key` while copying the
-database — you would lose the only way to read it.
+The key lives in `~/.config/whoisthat`, not in the data directory, so moving the
+database alone is not enough. Re-add subscriptions afterwards. Never delete
+`db.key` while copying the database — you would lose the only way to read it.
 
 ## Leftover firewall and routing rules
 

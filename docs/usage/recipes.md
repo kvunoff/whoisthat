@@ -55,7 +55,7 @@ Point applications at:
 - SOCKS5: `127.0.0.1:3090`
 - HTTP: `127.0.0.1:3091`
 
-TUN capabilities are not required for this mode. `whoisthat mode tun` switches to the system-wide tunnel later; see [Quick Start](/guide/quick-start#5-choosing-your-connection-mode).
+TUN capabilities are not required for this mode. `whoisthat mode tun` switches to the system-wide tunnel later; see [Quick Start](/guide/quick-start#choose-a-mode).
 
 ---
 
