@@ -95,6 +95,33 @@ replaced_by: "none"
 # Removed
 EOF
 
+mkdir -p "$TMP/docs/zz-dirlanding"
+cat >"$TMP/docs/zz-dirlanding/index.md" <<'EOF'
+---
+title: "Directory landing"
+description: "Fixture."
+audience: "user"
+type: "reference"
+---
+
+# Directory landing
+
+## Anchor target
+EOF
+
+cat >"$TMP/docs/zz-dirlanding-link.md" <<'EOF'
+---
+title: "Directory link"
+description: "Fixture."
+audience: "user"
+type: "reference"
+---
+
+# Directory link
+
+[ok](/zz-dirlanding/#anchor-target)
+EOF
+
 printf "\n{ text: 'Missing', link: '/zz-missing' },\n" >>"$TMP/docs/.vitepress/config.mts"
 
 cat >"$TMP/docs/public/zz-broken.html" <<'EOF'
@@ -149,6 +176,13 @@ check_report "'removed_in' 0.19.0 is not after current" "expired removal"
 check_report 'link target not found: zz-missing.md' "broken sidebar link"
 check_report 'redirect target not found: /zz-missing-page' "broken redirect target"
 check_report 'stub collides with generated page zz-collision.md' "redirect/page collision"
+
+if grep -q 'BROKEN.*zz-dirlanding' "$TMP/broken.log"; then
+    cat "$TMP/broken.log" >&2
+    bad "directory index anchor reported broken"
+else
+    pass "directory index anchor resolves"
+fi
 
 printf '\n'
 if [ "$fail" -ne 0 ]; then
