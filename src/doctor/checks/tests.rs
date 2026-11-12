@@ -155,3 +155,21 @@ fn detects_happ_safety_returns() {
     let iptables_sink = "-A WHOISTHAT_DNS_OUT -d 198.18.0.53/32 -j RETURN";
     assert!(has_sink_return(iptables_sink));
 }
+
+// K-9: doctor must be able to FAIL when the kill-switch is enabled but the
+// firewall is not enforcing.
+#[test]
+fn doctor_fails_when_kill_switch_enabled_but_rules_absent() {
+    use super::dns::kill_switch_absent_item;
+    use crate::doctor::types::CheckStatus;
+    assert_eq!(kill_switch_absent_item(true).status, CheckStatus::Fail);
+    assert_eq!(kill_switch_absent_item(false).status, CheckStatus::Info);
+}
+
+#[test]
+fn doctor_fails_when_kill_switch_whitelist_incomplete() {
+    use super::dns::kill_switch_present_item;
+    use crate::doctor::types::CheckStatus;
+    let item = kill_switch_present_item(true, "oifname \"x\" accept", "whoisthattun");
+    assert_eq!(item.status, CheckStatus::Fail);
+}

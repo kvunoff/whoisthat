@@ -1,0 +1,1 @@
+{"nftables": [{"metainfo": {"version": "1.0.9", "release_name": "Old Doc Yak #3", "json_schema_version": 1}}, {"table": {"family": "inet", "name": "whoisthat_ks", "handle": 1}}, {"chain": {"family": "inet", "table": "whoisthat_ks", "name": "output", "handle": 1, "type": "filter", "hook": "output", "prio": 0, "policy": "drop"}}]}

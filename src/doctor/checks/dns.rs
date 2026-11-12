@@ -304,59 +304,12 @@ pub(super) fn check_dns_and_routing(cfg: &AppConfig) -> CheckCategory {
     }
 
     match probe_kill_switch() {
-        KillSwitchProbe::Absent => {
-            if core_cfg.kill_switch {
-                items.push(CheckItem::warn(
-                    "Kill-switch firewall",
-                    "kill-switch is enabled but no rules are installed",
-                    Some(
-                        "check core.log; re-enable the kill-switch or use \
-                         `settings set kill-switch=false --force`"
-                            .into(),
-                    ),
-                ));
-            } else {
-                items.push(CheckItem::info(
-                    "Kill-switch firewall",
-                    "kill-switch is disabled",
-                ));
-            }
-        }
-        KillSwitchProbe::Present(text) => {
-            if !core_cfg.kill_switch {
-                items.push(CheckItem::warn(
-                    "Kill-switch firewall",
-                    "kill-switch is disabled but firewall rules are still installed",
-                    Some("remove them: sudo nft delete table inet whoisthat_ks".into()),
-                ));
-            } else {
-                let mut missing = Vec::new();
-                if !text.contains(tun_name.as_str()) {
-                    missing.push("TUN interface");
-                }
-                if !text.contains(DNS_SINK4) {
-                    missing.push("DNS sink");
-                }
-                if !(text.contains("mark 0x00000001")
-                    || text.contains("mark 1")
-                    || text.contains("--mark 0x1"))
-                {
-                    missing.push("mark 1");
-                }
-                if missing.is_empty() {
-                    items.push(CheckItem::pass(
-                        "Kill-switch firewall",
-                        "TUN, DNS sink, and mark 1 are allowed",
-                    ));
-                } else {
-                    items.push(CheckItem::warn(
-                        "Kill-switch firewall",
-                        format!("missing allows: {}", missing.join(", ")),
-                        Some("Re-apply the kill-switch so the whitelist is regenerated".into()),
-                    ));
-                }
-            }
-        }
+        KillSwitchProbe::Absent => items.push(kill_switch_absent_item(core_cfg.kill_switch)),
+        KillSwitchProbe::Present(text) => items.push(kill_switch_present_item(
+            core_cfg.kill_switch,
+            &text,
+            &tun_name,
+        )),
         KillSwitchProbe::PermissionDenied => items.push(CheckItem::info(
             "Kill-switch firewall",
             "cannot inspect the kill-switch rules without root \
@@ -401,6 +354,56 @@ fn read_core_runtime_config() -> CoreRuntimeConfig {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string(),
+    }
+}
+
+/// K-9: an enabled kill-switch with no rules is a failure, not a warning.
+pub(super) fn kill_switch_absent_item(enabled: bool) -> CheckItem {
+    if enabled {
+        CheckItem::fail(
+            "Kill-switch firewall",
+            "kill-switch is enabled but no rules are installed",
+            Some(
+                "check core.log; re-enable the kill-switch or use \
+                 `settings set kill-switch=false --force`"
+                    .into(),
+            ),
+        )
+    } else {
+        CheckItem::info("Kill-switch firewall", "kill-switch is disabled")
+    }
+}
+
+pub(super) fn kill_switch_present_item(enabled: bool, text: &str, tun_name: &str) -> CheckItem {
+    if !enabled {
+        return CheckItem::warn(
+            "Kill-switch firewall",
+            "kill-switch is disabled but firewall rules are still installed",
+            Some("remove them: sudo nft delete table inet whoisthat_ks".into()),
+        );
+    }
+    let mut missing = Vec::new();
+    if !text.contains(tun_name) {
+        missing.push("TUN interface");
+    }
+    if !text.contains(DNS_SINK4) {
+        missing.push("DNS sink");
+    }
+    if !(text.contains("mark 0x00000001") || text.contains("mark 1") || text.contains("--mark 0x1"))
+    {
+        missing.push("mark 1");
+    }
+    if missing.is_empty() {
+        CheckItem::pass(
+            "Kill-switch firewall",
+            "TUN, DNS sink, and mark 1 are allowed",
+        )
+    } else {
+        CheckItem::fail(
+            "Kill-switch firewall",
+            format!("missing allows: {}", missing.join(", ")),
+            Some("Re-apply the kill-switch so the whitelist is regenerated".into()),
+        )
     }
 }
 

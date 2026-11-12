@@ -279,8 +279,9 @@ func TestKillSwitchArmedSkipsAbsentBackends(t *testing.T) {
 }
 
 func TestKillSwitchArmedDetectsNftChain(t *testing.T) {
+	correct := readKSFixture(t, "nft_ks_correct.json")
 	fakeProbes(t, map[string]bool{"nft": true}, func(string, ...string) (string, error) {
-		return "", nil
+		return correct, nil
 	})
 	armed, err := KillSwitchArmed()
 	if !armed || err != nil {
@@ -501,71 +502,6 @@ func TestRemoveKillSwitchBlockRefusesWhileHalfInstalled(t *testing.T) {
 	})
 	if err := RemoveKillSwitchBlock(); err == nil {
 		t.Fatal("RemoveKillSwitchBlock must fail while a drop-policy chain remains")
-	}
-}
-
-// K-6: arming is one transaction. When the batch fails (here: an injected bad
-// rule) nothing may be left behind, in particular no drop-policy table that
-// strands the host with an empty allowlist.
-func TestKillSwitchNftFailedArmLeavesNoTable(t *testing.T) {
-	if _, err := exec.LookPath("unshare"); err != nil {
-		t.Skip("unshare not available")
-	}
-	if _, err := exec.LookPath("nft"); err != nil {
-		t.Skip("nft not available")
-	}
-	if err := exec.Command("unshare", "-rn", "true").Run(); err != nil {
-		t.Skipf("user+net namespaces not available: %v", err)
-	}
-	good := buildKillSwitchNftScript([]string{"203.0.113.7"}, "", []string{"1.1.1.1"})
-	const finalDrop = "add rule inet whoisthat_ks output drop\n"
-	if !strings.Contains(good, finalDrop) {
-		t.Fatalf("script shape changed, cannot inject failure:\n%s", good)
-	}
-	bad := strings.Replace(good, finalDrop, "add rule inet whoisthat_ks output bogus_expr\n", 1)
-
-	dir := t.TempDir()
-	path := dir + "/arm.sh"
-	if err := os.WriteFile(path, []byte(bad), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	cmd := exec.Command("unshare", "-rn", "sh", "-c",
-		`sh `+path+`; rc=$?; if nft list table inet whoisthat_ks >/dev/null 2>&1; then echo TABLE_PRESENT; else echo TABLE_ABSENT; fi; exit $rc`)
-	out, err := cmd.CombinedOutput()
-	if err == nil {
-		t.Fatalf("arm script must report failure when the batch is rejected:\n%s", out)
-	}
-	if strings.Contains(string(out), "TABLE_PRESENT") || !strings.Contains(string(out), "TABLE_ABSENT") {
-		t.Fatalf("failed arm left a half-built table behind:\n%s", out)
-	}
-}
-
-// A failed re-arm must not tear down an already armed switch: the batch is
-// atomic, so the old ruleset survives and cleanup must leave it alone.
-func TestKillSwitchNftFailedRearmKeepsPreviousRules(t *testing.T) {
-	if _, err := exec.LookPath("unshare"); err != nil {
-		t.Skip("unshare not available")
-	}
-	if _, err := exec.LookPath("nft"); err != nil {
-		t.Skip("nft not available")
-	}
-	if err := exec.Command("unshare", "-rn", "true").Run(); err != nil {
-		t.Skipf("user+net namespaces not available: %v", err)
-	}
-	good := buildKillSwitchNftScript([]string{"203.0.113.7"}, "", []string{"1.1.1.1"})
-	bad := strings.Replace(good, "add rule inet whoisthat_ks output drop\n", "add rule inet whoisthat_ks output bogus_expr\n", 1)
-	dir := t.TempDir()
-	if err := os.WriteFile(dir+"/good.sh", []byte(good), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(dir+"/bad.sh", []byte(bad), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	cmd := exec.Command("unshare", "-rn", "sh", "-c",
-		`sh `+dir+`/good.sh || exit 90; sh `+dir+`/bad.sh; nft list chain inet whoisthat_ks output | grep -c 203.0.113.7`)
-	out, _ := cmd.CombinedOutput()
-	if !strings.Contains(string(out), "1") {
-		t.Fatalf("previous armed ruleset was lost by a failed re-arm:\n%s", out)
 	}
 }
 

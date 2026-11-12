@@ -33,6 +33,11 @@ pub struct CliStatus {
     pub tx_speed_bytes: i64,
     pub rx_speed_human: String,
     pub tx_speed_human: String,
+    /// Absent from JSON while off so the Waybar/Polybar contract is unchanged.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub kill_switch_enabled: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub kill_switch_armed: bool,
 }
 
 impl CliStatus {
@@ -53,6 +58,8 @@ impl CliStatus {
             tx_speed_bytes: 0,
             rx_speed_human: "0 B/s".to_string(),
             tx_speed_human: "0 B/s".to_string(),
+            kill_switch_enabled: false,
+            kill_switch_armed: false,
         }
     }
 
@@ -123,6 +130,8 @@ impl CliStatus {
             tx_speed_bytes: 0,
             rx_speed_human: "0 B/s".to_string(),
             tx_speed_human: "0 B/s".to_string(),
+            kill_switch_enabled: state.kill_switch,
+            kill_switch_armed: state.kill_switch_armed,
         }
     }
 
@@ -142,9 +151,17 @@ impl CliStatus {
         }
     }
 
+    fn kill_switch_tag(&self) -> &'static str {
+        match (self.kill_switch_enabled, self.kill_switch_armed) {
+            (false, _) => "",
+            (true, true) => " [KS]",
+            (true, false) => " [KS NOT ARMED]",
+        }
+    }
+
     pub fn format_short(&self) -> String {
-        if !self.core_running {
-            "[Offline]".to_string()
+        let base = if !self.core_running {
+            return "[Offline]".to_string();
         } else if !self.connected {
             "[Disconnected]".to_string()
         } else {
@@ -153,7 +170,8 @@ impl CliStatus {
                 "[Connected] [{}] ↓ {} ↑ {}",
                 mode_tag, self.rx_speed_human, self.tx_speed_human
             )
-        }
+        };
+        format!("{base}{}", self.kill_switch_tag())
     }
 
     pub fn format_pretty(&self) -> String {
@@ -344,6 +362,39 @@ mod tests {
             s.format_short(),
             "[Connected] [TUN] ↓ 1.2 MB/s ↑ 340.0 KB/s"
         );
+    }
+
+    // K-11: the one-line status must tell the truth about the kill-switch.
+    #[test]
+    fn short_status_reports_kill_switch_state() {
+        let mut s = CliStatus::offline();
+        s.core_running = true;
+        s.connected = true;
+        s.tun_enabled = true;
+        s.rx_speed_human = "1.0 KB/s".into();
+        s.tx_speed_human = "2.0 KB/s".into();
+        let base = s.format_short();
+
+        s.kill_switch_enabled = true;
+        s.kill_switch_armed = true;
+        assert_eq!(s.format_short(), format!("{base} [KS]"));
+
+        s.kill_switch_armed = false;
+        assert_eq!(s.format_short(), format!("{base} [KS NOT ARMED]"));
+
+        s.connected = false;
+        assert_eq!(s.format_short(), "[Disconnected] [KS NOT ARMED]");
+    }
+
+    #[test]
+    fn kill_switch_fields_stay_out_of_json_when_off() {
+        let s = CliStatus::offline();
+        let json = serde_json::to_string(&s).unwrap();
+        assert!(!json.contains("kill_switch"));
+        let mut on = s;
+        on.kill_switch_enabled = true;
+        let json = serde_json::to_string(&on).unwrap();
+        assert!(json.contains("\"kill_switch_enabled\":true"));
     }
 
     #[test]
