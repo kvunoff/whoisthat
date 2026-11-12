@@ -36,7 +36,7 @@ whoisthat status --short
 - Enabling the unit does not start it immediately — run `systemctl --user start` once (or log out/in).
 - For monitoring, `whoisthat status --watch --json` is the stable NDJSON stream.
 
-See [Systemd User Service](/integrations/systemd) and [CLI](/integrations/cli).
+See [Systemd User Service](/integrations/systemd) and [CLI](/reference/cli).
 
 ---
 
