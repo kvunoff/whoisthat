@@ -90,21 +90,13 @@ WhoisThat includes a high-precision multi-sample latency testing subsystem:
 * <kbd>T</kbd>: **Scan All** — Queues every profile across all groups (the focused profile/group first), deduplicated by group/profile ID.
 * <kbd>C</kbd>: **Cancel Tests** — Drops queued tests via the internal epoch counter. A test already in flight finishes its current sample or times out; it is not killed mid-connection.
 
-### Testing Architecture & Metrics
-Latency tests are not simple ICMP pings (which many VPN firewalls block or prioritize). Instead, tests simulate real application traffic:
+### How results are measured
 
-1. **Test Methods**:
-   * **`tcp`**: Fast direct TCP handshake prefilter.
-   * **`http-get`** *(Recommended)*: Spawns a temporary Xray instance and performs a full HTTP GET request to the test endpoint over SOCKS5.
-   * **`http-head`**: Similar to HTTP GET but issues lightweight HTTP HEAD requests.
-2. **Multi-Sample Precision**:
-   Configurable in Settings (default: 3 samples). The median latency is displayed in the tree:
-   * **Median Latency (ms)**: Real round-trip time, resilient to network spikes.
-   * **Jitter (ms)**: Difference between maximum and minimum sample latency (max − min).
-   * **Packet Loss (%)**: Percentage of failed sample requests.
-3. **Progress Broadcasting & Visual Feedback**:
-   * Pending profiles show `…` immediately when added to the test queue.
-   * In-flight batches broadcast tested/total progress to the bottom status bar (`[Testing 12/48]`).
-   * **Throttled Failure Notifications**: When test endpoints fail or time out, the core broadcasts a `warn` notification, throttled to 1 warning per error-reason per 5 seconds so users are not spammed with modal alerts.
-4. **Auto-Test on Refresh**:
-   When **Auto-test on refresh** is enabled in Settings, refreshing a subscription group (<kbd>u</kbd> / <kbd>r</kbd>) schedules latency tests for the imported servers. Groups larger than 50 profiles are skipped to avoid a test storm.
+Tests simulate real traffic rather than ICMP. The median round-trip time is shown
+in the tree; jitter and loss are shown in the details pane. Method, sample count,
+concurrency, timeout and endpoint are configured in Settings. With **Auto-test on
+refresh** enabled, refreshing a group schedules tests for the imported profiles;
+groups larger than 50 profiles are skipped.
+
+The test pipeline, methods and warning throttling are described in
+[Testing](/developers/testing#latency-tester-internals).

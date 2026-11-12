@@ -7,17 +7,9 @@ type: "reference"
 
 # Navigation & Keybindings Cheat Sheet
 
-WhoisThat features a high-speed, keyboard-driven interface with vim-inspired motions, instant modal switchers, and mouse support for lists, the top-bar actions and the Tab Switcher.
-
-Routing and testing are also scriptable:
-
-```bash
-whoisthat route list --group Work
-whoisthat route add --type geosite --value geosite:openai --outbound proxy
-whoisthat test group Work --wait
-```
-
----
+WhoisThat features a high-speed, keyboard-driven interface with vim-inspired
+motions, modal switchers, and mouse support for lists, top-bar actions and the
+Tab Switcher. For the full CLI surface see the [CLI Reference](/reference/cli).
 
 ## Global Navigation Keys
 
@@ -69,7 +61,7 @@ whoisthat test group Work --wait
 | <kbd>K</kbd> / <kbd>Alt+↑</kbd> / <kbd>Shift+↑</kbd> | Profile / Group | **Move Up**: Reorder profile or group upwards (instant & persistent) |
 | <kbd>A</kbd> / <kbd>n</kbd> | Profiles Tab | **Add Group**: Create a new group from a subscription URL (name comes from the provider or URL host) |
 | <kbd>u</kbd> / <kbd>r</kbd> | Group (tree or Details) | **Update Subscription**: Fetch fresh profiles from subscription URL |
-| <kbd>a</kbd> | Profiles Tab | **Import Profile**: Paste proxy URI (`vless://`, `hysteria2://`, `trojan://`, etc.) |
+| <kbd>a</kbd> | Profiles Tab | **Import Profile**: imports clipboard text immediately when it contains a URI; otherwise opens the paste popup (`vless://`, `hysteria2://`, `trojan://`, etc.) |
 | <kbd>e</kbd> | Profile / Group (tree or Details) | **Edit / Rename**: Modify group URL/name or rename selected profile |
 | <kbd>x</kbd> | Profile (tree or Details) | **Delete Profile**: Delete selected server profile |
 | <kbd>X</kbd> | Group (tree or Details) | **Delete Group**: Delete entire subscription group and all its profiles |
