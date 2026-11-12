@@ -182,6 +182,155 @@ grep -rqF "$pinned" "$DOCS" ||
 grep -rqF "${go_version%.*}" "$DOCS/guide/installation.md" ||
     stale "$DOCS/guide/installation.md: no mention of Go ${go_version%.*}"
 
+# ---------------------------------------------------------------------------
+# 8. Frontmatter and lifecycle metadata
+# ---------------------------------------------------------------------------
+frontmatter_value() {
+    awk -v key="$2" '
+        NR == 1 {
+            if ($0 != "---") exit 0
+            in_fm = 1
+            next
+        }
+        in_fm && $0 == "---" { exit 0 }
+        in_fm {
+            if (index($0, key ":") == 1) {
+                value = substr($0, length(key) + 2)
+                sub(/^[ \t]+/, "", value)
+                sub(/[ \t]+#.*$/, "", value)
+                gsub(/^"|"$/, "", value)
+                print value
+                exit 0
+            }
+        }
+    ' "$1"
+}
+
+internal_path_to_file() {
+    local path="$1"
+    path="${path%%#*}"
+    case "$path" in
+        /*) ;;
+        *) return 1 ;;
+    esac
+    path="${path#/}"
+    if [ -z "$path" ]; then
+        printf 'index.md\n'
+    elif [ "${path%/}" != "$path" ]; then
+        printf '%s/index.md\n' "${path%/}"
+    else
+        printf '%s.md\n' "$path"
+    fi
+}
+
+current_version="$(sed -nE 's/^version = "([^"]+)"/\1/p' Cargo.toml | head -1)"
+
+echo "docs: checking frontmatter..."
+while IFS= read -r md; do
+    [ -n "$md" ] || continue
+    rel="${md#"$DOCS"/}"
+
+    if [ "$(head -n 1 "$md")" != "---" ]; then
+        missing "$rel: frontmatter block is missing"
+        continue
+    fi
+    if ! tail -n +2 "$md" | grep -qx -- '---'; then
+        missing "$rel: frontmatter closing --- is missing"
+        continue
+    fi
+
+    for field in title description audience type; do
+        [ -n "$(frontmatter_value "$md" "$field")" ] ||
+            missing "$rel: frontmatter field '$field' is missing"
+    done
+
+    audience="$(frontmatter_value "$md" audience)"
+    case "$audience" in
+        user | operator | integrator | developer) ;;
+        *) missing "$rel: unknown audience '$audience'" ;;
+    esac
+
+    doc_type="$(frontmatter_value "$md" type)"
+    case "$doc_type" in
+        landing | tutorial | how-to | reference | explanation) ;;
+        *) missing "$rel: unknown type '$doc_type'" ;;
+    esac
+
+    status="$(frontmatter_value "$md" status)"
+    [ -n "$status" ] || status=current
+    case "$status" in
+        current | experimental | legacy | deprecated) ;;
+        *) missing "$rel: unknown status '$status'" ;;
+    esac
+
+    for field in since changed_in deprecated_in removed_in; do
+        value="$(frontmatter_value "$md" "$field")"
+        [ -z "$value" ] && continue
+        printf '%s' "$value" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' ||
+            missing "$rel: '$field' is not semver: $value"
+    done
+
+    if [ "$status" = "deprecated" ]; then
+        deprecated_in="$(frontmatter_value "$md" deprecated_in)"
+        removed_in="$(frontmatter_value "$md" removed_in)"
+        replaced_by="$(frontmatter_value "$md" replaced_by)"
+        [ -n "$deprecated_in" ] ||
+            missing "$rel: deprecated page needs 'deprecated_in'"
+        [ -n "$removed_in" ] ||
+            missing "$rel: deprecated page needs 'removed_in'"
+        [ -n "$replaced_by" ] ||
+            missing "$rel: deprecated page needs 'replaced_by'"
+
+        if [ -n "$replaced_by" ] && [ "$replaced_by" != "none" ]; then
+            if target="$(internal_path_to_file "$replaced_by")"; then
+                [ -f "$DOCS/$target" ] ||
+                    missing "$rel: 'replaced_by' target not found: $replaced_by"
+            else
+                missing "$rel: 'replaced_by' must be an internal path or none"
+            fi
+        fi
+
+        if [ -n "$removed_in" ] && [ -n "$current_version" ]; then
+            smallest="$(printf '%s\n%s\n' "$removed_in" "$current_version" | sort -V | head -n 1)"
+            if [ "$smallest" = "$removed_in" ]; then
+                missing "$rel: 'removed_in' $removed_in is not after current $current_version"
+            fi
+        fi
+    fi
+done < <(find "$DOCS" -name '*.md' -not -path '*/.vitepress/*' | sort)
+
+# ---------------------------------------------------------------------------
+# 9. Sidebar coverage: every page is linked, every link resolves
+# ---------------------------------------------------------------------------
+echo "docs: checking sidebar coverage..."
+sidebar_links="$(grep -oE "link: ['\"][^'\"]+['\"]" "$DOCS/.vitepress/config.mts" |
+    sed -E "s/^link: ['\"]//; s/['\"]$//" || true)"
+
+mapped_links=""
+if [ -n "$sidebar_links" ]; then
+    mapped_links="$(printf '%s\n' "$sidebar_links" |
+        while IFS= read -r link; do
+            case "$link" in
+                /*) ;;
+                *) continue ;;
+            esac
+            target="$(internal_path_to_file "$link")" || continue
+            printf '%s\n' "$target"
+        done | sort -u)"
+fi
+
+while IFS= read -r rel; do
+    [ -n "$rel" ] || continue
+    grep -Fxq "$rel" <<<"$mapped_links" ||
+        missing "$rel: not linked from docs/.vitepress/config.mts"
+done < <(find "$DOCS" -name '*.md' -not -path '*/.vitepress/*' -printf '%P\n' | sort)
+
+while IFS= read -r rel; do
+    [ -n "$rel" ] || continue
+    [ -f "$DOCS/$rel" ] ||
+        missing "docs/.vitepress/config.mts: link target not found: $rel"
+done <<<"$mapped_links"
+
 if [ "$fail" -ne 0 ]; then
     echo "docs: inconsistencies found"
     exit 1
