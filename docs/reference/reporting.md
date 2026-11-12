@@ -1,3 +1,10 @@
+---
+title: "Reporting a Bug"
+description: "What to collect, redact, and include when reporting a WhoisThat bug."
+audience: "developer"
+type: "how-to"
+---
+
 # Reporting a Bug
 
 A good report lets a maintainer reproduce the problem without guessing. WhoisThat has a built-in diagnostic report; collect it before opening an issue.

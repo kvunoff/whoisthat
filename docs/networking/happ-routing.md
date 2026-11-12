@@ -1,3 +1,10 @@
+---
+title: "Happ Routing Profiles"
+description: "Import and manage provider Happ routing profiles and per-group modes."
+audience: "user"
+type: "how-to"
+---
+
 # Happ Routing Profiles
 
 WhoisThat provides native support for **Happ routing profiles** (`happ://routing/...`). Many VPN subscription providers, anti-censorship operators and server panels bundle complex routing configurations — thousands of verified domains, CIDRs, regional rules and custom GeoIP/GeoSite databases — directly inside subscription responses or standalone links.

@@ -1,3 +1,10 @@
+---
+title: "Systemd User Service"
+description: "Run WhoisThat core as a systemd user service with linger."
+audience: "operator"
+type: "how-to"
+---
+
 # Systemd User Service
 
 WhoisThat Core can run as a persistent **systemd user service**, allowing the VPN daemon to launch automatically upon system boot—even before you log in graphically—via systemd user lingering.

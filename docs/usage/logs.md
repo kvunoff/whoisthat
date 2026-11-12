@@ -1,3 +1,10 @@
+---
+title: "Log Viewer & Diagnostics"
+description: "Use the log viewer and locate, filter, and rotate WhoisThat logs."
+audience: "user"
+type: "reference"
+---
+
 # Log Viewer & Diagnostics
 
 The Logs tab (<kbd>4</kbd>, or cycle with <kbd>[</kbd> / <kbd>]</kbd>) provides a live stream of daemon events, routing decisions, and diagnostic warnings directly inside the TUI.

@@ -1,3 +1,10 @@
+---
+title: "Happ Format Reference"
+description: "The Happ routing URI, payload, and JSON format contract."
+audience: "integrator"
+type: "reference"
+---
+
 # Happ Format Reference
 
 Technical specification of the `happ://routing/...` payload consumed by WhoisThat: URI actions, tolerant Base64 decoding, the JSON contract, the isolated Geo sandbox and the IPC messages that drive it. For importing profiles and managing modes in the UI, see [Happ Routing Profiles](/networking/happ-routing).

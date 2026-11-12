@@ -1,3 +1,10 @@
+---
+title: "Navigation & Keybindings Cheat Sheet"
+description: "Keyboard, mouse, and tab navigation in the WhoisThat TUI."
+audience: "user"
+type: "reference"
+---
+
 # Navigation & Keybindings Cheat Sheet
 
 WhoisThat features a high-speed, keyboard-driven interface with vim-inspired motions, instant modal switchers, and mouse support for lists, the top-bar actions and the Tab Switcher.

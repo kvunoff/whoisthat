@@ -1,3 +1,10 @@
+---
+title: "DNS & FakeDNS"
+description: "Resolver paths, DNS hijacking, FakeDNS, and leak limits in TUN mode."
+audience: "user"
+type: "explanation"
+---
+
 # DNS & FakeDNS
 
 WhoisThat intercepts DNS in TUN mode so queries cannot leave through the physical interface behind the VPN's back. Which resolver answers depends on the active profile: the legacy path uses your configured `dns-servers`, while a Happ profile can supply its own domestic/remote resolvers and FakeDNS.

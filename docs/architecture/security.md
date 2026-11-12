@@ -1,3 +1,10 @@
+---
+title: "Security & Cryptography"
+description: "Encryption, capabilities, DNS handling, and the trust boundaries of WhoisThat."
+audience: "developer"
+type: "explanation"
+---
+
 # Security & Cryptography
 
 Security in WhoisThat is designed around the principle of **least privilege**: minimizing root exposure, encrypting persistent state at rest, preventing traffic and DNS leaks, and isolating IPC channels.

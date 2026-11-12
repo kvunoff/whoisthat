@@ -1,3 +1,10 @@
+---
+title: "Non-systemd systems (Artix, OpenRC, dinit, runit)"
+description: "Run WhoisThat on Artix, OpenRC, dinit, and runit systems without systemd."
+audience: "operator"
+type: "how-to"
+---
+
 # Non-systemd systems (Artix, OpenRC, dinit, runit)
 
 WhoisThat works without systemd. The TUI, CLI, core daemon and split-tunnel

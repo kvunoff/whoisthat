@@ -1,3 +1,10 @@
+---
+title: "CLI Subcommands & Flags"
+description: "The complete `whoisthat` command-line interface, selectors, output, and exit codes."
+audience: "integrator"
+type: "reference"
+---
+
 # CLI Subcommands & Flags
 
 WhoisThat exposes the whole client through a `noun verb` command tree. The interactive TUI is still

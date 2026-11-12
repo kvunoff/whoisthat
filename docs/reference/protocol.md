@@ -1,3 +1,10 @@
+---
+title: "TCP & IPC Wire Protocol Reference"
+description: "Complete IPC command and notification schema for WhoisThat clients."
+audience: "integrator"
+type: "reference"
+---
+
 # TCP & IPC Wire Protocol Reference
 
 This document provides a complete technical specification for the length-prefixed JSON protocol utilized by `whoisthat-core`.

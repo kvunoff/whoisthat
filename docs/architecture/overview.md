@@ -1,3 +1,10 @@
+---
+title: "System Architecture Overview"
+description: "The process model, layers, and packet flow of the WhoisThat system."
+audience: "developer"
+type: "explanation"
+---
+
 # System Architecture Overview
 
 WhoisThat is engineered as a distributed, decoupled system where user interface logic is strictly isolated from core network daemon operations.

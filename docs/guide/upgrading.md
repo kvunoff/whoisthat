@@ -1,3 +1,10 @@
+---
+title: "Upgrading, Downgrading & Uninstalling"
+description: "Upgrade, downgrade, and uninstall WhoisThat while keeping configuration and data."
+audience: "user"
+type: "how-to"
+---
+
 # Upgrading, Downgrading & Uninstalling
 
 WhoisThat ships as two independently versioned binaries — the Rust TUI/CLI (`whoisthat`) and the Go daemon (`whoisthat-core`) — plus a pinned Xray runtime. Upgrading replaces the binaries; your configuration and encrypted database are kept.

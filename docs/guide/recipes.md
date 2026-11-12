@@ -1,3 +1,10 @@
+---
+title: "Recipes & Common Setups"
+description: "Copy-paste configurations for headless, proxy-only, split-tunnel, and Docker setups."
+audience: "user"
+type: "how-to"
+---
+
 # Recipes & Common Setups
 
 Short, copy-pasteable configurations for the situations that come up most often. Each recipe links to the deep-dive page instead of repeating it.

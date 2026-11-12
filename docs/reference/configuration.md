@@ -1,3 +1,10 @@
+---
+title: "Configuration Files Reference"
+description: "`config.toml`, `config.json`, setting keys, defaults, and data paths."
+audience: "operator"
+type: "reference"
+---
+
 # Configuration Files Reference
 
 WhoisThat stores user preferences, daemon network rules, and encrypted credentials in standardized XDG configuration and data paths.

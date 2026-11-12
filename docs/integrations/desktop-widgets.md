@@ -1,3 +1,10 @@
+---
+title: "Desktop Status Widgets (Waybar, Polybar)"
+description: "Waybar, Polybar, and NDJSON status output for desktop widgets."
+audience: "integrator"
+type: "how-to"
+---
+
 # Desktop Status Widgets (Waybar, Polybar)
 
 WhoisThat is engineered for integration with Linux desktop status bars, tiling window managers, and shell panels (**Waybar**, **Polybar**, **i3status**, **dwmbars**, **Eww**).

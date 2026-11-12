@@ -1,3 +1,10 @@
+---
+title: "Official GNOME Shell Extension"
+description: "Install and use the GNOME Shell extension for WhoisThat."
+audience: "user"
+type: "how-to"
+---
+
 # Official GNOME Shell Extension
 
 WhoisThat features an official, first-class desktop extension for the GNOME desktop environment: **WhoisThat VPN Indicator**.
