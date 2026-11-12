@@ -39,6 +39,12 @@ Use these terms consistently in the TUI, CLI, code, and documentation.
 | **IPC** | The length-prefixed JSON protocol between the client and the core. |
 | **protocol version** | The IPC compatibility number (`5` in the current release). |
 | **Xray-core** | The pinned proxy runtime managed by the core. |
+| **status JSON** | The stable `whoisthat status --json` and NDJSON contract. |
+| **warning key** | A machine-readable `warn` reason such as `connect-failed`. |
+| **request id** | The optional `id` echoed on replies and request-scoped notifications. |
+| **managed profile** | A profile owned by a JSON subscription; provider routing stays immutable. |
+| **split slice** | The cgroup that `whoisthat run` places applications in. |
+| **direct mark** | `SO_MARK=1`, used for direct traffic and split-exclude apps. |
 
 ## Spelling and style
 
