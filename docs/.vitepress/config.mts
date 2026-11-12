@@ -59,6 +59,7 @@ export default withMermaid(defineConfig({
       { text: 'Networking', link: '/networking/tun-mode' },
       { text: 'Integrations', link: '/integrations/cli' },
       { text: 'API & Wire Protocol', link: '/reference/protocol' },
+      { text: 'Developers', link: '/developers/' },
       {
         text: `v${clientVersion}`,
         items: [
@@ -144,7 +145,16 @@ export default withMermaid(defineConfig({
           { text: 'Troubleshooting & FAQ', link: '/reference/troubleshooting' },
           { text: 'Threat Model & Limitations', link: '/reference/threat-model' },
           { text: 'Reporting a Bug', link: '/reference/reporting' },
-          { text: 'Development & Testing', link: '/reference/development' }
+          { text: 'Development & Testing', link: '/reference/development' },
+          { text: 'Glossary', link: '/reference/glossary' }
+        ]
+      },
+      {
+        text: 'Developers',
+        collapsed: false,
+        items: [
+          { text: 'For Developers', link: '/developers/' },
+          { text: 'Documentation Guide', link: '/developers/documentation' }
         ]
       }
     ],
