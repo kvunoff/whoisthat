@@ -11,35 +11,10 @@ WhoisThat is engineered for integration with Linux desktop status bars, tiling w
 
 ---
 
-## The JSON Status Schema
+The stable JSON contract lives in [Status JSON](/reference/status-json). This
+page only shows how to adapt it to a status bar.
 
-Running `whoisthat status --json` (or streaming with `whoisthat status --watch --json`) emits a structured JSON object.
-`whoisthat mode status --json` and `whoisthat core status --json` provide smaller objects for widgets
-that only need the mode or daemon health; the `status` contract below is unchanged. In watch mode a line is printed per `traffic-stats` tick (1/s while connected) plus on status/TUN/state changes; an idle disconnected client can stay silent. Optional fields (`group_id`, `profile_name`, `xray_version`, …) are omitted when empty.
-
-```json
-{
-  "core_running": true,
-  "connected": true,
-  "status": "connected",
-  "mode": "tun",
-  "tun_enabled": true,
-  "group_id": 1,
-  "group_name": "Premium",
-  "profile_id": 4,
-  "profile_name": "Frankfurt-10G",
-  "protocol": "vless",
-  "xray_version": "v26.10.31",
-  "rx_speed_bytes": 4823449,
-  "tx_speed_bytes": 524288,
-  "rx_speed_human": "4.6 MB/s",
-  "tx_speed_human": "512.0 KB/s"
-}
-```
-
----
-
-## 1. Waybar Integration
+## Waybar
 
 Waybar's `custom` module substitutes `{}`/`{icon}` only from the `text`/`alt`/`class` keys. Raw `status --json` deliberately exposes machine fields (`connected`, `mode`, `rx_speed_human`, …) instead, so use the wrapper script below.
 
@@ -55,8 +30,8 @@ Waybar's `custom` module substitutes `{}`/`{icon}` only from the `text`/`alt`/`c
         "disconnected": "🔓",
         "offline": "⚠️"
     },
-    "on-click": "whoisthat -t",
-    "on-click-right": "whoisthat -mt",
+    "on-click": "whoisthat toggle",
+    "on-click-right": "whoisthat mode toggle",
     "tooltip": true
 }
 ```
@@ -93,7 +68,7 @@ done
 
 ---
 
-## 2. Polybar Integration
+## Polybar
 
 ### `~/.config/polybar/config.ini`
 
@@ -102,15 +77,15 @@ done
 type = custom/script
 exec = whoisthat status --short
 interval = 1
-click-left = whoisthat -t
-click-right = whoisthat -mt
+click-left = whoisthat toggle
+click-right = whoisthat mode toggle
 format-prefix = "󰖂 "
 format-prefix-foreground = ${colors.primary}
 ```
 
 ---
 
-## 3. Compact Status String (`status --short`)
+## Compact status string (`status --short`)
 
 For simple status scripts that do not parse JSON, `whoisthat status --short` provides clean pre-formatted outputs:
 
@@ -118,3 +93,9 @@ For simple status scripts that do not parse JSON, `whoisthat status --short` pro
 * **Connected via Proxy**: `[Connected] [Proxy] ↓ 1.1 MB/s ↑ 120.0 KB/s`
 * **Disconnected**: `[Disconnected]`
 * **Core Daemon Offline**: `[Offline]`
+
+## See also
+
+- [Status JSON](/reference/status-json)
+- [CLI Reference](/reference/cli)
+- [GNOME Shell Extension](/integrations/gnome-extension)
