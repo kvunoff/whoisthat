@@ -3,12 +3,12 @@ package tunmode
 import (
 	"fmt"
 	"net"
-	"os/exec"
 	"strings"
+	"whoisthat-core/utils"
 )
 
 func GetDefaultInterfaceAndIP() (name string, ip4 string, ip6 string, err error) {
-	out, err := exec.Command("ip", "route", "show", "default").Output()
+	out, err := utils.SafeCommand("ip", "route", "show", "default").Output()
 	if err != nil {
 		return "", "", "", fmt.Errorf("failed to get default route: %w", err)
 	}
@@ -28,7 +28,7 @@ func GetDefaultInterfaceAndIP() (name string, ip4 string, ip6 string, err error)
 	}
 
 	ip6gw := ""
-	out6, err := exec.Command("ip", "-6", "route", "show", "default").Output()
+	out6, err := utils.SafeCommand("ip", "-6", "route", "show", "default").Output()
 	if err == nil {
 		output6 := string(out6)
 		fields6 := strings.Fields(output6)

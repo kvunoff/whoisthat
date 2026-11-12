@@ -5,9 +5,9 @@ import (
 	"encoding/hex"
 	"net"
 	"os"
-	"os/exec"
 	"runtime"
 	"strings"
+	"whoisthat-core/utils"
 
 	"whoisthat-core/lib/logger"
 )
@@ -58,7 +58,7 @@ func Platform() string {
 }
 
 func KernelVersion() string {
-	out, err := exec.Command("uname", "-r").Output()
+	out, err := utils.SafeCommand("uname", "-r").Output()
 	if err != nil {
 		return "unknown"
 	}

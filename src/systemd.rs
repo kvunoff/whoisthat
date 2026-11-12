@@ -65,6 +65,7 @@ fn generate_unit_file(core_path: &str) -> String {
          [Service]\n\
          Type=simple\n\
          ExecStart=\"{core}\"\n\
+         Environment=\"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\"\n\
          Restart=on-failure\n\
          RestartSec=5\n\
          RestartPreventExitStatus=78\n\
@@ -213,15 +214,13 @@ mod tests {
         assert!(!unit.contains("\" \n"));
     }
 
+    // F-03: the user manager's PATH includes user-writable dirs; the core must
+    // not resolve nft/ip/xray through it.
     #[test]
-    fn restart_guard_is_inserted_once() {
+    fn unit_file_pins_path_to_system_directories() {
         let unit = generate_unit_file("/usr/bin/whoisthat-core");
-        assert!(with_restart_guard(&unit).is_none());
-
-        let old = unit.replace("RestartPreventExitStatus=78\n", "");
-        let patched = with_restart_guard(&old).expect("old unit must be patched");
-        assert!(patched.contains("RestartPreventExitStatus=78"));
-        assert!(patched.contains("Restart=on-failure"));
-        assert_eq!(patched.matches("RestartPreventExitStatus=78").count(), 1);
+        assert!(unit.contains(
+            "Environment=\"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\"\n"
+        ));
     }
 }

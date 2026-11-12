@@ -123,7 +123,7 @@ func validateXrayConfig(cfg []byte, assetDir string) error {
 		ad = geo.AssetDir()
 	}
 	if ad != "" {
-		cmd.Env = append(os.Environ(), "XRAY_LOCATION_ASSET="+ad)
+		cmd.Env = append(utils.SafeEnv(os.Environ()), "XRAY_LOCATION_ASSET="+ad)
 	}
 	cmd.Stdin = bytes.NewReader(cfg)
 

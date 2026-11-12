@@ -2,6 +2,7 @@ package tunmode
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"testing"

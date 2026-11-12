@@ -5,13 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
 	"whoisthat-core/structs"
+	"whoisthat-core/utils"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -146,7 +146,7 @@ var (
 
 func querySsStats(port int) (up, down int64, err error) {
 	filter := fmt.Sprintf("dport = :%d", port)
-	cmd := exec.Command("ss", "-tie", filter)
+	cmd := utils.SafeCommand("ss", "-tie", filter)
 	output, cmdErr := cmd.Output()
 	if cmdErr != nil {
 		if len(output) > 0 {

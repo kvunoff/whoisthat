@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"whoisthat-core/utils"
 
 	"golang.org/x/sys/unix"
 )
@@ -44,7 +45,7 @@ func probeFirewall() firewallBackend {
 			fwBackend = firewallNftables
 			return
 		}
-		if _, err := resolvePrivileged("nft"); err == nil {
+		if _, err := utils.SafeLookPath("nft"); err == nil {
 			fwBackend = firewallNftables
 		} else {
 			fwBackend = firewallIptables
@@ -123,12 +124,7 @@ func scriptPath() string {
 }
 
 func runScriptWithSh(script string) (string, error) {
-	shell, err := shellPath()
-	if err != nil {
-		return "", err
-	}
-	cmd := exec.Command(shell)
-	cmd.Env = []string{"PATH=" + scriptPath(), "LC_ALL=C"}
+	cmd := utils.SafeCommand("sh")
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		AmbientCaps: []uintptr{unix.CAP_NET_ADMIN, unix.CAP_NET_RAW},
 	}
@@ -159,12 +155,8 @@ func runScriptWithSh(script string) (string, error) {
 // combined output, even on failure. Callers that need to tell "not there" from
 // "could not look" parse the output/exit code themselves.
 func runCommandWithCaps(name string, args ...string) (string, error) {
-	resolved, err := resolvePrivileged(name)
-	if err != nil {
-		return "", err
-	}
-	cmd := exec.Command(resolved, args...)
-	cmd.Env = []string{"PATH=" + scriptPath(), "LC_ALL=C"}
+	cmd := utils.SafeCommand(name, args...)
+	cmd.Env = append(cmd.Env, "LC_ALL=C")
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		AmbientCaps: []uintptr{unix.CAP_NET_ADMIN, unix.CAP_NET_RAW},
 	}

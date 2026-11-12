@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -259,7 +260,39 @@ const maxSubBytes = 16 * 1024 * 1024
 
 // subClient is a dedicated HTTP client with a sane timeout so a hung or
 // slow subscription server can't leak a goroutine forever.
-var subClient = &http.Client{Timeout: 30 * time.Second, Transport: netmark.Transport()}
+var subClient = &http.Client{
+	Timeout:       30 * time.Second,
+	Transport:     netmark.Transport(),
+	CheckRedirect: subscriptionCheckRedirect,
+}
+
+// requireHTTPSSubscription rejects every scheme except https (and http to a
+// loopback host, which never leaves the machine).
+func requireHTTPSSubscription(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return fmt.Errorf("invalid subscription URL")
+	}
+	switch u.Scheme {
+	case "https":
+		return nil
+	case "http":
+		if ip := net.ParseIP(u.Hostname()); u.Hostname() == "localhost" || (ip != nil && ip.IsLoopback()) {
+			return nil
+		}
+		return fmt.Errorf("subscription URL must use https")
+	}
+	return fmt.Errorf("invalid subscription URL scheme (https required)")
+}
+
+// subscriptionCheckRedirect applies the same rule to every redirect hop, so a
+// valid https URL cannot be bounced to cleartext, and bounds the chain.
+func subscriptionCheckRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) >= 5 {
+		return fmt.Errorf("stopped after 5 redirects")
+	}
+	return requireHTTPSSubscription(req.URL.String())
+}
 
 // fetchSubscription prefers the provider's JSON form (<url>/json) so each
 // server keeps its own provider-owned routing. When that endpoint is missing or
@@ -294,11 +327,10 @@ func subscriptionJSONURL(raw string) (string, bool) {
 }
 
 func fetchSubscriptionURL(subscriptionURL string) (string, *http.Response, error) {
-	// Reject non-http(s) schemes to avoid protocol-smuggling surprises
-	// (e.g. file:// reads from local disk).
-	if !strings.HasPrefix(subscriptionURL, "http://") &&
-		!strings.HasPrefix(subscriptionURL, "https://") {
-		return "", nil, fmt.Errorf("invalid subscription URL scheme")
+	// https only (F-17): the URL is the credential and the body is the server
+	// list. Loopback http is allowed for local panels and tests; nothing else.
+	if err := requireHTTPSSubscription(subscriptionURL); err != nil {
+		return "", nil, err
 	}
 
 	req, err := http.NewRequest("GET", subscriptionURL, nil)

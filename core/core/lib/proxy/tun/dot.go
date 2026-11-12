@@ -2,9 +2,9 @@ package tunmode
 
 import (
 	"fmt"
-	"os/exec"
 	"strings"
 	"sync"
+	"whoisthat-core/utils"
 )
 
 // DNS-over-TLS (K-2): with systemd-resolved in DoT mode the stub sends port 853
@@ -14,9 +14,9 @@ import (
 // armed switch over a DoT-only resolver means no DNS at all.
 
 var (
-	resolvectlLookPath = exec.LookPath
+	resolvectlLookPath = utils.SafeLookPath
 	resolvectlRun      = func(args ...string) (string, error) {
-		out, err := exec.Command("resolvectl", args...).CombinedOutput()
+		out, err := utils.SafeCommand("resolvectl", args...).CombinedOutput()
 		return string(out), err
 	}
 

@@ -316,7 +316,7 @@ func verifyGeoIP(path string) bool {
 	cmd.Stdin = bytes.NewReader(raw)
 	cmd.Stdout = nil
 	cmd.Stderr = &stderrBuf
-	cmd.Env = append(os.Environ(), "XRAY_LOCATION_ASSET="+filepath.Dir(path))
+	cmd.Env = append(utils.SafeEnv(os.Environ()), "XRAY_LOCATION_ASSET="+filepath.Dir(path))
 
 	if err := cmd.Run(); err != nil {
 		if ctx.Err() != nil {

@@ -2,7 +2,6 @@ package utils
 
 import (
 	"os"
-	"os/exec"
 	"os/user"
 	"strconv"
 	"strings"
@@ -23,7 +22,7 @@ func RealUserUid() int {
 			return uid
 		}
 	}
-	if out, err := exec.Command("logname").Output(); err == nil {
+	if out, err := SafeCommand("logname").Output(); err == nil {
 		username := strings.TrimSpace(string(out))
 		if u, err := user.Lookup(username); err == nil {
 			if uid, err := strconv.Atoi(u.Uid); err == nil && uid > 0 {

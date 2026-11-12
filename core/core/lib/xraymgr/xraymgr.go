@@ -5,7 +5,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sync"
 	"time"
@@ -30,6 +29,10 @@ var (
 )
 
 // GetManager returns the singleton Xray runtime manager instance.
+// systemXrayLookup finds a system xray in the pinned directories only (F-03);
+// tests replace it to point at a fixture directory.
+var systemXrayLookup = utils.SafeLookPath
+
 func GetManager() *Manager {
 	once.Do(func() {
 		defaultManager = NewManager()
@@ -126,7 +129,7 @@ func (m *Manager) Init() error {
 		"/usr/local/bin/xray",
 		"/usr/bin/xray",
 	}
-	if p, err := exec.LookPath("xray"); err == nil {
+	if p, err := systemXrayLookup("xray"); err == nil {
 		if abs, err := filepath.Abs(p); err == nil {
 			sysCandidates = append([]string{abs}, sysCandidates...)
 		}

@@ -139,6 +139,7 @@ func (x *XrayCore) Start(stdinPipe []byte, assetDir string) error {
 		logger.Infof("xray will run as uid=%d gid=%d", uid, gid)
 	}
 
+	cmd.Env = utils.SafeEnv(os.Environ())
 	targetAssetDir := assetDir
 	if targetAssetDir == "" {
 		targetAssetDir = geo.AssetDir()
@@ -149,10 +150,10 @@ func (x *XrayCore) Start(stdinPipe []byte, assetDir string) error {
 			geo.WaitReady(3 * time.Second)
 		}
 		if assetDir != "" || geo.IsReady() {
-			cmd.Env = setOrReplaceEnv(os.Environ(), "XRAY_LOCATION_ASSET", targetAssetDir)
+			cmd.Env = setOrReplaceEnv(utils.SafeEnv(os.Environ()), "XRAY_LOCATION_ASSET", targetAssetDir)
 			logger.Infof("xray XRAY_LOCATION_ASSET=%s", targetAssetDir)
 		} else if _, err := os.Stat(filepath.Join(targetAssetDir, "geoip.dat")); err == nil {
-			cmd.Env = setOrReplaceEnv(os.Environ(), "XRAY_LOCATION_ASSET", targetAssetDir)
+			cmd.Env = setOrReplaceEnv(utils.SafeEnv(os.Environ()), "XRAY_LOCATION_ASSET", targetAssetDir)
 			logger.Infof("xray XRAY_LOCATION_ASSET=%s (fallback: files exist)", targetAssetDir)
 		} else {
 			logger.Warn("xray: geo assets not ready, skipping XRAY_LOCATION_ASSET")

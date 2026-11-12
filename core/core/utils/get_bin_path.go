@@ -3,18 +3,16 @@ package utils
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 )
 
 func GetBinPath(name string) (string, error) {
-	if p, err := exec.LookPath(name); err == nil {
-		return filepath.Abs(p)
+	// Pinned directories only: never the caller's PATH or the cwd (F-03).
+	if p, err := SafeLookPath(name); err == nil {
+		return p, nil
 	}
 
 	paths := []string{
-		"./" + name,
-		filepath.Join(".", "bin", name),
 		filepath.Join("/usr/local/bin", name),
 		filepath.Join("/usr/bin", name),
 	}

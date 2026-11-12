@@ -384,7 +384,7 @@ func TestInit_AdoptsSystemBinary(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	dir := t.TempDir()
 	writeFakeXray(t, dir, PinnedVersion)
-	t.Setenv("PATH", dir)
+	useSystemXrayDir(t, dir)
 
 	m := NewManager()
 	if err := m.Init(); err != nil {
@@ -423,7 +423,7 @@ func TestInit_WrongManagedFallsBackToSystem(t *testing.T) {
 
 	dir := t.TempDir()
 	writeFakeXray(t, dir, PinnedVersion)
-	t.Setenv("PATH", dir)
+	useSystemXrayDir(t, dir)
 
 	m := NewManager()
 	if err := m.Init(); err != nil {
@@ -467,4 +467,19 @@ func TestFetchDigest_Non200(t *testing.T) {
 	if _, err := fetchDigest(srv.Client(), PinnedVersion, "64"); err == nil {
 		t.Fatal("expected an error for HTTP 404")
 	}
+}
+
+// useSystemXrayDir makes the fixture directory the "system" xray location
+// without touching PATH (the production lookup ignores the caller's PATH).
+func useSystemXrayDir(t *testing.T, dir string) {
+	t.Helper()
+	old := systemXrayLookup
+	systemXrayLookup = func(name string) (string, error) {
+		p := filepath.Join(dir, name)
+		if _, err := os.Stat(p); err != nil {
+			return "", err
+		}
+		return p, nil
+	}
+	t.Cleanup(func() { systemXrayLookup = old })
 }
