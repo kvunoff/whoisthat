@@ -1,5 +1,5 @@
 ---
-title: "Split Tunneling (cgroup v2)"
+title: "Split Tunneling"
 description: "Run selected applications inside or outside the VPN tunnel with cgroup v2."
 audience: "user"
 type: "how-to"
@@ -57,7 +57,7 @@ The `whoisthat run` CLI command supports two execution styles.
 On systemd hosts the application is placed in `whoisthat_split.slice` with
 `systemd-run --user`. On other systems a per-user `whoisthat-runner` service
 (forks inside `/sys/fs/cgroup/whoisthat-<uid>`) does the same without sudo; see
-[Non-systemd systems](/guide/non-systemd). In both cases the application's exit
+[Non-systemd systems](/guide/platforms). In both cases the application's exit
 code, environment and working directory are preserved.
 
 ### A. Background / Detached Mode (`-d`, `--detach`, `-b`)
@@ -213,38 +213,9 @@ If Steam is already minimized to your system tray, close it completely (`pkill -
 
 ---
 
-## Technical Deep-Dive: Kernel Implementation
+## See also
 
-WhoisThat uses pure kernel primitives for split tunneling without network namespaces or root privileges:
-
-```
-[Target Process (spotify)]
-       │
-       ▼
-systemd-run placed in cgroup slice:
-`user.slice/user-<uid>.slice/user@<uid>.service/whoisthat_split.slice`
-       │
-       ▼
-nftables table `inet whoisthat_split` (output hook priority -150)
-Matches: socket cgroupv2 level 4 "whoisthat_split.slice"
-       │
-       ├─► In `exclude` mode: Assigns `fwmark 1`
-       └─► In `include` mode: Assigns `fwmark 2`
-       │
-       ▼
-Kernel Policy Routing:
-       ├─► fwmark 1 ──► ip route table 100 (Physical Gateway Bypass)
-       └─► fwmark 2 ──► ip route table 200 (TUN Interface)
-       │
-       ▼
-Postrouting NAT Masquerade:
-Rewrites socket source IP on physical egress to prevent LAN dropouts
-       │
-       ▼
-IPv6 Leak Prevention:
-When the physical interface has no IPv6 gateway, Table 100 sets `unreachable default` for IPv6 to prevent Happy Eyeballs leaks; otherwise marked IPv6 traffic is routed to the physical gateway
-```
-
-### Live Dynamic Reconciliation
-
-Changing the split-tunnel mode in Settings (cycling `off` → `exclude` → `include`) while TUN mode is active immediately reapplies all routing tables, cgroup socket filters, nftables rules, and the DNS hijack on the fly without needing to disconnect or restart your active session.
+- [Kill-Switch](/usage/kill-switch)
+- [Platforms & Service Management](/guide/platforms)
+- [Networking internals](/architecture/networking)
+- [Routing](/usage/routing)

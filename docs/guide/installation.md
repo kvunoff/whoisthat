@@ -174,7 +174,7 @@ Runtime requirements for the full feature set:
 | `nftables` (recommended) | Split tunneling, kill-switch, DNS hijack |
 | `iptables` | Legacy fallback for kill-switch and DNS hijack (split tunneling still needs `nftables`) |
 | cgroup v2 (`/sys/fs/cgroup/cgroup.controllers`) | Split tunneling (`whoisthat run`) |
-| systemd user manager **or** OpenRC/dinit/runit | Autostart and split-tunnel launching (see [Non-systemd systems](/guide/non-systemd)) |
+| systemd user manager **or** OpenRC/dinit/runit | Autostart and split-tunnel launching (see [Platforms & Service Management](/guide/platforms)) |
 | `libcap` (`setcap`/`getcap`) | Rootless TUN via file capabilities |
 | `x86_64` or `aarch64` | Prebuilt Xray runtime |
 

@@ -16,12 +16,10 @@ fit together, how to build and test them, and how to change them safely.
   organized, written, and kept current.
 - [System Architecture Overview](/architecture/overview) — processes, IPC, and
   the packet path.
-- [Development & Testing Guide](/reference/development) — the current build,
-  test, and release workflow.
+- [Build & Run](/developers/build) — the local build and test workflow.
 
-The dedicated build, repository map, testing, debugging, extending, and release
-pages are part of the documentation restructuring. Until they land, use the
-development guide above and the source tree as the reference.
+Build, repository, testing, debugging, and release guides are listed in the
+sidebar. The Extending guide lands with the developer rewrite.
 
 ## Repository at a glance
 
@@ -45,15 +43,61 @@ pkg/, debian/        Distribution packaging
 - Run the checks in [Documentation Guide](/developers/documentation) for docs
   changes, and the relevant `make` targets for code changes.
 
+## Reporting a bug
+
+A good report lets a maintainer reproduce the problem without guessing. Collect
+the built-in diagnostic report before opening an issue.
+
+```bash
+whoisthat doctor --json > whoisthat-doctor.json
+whoisthat version --json
+whoisthat core status --json
+whoisthat doctor --logs --json > whoisthat-logs.json
+```
+
+Include the relevant environment block:
+
+```bash
+uname -a
+cat /etc/os-release
+ip -V
+nft --version
+systemctl --version | head -1
+```
+
+Also state how WhoisThat was installed and the exact release, the connection
+mode (proxy or TUN), split-tunnel mode, whether the kill-switch was armed, the
+firewall backend, steps to reproduce, expected and actual result, and whether
+the problem survives `whoisthat core restart`.
+
+::: danger Redact secrets
+Logs, `doctor` output and profile listings can contain subscription URLs, server
+addresses, HWIDs and tokens.
+
+- Never attach `~/.config/whoisthat/db.key` or the encrypted database.
+- Do not paste raw `vless://`, `vmess://`, `trojan://`, `ss://` or
+  `hysteria2://` URIs.
+- Mask subscription tokens: `whoisthat profile list` and `sub list` hide them
+  unless `--reveal` is used.
+- Review `whoisthat logs` output before posting; credentials in a URL path are
+  not masked automatically.
+:::
+
+File bugs and feature requests at
+[github.com/kvunoff/whoisthat/issues](https://github.com/kvunoff/whoisthat/issues).
+Documentation problems go to the same tracker with the page URL. Sensitive
+reports (credentials, privilege escalation, firewall bypass) follow
+[SECURITY.md](https://github.com/kvunoff/whoisthat/security/policy) and GitHub's
+private vulnerability reporting; do not open a public issue with the details.
+
 ## Getting help
 
-Open an issue with the `docs` label for documentation gaps. For runtime
-problems, use `whoisthat doctor` and the troubleshooting guide before filing a
-bug.
+For runtime problems, use `whoisthat doctor` and the troubleshooting guide
+before filing a bug. Open an issue with the `docs` label for documentation gaps.
 
 ## See also
 
 - [Documentation Guide](/developers/documentation)
-- [Development & Testing Guide](/reference/development)
-- [IPC Transport & Framing](/architecture/ipc-flow)
+- [Build & Run](/developers/build)
+- [IPC & Event Flow](/architecture/ipc-flow)
 - [Go Core Daemon](/architecture/go-core)
