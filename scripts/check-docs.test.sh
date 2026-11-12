@@ -97,6 +97,27 @@ EOF
 
 printf "\n{ text: 'Missing', link: '/zz-missing' },\n" >>"$TMP/docs/.vitepress/config.mts"
 
+cat >"$TMP/docs/public/zz-broken.html" <<'EOF'
+<!doctype html>
+<meta http-equiv="refresh" content="0; url=/zz-missing-page">
+EOF
+
+cat >"$TMP/docs/public/zz-collision.html" <<'EOF'
+<!doctype html>
+<meta http-equiv="refresh" content="0; url=/reference/cli">
+EOF
+
+cat >"$TMP/docs/zz-collision.md" <<'EOF'
+---
+title: "Collision"
+description: "Fixture."
+audience: "user"
+type: "reference"
+---
+
+# Collision
+EOF
+
 if DOCS_DIR="$TMP/docs" "$ROOT/scripts/check-docs.sh" >"$TMP/broken.log" 2>&1; then
     bad "expected exit 1"
 else
@@ -126,6 +147,8 @@ check_report "deprecated page needs 'removed_in'" "deprecated metadata"
 check_report "'replaced_by' target not found" "broken replacement target"
 check_report "'removed_in' 0.19.0 is not after current" "expired removal"
 check_report 'link target not found: zz-missing.md' "broken sidebar link"
+check_report 'redirect target not found: /zz-missing-page' "broken redirect target"
+check_report 'stub collides with generated page zz-collision.md' "redirect/page collision"
 
 printf '\n'
 if [ "$fail" -ne 0 ]; then
