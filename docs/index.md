@@ -1,6 +1,8 @@
 ---
 title: Introduction
 description: Official documentation for WhoisThat - Modern Linux terminal-based VPN client with Rust TUI and Go core daemon.
+audience: user
+type: landing
 ---
 
 <div style="display: flex; align-items: center; gap: 1.25rem; margin-top: 1rem; margin-bottom: 2rem;">

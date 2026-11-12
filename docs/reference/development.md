@@ -1,3 +1,10 @@
+---
+title: "Development & Testing Guide"
+description: "Build, test, debug, package, and release WhoisThat."
+audience: "developer"
+type: "how-to"
+---
+
 # Development & Testing Guide
 
 This guide explains how to build, test, debug, and contribute to the WhoisThat codebase.

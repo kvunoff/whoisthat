@@ -1,3 +1,10 @@
+---
+title: "Troubleshooting & FAQ"
+description: "Symptom-to-fix matrix and FAQ for common WhoisThat problems."
+audience: "user"
+type: "how-to"
+---
+
 # Troubleshooting & FAQ
 
 Encountering an issue? Consult this troubleshooting matrix and frequently asked questions for immediate solutions.

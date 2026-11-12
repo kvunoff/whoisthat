@@ -1,3 +1,10 @@
+---
+title: "Settings Reference"
+description: "Every row in the WhoisThat Settings screen, with defaults and CLI equivalents."
+audience: "user"
+type: "reference"
+---
+
 # Settings Reference
 
 The Settings tab (<kbd>5</kbd> or cycle with <kbd>[</kbd> / <kbd>]</kbd>) provides an interactive control panel for configuring all runtime behaviors of WhoisThat.

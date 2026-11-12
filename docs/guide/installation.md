@@ -1,3 +1,10 @@
+---
+title: "Installation"
+description: "Install WhoisThat from the install script, distribution packages, AUR, or source."
+audience: "user"
+type: "tutorial"
+---
+
 # Installation
 
 WhoisThat can be installed via an automated installer script, a distribution package (`.deb` / `.rpm`), the Ubuntu PPA, the Arch User Repository (AUR), or compiled manually from source.

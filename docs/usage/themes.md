@@ -1,3 +1,10 @@
+---
+title: "Themes & Responsive Layout"
+description: "Switch color themes and understand the responsive TUI layout."
+audience: "user"
+type: "reference"
+---
+
 # Themes & Responsive Layout
 
 WhoisThat is crafted for terminal aesthetics and responsiveness, featuring curated color palettes and an adaptive layout engine that tailors the interface to your window dimensions.

@@ -1,3 +1,10 @@
+---
+title: "Routing Precedence"
+description: "The canonical first-match order for manual, Happ, and JSON routing."
+audience: "developer"
+type: "reference"
+---
+
 # Routing Precedence
 
 Xray evaluates routing rules **top to bottom; the first match wins**. WhoisThat builds that list from structural rules, manual rules, a Happ profile, or a provider JSON baseline depending on the group and its mode. This page is the canonical order; editing UI and presets are covered in [Routing Rules & Presets](/networking/routing-rules).

@@ -1,3 +1,10 @@
+---
+title: "Deep Links & Browser Integration (`wit://`)"
+description: "The `wit://` deep-link grammar and desktop handler registration."
+audience: "integrator"
+type: "reference"
+---
+
 # Deep Links & Browser Integration (`wit://`)
 
 WhoisThat registers the custom desktop URL scheme `wit://`. This enables web dashboards, VPN provider portals, and personal websites to import subscriptions, profiles, and routing policies with a single click in any web browser (Chrome, Firefox, Brave, Edge).

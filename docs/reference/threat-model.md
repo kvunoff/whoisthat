@@ -1,3 +1,10 @@
+---
+title: "Threat Model & Limitations"
+description: "Threats WhoisThat does and does not protect against, plus hardening notes."
+audience: "developer"
+type: "explanation"
+---
+
 # Threat Model & Limitations
 
 WhoisThat is a local VPN client, not a sandbox. This page states what the security measures protect against, what they assume, and where the boundaries are.

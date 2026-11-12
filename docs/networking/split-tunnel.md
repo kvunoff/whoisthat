@@ -1,3 +1,10 @@
+---
+title: "Split Tunneling (cgroup v2)"
+description: "Run selected applications inside or outside the VPN tunnel with cgroup v2."
+audience: "user"
+type: "how-to"
+---
+
 # Split Tunneling (cgroup v2)
 
 Split Tunneling allows you to route specific applications differently from the rest of your system. You can bypass the VPN for domestic banking or high-speed gaming while keeping the rest of your OS protected, or route only a specific web browser through the tunnel.

@@ -1,3 +1,10 @@
+---
+title: "JSON Subscriptions"
+description: "How Xray JSON subscriptions are imported and kept provider-owned."
+audience: "user"
+type: "explanation"
+---
+
 # JSON Subscriptions
 
 Some providers ship a second subscription format where every server is a complete Xray client configuration instead of a share link. Happ calls these **JSON subscriptions** (`content-type: application/json`). WhoisThat imports them and keeps the provider's per-server routing intact.

@@ -1,3 +1,10 @@
+---
+title: "Kill-Switch Firewall Protection"
+description: "How the independent nftables kill-switch blocks traffic when the VPN drops."
+audience: "user"
+type: "how-to"
+---
+
 # Kill-Switch Firewall Protection
 
 The **Kill-Switch** prevents accidental data and IP leaks by automatically blocking all outbound network traffic if the VPN connection drops unexpectedly.

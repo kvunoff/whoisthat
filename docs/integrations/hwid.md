@@ -1,3 +1,10 @@
+---
+title: "HWID & Device Fingerprinting"
+description: "How the HWID device fingerprint is sent and how to control it."
+audience: "user"
+type: "explanation"
+---
+
 # HWID & Device Fingerprinting
 
 WhoisThat implements the **Hardware ID (HWID)** device identification specification widely adopted by modern subscription providers (including Remnawave and Happ panels).

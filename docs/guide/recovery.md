@@ -1,3 +1,10 @@
+---
+title: "Repair & Recovery"
+description: "Back up, repair, and restore WhoisThat configuration, database, and network rules."
+audience: "user"
+type: "how-to"
+---
+
 # Repair & Recovery
 
 WhoisThat keeps last-known-good copies of its settings and daily snapshots of the encrypted database. If a file is damaged or unreadable, the daemon does **not** overwrite it with defaults; it reports the problem and keeps the damaged copy for recovery.

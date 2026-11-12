@@ -1,3 +1,10 @@
+---
+title: "Go Core Daemon (`whoisthat-core`)"
+description: "How the Go daemon starts, manages state, and orchestrates Xray and the network."
+audience: "developer"
+type: "explanation"
+---
+
 # Go Core Daemon (`whoisthat-core`)
 
 The **WhoisThat Core** is an autonomous, event-driven daemon written in Go. It operates independently in the background, serving as the central coordinator for proxy processes, TUN interfaces, database transactions, and client communication.

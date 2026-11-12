@@ -1,3 +1,10 @@
+---
+title: "Supported Protocols & Transports"
+description: "Supported proxy protocols and transports in the pinned Xray-core runtime."
+audience: "user"
+type: "explanation"
+---
+
 # Supported Protocols & Transports
 
 WhoisThat uses a unified proxy architecture powered by **Xray-core v26.10.31**. All protocols—including advanced QUIC and Reality handshakes—are parsed directly into Xray configurations, benefiting equally from native TUN routing, live gRPC traffic metrics, and DNS protection.

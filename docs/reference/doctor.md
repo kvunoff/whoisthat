@@ -1,3 +1,10 @@
+---
+title: "Doctor Diagnostics (`whoisthat doctor`)"
+description: "Doctor categories, checks, JSON output, and remediation."
+audience: "operator"
+type: "reference"
+---
+
 # Doctor Diagnostics (`whoisthat doctor`)
 
 WhoisThat features a built-in diagnostic and health inspection suite accessible via the command line:

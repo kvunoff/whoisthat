@@ -1,3 +1,10 @@
+---
+title: "Routing Engine Architecture & Principles"
+description: "How routing rules, matchers, presets, and GeoIP data work in WhoisThat."
+audience: "user"
+type: "explanation"
+---
+
 # Routing Engine Architecture & Principles
 
 Modern proxy circumvention and virtual private networking have evolved far beyond naive "global VPN" tunnels. In a modern network environment, routing all traffic unconditionally through a remote proxy introduces unnecessary latency for domestic services, triggers anti-fraud blocks on local banking portals, and saturates encrypted tunnels with heavy, non-restricted data streams (such as OS updates and Steam downloads).

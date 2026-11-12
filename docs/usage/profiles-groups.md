@@ -1,3 +1,10 @@
+---
+title: "Profiles & Subscription Groups"
+description: "Manage subscription groups, profiles, metadata, and latency tests in the TUI."
+audience: "user"
+type: "how-to"
+---
+
 # Profiles & Subscription Groups
 
 WhoisThat organizes VPN servers into a flexible hierarchical tree consisting of **Subscription Groups** and individual **Profiles**.

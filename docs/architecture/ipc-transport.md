@@ -1,3 +1,10 @@
+---
+title: "IPC Transport & Framing"
+description: "The length-prefixed IPC transport between the Rust client and the Go core."
+audience: "developer"
+type: "explanation"
+---
+
 # IPC Transport & Framing
 
 Communication between the user-facing interfaces (Rust TUI, CLI, status scripts) and the core daemon (`whoisthat-core`) takes place over a dedicated, high-speed Inter-Process Communication (IPC) transport.

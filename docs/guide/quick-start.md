@@ -1,3 +1,10 @@
+---
+title: "Quick Start"
+description: "Launch WhoisThat, import a profile or subscription, test latency, and connect."
+audience: "user"
+type: "tutorial"
+---
+
 # Quick Start
 
 Get up and running with WhoisThat in less than two minutes.
