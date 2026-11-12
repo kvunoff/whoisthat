@@ -101,6 +101,9 @@ remove copies elsewhere.
 | HWID headers | `integrations/hwid.md` |
 | Update checks and `WHOISTHAT_NO_UPDATE_CHECK` | `reference/configuration.md` |
 | User-facing TUN, DNS, split, and kill-switch behavior | `networking/*` |
+| Kernel networking internals | `architecture/networking.md` |
+| Routing compilation, Happ/JSON, and reload | `architecture/routing-engine.md` |
+| Security model and threat model | `architecture/security.md` |
 | Rust client internals | `architecture/rust-client.md` |
 | Go core internals | `architecture/go-core.md` |
 | Build, test, debug, release | `developers/*` |
@@ -424,5 +427,5 @@ Before a release:
 
 - [For Developers](/developers/)
 - [Glossary](/reference/glossary)
-- [Development & Testing Guide](/reference/development)
+- [Build & Run](/developers/build)
 - [System Architecture Overview](/architecture/overview)

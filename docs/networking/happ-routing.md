@@ -252,6 +252,7 @@ In the TUI on Tab 2 (*Routing*), pressing <kbd>H</kbd> opens the **Happ Routing 
 ## References & External Links
 
 * [Happ Format Reference](/reference/happ-format) — URI actions, Base64 decoding, payload fields, Geo sandbox and IPC payloads.
+* [Routing Engine](/architecture/routing-engine) — how Happ rules are compiled and reloaded.
 * [Happ Developer Documentation: Routing](https://www.happ.su/main/dev-docs/routing) — Upstream protocol reference and schema documentation.
 * [Happ Web Rule Builder](https://routing.happ.su/) — Visual editor for crafting and exporting Happ routing profiles.
 * [Xray-core Routing Configuration](https://xtls.github.io/config/routing.html) — Reference for underlying routing tags and domain matching mechanics.

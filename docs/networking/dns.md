@@ -129,3 +129,9 @@ resolvectl dns <tun-name>        # what systemd-resolved was pointed at
 `doctor` reports the active mode as Happ sink, legacy resolver, disabled in `include`, or TUN inactive. If it cannot read firewall state without root, it prints the exact `sudo` command instead of failing.
 
 See [Troubleshooting](/reference/troubleshooting) for leak symptoms and the HTTP/3 caveat.
+
+## See also
+
+- [Kernel Networking](/architecture/networking)
+- [TUN Mode & Capabilities](/networking/tun-mode)
+- [Split Tunneling](/usage/split-tunnel)

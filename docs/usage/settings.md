@@ -59,3 +59,50 @@ in the interactive Settings tab (set it from the CLI or `config.toml`).
 * **Toggle / Cycle**: Press <kbd>Enter</kbd> or <kbd>Space</kbd> to activate the highlighted row (toggle a boolean, cycle a choice, open a text editor, or run the **Reset HWID** action). On the **Theme** row, <kbd>h</kbd> / <kbd>l</kbd> (and <kbd>←</kbd> / <kbd>→</kbd>) cycle the palette directly; other rows ignore <kbd>h</kbd> / <kbd>l</kbd>.
 * **Text Editing**: Press <kbd>Enter</kbd> on editable fields (e.g. **TUN Name**, **User-Agent**) to summon an in-place text editor modal.
 * **Instant Persistence**: Any modification made in the Settings tab is saved immediately to `~/.config/whoisthat/config.toml` (TUI options) and synchronized over IPC to `~/.config/whoisthat/config.json` (Core options).
+
+---
+
+## Themes and responsive layout
+
+WhoisThat includes four curated palettes designed for readability and contrast:
+
+| Theme | Style | Accents |
+| :--- | :--- | :--- |
+| **Graphite Dark** *(default)* | Monochrome graphite with obsidian depth | Platinum silver, crisp white, emerald |
+| **Graphite Light** | Minimalist paper and chalk | Ink black, charcoal, deep forest green |
+| **Tokyo Night** | Deep midnight blue inspired by Tokyo at dusk | Neon cyan, soft sky blue, coral red |
+| **Dracula** | Gothic contrast with deep purple tones | Neon pink, electric purple, spring green |
+
+To switch themes: open Settings (<kbd>5</kbd>), highlight **Theme**, and press
+<kbd>Enter</kbd>, <kbd>Space</kbd>, or <kbd>l</kbd>/<kbd>→</kbd> to cycle
+forward; <kbd>h</kbd>/<kbd>←</kbd> cycles backward with live preview. The choice
+is saved to `~/.config/whoisthat/config.toml`.
+
+The layout engine adapts to the terminal size:
+
+- **Compact (< 80 columns)**: stacked 60/40 tree/details when the content area is
+  at least 18 rows; below that only the tree is shown. <kbd>Tab</kbd> switches
+  focus.
+- **Medium (80–125 columns)**: side-by-side 55/45 tree/details. <kbd>Tab</kbd>
+  toggles focus.
+- **Wide (126–160 columns)**: 45/55 split with full server parameters, TLS
+  properties, and statistics.
+- **UltraWide (> 160 columns)**: same 45/55 split with the widest panes.
+
+Height tiers:
+
+- **Tiny (< 16 rows)**: compressed header, auxiliary cards hidden.
+- **Short (16–24 rows)**: standard layout with a compact footer.
+- **Normal (25–42 rows)**: full layout with latency metrics, quota bars, and
+  interface cards.
+- **Tall (> 42 rows)**: expanded logs pane and 60-second full-height traffic
+  charts.
+
+Below **45 columns × 8 rows**, rendering is suspended and a minimum-size warning
+is shown to prevent buffer overflow and visual artifacts.
+
+## See also
+
+- [Navigation & Keybindings](/usage/navigation)
+- [Configuration Files Reference](/reference/configuration)
+- [Log Viewer & Diagnostics](/usage/logs)

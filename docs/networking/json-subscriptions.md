@@ -89,3 +89,9 @@ Only the structural pieces are changed:
 - traffic counters are summed across all proxy outbounds.
 
 Latency tests run the provider config with a temporary SOCKS inbound, so balancers and per-server rules are exercised the same way as a real connection.
+
+## See also
+
+- [Routing Engine](/architecture/routing-engine)
+- [Routing Precedence](/reference/routing-precedence)
+- [Happ Routing Profiles](/networking/happ-routing)

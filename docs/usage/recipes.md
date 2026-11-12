@@ -36,7 +36,7 @@ whoisthat status --short
 - Enabling the unit does not start it immediately — run `systemctl --user start` once (or log out/in).
 - For monitoring, `whoisthat status --watch --json` is the stable NDJSON stream.
 
-See [Systemd User Service](/integrations/systemd) and [CLI](/reference/cli).
+See [Platforms & Service Management](/guide/platforms) and [CLI](/reference/cli).
 
 ---
 
@@ -77,7 +77,7 @@ pkill -9 spotify
 whoisthat run -d spotify
 ```
 
-For Steam, use the launch option `whoisthat run %command%` **without** `-d`, and prefix wrappers (`gamemoderun`, `mangohud`, `gamescope`) inside it. Full details: [Split Tunneling](/networking/split-tunnel#gaming-steam-integration).
+For Steam, use the launch option `whoisthat run %command%` **without** `-d`, and prefix wrappers (`gamemoderun`, `mangohud`, `gamescope`) inside it. Full details: [Split Tunneling](/usage/split-tunnel#gaming-steam-integration).
 
 ---
 

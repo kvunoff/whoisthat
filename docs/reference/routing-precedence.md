@@ -64,7 +64,7 @@ For a normal (share-link) profile, the structural rules are followed by the rule
 
 With `GlobalProxy=true` there is no terminal catch-all: unmatched traffic falls through to the default outbound (the active proxy).
 
-Manual rules use the six match types described in [Routing Rules](/networking/routing-rules#supported-rule-match-types): domain, IP, protocol, port, geoip and geosite. GeoIP/GeoSite values are stored in the `ip`/`domain` fields.
+Manual rules use the six match types described in [Routing](/usage/routing#supported-rule-match-types): domain, IP, protocol, port, geoip and geosite. GeoIP/GeoSite values are stored in the `ip`/`domain` fields.
 
 ---
 

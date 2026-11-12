@@ -86,7 +86,7 @@ whoisthat run -d spotify           # Spotify bypasses the VPN tunnel in backgrou
 whoisthat run %command%            # In Steam launch options: zero-ping direct gaming
 whoisthat run curl 2ip.io          # Runs directly attached in terminal
 ```
-See the [Split Tunneling & Steam Guide](/networking/split-tunnel#gaming-steam-integration) for technical details and setup.
+See the [Split Tunneling & Steam Guide](/usage/split-tunnel#gaming-steam-integration) for technical details and setup.
 
 ### 4. Rich Routing & Happ Profiles
 Define fine-grained routing policies based on domain names, IP subnets, protocols, GeoIP, and GeoSite databases. Ingest provider **Happ routing profiles** (`happ://routing/...`) with per-group routing modes (`auto`, `manual`, `subscription`).
@@ -123,12 +123,12 @@ Get started exploring the documentation:
 * **[Installation Guide](/guide/installation)** — Install via the curl script, the Ubuntu PPA, `.deb`/`.rpm` packages, AUR (`whoisthat-bin` or source `whoisthat`), or build from source.
 * **[Quick Start Tutorial](/guide/quick-start)** — First launch, importing subscriptions, latency testing, and connecting.
 * **[Recipes & Common Setups](/usage/recipes)** — Headless server, proxy-only desktop, per-app bypass, Docker and multi-subscription routing.
-* **[Upgrading & Recovery](/guide/upgrading)** — Update, roll back or uninstall; restore settings and profiles after a failure.
+* **[Maintenance & Recovery](/guide/maintenance)** — Update, roll back or uninstall; restore settings and profiles after a failure.
 * **[Architecture Deep-Dive](/architecture/overview)** — Explore the Go daemon, IPC wire framing, and encryption layer.
 * **[TUN Mode & Networking](/networking/tun-mode)** — Learn how rootless TUN, DNS hijacking, and Docker reply conntrack work.
 * **[DNS & FakeDNS](/networking/dns)** — Legacy vs Happ resolvers, sink addresses, split-mode behaviour and leak limits.
 * **[Routing Precedence](/reference/routing-precedence)** — The canonical first-match order for manual, Happ and JSON routing.
-* **[Split Tunneling](/networking/split-tunnel)** — Complete manual on running apps inside cgroup v2 transient slices.
+* **[Split Tunneling](/usage/split-tunnel)** — Run apps inside or outside the VPN with cgroup v2.
 * **[CLI Reference](/reference/cli)** — Command-line flags, selectors, output, and exit codes.
 * **[Wire Protocol Reference](/reference/protocol)** — Complete specification of IPC commands and streaming notifications.
 
