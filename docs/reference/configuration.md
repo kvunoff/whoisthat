@@ -94,7 +94,13 @@ ipc_socket_path = ""
 use_tcp = false
 ```
 
-`RUST_LOG` or `WHOISTHAT_LOG_LEVEL` (a bare level or `whoisthat=debug`) overrides `log_enabled`/`log_level` for the current session and applies the level to the core; nothing is written back to this file.
+`RUST_LOG` or `WHOISTHAT_LOG_LEVEL` (a bare level or `whoisthat=debug`) overrides
+`log_enabled`/`log_level` for the current session and applies the level to the
+core; nothing is written back to this file.
+
+Set `check_updates = false`, run `whoisthat settings set check-updates=off`, or
+set `WHOISTHAT_NO_UPDATE_CHECK=1` to disable the GitHub release check. The
+environment override is session-only and is not written to `config.toml`.
 
 ---
 
@@ -216,7 +222,7 @@ errors forward the underlying error to the client.
 
 | Directory Path | Content & Purpose | Permissions |
 | :--- | :--- | :---: |
-| `~/.local/share/whoisthat/db/` | AES-256-GCM encrypted database: `config.json`, `routing.json`, and per-group directories (`groups/<id>/group_config.json`, profile files). | `0700` |
+| `~/.local/share/whoisthat/db/` | AES-256-GCM encrypted database: `routing.json` and per-group directories (`groups/<id>/group_config.json`, profile files). The daemon `config.json` lives in `~/.config/whoisthat/`. | `0700` |
 | `~/.local/share/whoisthat/backups/db-YYYYMMDD/` | Daily database snapshot (last three kept) used by **Repair WhoisThat** on the next start. | `0700` |
 | `~/.config/whoisthat/config.json.bak` | Last known good copy of the daemon settings; `config.json` is never replaced by defaults when it cannot be parsed. | `0600` |
 | `~/.local/share/whoisthat/db/routing.json` | Global manual routing rules shared by groups that inherit them. | `0600` |

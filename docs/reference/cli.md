@@ -195,8 +195,9 @@ Notes:
 ```bash
 whoisthat test profile 12:6
 whoisthat test profile 12:6 --wait
-whoisthat test group Work --wait
-whoisthat test all --wait
+whoisthat test profile 12:6 --method tcp
+whoisthat test group Work --wait --method http-head
+whoisthat test all --method http-get --wait
 whoisthat test cancel
 whoisthat test config
 whoisthat test config --concurrency 16 --test-timeout 5 --samples 3
@@ -205,8 +206,9 @@ whoisthat test config --auto-on-subscribe off
 ```
 
 `--wait` for a group finishes when `test-progress` reports `tested >= total`. If all profiles are
-already being tested, the command reports that instead of hanging. `test config` mirrors the
-daemon's sanitized values after applying changes.
+already being tested, the command reports that instead of hanging. `--method` accepts
+`tcp`, `http-get`, or `http-head` and overrides the method saved in Settings for this run.
+`test config` mirrors the daemon's sanitized values after applying changes.
 
 `test config` uses `--test-timeout` for the core's per-test timeout; the global `--timeout` is the
 CLI reply timeout and is not the same setting.
@@ -314,9 +316,9 @@ fallback paths (`$TMPDIR/whoisthat-<uid>/...`) are used when the primary file is
 tail that `--lines` reads, not to the whole file, and they combine with `--level`.
 
 `logs clear` truncates active files in place (writers keep their descriptor) and removes rotated
-backups; `--source core` also clears `core-crash.log`. It requires `--yes`, accepts
-`--source core|tui|all`, prints one line per file, and with `--json` returns an array of
-`{path, action, bytes, error?}` objects. A file owned by another user is reported as `failed` and
+backups; `--source` defaults to `all`, and `--source core` also clears `core-crash.log`. It requires
+`--yes`, accepts `--source core|tui|all`, prints one line per file, and with `--json` returns an
+array of `{path, action, bytes, error?}` objects. A file owned by another user is reported as `failed` and
 the command exits `1`.
 
 ---
@@ -485,11 +487,9 @@ Old flags are hidden aliases and keep working:
 
 ## JSON output
 
-`status --json` is unchanged (Waybar/Polybar/GNOME contract). New commands use stable objects:
-
-```json
-{"connected":true,"mode":"tun","tun_enabled":true,"split_tunnel":"exclude"}
-```
+`status --json` and `status --watch --json` are documented in
+[Status JSON](/reference/status-json). Other commands return stable objects; for
+example, `profile list --json` returns an array:
 
 ```json
 [{"id":6,"group_id":12,"group_name":"tuqise","name":"Vienna","protocol":"vless",
@@ -505,7 +505,7 @@ Old flags are hidden aliases and keep working:
 
 ```bash
 # Toggle from a window manager
-bind = $mainMod, V, exec, whoisthat -t
+bind = $mainMod, V, exec, whoisthat toggle
 
 # Status bar
 whoisthat status --short
@@ -529,5 +529,5 @@ whoisthat logs --level error --json
 
 * Downloading/updating the pinned Xray runtime (no IPC command; needs a core change).
 * Managing split-tunnel application lists (apps are launched through `whoisthat run`).
-* Changing the TUN interface name on a live connection (`set-tun-name` persists it; reconnect to apply).
+* Changing the TUN interface name on a live connection (`whoisthat settings set tun-name=...` persists it; reconnect to apply).
 * Remote TCP: the daemon binds loopback only.
