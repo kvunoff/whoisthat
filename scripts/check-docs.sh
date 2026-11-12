@@ -148,6 +148,11 @@ while IFS= read -r md; do
             [ -e "$target_file" ] || target_file="${target_file}.md"
         fi
 
+        # A directory URL such as /developers/ resolves to its index page.
+        if [ -d "$target_file" ]; then
+            target_file="${target_file%/}/index.md"
+        fi
+
         [ -n "$anchor" ] || continue
         anchors="$(anchors_of "$target_file" || true)"
         grep -Fxq "$anchor" <<<"$anchors" ||
