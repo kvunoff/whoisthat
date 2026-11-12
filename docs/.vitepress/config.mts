@@ -78,10 +78,60 @@ export default withMermaid(defineConfig({
         items: [
           { text: 'Introduction', link: '/' },
           { text: 'Installation', link: '/guide/installation' },
-          { text: 'Non-systemd systems', link: '/guide/non-systemd' },
           { text: 'Quick Start', link: '/guide/quick-start' },
-          { text: 'Upgrading & Uninstalling', link: '/guide/upgrading' },
-          { text: 'Repair & Recovery', link: '/guide/recovery' }
+          { text: 'Platforms & Service Management', link: '/guide/platforms' },
+          { text: 'Maintenance, Upgrading & Recovery', link: '/guide/maintenance' }
+        ]
+      },
+      {
+        text: 'Usage',
+        collapsed: false,
+        items: [
+          { text: 'Navigation & Keybindings', link: '/usage/navigation' },
+          { text: 'Profiles & Subscriptions', link: '/usage/profiles' },
+          { text: 'Routing', link: '/usage/routing' },
+          { text: 'Split Tunneling', link: '/usage/split-tunnel' },
+          { text: 'Kill-Switch', link: '/usage/kill-switch' },
+          { text: 'Traffic Monitoring', link: '/usage/traffic' },
+          { text: 'Logs', link: '/usage/logs' },
+          { text: 'Settings & Appearance', link: '/usage/settings' },
+          { text: 'Recipes & Common Setups', link: '/usage/recipes' }
+        ]
+      },
+      {
+        text: 'Networking',
+        collapsed: false,
+        items: [
+          { text: 'TUN Mode & Capabilities', link: '/networking/tun-mode' },
+          { text: 'DNS & FakeDNS', link: '/networking/dns' },
+          { text: 'Routing Rules', link: '/networking/routing-rules' },
+          { text: 'Happ Routing Profiles', link: '/networking/happ-routing' },
+          { text: 'JSON Subscriptions', link: '/networking/json-subscriptions' },
+          { text: 'Supported Protocols', link: '/networking/protocols' }
+        ]
+      },
+      {
+        text: 'Integrations',
+        collapsed: false,
+        items: [
+          { text: 'Desktop Widgets (Waybar/Polybar)', link: '/integrations/desktop-widgets' },
+          { text: 'GNOME Shell Extension', link: '/integrations/gnome-extension' },
+          { text: 'Deep Links (wit://)', link: '/integrations/deeplinks' },
+          { text: 'HWID & Device Fingerprint', link: '/integrations/hwid' }
+        ]
+      },
+      {
+        text: 'Reference',
+        collapsed: false,
+        items: [
+          { text: 'CLI Reference', link: '/reference/cli' },
+          { text: 'Configuration', link: '/reference/configuration' },
+          { text: 'Routing Precedence', link: '/reference/routing-precedence' },
+          { text: 'Happ Format', link: '/reference/happ-format' },
+          { text: 'IPC & Wire Protocol', link: '/reference/protocol' },
+          { text: 'Doctor Diagnostics', link: '/reference/doctor' },
+          { text: 'Troubleshooting & FAQ', link: '/reference/troubleshooting' },
+          { text: 'Glossary', link: '/reference/glossary' }
         ]
       },
       {
@@ -90,63 +140,10 @@ export default withMermaid(defineConfig({
         items: [
           { text: 'System Overview', link: '/architecture/overview' },
           { text: 'Go Core Daemon', link: '/architecture/go-core' },
-          { text: 'IPC Transport', link: '/architecture/ipc-flow' },
-          { text: 'Security & Encryption', link: '/architecture/security' }
-        ]
-      },
-      {
-        text: 'TUI & Usage',
-        collapsed: false,
-        items: [
-          { text: 'Navigation & Hotkeys', link: '/usage/navigation' },
-          { text: 'Profiles & Groups', link: '/usage/profiles' },
-          { text: 'Traffic Monitoring', link: '/usage/traffic' },
-          { text: 'Log Tailer', link: '/usage/logs' },
-          { text: 'Themes & Visuals', link: '/usage/themes' },
-          { text: 'Settings Reference', link: '/usage/settings' },
-          { text: 'Recipes & Common Setups', link: '/usage/recipes' }
-        ]
-      },
-      {
-        text: 'Networking & VPN',
-        collapsed: false,
-        items: [
-          { text: 'TUN Mode & Capabilities', link: '/networking/tun-mode' },
-          { text: 'DNS & FakeDNS', link: '/networking/dns' },
-          { text: 'Split Tunneling (cgroup v2)', link: '/networking/split-tunnel' },
-          { text: 'Kill-Switch Firewall', link: '/networking/killswitch' },
-          { text: 'Routing Rules & Presets', link: '/networking/routing-rules' },
-          { text: 'Happ Routing Profiles', link: '/networking/happ-routing' },
-          { text: 'JSON Subscriptions', link: '/networking/json-subscriptions' },
-          { text: 'Supported Protocols', link: '/networking/protocols' }
-        ]
-      },
-      {
-        text: 'Integrations & Ecosystem',
-        collapsed: false,
-        items: [
-          { text: 'Desktop Widgets (Waybar/Polybar)', link: '/integrations/desktop-widgets' },
-          { text: 'GNOME Shell Extension', link: '/integrations/gnome-extension' },
-          { text: 'Deep Links (wit://)', link: '/integrations/deeplinks' },
-          { text: 'Systemd User Service', link: '/integrations/systemd' },
-          { text: 'HWID & Device Fingerprint', link: '/integrations/hwid' }
-        ]
-      },
-      {
-        text: 'Technical Reference',
-        collapsed: false,
-        items: [
-          { text: 'CLI Subcommands & Flags', link: '/reference/cli' },
-          { text: 'TCP & IPC Wire Protocol', link: '/reference/protocol' },
-          { text: 'Configuration Files', link: '/reference/configuration' },
-          { text: 'Routing Precedence', link: '/reference/routing-precedence' },
-          { text: 'Happ Format Reference', link: '/reference/happ-format' },
-          { text: 'Doctor Diagnostics', link: '/reference/doctor' },
-          { text: 'Troubleshooting & FAQ', link: '/reference/troubleshooting' },
-          { text: 'Threat Model & Limitations', link: '/reference/threat-model' },
-          { text: 'Reporting a Bug', link: '/reference/reporting' },
-          { text: 'Development & Testing', link: '/reference/development' },
-          { text: 'Glossary', link: '/reference/glossary' }
+          { text: 'IPC & Event Flow', link: '/architecture/ipc-flow' },
+          { text: 'Kernel Networking', link: '/architecture/networking' },
+          { text: 'Routing Engine', link: '/architecture/routing-engine' },
+          { text: 'Security & Threat Model', link: '/architecture/security' }
         ]
       },
       {
@@ -154,7 +151,12 @@ export default withMermaid(defineConfig({
         collapsed: false,
         items: [
           { text: 'For Developers', link: '/developers/' },
-          { text: 'Documentation Guide', link: '/developers/documentation' }
+          { text: 'Documentation Guide', link: '/developers/documentation' },
+          { text: 'Build & Run', link: '/developers/build' },
+          { text: 'Repository Map', link: '/developers/repository' },
+          { text: 'Testing', link: '/developers/testing' },
+          { text: 'Debugging', link: '/developers/debugging' },
+          { text: 'Releasing', link: '/developers/releasing' }
         ]
       }
     ],
