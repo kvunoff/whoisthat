@@ -11,7 +11,7 @@ WhoisThat stores user preferences, daemon network rules, and encrypted credentia
 
 ---
 
-## 1. TUI Configuration (`config.toml`)
+## TUI configuration (`config.toml`)
 
 **Location**: `~/.config/whoisthat/config.toml`
 
@@ -98,7 +98,7 @@ use_tcp = false
 
 ---
 
-## 2. Core Daemon Configuration (`config.json`)
+## Core daemon configuration (`config.json`)
 
 **Location**: `~/.config/whoisthat/config.json`
 
@@ -193,7 +193,26 @@ whoisthat settings set terminal=
 
 ---
 
-## 3. Data & Cache Storage Directories
+## Xray runtime
+
+WhoisThat uses a pinned **Xray-core v26.10.31**. The core looks for the runtime
+in `~/.local/share/whoisthat/runtimes/xray/v26.10.31/`. If it is missing, it
+downloads the official release archive from GitHub, falls back to the
+`ghfast.top` mirror for the archive, and fetches the official `.dgst` file
+**only from GitHub**. The SHA-256 is verified before the archive is unpacked; a
+missing or mismatched checksum aborts the install.
+
+If `/usr/local/bin/xray` or `/usr/bin/xray` exists and exactly matches the
+pinned version, the core adopts the system binary. Hysteria2 support is compiled
+into the pinned Xray build, so no separate `hysteria` binary is required.
+
+If the runtime is missing and cannot be downloaded (for example offline), the
+core emits a high-priority `warn` event with an installation hint; connect-time
+errors forward the underlying error to the client.
+
+---
+
+## Data and cache storage directories
 
 | Directory Path | Content & Purpose | Permissions |
 | :--- | :--- | :---: |

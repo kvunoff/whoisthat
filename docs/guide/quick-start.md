@@ -7,120 +7,112 @@ type: "tutorial"
 
 # Quick Start
 
-Get up and running with WhoisThat in less than two minutes.
+This gets you from a fresh install to a working connection.
 
----
+## Before you start
 
-## 1. Launching the Interface
+- Install WhoisThat first: [Installation](/guide/installation).
+- Run `whoisthat doctor` once. It checks the binaries, capabilities, IPC socket
+  and storage.
+- TUN mode needs the core capabilities; proxy mode does not. If TUN is not
+  available, the TUI reports the missing capability and points to `setcap`.
 
-Run the `whoisthat` binary from your terminal:
+## Launch
 
 ```bash
 whoisthat
 ```
 
-When started, WhoisThat checks whether the background daemon (`whoisthat-core`) is already running. If it is offline, the TUI automatically spawns it in the background, connects over the Unix domain socket (protected by `0600` filesystem permissions), and renders the interface.
+The TUI attaches to a running `whoisthat-core` or starts one in the background
+and connects over the Unix socket.
 
----
+## Import a profile or subscription
 
-## 2. Adding VPN Profiles
+### Subscription
 
-There are three ways to import VPN profiles:
+1. Press <kbd>A</kbd> or <kbd>n</kbd>.
+2. Paste the subscription URL.
+3. Press <kbd>Enter</kbd>.
 
-### Method A: Subscription URL (Recommended)
+The core fetches the subscription, imports the supported profiles, fills in
+provider metadata, and tests the new servers. The group is named after
+`profile-title`, or the URL host when the provider sends none. Rename it with
+<kbd>e</kbd>.
 
-1. Press <kbd>A</kbd> or <kbd>n</kbd> in the TUI to open the **Add Group** modal.
-2. Paste your subscription URL into the **Subscription URL** field.
-3. Press <kbd>Enter</kbd> to save. The group is named after the provider's `profile-title` (or the URL host if the provider sends none); rename it later with <kbd>e</kbd>.
+### Single profile
 
-::: tip Automatic Ingestion & Testing
-The core daemon immediately fetches the subscription, parses all supported proxy URIs, populates metadata (traffic usage, plan expiry), and automatically triggers latency tests for newly added servers.
-:::
+1. Copy a supported URI (`vless://`, `vmess://`, `trojan://`, `ss://`,
+   `socks://`, `hysteria2://`, `hy2://`).
+2. Press <kbd>a</kbd>. With text in the clipboard, WhoisThat imports it
+   immediately; otherwise the import popup opens.
+3. Paste with <kbd>Ctrl+V</kbd> and press <kbd>Enter</kbd>.
 
-### Method B: Single Profile URI (Clipboard or Manual)
+### Deep link
 
-1. Copy any supported proxy URI to your system clipboard (`vless://`, `vmess://`, `trojan://`, `ss://`, `socks://`, `hysteria2://`, `hy2://`).
-2. Press <kbd>a</kbd>. If the clipboard already contains text, WhoisThat imports it immediately; otherwise the **Import Profile** popup opens.
-3. In the popup, press <kbd>Ctrl+V</kbd> or paste the URI and hit <kbd>Enter</kbd>.
+Clicking a `wit://` link (or running `whoisthat "wit://sub?url=..."`) imports
+the profile or subscription without opening the TUI first. See
+[Deep Links](/integrations/deeplinks).
 
-### Method C: One-Click Browser Deep Link
+## Test latency
 
-If you click a `wit://` link on any web page (or run `whoisthat "wit://sub?url=..."`), WhoisThat creates the group and downloads the subscription headlessly without requiring you to open the TUI first.
+| Key | Action |
+| :---: | :--- |
+| <kbd>t</kbd> | Test the focused profile or group |
+| <kbd>T</kbd> | Test all profiles |
+| <kbd>C</kbd> | Cancel queued tests |
 
----
+Pending tests show `…`; results show the median round-trip time plus jitter and
+loss in the details pane. The test method and sample count live in Settings.
 
-## 3. Testing Latency & Server Speed
+## Connect
 
-WhoisThat features a multi-sample latency testing engine:
+1. Move with <kbd>j</kbd>/<kbd>k</kbd> or the arrow keys.
+2. Press <kbd>c</kbd> or <kbd>Enter</kbd>.
+3. The header changes to `● Connected`.
 
-| Key | Action | Details |
-| :---: | :--- | :--- |
-| <kbd>t</kbd> | **Test Focused** | Tests only the highlighted profile, or all profiles within the highlighted group. |
-| <kbd>T</kbd> | **Test All** | Queues every profile across all groups, deduplicated by group/profile ID. |
-| <kbd>C</kbd> | **Cancel Tests** | Drops queued tests; a sample already in flight finishes or times out. |
+## Choose a mode
 
-Pending tests display `…`. Finished profiles show median round-trip time in milliseconds (e.g. `42ms`), along with jitter and packet loss percentages in the details panel.
+**Proxy mode** is the default. Applications use the local SOCKS5/HTTP proxy:
 
----
+- SOCKS5: `127.0.0.1:3090`
+- HTTP: `127.0.0.1:3091`
 
-## 4. Connecting to a Server
+**TUN mode** routes the whole system through `whoisthattun`. Press <kbd>v</kbd>
+or click `TUN` in the footer. TUN captures DNS and routes it through the
+resolvers described in [DNS & FakeDNS](/networking/dns); it is not a promise of
+zero leaks for applications that use their own resolver or DoH.
 
-1. Use <kbd>j</kbd> / <kbd>k</kbd> or the arrow keys <kbd>↓</kbd> / <kbd>↑</kbd> to move the selection bar.
-2. Press <kbd>Tab</kbd> if you want to switch focus between the Profile Tree and the Details pane (e.g. to scroll server details or copy parameters).
-3. Press <kbd>c</kbd> or <kbd>Enter</kbd> to connect to the highlighted profile.
-4. The status indicator in the top header will transition to `● Connected`.
+See [TUN Mode & Capabilities](/networking/tun-mode) for requirements and limits.
 
----
+## Detach or quit
 
-## 5. Choosing Your Connection Mode
+- <kbd>q</kbd> detaches: the TUI exits and the VPN keeps running. Reopen with
+  `whoisthat`.
+- <kbd>Q</kbd> or <kbd>Ctrl+C</kbd> exits the client and shuts down the current
+  core session. Autostart controls what happens on the next login or boot.
 
-WhoisThat offers two distinct operating modes:
+## CLI quick toggles
 
-### Proxy Mode (Default)
-Traffic is made available on local proxy ports:
-* **SOCKS5**: `127.0.0.1:3090`
-* **HTTP**: `127.0.0.1:3091`
-
-Configure your browser or application proxy settings to use these ports.
-
-### TUN Mode (System-Wide VPN)
-Press <kbd>v</kbd> on your keyboard (or click `TUN` in the bottom status bar) to toggle TUN mode.
-
-* Creates a virtual network adapter (`whoisthattun`).
-* Intercepts and tunnels all TCP and UDP traffic from all system applications.
-* Performs DNS hijacking to ensure zero DNS leaks.
-
----
-
-## 6. Detach vs Quit
-
-* **Detach (<kbd>q</kbd>)**: Exits the TUI interface, but **leaves the VPN running in the background**. You can reopen the interface at any time with `whoisthat` to reattach to the running session.
-* **Full Quit (<kbd>Q</kbd> or <kbd>Ctrl+C</kbd>)**: Shuts down the VPN tunnel, restores system routing rules, and terminates the daemon.
-
----
-
-## 7. Headless CLI Quick Toggles
-
-You don't need to open the TUI just to toggle your VPN:
+The noun/verb form is the stable interface:
 
 ```bash
-# Toggle connection (reconnects to last profile or disconnects)
-whoisthat -t
-
-# Toggle between TUN mode and Proxy mode
-whoisthat -mt
-
-# View one-line status
-whoisthat status -s
-# Example output: [Connected] [TUN] ↓ 2.4 MB/s ↑ 410.0 KB/s
-
-# Same commands in the noun/verb form
+whoisthat status
 whoisthat toggle
-whoisthat mode toggle
 whoisthat mode status
-
-# Manage subscriptions and profiles without the TUI
+whoisthat mode toggle
 whoisthat sub list
 whoisthat sub refresh --all
 whoisthat profile list
 ```
+
+The legacy flags `-t` (toggle connection), `-mt` (toggle mode) and
+`whoisthat status -s` (one-line status) still work. See the
+[CLI Reference](/reference/cli).
+
+## See also
+
+- [Installation](/guide/installation)
+- [Profiles & Subscriptions](/usage/profiles)
+- [TUN Mode & Capabilities](/networking/tun-mode)
+- [Configuration](/reference/configuration)
+- [Troubleshooting & FAQ](/reference/troubleshooting)
