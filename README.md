@@ -166,7 +166,7 @@ whoisthat route list --group Work
 whoisthat test group Work --wait
 ```
 
-See the [CLI reference](https://docs.tuqise.com/integrations/cli) for the full command tree.
+See the [CLI reference](https://docs.tuqise.com/reference/cli) for the full command tree.
 
 ---
 

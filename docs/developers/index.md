@@ -55,5 +55,5 @@ bug.
 
 - [Documentation Guide](/developers/documentation)
 - [Development & Testing Guide](/reference/development)
-- [IPC Transport & Framing](/architecture/ipc-transport)
-- [Go Core Daemon](/architecture/core-engine)
+- [IPC Transport & Framing](/architecture/ipc-flow)
+- [Go Core Daemon](/architecture/go-core)

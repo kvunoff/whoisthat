@@ -57,7 +57,7 @@ export default withMermaid(defineConfig({
       { text: 'Guide', link: '/guide/quick-start' },
       { text: 'Architecture', link: '/architecture/overview' },
       { text: 'Networking', link: '/networking/tun-mode' },
-      { text: 'Integrations', link: '/integrations/cli' },
+      { text: 'Integrations', link: '/integrations/desktop-widgets' },
       { text: 'API & Wire Protocol', link: '/reference/protocol' },
       { text: 'Developers', link: '/developers/' },
       {
@@ -80,7 +80,6 @@ export default withMermaid(defineConfig({
           { text: 'Installation', link: '/guide/installation' },
           { text: 'Non-systemd systems', link: '/guide/non-systemd' },
           { text: 'Quick Start', link: '/guide/quick-start' },
-          { text: 'Recipes & Common Setups', link: '/guide/recipes' },
           { text: 'Upgrading & Uninstalling', link: '/guide/upgrading' },
           { text: 'Repair & Recovery', link: '/guide/recovery' }
         ]
@@ -90,8 +89,8 @@ export default withMermaid(defineConfig({
         collapsed: false,
         items: [
           { text: 'System Overview', link: '/architecture/overview' },
-          { text: 'Go Core Daemon', link: '/architecture/core-engine' },
-          { text: 'IPC Transport', link: '/architecture/ipc-transport' },
+          { text: 'Go Core Daemon', link: '/architecture/go-core' },
+          { text: 'IPC Transport', link: '/architecture/ipc-flow' },
           { text: 'Security & Encryption', link: '/architecture/security' }
         ]
       },
@@ -100,11 +99,12 @@ export default withMermaid(defineConfig({
         collapsed: false,
         items: [
           { text: 'Navigation & Hotkeys', link: '/usage/navigation' },
-          { text: 'Profiles & Groups', link: '/usage/profiles-groups' },
-          { text: 'Traffic Monitoring', link: '/usage/traffic-monitoring' },
+          { text: 'Profiles & Groups', link: '/usage/profiles' },
+          { text: 'Traffic Monitoring', link: '/usage/traffic' },
           { text: 'Log Tailer', link: '/usage/logs' },
           { text: 'Themes & Visuals', link: '/usage/themes' },
-          { text: 'Settings Reference', link: '/usage/settings' }
+          { text: 'Settings Reference', link: '/usage/settings' },
+          { text: 'Recipes & Common Setups', link: '/usage/recipes' }
         ]
       },
       {
@@ -125,7 +125,6 @@ export default withMermaid(defineConfig({
         text: 'Integrations & Ecosystem',
         collapsed: false,
         items: [
-          { text: 'CLI Subcommands & Flags', link: '/integrations/cli' },
           { text: 'Desktop Widgets (Waybar/Polybar)', link: '/integrations/desktop-widgets' },
           { text: 'GNOME Shell Extension', link: '/integrations/gnome-extension' },
           { text: 'Deep Links (wit://)', link: '/integrations/deeplinks' },
@@ -137,6 +136,7 @@ export default withMermaid(defineConfig({
         text: 'Technical Reference',
         collapsed: false,
         items: [
+          { text: 'CLI Subcommands & Flags', link: '/reference/cli' },
           { text: 'TCP & IPC Wire Protocol', link: '/reference/protocol' },
           { text: 'Configuration Files', link: '/reference/configuration' },
           { text: 'Routing Precedence', link: '/reference/routing-precedence' },

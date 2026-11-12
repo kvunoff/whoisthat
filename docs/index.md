@@ -122,14 +122,14 @@ Get started exploring the documentation:
 
 * **[Installation Guide](/guide/installation)** — Install via the curl script, the Ubuntu PPA, `.deb`/`.rpm` packages, AUR (`whoisthat-bin` or source `whoisthat`), or build from source.
 * **[Quick Start Tutorial](/guide/quick-start)** — First launch, importing subscriptions, latency testing, and connecting.
-* **[Recipes & Common Setups](/guide/recipes)** — Headless server, proxy-only desktop, per-app bypass, Docker and multi-subscription routing.
+* **[Recipes & Common Setups](/usage/recipes)** — Headless server, proxy-only desktop, per-app bypass, Docker and multi-subscription routing.
 * **[Upgrading & Recovery](/guide/upgrading)** — Update, roll back or uninstall; restore settings and profiles after a failure.
 * **[Architecture Deep-Dive](/architecture/overview)** — Explore the Go daemon, IPC wire framing, and encryption layer.
 * **[TUN Mode & Networking](/networking/tun-mode)** — Learn how rootless TUN, DNS hijacking, and Docker reply conntrack work.
 * **[DNS & FakeDNS](/networking/dns)** — Legacy vs Happ resolvers, sink addresses, split-mode behaviour and leak limits.
 * **[Routing Precedence](/reference/routing-precedence)** — The canonical first-match order for manual, Happ and JSON routing.
 * **[Split Tunneling](/networking/split-tunnel)** — Complete manual on running apps inside cgroup v2 transient slices.
-* **[CLI & Desktop Widgets](/integrations/cli)** — Command-line flags, Waybar, Polybar, and the GNOME Shell extension.
+* **[CLI Reference](/reference/cli)** — Command-line flags, selectors, output, and exit codes.
 * **[Wire Protocol Reference](/reference/protocol)** — Complete specification of IPC commands and streaming notifications.
 
 ---
