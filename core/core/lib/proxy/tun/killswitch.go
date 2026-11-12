@@ -74,17 +74,6 @@ var validTunNameRe = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]*$`)
 // configured TUN interface (empty when TUN is unused), dnsServers the resolver
 // list from the app config.
 func SetupKillSwitchBlock(proxyIPs []string, tunName string, dnsServers []string) error {
-	direct := currentDirectExceptions()
-	d4, d6 := splitNetsValid(direct)
-	logger.Infof("kill-switch: direct-rule targets %v", direct)
-	// Visible at arm time: a missing exception shows up as a low count.
-	logger.Infof("kill-switch: %d direct-rule accept exceptions (v4 %d, v6 %d)", len(d4)+len(d6), len(d4), len(d6))
-	// Tripwire: an empty target list usually means the extractor saw no rules
-	// (or none resolved) rather than that none exist, and the arm then drops the
-	// excluded hosts. Warn instead of quietly arming with nothing.
-	if len(direct) == 0 {
-		logger.Warn("kill-switch: no direct-rule targets resolved; arming with no exceptions")
-	}
 	// K-2: refuse to arm over a DoT-only resolver we cannot neutralise.
 	if err := neutraliseDoT(tunName); err != nil {
 		return err
@@ -113,6 +102,9 @@ func RemoveKillSwitchBlock() error {
 	}
 	if armed {
 		return fmt.Errorf("kill-switch rules are still installed (nft: %v, iptables: %v)", nftErr, iptErr)
+	}
+	if err := restoreDoT(); err != nil {
+		logger.Warnf("kill-switch: %v", err)
 	}
 	return nil
 }

@@ -76,6 +76,10 @@ func (t *TunModeManager) Start(proxy_ipv4s []string, proxy_ipv6s []string, dns D
 		return fmt.Errorf("there was an error creating tun interface %w", err)
 	}
 	logger.Infof("tun: interface %s created (%s, %s)", t.tun_name, t.tun_ip, t.tun_ipv6)
+	if err := ReconcileDoT(); err != nil {
+		t.clearNetworkRules()
+		return fmt.Errorf("kill-switch DNS-over-TLS: %w", err)
+	}
 
 	err = setupProxyIpRoutes(t.proxy_ipv4s, t.proxy_ipv6s, t.default_interface_ip, t.default_interface_ipv6)
 	if err != nil {
