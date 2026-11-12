@@ -14,7 +14,7 @@ cd "$ROOT"
 DOCS="${DOCS_DIR:-$ROOT/docs}"
 PROTOCOL="$DOCS/reference/protocol.md"
 CONFIGURATION="$DOCS/reference/configuration.md"
-CLI_DOC="$DOCS/integrations/cli.md"
+CLI_DOC="$DOCS/reference/cli.md"
 DOCTOR_DOC="$DOCS/reference/doctor.md"
 TCPSERVER="$ROOT/core/core/lib/TCPServer/dispatch.go"
 APPCONFIG="$ROOT/core/core/lib/AppConfig/config.go"
@@ -330,6 +330,32 @@ while IFS= read -r rel; do
     [ -f "$DOCS/$rel" ] ||
         missing "docs/.vitepress/config.mts: link target not found: $rel"
 done <<<"$mapped_links"
+
+# ---------------------------------------------------------------------------
+# 10. Redirect stubs point at real pages and do not shadow generated pages
+# ---------------------------------------------------------------------------
+echo "docs: checking redirect stubs..."
+while IFS= read -r stub; do
+    [ -n "$stub" ] || continue
+    target_url="$(grep -oE 'url=[^"]+' "$stub" | head -n 1 | sed 's/^url=//' || true)"
+    if [ -z "$target_url" ]; then
+        missing "$stub: redirect stub has no meta refresh url"
+        continue
+    fi
+
+    if target="$(internal_path_to_file "$target_url")"; then
+        [ -f "$DOCS/$target" ] ||
+            missing "$stub: redirect target not found: $target_url"
+    else
+        missing "$stub: redirect target must be an internal path: $target_url"
+    fi
+
+    rel="${stub#"$DOCS"/public/}"
+    rel="${rel%.html}.md"
+    if [ -f "$DOCS/$rel" ]; then
+        missing "$stub: stub collides with generated page $rel"
+    fi
+done < <(find "$DOCS/public" -name '*.html' 2>/dev/null | sort)
 
 if [ "$fail" -ne 0 ]; then
     echo "docs: inconsistencies found"
