@@ -90,14 +90,15 @@ This guarantees that:
 
 ---
 
-## Functional Capability Verification
+## Verifying capabilities
 
-Rather than merely checking if the user is `root` or inspecting file flags, the daemon performs a **functional capability probe** before enabling TUN:
-1. Creates a transient test adapter named `wt-capcheck`.
-2. Verifies `ioctl(TUNSETIFF)` succeeds.
-3. Immediately tears down the test adapter.
-
-If capabilities are missing (e.g. after a fresh compile), the TUI reports it and points to the `setcap` command; a `pkexec` prompt is offered only when the daemon is spawned from an interactive terminal while TUN autostart is configured, never on the TUN toggle itself.
+`whoisthat doctor` reports the file capabilities. Before enabling TUN, the core
+also probes them by creating and immediately destroying a transient `wt-capcheck`
+adapter. If capabilities are missing (for example after a fresh compile), the TUI
+points to the `setcap` command. A `pkexec` prompt is offered only when the daemon
+is spawned from an interactive terminal while TUN autostart is configured, never
+on the TUN toggle itself. The kernel-side details are in
+[Kernel Networking](/architecture/networking#capabilities-and-verification).
 
 ## See also
 
