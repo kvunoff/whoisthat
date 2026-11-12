@@ -7,51 +7,12 @@ type: "how-to"
 
 # Happ Routing Profiles
 
-WhoisThat provides native support for **Happ routing profiles** (`happ://routing/...`). Many VPN subscription providers, anti-censorship operators and server panels bundle complex routing configurations — thousands of verified domains, CIDRs, regional rules and custom GeoIP/GeoSite databases — directly inside subscription responses or standalone links.
-
-This page covers how profiles enter the client, how they are scoped to a group, and how to manage them in the TUI. The wire format (URI actions, Base64 decoding, JSON fields, Geo sandbox, IPC payloads) is in [Happ Format Reference](/reference/happ-format).
-
----
-
-## Architecture Overview
-
-The Happ routing engine is an autonomous pipeline inside `whoisthat-core`, integrated with the encrypted database, the Xray process supervisor and the Rust TUI:
-
-```mermaid
-flowchart TD
-    subgraph Ingestion["1. Ingestion Vectors"]
-        A1["Subscription HTTP Header\n(routing: happ://routing/...)"] --> B["happ.ExtractLinks\n(Headers & Body)"]
-        A2["Subscription Body\n(Plaintext / Base64)"] --> B
-        A3["TUI Clipboard Import\n(Press 'i' in Routing tab)"] --> C["IPC: import-happ-routing"]
-        A4["CLI / Browser Deep Link\n(whoisthat link handle / wit://)"] --> C
-        A5["QR Code Scanning\n(Mobile / Desktop Readers)"] --> C
-    end
-
-    B --> C
-    C --> D["happ.ParseLink\n(Tolerant Base64 & JSON Parser)"]
-
-    subgraph Core["2. Storage & Sandboxing"]
-        D --> E["db.UpsertFromLink\n(AES-256-GCM Encrypted Storage)"]
-        E -->|Geo URLs Present| F["happ.EnsureProfileGeo (Async Worker)\n• HTTPS Only • Size Cap (100MB)\n• 3-min Timeout • HTML/JSON Detection"]
-        F --> G["Atomic Commit & Version Prune\n(~/.local/share/whoisthat/db/.../geo/)"]
-    end
-
-    subgraph Resolution["3. Resolution & Compilation"]
-        H["Group Routing Mode\n(auto | manual | subscription)"] --> I["db.ResolveRouting(groupID)"]
-        G -.->|Profile Ready| I
-        E -.->|Rules Available| I
-        I --> J["happ.ToRoutingConfig\n• LAN RFC1918 Bypass First\n• Block -> Direct -> Proxy\n• GlobalProxy Fallback"]
-    end
-
-    subgraph Runtime["4. Live Hot-Reload"]
-        J --> K["mainproxy.ReloadRouting"]
-        K --> L["Pre-flight: xray run -test\n(with XRAY_LOCATION_ASSET)"]
-        L -->|Pass| M["Zero-Downtime Swap\n(Preserves TUN & Connection State)"]
-        L -->|Fail| N["Preserve Active Connection\n(Log error & keep running core)"]
-    end
-```
-
----
+WhoisThat supports provider **Happ routing profiles**: a provider-owned set of
+routing rules delivered as a `happ://routing/...` link. The profile is stored
+per group and compiled into Xray rules; manual rules keep priority. The
+compilation, lifecycle and geo sandbox are described in
+[Routing Engine](/architecture/routing-engine) and
+[Happ Format Reference](/reference/happ-format).
 
 ## How Happ Routing Enters the Client
 
@@ -144,49 +105,6 @@ whoisthat link handle "happ://routing/add/<BASE64>" --group "Premium"
 
 ---
 
-## Subscription Lifecycle
-
-### 1. Isolated Per-Subscription Scope
-Every group keeps its own Happ profiles, active profile, routing mode and cached Geo assets. Manual rules are different: they live in a **Global** set, and each group either inherits it or keeps a custom override. Changing one group does not affect another.
-
-### 2. Cascading Deletion
-Deleting a group purges its Happ profiles and the cached Geo sandbox (`~/.local/share/whoisthat/db/groups/<GID>/routing/geo/`), so no orphaned `.dat` files remain.
-
-### 3. Name-Based Deduplication & Versioning
-- A profile with the same name in the same group is updated in place.
-- **`LastUpdated` gate**: an incoming profile older than the stored one is ignored, preventing rollback from cached CDN responses.
-
-### 4. Continuity During Updates
-When an update arrives, the profile moves to `updating`, new Geo assets download in the background, and the running core keeps serving the old rules. Once assets verify, the profile becomes `ready`; the running connection keeps the previous rules until the profile is activated (or the connection reloads). There is no automatic hot-swap at download completion.
-
-### 5. 7-Day Cooldown
-Custom Geo files are gated by a 7-day cooldown (`WeeklyUpdateGate = 604800`), even if the subscription refreshes hourly. This protects provider CDNs.
-
-### 6. Independence from Upstream Clients
-WhoisThat supports Happ as an open format but uses its own runtime:
-
-- **In-place reload** (`ReloadRouting`): the Xray process is restarted after a 30 ms pause; the TUN device and routing stay up.
-- **Native Linux stack**: rootless TUN via file capabilities, policy routing, nftables marks and cgroup v2 slices.
-- **Decoupled control**: for [JSON subscriptions](/networking/json-subscriptions) the provider routing is read-only, but manual rules stay editable and take priority; mode/profile selectors are disabled for those groups.
-
----
-
-## Rule Compilation & Order of Precedence
-
-WhoisThat's compiler translates a `HappProfile` into a fixed order: LAN → block → direct → proxy, with the `GlobalProxy` catch-all last. The core prepends its structural API and DNS rules and appends manual rules where applicable, so the first matching rule always wins.
-
-The exact order — including manual rules, JSON subscriptions and the `subscription` LAN-only fallback — is in [Routing Precedence](/reference/routing-precedence).
-
----
-
-## DNS and FakeDNS
-
-When the active Happ profile supplies DNS fields, the core **replaces** Xray's DNS section: `remote-dns` is reached through the proxy, `domestic-dns` directly, and `DnsHosts` plus the resolved VPN server addresses bootstrap the lookup. FakeDNS is applied only in TUN mode with `GlobalProxy=true` and split mode `off`/`exclude`.
-
-The resolver selection table, bootstrap order, fake pools and their limitations are documented in [DNS & FakeDNS](/networking/dns).
-
----
-
 ## Per-Group Routing Modes
 
 Happ profiles, Geo assets and the routing mode are configured **independently for each group**. Pressing <kbd>m</kbd> on the Routing tab cycles `auto → manual → subscription`.
@@ -256,3 +174,10 @@ In the TUI on Tab 2 (*Routing*), pressing <kbd>H</kbd> opens the **Happ Routing 
 * [Happ Developer Documentation: Routing](https://www.happ.su/main/dev-docs/routing) — Upstream protocol reference and schema documentation.
 * [Happ Web Rule Builder](https://routing.happ.su/) — Visual editor for crafting and exporting Happ routing profiles.
 * [Xray-core Routing Configuration](https://xtls.github.io/config/routing.html) — Reference for underlying routing tags and domain matching mechanics.
+
+## See also
+
+- [Routing](/usage/routing)
+- [Routing Precedence](/reference/routing-precedence)
+- [Routing Engine](/architecture/routing-engine)
+- [Happ Format Reference](/reference/happ-format)

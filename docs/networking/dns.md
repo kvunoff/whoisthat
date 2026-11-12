@@ -11,7 +11,7 @@ WhoisThat intercepts DNS in TUN mode so queries cannot leave through the physica
 
 ---
 
-## 1. Modes at a Glance
+## Modes at a glance
 
 | Mode | When it is used | Resolver |
 | :--- | :--- | :--- |
@@ -19,11 +19,34 @@ WhoisThat intercepts DNS in TUN mode so queries cannot leave through the physica
 | **Happ DNS** | The active Happ profile has `RemoteDNS*` / `DomesticDNS*` | Xray's tagged `remote-dns` (through the proxy) and `domestic-dns` (direct) |
 | **FakeDNS** | Happ DNS plus TUN, `GlobalProxy=true`, split mode `off`/`exclude` | Fake pool first, then the real Happ resolvers |
 
-The hijack rules are installed only while TUN is active. Proxy mode has no kernel-level DNS interception; applications must use the SOCKS5/HTTP inbound.
+The hijack rules are installed only while TUN is active. Proxy mode has no
+kernel-level DNS interception; applications must use the SOCKS5/HTTP inbound.
+
+## Choosing a resolver
+
+- With manual routing or a profile without DNS fields, set `dns-servers` in
+  `config.json` (or through `whoisthat settings`) to resolvers you trust. They
+  are reached through the physical gateway.
+- With a Happ profile, use the provider's `RemoteDNS`/`DomesticDNS` values. Do
+  not override them unless you know which queries should go direct and which
+  should go through the proxy.
+- After changing DNS while TUN is active, the core reconciles the hijack, the
+  cgroup rules and `resolvectl` without reconnecting.
+
+## Limits
+
+- Only destination port 53 is hijacked. DoH/DoT to another port, or an
+  application with its own resolver, is not intercepted.
+- In `include` split mode the Happ hijack and FakeDNS are disabled by design;
+  only the launched apps use the tunnel.
+- FakeDNS does not map ICMP; a successful `ping <fake-ip>` does not prove
+  reachability.
+- QUIC/HTTP-3 is not in the FakeDNS `destOverride` list, so it may be routed by
+  IP instead of domain.
 
 ---
 
-## 2. Legacy Resolver Hijack
+## Legacy resolver hijack
 
 With the legacy path:
 
@@ -37,7 +60,7 @@ The legacy hijack is independent of the split-tunnel mode: when the legacy path 
 
 ---
 
-## 3. Happ DNS
+## Happ DNS
 
 A Happ profile can replace Xray's DNS section entirely. WhoisThat routes queries through two tagged resolvers:
 
@@ -76,7 +99,7 @@ The last entry is required in TUN mode: when Xray reconnects, the system resolve
 
 ---
 
-## 4. FakeDNS
+## FakeDNS
 
 FakeDNS is enabled only when **all** of these are true:
 
@@ -103,7 +126,7 @@ Limitations:
 
 ---
 
-## 5. Split Tunneling and the Kill-Switch
+## Split tunneling and the kill-switch
 
 | Split mode | Happ hijack | FakeDNS | Resolution of split apps |
 | :--- | :---: | :---: | :--- |
@@ -117,7 +140,7 @@ With the kill-switch armed, its nftables table must allow the configured resolve
 
 ---
 
-## 6. Diagnostics
+## Diagnostics
 
 ```bash
 whoisthat doctor                 # DNS sink, fake pools, hijack mode, safety returns

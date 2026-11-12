@@ -1,75 +1,108 @@
 ---
 title: "Supported Protocols & Transports"
-description: "Supported proxy protocols and transports in the pinned Xray-core runtime."
+description: "Supported proxy protocols, transports, and how to choose between them."
 audience: "user"
 type: "explanation"
 ---
 
 # Supported Protocols & Transports
 
-WhoisThat uses a unified proxy architecture powered by **Xray-core v26.10.31**. All protocols—including advanced QUIC and Reality handshakes—are parsed directly into Xray configurations, benefiting equally from native TUN routing, live gRPC traffic metrics, and DNS protection.
+WhoisThat parses share links into Xray configurations and runs them on the pinned
+**Xray-core v26.10.31**. Every protocol benefits from the same TUN, routing, DNS
+and traffic-monitoring path.
 
----
+## Protocol matrix
 
-## Protocol Matrix
-
-| Protocol | URI Scheme | Transports & Features |
+| Protocol | URI scheme | Common transports and features |
 | :--- | :--- | :--- |
-| **VLESS** | `vless://` | Reality, Vision flow, xHTTP (SplitHTTP), gRPC, WebSocket, HTTPUpgrade, QUIC, mKCP, TCP/TLS |
+| **VLESS** | `vless://` | Reality, Vision, xHTTP (SplitHTTP), gRPC, WebSocket, HTTPUpgrade, QUIC, mKCP, TCP/TLS |
 | **VMess** | `vmess://` | TCP, WebSocket, gRPC, HTTPUpgrade, QUIC, mKCP, TLS, AEAD |
-| **Trojan** | `trojan://` | Native TLS, Reality, WebSocket, gRPC, HTTPUpgrade, QUIC, mKCP |
-| **Shadowsocks**| `ss://` | AEAD (AES-256-GCM, ChaCha20-Poly1305), Shadowsocks 2022 |
-| **SOCKS** | `socks://`, `socks5://`, `socks4://` | SOCKS5 with optional username/password authentication; SOCKS4 accepted as a legacy alias |
-| **Hysteria2** | `hysteria2://`, `hy2://` | Native QUIC, TLS, Salamander obfuscation, UDP Port Hopping |
+| **Trojan** | `trojan://` | TLS, Reality, WebSocket, gRPC, HTTPUpgrade, QUIC, mKCP |
+| **Shadowsocks** | `ss://` | AEAD (AES-256-GCM, ChaCha20-Poly1305), Shadowsocks 2022 |
+| **SOCKS** | `socks://`, `socks5://`, `socks4://` | SOCKS5 with optional username/password; SOCKS4 is a legacy alias |
+| **Hysteria2** | `hysteria2://`, `hy2://` | Native QUIC, TLS, Salamander obfuscation, UDP port hopping |
 
----
+## Choosing a protocol
 
-## Detailed Protocol Specifications
+- **VLESS + Reality** is the usual choice for a modern server: it needs no
+  domain or certificate and resists active probing.
+- **VLESS + WebSocket/gRPC + TLS** is for CDN fronting and restrictive networks.
+- **Hysteria2** is for lossy, high-jitter, or UDP-throttled links. It needs UDP
+  to the server; networks that block QUIC will not work.
+- **Trojan** is a good fit when you already have a TLS reverse proxy.
+- **Shadowsocks** is lightweight and widely supported; 2022 ciphers are
+  preferred over legacy AEAD.
+- **SOCKS5** is a direct proxy hop, not an encrypted tunnel. Use it only when
+  the server and path are trusted.
 
-### 1. VLESS (XTLS / Reality / Vision)
+## VLESS
 
-VLESS is the modern standard for lightweight, unencrypted-payload proxying wrapped inside legitimate TLS handshakes:
+VLESS carries an unencrypted payload inside a TLS-like handshake:
 
-* **Reality**: Emulates real web server TLS certificates (e.g. `gateway.icloud.com` or `microsoft.com`) using public-key authentication (`pbk=...`) and Short ID (`sid=...`), preventing active DPI probing.
-* **xHTTP (SplitHTTP)**: Chunked HTTP upload and download streams that mimic standard web traffic through strict CDN reverse proxies.
-* **Vision Flow (`xtls-rprx-vision`)**: Pattern-masks packet lengths and timing characteristics to resist machine-learning traffic analysis.
+- **Reality** emulates a real TLS server with a public key (`pbk`) and short ID
+  (`sid`), so active probes see a legitimate site.
+- **Vision** (`xtls-rprx-vision`) masks packet lengths and timing.
+- **xHTTP (SplitHTTP)** splits upload/download into HTTP streams for CDN
+  reverse proxies.
 
-**Example URI:**
-```
-vless://uuid-1234@server.com:443?encryption=none&security=reality&sni=example.com&fp=chrome&pbk=AbCdEf1234&sid=123456&type=tcp&flow=xtls-rprx-vision#MyVLESS
-```
-
----
-
-### 2. Hysteria2 (`hysteria2://` / `hy2://`)
-
-Hysteria2 is a customized UDP protocol based on QUIC, designed specifically for lossy, high-jitter, or throttled network connections.
-
-* **Salamander Obfuscation**: Scrambles QUIC packets with a shared password (`obfs=salamander&obfs-password=...`), rendering UDP traffic indistinguishable from random noise.
-* **UDP Port Hopping**: Rotates client UDP destination ports across a configured port range (`mport=20000-40000`) to defeat ISP UDP rate-limiting.
-* **Native Xray Engine**: Fully compiled into Xray-core; **no standalone `hysteria` binary is needed**.
-
-**Example URI:**
-```
-hysteria2://password@server.com:443?sni=example.com&obfs=salamander&obfs-password=secret&mport=20000-40000#MyHysteria2
+```text
+vless://uuid@server:443?encryption=none&security=reality&sni=example.com&fp=chrome&pbk=...&sid=...&type=tcp&flow=xtls-rprx-vision#Name
 ```
 
----
+## VMess
 
-### 3. Trojan
+VMess is an older encrypted protocol. It remains useful for compatibility with
+existing providers. Prefer AEAD and TLS; plain VMess over TCP is detectable.
 
-Emulates legitimate HTTPS web traffic by authenticating via a password hash sent directly inside the TLS handshake:
+## Trojan
 
-* Supports modern TLS 1.3, ALPN negotiation (`h2`, `http/1.1`), and WebSocket/gRPC multiplexing.
+Trojan authenticates with a password inside a TLS handshake and looks like
+normal HTTPS. It supports TLS 1.3, ALPN, WebSocket and gRPC.
 
-**Example URI:**
+```text
+trojan://password@server:443?security=tls&sni=cdn.example.com&type=ws&path=%2Ftrojan#Name
 ```
-trojan://password123@server.com:443?security=tls&sni=mycdn.com&type=ws&path=%2Ftrojan#MyTrojan
+
+## Shadowsocks
+
+AEAD ciphers (`aes-256-gcm`, `chacha20-ietf-poly1305`) and the 2022 suite
+(`2022-blake3-aes-128-gcm`, `2022-blake3-aes-256-gcm`,
+`2022-blake3-chacha20-poly1305`) are supported. Use 2022 where the server
+supports it.
+
+## SOCKS
+
+SOCKS5 supports optional username/password authentication. SOCKS4 is accepted
+as a legacy alias. Traffic between the client and the SOCKS server is not
+encrypted by the protocol itself.
+
+## Hysteria2
+
+Hysteria2 is QUIC-based and tolerates loss better than TCP. Salamander
+obfuscation makes UDP look random, and port hopping rotates destination ports to
+avoid ISP rate limits. It is compiled into Xray; no separate `hysteria` binary is
+needed.
+
+```text
+hysteria2://password@server:443?sni=example.com&obfs=salamander&obfs-password=...&mport=20000-40000#Name
 ```
 
----
+## Not supported
 
-### 4. Shadowsocks & Shadowsocks 2022
+WireGuard and OpenVPN are not proxy protocols in this engine and are not
+imported from share links. Use a dedicated client for them. Plain HTTP proxies
+are also not a supported import format.
 
-* Supports standard AEAD ciphers (`aes-256-gcm`, `chacha20-ietf-poly1305`).
-* Full support for Shadowsocks 2022 specifications (`2022-blake3-aes-128-gcm`, `2022-blake3-aes-256-gcm`, `2022-blake3-chacha20-poly1305`).
+## Validation
+
+Import failures are reported per URI. A provider may return a valid-looking link
+whose transport or cipher is unsupported; the profile is skipped, and the
+remaining links are still imported. Run `whoisthat profile list` to see what was
+accepted.
+
+## See also
+
+- [Routing](/usage/routing)
+- [Happ Routing Profiles](/networking/happ-routing)
+- [JSON Subscriptions](/networking/json-subscriptions)
+- [Troubleshooting & FAQ](/reference/troubleshooting)

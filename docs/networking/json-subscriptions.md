@@ -76,19 +76,9 @@ The canonical order across share-link, Happ and JSON groups is in [Routing Prece
 
 Happ profiles delivered by the same subscription are used for their geo assets only; their rules are not stacked on top of the JSON routing. Importing, activating or deleting Happ profiles and changing the routing mode is disabled for JSON groups.
 
-## Runtime adaptations
+## How it works
 
-Only the structural pieces are changed:
-
-- provider socks/http inbounds are moved to the ports from `config.json`; the native TUN inbound is added when TUN is active;
-- `freedom` outbounds get `sockopt.mark = 1` so direct traffic bypasses the tunnel;
-- `stats`, the StatsService API inbound and the api rule are injected (provider `policy` levels are kept);
-- a `port 53 -> dns-out` rule is added in TUN mode, and DNS hijack uses the tunnel sink like a Happ profile (see [DNS & FakeDNS](/networking/dns));
-- when the provider brings custom geo assets, the global `geoip.dat`/`geosite.dat` are exposed alongside them as `geoip-global.dat`/`geosite-global.dat`; manual `geoip:`/`geosite:` rules are compiled to Xray's `ext-ip:`/`ext-domain:` references so both datasets resolve in one Xray process;
-- every outbound server address is resolved before TUN starts, added to `dns.hosts` and to the kill-switch allow-list — one JSON profile may contain several servers and balancers;
-- traffic counters are summed across all proxy outbounds.
-
-Latency tests run the provider config with a temporary SOCKS inbound, so balancers and per-server rules are exercised the same way as a real connection.
+The provider payload is stored as a managed profile; the daemon adapts ports, marks, stats and DNS without changing provider routing. See [Routing Engine](/architecture/routing-engine).
 
 ## See also
 
