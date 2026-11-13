@@ -23,7 +23,9 @@ documented below as manual setup; sysvinit/Devuan are out of scope.
 | Autostart | user unit + linger | init service or a `.desktop` entry |
 | Split-tunnel cgroup | `user@<uid>.service` | `/sys/fs/cgroup/whoisthat-<uid>` |
 
-The daemon runs as your user; it never runs as root.
+The daemon runs as your user by default. TUN has a privileged fallback for hosts
+where file capabilities are unavailable; it is documented in
+[TUN Mode & Capabilities](/networking/tun-mode).
 
 ## Systemd user service
 

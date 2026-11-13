@@ -11,12 +11,12 @@ Short, copy-pasteable configurations for the situations that come up most often.
 
 ---
 
-## 1. Headless Server (No GUI)
+## Headless Server (No GUI)
 
 The CLI and the daemon do not need a terminal UI. Install normally, then run the core as a systemd user service:
 
 ```bash
-whoisthat systemd enable                # writes and enables whoisthat-core.service
+whoisthat autostart enable --backend systemd  # writes and enables whoisthat-core.service
 sudo loginctl enable-linger "$USER"     # start at boot, before login
 systemctl --user start whoisthat-core
 whoisthat doctor
@@ -40,7 +40,7 @@ See [Platforms & Service Management](/guide/platforms) and [CLI](/reference/cli)
 
 ---
 
-## 2. Proxy-Only Desktop (No TUN)
+## Proxy-Only Desktop (No TUN)
 
 If you only need a local proxy and do not want kernel-level routing:
 
@@ -59,7 +59,7 @@ TUN capabilities are not required for this mode. `whoisthat mode tun` switches t
 
 ---
 
-## 3. Per-App Bypass (Spotify, Games, Banking)
+## Per-App Bypass (Spotify, Games, Banking)
 
 Exclude mode keeps the OS on the VPN and sends selected apps through the physical link:
 
@@ -81,7 +81,7 @@ For Steam, use the launch option `whoisthat run %command%` **without** `-d`, and
 
 ---
 
-## 4. Docker Host and Local Servers
+## Docker Host and Local Servers
 
 TUN mode does not break inbound LAN or Docker-published ports: reply packets are matched by conntrack and marked so they return through the physical interface instead of entering the tunnel.
 
@@ -95,7 +95,7 @@ See [TUN Mode & Conntrack](/networking/tun-mode#incoming-connections-server-host
 
 ---
 
-## 5. Several Subscriptions with Different Routing
+## Several Subscriptions with Different Routing
 
 Each group can use its own Happ profile or manual rules.
 
@@ -114,7 +114,7 @@ whoisthat route add --type domain --value example.com --outbound direct --group 
 
 ---
 
-## 6. Scheduled Refresh and Monitoring
+## Scheduled Refresh and Monitoring
 
 ```bash
 whoisthat sub auto 12 on
@@ -126,7 +126,7 @@ The daemon checks subscriptions every 10 minutes; background refreshes do not ru
 
 ---
 
-## 7. Desktop Integration
+## Desktop Integration
 
 ```bash
 whoisthat status --short             # Polybar/style scripts

@@ -44,7 +44,7 @@ A root `Makefile` wraps the common workflows:
 
 ```bash
 make build        # whoisthat-core + release TUI
-make test         # cargo test + go test ./... + scripts/bump.test.sh
+make test         # go, rust, shell, bump, docs, release, and package tests
 make lint         # rustfmt --check, clippy, go vet, gofmt
 make integration  # privileged netns suite
 make test-e2e     # real core in a temp XDG sandbox, read back through the CLI

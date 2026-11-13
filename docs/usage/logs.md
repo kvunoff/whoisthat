@@ -45,7 +45,7 @@ Lines whose level cannot be recognized are shown only under `ALL`.
 
 Both components write:
 
-```
+```text
 2026/10/31 13:37:11 [WARN] message
 ```
 

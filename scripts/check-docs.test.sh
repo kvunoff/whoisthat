@@ -122,6 +122,47 @@ type: "reference"
 [ok](/zz-dirlanding/#anchor-target)
 EOF
 
+cat >"$TMP/docs/zz-numbered.md" <<'EOF'
+---
+title: "Numbered"
+description: "Fixture."
+audience: "user"
+type: "reference"
+---
+
+# Numbered
+
+## 1. Bad heading
+EOF
+
+cat >"$TMP/docs/zz-fence.md" <<'EOF'
+---
+title: "Fence"
+description: "Fixture."
+audience: "user"
+type: "reference"
+---
+
+# Fence
+
+```
+no language
+```
+EOF
+
+cat >"$TMP/docs/zz-terminology.md" <<'EOF'
+---
+title: "Terminology"
+description: "Fixture."
+audience: "user"
+type: "reference"
+---
+
+# Terminology
+
+This page says split tunnelling.
+EOF
+
 printf "\n{ text: 'Missing', link: '/zz-missing' },\n" >>"$TMP/docs/.vitepress/config.mts"
 
 cat >"$TMP/docs/public/zz-broken.html" <<'EOF'
@@ -183,6 +224,10 @@ if grep -q 'BROKEN.*zz-dirlanding' "$TMP/broken.log"; then
 else
     pass "directory index anchor resolves"
 fi
+
+check_report 'numbered heading' "numbered heading"
+check_report 'code fence without language' "unlabeled code fence"
+check_report "use 'split tunneling'" "terminology"
 
 printf '\n'
 if [ "$fail" -ne 0 ]; then

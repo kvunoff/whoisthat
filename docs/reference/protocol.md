@@ -13,7 +13,7 @@ This document provides a complete technical specification for the length-prefixe
 
 ## Wire Format
 
-```
+```text
 ┌──────────────┬───────────────────────────┐
 │ 4 bytes (BE) │ JSON payload              │
 │ uint32 len   │ {"msg":"...","data":{...}}│
@@ -52,7 +52,7 @@ Some commands emit **two** id-carrying frames. Wait for the terminal one, not th
 warnings alone as failure. For the kill-switch the reply carries two fields: `enabled` is the
 persisted intent, `armed` is the actual kernel state.
 * **Socket Endpoints**:
-  * **Unix Domain Socket (Default)**: `$XDG_RUNTIME_DIR/whoisthat/core.sock` (mode `0600`, owned by the invoking user).
+  * **Unix Domain Socket (Default)**: mode `0600`, owned by the invoking user. Resolution order: `/run/whoisthat/<uid>/whoisthat/core.sock`, then `$XDG_RUNTIME_DIR/whoisthat/core.sock`, then `/tmp/whoisthat-<uid>/whoisthat/core.sock`. The init backend uses the canonical `/run/whoisthat/<uid>` path with no fallback.
   * **Loopback TCP (Opt-in)**: `127.0.0.1:4897` / `[::1]:4897` (when `tcp-enabled: true` in `config.json`).
 
 ### TCP authentication handshake

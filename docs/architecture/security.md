@@ -15,7 +15,7 @@ Security in WhoisThat is designed around the principle of **least privilege**: m
 
 All subscription credentials, server hostnames, tokens, and routing configurations are stored locally on disk under:
 
-```
+```text
 ~/.local/share/whoisthat/db/
 ```
 
@@ -39,13 +39,13 @@ All subscription credentials, server hostnames, tokens, and routing configuratio
 
 Traditionally, Linux VPN clients require `sudo`, setuid binaries, or a persistent root daemon. WhoisThat eliminates root privilege escalation entirely through **Linux File Capabilities**:
 
-```
+```text
 cap_net_admin,cap_net_raw,cap_setpcap=+ep
 ```
 
 ### How Ambient Capabilities Work:
 
-```
+```text
 [whoisthat-core binary]  (Has +ep capabilities on disk)
        │
        ▼

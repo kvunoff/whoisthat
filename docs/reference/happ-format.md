@@ -125,7 +125,7 @@ To prevent parser panics when interacting with heterogeneous providers, the core
 
 When a Happ profile links to external Geo databases via `Geoipurl` or `Geositeurl`, WhoisThat isolates them inside a dedicated sandbox rather than overwriting global system assets:
 
-```
+```text
 ~/.local/share/whoisthat/db/groups/<GROUP_ID>/routing/geo/<PROFILE_ID>/<VERSION_EPOCH>/
 ├── geoip.dat
 └── geosite.dat
@@ -178,7 +178,7 @@ sequenceDiagram
 
 Whenever an active Happ profile is modified, activated, finishes downloading Geo assets, or changes its DNS settings, `whoisthat-core` reloads Xray-core **in-place without resetting the TUN device** (`ReloadRouting`):
 
-### 1. Asset Environment Binding
+### Asset Environment Binding
 The daemon dynamically exports the `XRAY_LOCATION_ASSET` environment variable pointing to the profile's isolated sandbox folder:
 ```go
 if selection.GeoDir != "" {
@@ -186,7 +186,7 @@ if selection.GeoDir != "" {
 }
 ```
 
-### 2. Pre-Flight Sandbox Verification
+### Pre-Flight Sandbox Verification
 Before terminating the running Xray instance, the core tests the compiled configuration against the Xray binary:
 ```bash
 xray run -test
@@ -194,7 +194,7 @@ xray run -test
 * The candidate config is validated in memory via `stdin`.
 * If Xray reports a syntax error or a corrupted `.dat` file, the reload is aborted with an error log. **The active VPN connection and network traffic remain completely uninterrupted.**
 
-### 3. Zero-Downtime Swap
+### Zero-Downtime Swap
 * If the pre-flight test passes, the core stops the previous Xray child process and starts the new instance within milliseconds.
 * The Linux TUN adapter, system routes, and nftables rules are retained, ensuring SSH sessions and active sockets do not drop.
 

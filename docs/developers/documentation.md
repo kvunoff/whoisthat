@@ -402,15 +402,15 @@ Before a release:
 ## Automation
 
 - `./scripts/check-docs.sh` checks IPC names, config keys, CLI nouns, doctor
-  categories, links, versions, frontmatter, sidebar coverage, and lifecycle
-  metadata.
+  categories, links, versions, frontmatter, sidebar coverage, lifecycle
+  metadata, heading numbering, code-fence language, and terminology.
 - `./scripts/check-docs.test.sh` tests the checker itself.
 - `./scripts/check-versions.sh` keeps version strings in sync.
 - `npm run docs:build` builds the site.
 - The `docs` job in CI runs the checks and the build on every pull request.
-- A monthly `docs-audit` workflow will report orphans, overdue deprecations,
-  stale `review_by` dates, and broken external links as an issue, not as a
-  failed pull request.
+- A monthly `docs-audit` workflow reports expired deprecations and overdue
+  `review_by` dates as an issue, not as a failed pull request. Orphans and
+  broken local links are enforced by `check-docs.sh` on every PR.
 
 ## What not to do
 

@@ -18,13 +18,13 @@ compilation, lifecycle and geo sandbox are described in
 
 Profiles are distributed by providers and generated without manual rule-by-rule configuration on every device.
 
-### 1. Profile Creation & Web Generator
+### Profile Creation & Web Generator
 
 Routing rules can be assembled, visually tested and exported into Happ URIs using the official web generator at **[routing.happ.su](https://routing.happ.su/)**, or authored directly in accordance with the [Happ routing specification](https://www.happ.su/main/dev-docs/routing).
 
 From the generator, administrators define proxy lists, direct sites, blocked resources and custom Geo URLs, then export a ready-to-use `happ://routing/add/{base64}` or `happ://routing/onadd/{base64}` link.
 
-### 2. Delivery Channels
+### Delivery Channels
 
 WhoisThat detects all delivery channels defined by the Happ specification:
 
@@ -71,7 +71,7 @@ When WhoisThat updates a subscription (<kbd>u</kbd> / <kbd>r</kbd> in the TUI, o
 #### Channel B: Embedded in Subscription Body
 The link can sit directly inside the subscription body, on its own line alongside proxy node URIs:
 
-```
+```text
 happ://routing/onadd/ewogICAgIk5hbWUiOiAidGVzdCIsCiAgICAiR2xvYmFsUHJveHkiOiAidHJ1ZSIs...
 vmess://eyJob3N0IjoiZ3VhdmVpc3RhbmJ1bC5jb20iLCJwYXRoIjoiXC8xUyIsInRscyI6InRscyIs...
 vless://70cc43c5-b2f4-34ac-a092-d806984a6b8c@1.13.7.91:443?encryption=none&security=reality...
@@ -86,7 +86,7 @@ Copy a `happ://routing/...` link from a website, Telegram channel or email and p
 #### Channel D: Desktop Deep Links (`wit://`)
 Only `wit://` is registered with `xdg-mime` (the TUI writes `~/.local/share/applications/whoisthat-url.desktop` and registers `x-scheme-handler/wit` on launch). A bare `happ://` link in a browser will not launch WhoisThat; use the wrapper or the CLI:
 
-```
+```text
 wit://happ://routing/add/<BASE64>
 wit://routing?link=happ%3A%2F%2Frouting%2Fadd%2F...&group=Premium
 whoisthat link handle "happ://routing/add/<BASE64>" --group Premium
@@ -119,7 +119,7 @@ The full fallback table — including what happens when the active profile is un
 
 In the TUI on Tab 2 (*Routing*), pressing <kbd>H</kbd> opens the **Happ Routing Profiles** modal:
 
-```
+```text
 ┌───────────────── ⚡ Happ Routing Profiles — Group: Premium [mode: auto] ─────────────────┐
 │                                                                                         │
 │  ▸ [● Active]  [ready]       Provider Comprehensive Bypass                              │

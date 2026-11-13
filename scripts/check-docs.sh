@@ -362,6 +362,41 @@ while IFS= read -r stub; do
     fi
 done < <(find "$DOCS/public" -name '*.html' 2>/dev/null | sort)
 
+# ---------------------------------------------------------------------------
+# 11. Heading numbering, fence language, terminology
+# ---------------------------------------------------------------------------
+echo "docs: checking headings, fences, and terminology..."
+while IFS= read -r md; do
+    [ -n "$md" ] || continue
+    rel="${md#"$DOCS"/}"
+
+    while IFS= read -r hit; do
+        missing "$rel:$hit"
+    done < <(awk '
+        /^```/ { inf = !inf; next }
+        !inf && /^#{1,6} [0-9]+\./ { print NR ": numbered heading: " $0 }
+    ' "$md")
+
+    while IFS= read -r hit; do
+        missing "$rel:$hit"
+    done < <(awk '
+        /^```/ {
+            if (!inf) {
+                if ($0 == "```") print NR ": code fence without language"
+                inf = 1
+            } else {
+                inf = 0
+            }
+        }
+    ' "$md")
+
+    if [ "$rel" != "reference/glossary.md" ]; then
+        while IFS= read -r hit; do
+            missing "$rel: use 'split tunneling': $hit"
+        done < <(grep -in -- 'split tunnelling' "$md" || true)
+    fi
+done < <(find "$DOCS" -name '*.md' -not -path '*/.vitepress/*' | sort)
+
 if [ "$fail" -ne 0 ]; then
     echo "docs: inconsistencies found"
     exit 1

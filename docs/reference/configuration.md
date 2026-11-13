@@ -87,7 +87,7 @@ tun_name = "whoisthattun"
 # State of Kill-Switch firewall protection
 kill_switch_enabled = false
 
-# Custom Unix socket path (blank = default $XDG_RUNTIME_DIR/whoisthat/core.sock)
+# Custom Unix socket path (blank = runtime-dir default, see below)
 ipc_socket_path = ""
 
 # Connect via legacy loopback TCP instead of Unix Domain Socket
@@ -231,5 +231,5 @@ errors forward the underlying error to the client.
 | `~/.local/share/whoisthat/runtimes/xray/v26.10.31/` | Pinned official Xray-core binary (versioned runtime directory). | `0755` |
 | `~/.config/whoisthat/geo/` | Global routing databases (`geoip.dat`, `geosite.dat`). | `0755` |
 | `~/.local/share/whoisthat/db/groups/<id>/routing/geo/<profile_id>/<version>/` | Isolated Happ routing profile geo assets. | `0700` |
-| `$XDG_RUNTIME_DIR/whoisthat/core.sock` | Active Unix Domain Socket IPC endpoint. | `0600` |
+| `$XDG_RUNTIME_DIR/whoisthat/core.sock` | Active Unix Domain Socket IPC endpoint. Resolution order: `/run/whoisthat/<uid>/whoisthat/core.sock`, then `$XDG_RUNTIME_DIR/whoisthat/core.sock`, then `/tmp/whoisthat-<uid>/whoisthat/core.sock`. The init backend uses the canonical `/run/whoisthat/<uid>` path with no fallback. | `0600` |
 | `$XDG_RUNTIME_DIR/whoisthat/ipc.token` | Shared secret required by the opt-in TCP IPC transport (64 hex chars). | `0600` |

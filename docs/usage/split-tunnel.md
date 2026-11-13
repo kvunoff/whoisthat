@@ -15,7 +15,7 @@ Split Tunneling allows you to route specific applications differently from the r
 
 Configure the mode in the TUI (**Settings → Network → Split tunnel**) or via the CLI:
 
-### 1. `exclude` Mode *(Recommended)*
+### `exclude` Mode *(Recommended)*
 * **Entire Operating System**: Protected and routed through the VPN tunnel.
 * **Launched Applications** (`whoisthat run`): **Bypass the VPN**, connecting directly through your physical gateway.
 * **Ideal For**: Spotify, domestic banking portals, Russian web services (`.ru` / Госуслуги), online gaming (Steam, Discord voice), torrent clients, and local network tools.
@@ -24,7 +24,7 @@ Configure the mode in the TUI (**Settings → Network → Split tunnel**) or via
 Split tunneling is disabled by default. Set it to `exclude` or `include` explicitly; with `off`, `whoisthat run` launches the app but installs no split rules.
 :::
 
-### 2. `include` Mode
+### `include` Mode
 * **Entire Operating System**: Connects unprotected via your physical gateway.
 * **Launched Applications** (`whoisthat run`): **Exclusively routed through the VPN**.
 * **Ideal For**: Dedicated private browsing sessions, scraping scripts, or testing international endpoints without affecting system-wide network routing.

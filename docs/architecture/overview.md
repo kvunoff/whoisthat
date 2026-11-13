@@ -68,7 +68,7 @@ flowchart TD
 
 ## Life of a Packet
 
-### 1. In Proxy Mode (SOCKS5/HTTP)
+### In Proxy Mode (SOCKS5/HTTP)
 1. Local applications configure their proxy settings to point at `127.0.0.1:3090` (SOCKS5) or `3091` (HTTP).
 2. Xray-core receives proxy requests on the designated local inbound port.
 3. User routing rules evaluate the destination host and IP:
@@ -76,7 +76,7 @@ flowchart TD
    * **Proxy**: Xray encrypts and encapsulates the connection inside the active protocol (e.g. VLESS Reality) and forwards it to the remote VPN server.
    * **Block**: The connection is immediately dropped via the `blackhole` outbound.
 
-### 2. In System-Wide TUN Mode
+### In System-Wide TUN Mode
 1. The kernel intercepts all outbound traffic using policy routing directed to the `whoisthattun` virtual adapter.
 2. Xray's native TUN inbound reads raw IP packets from the TUN file descriptor.
 3. DNS is captured before it can leave the physical interface:
@@ -89,7 +89,7 @@ flowchart TD
    * The outbound connection sets socket mark `SO_MARK = 1`.
    * Kernel policy rule `ip rule fwmark 1 table 100` directs the marked packet to Table 100, routing it directly through your physical gateway without looping back into the TUN adapter!
 
-### 3. In Split Tunnel Mode (`whoisthat run`)
+### In Split Tunnel Mode (`whoisthat run`)
 1. Target processes are launched inside the split-tunnel cgroup: `whoisthat_split.slice` under systemd, or `/sys/fs/cgroup/whoisthat-<uid>` via the per-user runner elsewhere.
 2. The `inet whoisthat_split` nftables table detects sockets originating from level 4 of this cgroup slice (or level 1 of `whoisthat-<uid>`).
 3. Sockets are marked (`fwmark 1` for exclude, `fwmark 2` for include), triggering kernel route lookup in Table 100 or Table 200.

@@ -63,7 +63,7 @@ On subscription refresh the configuration is replaced wholesale. Profiles are ma
 
 Manual rules from the Routing tab still apply and are checked first:
 
-```
+```text
 stats/api rule
 TUN DNS capture rule
 manual rules (Routing tab)

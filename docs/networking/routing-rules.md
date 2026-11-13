@@ -51,12 +51,12 @@ flowchart TD
 
 ## Core Technologies of Modern Routing
 
-### 1. Ingress & Interception (Layer 3 vs Layer 4)
+### Ingress & Interception (Layer 3 vs Layer 4)
 Traffic enters the routing engine through one of two mechanisms:
 * **Layer 3 (TUN Virtual Network Interface)**: Operating at the IP packet level, a virtual TUN device (such as `whoisthattun`, configurable in Settings) captures all operating system IP datagrams. This captures every protocol (TCP, UDP, ICMP) system-wide without requiring application-level proxy configuration.
 * **Layer 4 (Loopback Proxy Inbounds)**: Local SOCKS5 (`127.0.0.1:3090`) and HTTP (`127.0.0.1:3091`) listeners accept proxy connections explicitly forwarded by browsers or command-line utilities.
 
-### 2. Deep Packet Inspection & Domain Sniffing
+### Deep Packet Inspection & Domain Sniffing
 In modern Content Delivery Networks (CDNs) and Anycast architectures (Cloudflare, Fastly, Akamai), tens of thousands of completely unrelated websites share the exact same IP address. If a routing engine only matched destination IP addresses, it would be impossible to split traffic (e.g. routing `blocked-site.org` through the proxy while sending `banking-site.ru` directly, when both resolve to the same Cloudflare IP).
 
 **Domain Sniffing** solves this dilemma by inspecting the initial handshake payload of a connection:
@@ -66,7 +66,7 @@ In modern Content Delivery Networks (CDNs) and Anycast architectures (Cloudflare
 
 By configuring `sniffing.routeOnly = false`, the routing engine replaces the destination IP address with the extracted domain name in the connection context, allowing domain-level rules to evaluate accurately even when the operating system resolved the address locally.
 
-### 3. DNS Resolution Strategies (`DomainStrategy`)
+### DNS Resolution Strategies (`DomainStrategy`)
 Routing creates a circular dependency:
 * To route by **domain**, the client needs to know the domain name.
 * To route by **IP**, the client needs the resolved IP address.
@@ -88,7 +88,7 @@ DNS is handled before user rules so a query for a blocked domain cannot be route
 
 The full resolver flow, sink addresses and split-mode behaviour are in [DNS & FakeDNS](/networking/dns).
 
-### 4. Rule Classification Engines
+### Rule Classification Engines
 
 When evaluating candidate packets, the routing engine uses specialized data structures optimized for sub-millisecond lookup times:
 
@@ -106,7 +106,7 @@ IP addresses are evaluated using **Longest Prefix Match (LPM)** algorithms:
 2. **CIDR Subnet Match**: Classless Inter-Domain Routing blocks (`192.168.0.0/16`, `10.0.0.0/8`) evaluated via a Radix/PATRICIA trie.
 3. **GeoIP Regional Databases (`geoip:<country>`)**: Compiled binary databases (`geoip.dat`) mapping global IPv4/IPv6 address allocations into country codes (`geoip:ru`, `geoip:us`) and special network categories (`geoip:private` for RFC1918 subnets).
 
-### 5. Outbound Actions & Dispatch
+### Outbound Actions & Dispatch
 
 Every evaluated packet is dispatched to one of three destination targets:
 
@@ -126,7 +126,7 @@ graph LR
 * **`direct`**: Connection data bypasses the proxy entirely. On Linux, this requires sophisticated kernel routing: the direct outbound socket sets an fwmark (`SO_MARK = 1`), and policy routing rules (`ip rule add fwmark 1 table 100`) route the packets through the physical interface gateway, preventing an infinite loop back into the TUN device.
 * **`block`**: Connection data is routed to a blackhole outbound. Inbound requests are immediately dropped or answered with a TCP RST, terminating ad-trackers, telemetry, and malicious domains before any network packets leave the interface.
 
-### 6. Fallback & Catch-All Policies
+### Fallback & Catch-All Policies
 When a packet does not match any explicit rule in the routing table, the system applies a terminal fallback policy governed by the `GlobalProxy` parameter:
 
 * **Tunnel-First (`GlobalProxy: true`)**: All unmatched traffic defaults to the `proxy` outbound. This ensures maximum privacy: only explicitly whitelisted services exit directly.
@@ -138,7 +138,7 @@ When a packet does not match any explicit rule in the routing table, the system 
 
 While routing concepts are universal across proxy platforms, WhoisThat's implementation is engineered specifically for Linux systems:
 
-```
+```text
 ┌────────────────────────────────────────────────────────┐
 │                   WhoisThat TUI & CLI                  │
 │    • Presets Catalog (<kbd>p</kbd>) • Interactive Rule Editor (<kbd>a</kbd>/<kbd>e</kbd>)   │

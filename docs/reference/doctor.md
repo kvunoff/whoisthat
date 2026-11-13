@@ -31,7 +31,7 @@ whoisthat doctor --logs
 
 The diagnostic engine performs comprehensive, non-destructive system inspections divided into six categories implemented in `src/doctor/checks/`. `--logs` appends a seventh, `Logs`:
 
-```
+```text
 ┌────────────────────────────────────────────────────────┐
 │                  whoisthat doctor                      │
 ├────────────────────────────────────────────────────────┤
@@ -45,13 +45,13 @@ The diagnostic engine performs comprehensive, non-destructive system inspections
 └────────────────────────────────────────────────────────┘
 ```
 
-### 1. Binaries & Runtimes
+### Binaries & Runtimes
 * **`whoisthat` (Client)**: Resolves the active binary path (`std::env::current_exe()`) and confirms it matches the compiled crate version (`CARGO_PKG_VERSION`).
 * **`whoisthat-core` (Daemon)**: Searches `PATH`, `./whoisthat-core`, `./core/core/whoisthat-core`, `./bin/whoisthat-core`, `/usr/bin`, and the legacy `/usr/local/bin` (in that order) for the daemon binary.
 * **`xray-core` (Proxy Runtime)**: Probes for available Xray-core runtimes in `~/.local/share/whoisthat/runtimes/xray/` and system `PATH`. Checks if version matches the pinned **v26.10.31** release.
 * **System CLI Tools**: Validates the presence of essential Linux networking utilities: `ip` (`iproute2`), `getcap` & `setcap` (`libcap`), and `pkexec` (`polkit`).
 
-### 2. Linux Capabilities & Kernel
+### Linux Capabilities & Kernel
 * **`whoisthat-core caps`**: Runs `getcap` against the daemon binary to verify all three required capabilities are granted:
   * `cap_net_admin`: Required for creating virtual TUN adapters and manipulating routing tables.
   * `cap_net_raw`: Required for raw socket binding and packet marking.
@@ -61,19 +61,19 @@ The diagnostic engine performs comprehensive, non-destructive system inspections
 * **cgroup v2 Controller**: Checks for `/sys/fs/cgroup/cgroup.controllers`. Confirms the unified cgroup v2 hierarchy is active for application split tunneling (`whoisthat run`).
 * **Split runner**: On non-systemd hosts, checks that `runner.sock` is reachable; without it `whoisthat run` cannot launch applications.
 
-### 3. Polkit & User Permissions
+### Polkit & User Permissions
 * **Polkit Daemon**: Checks if `polkit.service` is active via `systemctl is-active`.
 * **`pkexec` Helper**: Confirms `pkexec` binary is installed to allow graphical authentication dialogs during first-time TUN setup.
 * **Systemd User Linger**: Runs `loginctl show-user $USER --property=Linger` to check if user services can start at boot before interactive login.
 
-### 4. IPC & Daemon Runtime Status
+### IPC & Daemon Runtime Status
 * **`XDG_RUNTIME_DIR`**: Validates the user runtime directory environment variable and permissions.
-* **Unix Domain Socket**: Resolves `$XDG_RUNTIME_DIR/whoisthat/core.sock`, verifying that file mode is `0600` and owned by the current user.
+* **Unix Domain Socket**: Resolves the runtime path (`/run/whoisthat/<uid>/whoisthat/core.sock`, then `$XDG_RUNTIME_DIR/whoisthat/core.sock`, then `/tmp/whoisthat-<uid>/whoisthat/core.sock`), verifying mode `0600` and ownership.
 * **Daemon Handshake**: Transmits an IPC `get-application-state` probe to verify the daemon is responsive. The reported `core_version`/`protocol_version` are shown in the report header but are not interpreted as a pass/fail gate.
 * **Systemd User Service**: Reports `systemctl --user is-active` / `is-enabled` for `whoisthat-core.service` as informational.
 * **Legacy TCP Port**: If TCP is enabled, reports the configured `host:port`.
 
-### 5. DNS & Routing
+### DNS & Routing
 * **DNS sink address**: Verifies that `198.18.0.53` / `fd00::53` are **not** assigned to any interface. If they are, kernel local delivery bypasses the TUN inbound and DNS hijack stops working.
 * **FakeDNS pools**: Checks the TUN interface addresses against `198.19.0.0/16` and `fc00::/18`; an overlap means real traffic could collide with fake addresses.
 * **DNS hijack rules**: Inspects the `ip whoisthat` / `ip6 whoisthat` nftables tables (or the iptables `WHOISTHAT_DNS_*` chains) and reports the active mode: Happ sink, legacy resolver, disabled in `include`, or TUN inactive.
@@ -87,13 +87,13 @@ The diagnostic engine performs comprehensive, non-destructive system inspections
 Reading nftables/iptables state usually requires root. When `whoisthat doctor` runs unprivileged, firewall items are reported as `info` with the exact inspection command (`sudo nft list table ip whoisthat`) instead of failing.
 :::
 
-### 6. Configuration & Storage
+### Configuration & Storage
 * **TUI Config**: Confirms `~/.config/whoisthat/config.toml` exists and echoes the active theme/test method. It does not re-parse the file (the TUI already does that with a backup/fallback on error).
 * **Core Config**: Parses `~/.config/whoisthat/config.json` as JSON and reports the SOCKS/HTTP ports; invalid JSON is a warning because the core recreates defaults.
 * **Encrypted DB**: Checks that `~/.local/share/whoisthat/db/` exists and inspects the key (`~/.config/whoisthat/db.key`, legacy `db/.key`): exactly 32 bytes and mode `0600`. The DB directory mode itself is not asserted.
 * **Geo Assets**: Confirms `geoip.dat` and `geosite.dat` exist in `~/.config/whoisthat/geo/` and warns when `geoip.dat` is under 10 MiB. `geosite.dat` size is reported but not thresholded (the core's own floor is 1 MiB).
 
-### 7. Logs (`--logs`)
+### Logs (`--logs`)
 * **`core` / `tui` log**: path (primary or fallback), size, mode and age. A mode broader than `0600` is a warning with a `chmod 600` hint.
 * **Backups**: `tui.log.1` size and mode; for the core, the number and total size of lumberjack's timestamped `core-…log` backups.
 * **Recent errors**: up to five last `[ERRO]`/`[FATA]` lines from the last 256 KiB of each file, truncated for the report.
