@@ -143,8 +143,10 @@ export default withMermaid(defineConfig({
           { text: 'Rust Client', link: '/architecture/rust-client' },
           { text: 'Go Core Daemon', link: '/architecture/go-core' },
           { text: 'IPC & Event Flow', link: '/architecture/ipc-flow' },
+          { text: 'Data & Encryption', link: '/architecture/data-and-encryption' },
           { text: 'Kernel Networking', link: '/architecture/networking' },
           { text: 'Routing Engine', link: '/architecture/routing-engine' },
+          { text: 'Xray Runtime', link: '/architecture/xray-runtime' },
           { text: 'Security & Threat Model', link: '/architecture/security' }
         ]
       },
