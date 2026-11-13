@@ -17,7 +17,7 @@ Start with logs, then inspect the socket and kernel state. For runtime diagnosti
 | `$TMPDIR/whoisthat-<uid>/core.log` | Go Core | Same rotation; used when the config dir is not writable | same |
 | `~/.local/share/whoisthat/tui.log` | Rust TUI | Rotated on write at 10 MiB, one `.1` backup, `0600` | `warn`; `info`+ with **Verbose TUI log** |
 | `$TMPDIR/whoisthat-<uid>/tui.log` | Rust TUI | Same rotation; used when the data dir is not writable | same |
-| `~/.local/share/whoisthat/core-crash.log` | Go Core | Unhandled panics/fatal errors; rotated at 1 MB | always |
+| `~/.local/share/whoisthat/core-crash.log` | Go Core | Unhandled panics/fatal errors; rotated at startup above 1 MB | always |
 
 Both components write `YYYY/MM/DD HH:MM:SS [LEVEL] message` (no fractional seconds, so older clients can still parse `core.log`).
 

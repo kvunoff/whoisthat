@@ -13,7 +13,7 @@ The test suites are layered: fast in-memory unit tests, contract snapshots, priv
 
 Both the Rust client and Go daemon feature extensive unit test suites that run entirely in memory in milliseconds without requiring network access.
 
-### 1. Rust Test Suite
+### Rust Test Suite
 
 ```bash
 cargo test
@@ -30,7 +30,7 @@ cargo test
 * **Terminal Launch** (`src/terminal.rs`): Terminal detection order, per-emulator flags, explicit `terminal`/`$TERMINAL` prefixes, and system-default fallbacks.
 * **CLI** (`src/cli/`): clap definition consistency, legacy alias normalization, selector resolution, settings validation, log parsing, secret masking, and fake-core request-id correlation.
 
-### 2. Go Core Test Suite
+### Go Core Test Suite
 
 ```bash
 cd core/core
@@ -44,7 +44,7 @@ go test ./...
 * **PortPool Allocator** (`lib/PortPool`): Concurrent ephemeral port lease and release without race conditions.
 * **Startup Reconcile & Split** (`lib/proxy/tun`): Idempotency of nftables teardown scripts and routing table rule restoration.
 
-### 3. IPC contract snapshots
+### IPC contract snapshots
 
 `core/core/testdata/ipc-contract.json` is generated from the Go structs and parsed back by the Rust types. The Go test fails when the structs change, and the Rust test fails when the client can no longer round-trip the same payloads — so a field rename cannot silently drift across the language boundary.
 
@@ -55,7 +55,7 @@ cd core/core && go test ./structs -update-contract
 cd ../.. && cargo test ipc_contract_matches_go_snapshots
 ```
 
-### 4. Privileged network-namespace tests
+### Privileged network-namespace tests
 
 `go test ./...` only checks the *text* of the ip/nftables scripts. The
 `integration` build tag adds tests that actually execute them inside a
@@ -73,7 +73,7 @@ when `/dev/net/tun` is unavailable. CI runs them on every push.
 
 ---
 
-### 5. End-to-end IPC smoke test
+### End-to-end IPC smoke test
 
 The contract snapshot above checks the payload types, not the transport or the
 daemon startup. `scripts/ipc-e2e.test.sh` starts a real `whoisthat-core` in a

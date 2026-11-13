@@ -29,7 +29,7 @@ When all system traffic is directed into the TUN interface, Xray-core's own outb
 
 WhoisThat solves this using two distinct isolation strategies:
 
-### 1. Capability Mode (Rootless - Default)
+### Capability Mode (Rootless - Default)
 When running under file capabilities (`cap_net_admin,cap_net_raw,cap_setpcap=+ep`):
 * Xray-core is instructed to tag its outbound sockets with a firewall mark (`SO_MARK = 1`).
 * The core installs a policy routing rule:
@@ -39,7 +39,7 @@ When running under file capabilities (`cap_net_admin,cap_net_raw,cap_setpcap=+ep
   ```
 * All packets bearing `fwmark 1` bypass the TUN device entirely and exit directly through your physical gateway.
 
-### 2. Root Mode (Fallback)
+### Root Mode (Fallback)
 If running under a dedicated root daemon:
 * The core picks the first unused UID in the `61000–61999` range.
 * Kernel policy rule `ip rule add uidrange <uid>-<uid> table 100` directs that user's traffic to the physical gateway.
@@ -66,7 +66,7 @@ Many VPN clients break local network servers, Docker container ports, or SSH acc
 
 WhoisThat natively solves this via **Connection Tracking (Conntrack) Reply Marking**:
 
-```
+```text
 [Inbound Request from LAN] ──► Physical Interface
                                       │
                                       ▼

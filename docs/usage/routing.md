@@ -56,7 +56,7 @@ WhoisThat supports six distinct matching criteria in manual and imported rules:
 
 Press <kbd>p</kbd> in the Routing tab to open the built-in **Routing Presets Catalog**. Each preset can be toggled on or off with a single keystroke:
 
-```
+```text
 ┌──────────────────────── Routing Presets Catalog ────────────────────────┐
 │                                                                        │
 │  [X] 🇷🇺 Bypass Russia       Direct access to Russian domains & IPs     │

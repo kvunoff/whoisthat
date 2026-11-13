@@ -21,7 +21,7 @@ whoisthat profile move 12:6 --to Personal
 
 ---
 
-## 1. Group Operations
+## Group Operations
 
 Groups allow you to categorize profiles (e.g. by provider, protocol, or geographic location) and associate subscription update URLs.
 
@@ -37,11 +37,11 @@ Groups allow you to categorize profiles (e.g. by provider, protocol, or geograph
 
 ---
 
-## 2. Subscription Metadata
+## Subscription Metadata
 
 When a subscription URL is fetched, the core daemon inspects HTTP response headers (`subscription-userinfo`, `profile-title`, `profile-update-interval`):
 
-```
+```text
 upload=1048576; download=52428800; total=107374182400; expire=1720000000
 ```
 
@@ -67,7 +67,7 @@ The Details panel dynamically displays:
 
 ---
 
-## 3. Profile Operations
+## Profile Operations
 
 | Action | Shortcut | Description |
 | :--- | :---: | :--- |
@@ -81,7 +81,7 @@ The Details panel dynamically displays:
 
 ---
 
-## 4. Latency Testing Engine
+## Latency Testing Engine
 
 WhoisThat includes a high-precision multi-sample latency testing subsystem:
 

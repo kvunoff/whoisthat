@@ -55,7 +55,7 @@ xdg-mime default '' x-scheme-handler/wit
 
 ## Supported URL Schemes & Syntax
 
-### 1. Subscription ingestion (`sub` / `subscription`)
+### Subscription ingestion (`sub` / `subscription`)
 
 Creates a subscription group and fetches it. Latency tests follow the normal
 **Auto-test on refresh** policy; this is not a silent background connect.
@@ -75,7 +75,7 @@ Creates a subscription group and fetches it. Latency tests follow the normal
 
 ---
 
-### 2. Single profile import (`import`)
+### Single profile import (`import`)
 Imports an individual server profile into a specified group:
 
 * **Query Parameter Format**:
@@ -92,7 +92,7 @@ Imports an individual server profile into a specified group:
 
 ---
 
-### 3. Happ routing ingestion
+### Happ routing ingestion
 Imports a provider Happ routing profile into an existing or auto-detected group:
 
 * **Wrapped Format**:
@@ -106,7 +106,7 @@ Imports a provider Happ routing profile into an existing or auto-detected group:
 
 ---
 
-### 4. Direct browser actions
+### Direct browser actions
 Control connection state directly from bookmarks or shell scripts. `connect` takes no query parameters: it connects to the last used profile.
 
 * `wit://connect`
