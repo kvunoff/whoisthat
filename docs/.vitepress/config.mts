@@ -160,6 +160,7 @@ export default withMermaid(defineConfig({
           { text: 'Repository Map', link: '/developers/repository' },
           { text: 'Testing', link: '/developers/testing' },
           { text: 'Debugging', link: '/developers/debugging' },
+          { text: 'Extending WhoisThat', link: '/developers/extending' },
           { text: 'Releasing', link: '/developers/releasing' }
         ]
       }

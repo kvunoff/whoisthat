@@ -1,0 +1,44 @@
+name: Docs audit
+
+on:
+  schedule:
+    - cron: '0 6 1 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  audit:
+    name: Audit documentation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Run audit
+        run: ./scripts/docs-audit.sh > "$RUNNER_TEMP/docs-audit.md"
+
+      - name: Open or update issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh label create docs-audit \
+            --description "Documentation audit report" \
+            --color 5319e7 >/dev/null 2>&1 || true
+
+          body="$(cat "$RUNNER_TEMP/docs-audit.md")"
+          number="$(gh issue list --label docs-audit --state open --limit 1 \
+            --json number --jq '.[0].number // empty')"
+
+          if [ -n "$number" ]; then
+            gh issue comment "$number" --body "$body"
+          else
+            gh issue create \
+              --title "Documentation audit $(date -u +%Y-%m)" \
+              --body "$body" \
+              --label docs-audit
+          fi

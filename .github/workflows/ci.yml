@@ -173,7 +173,7 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq debhelper devscripts dpkg-dev dput python3-paramiko
       - name: shellcheck
-        run: shellcheck -S warning install.sh debian/postinst debian/preinst scripts/install.test.sh scripts/check-versions.sh scripts/check-docs.sh scripts/check-docs.test.sh scripts/bump.sh scripts/bump.test.sh scripts/release-upload.test.sh scripts/ipc-e2e.test.sh scripts/package.sh scripts/package/_common.sh scripts/package/aur.sh scripts/package/aur-bin.sh scripts/package/ppa.sh scripts/package.test.sh scripts/cgroup-setup scripts/cgroup-setup.test.sh scripts/run-runner scripts/run-runner.test.sh scripts/run-core scripts/run-core.test.sh scripts/install-init scripts/install-init.test.sh scripts/init-hook scripts/check-dinit.sh pkg/aur/whoisthat.install pkg/aur-bin/whoisthat-bin.install pkg/init/openrc/whoisthat-cgroup pkg/init/openrc/whoisthat-core pkg/init/openrc/whoisthat-runner pkg/init/runit/core-services/10-whoisthat-cgroup.sh pkg/init/runit/whoisthat-core/run pkg/init/runit/whoisthat-runner/run
+        run: shellcheck -S warning install.sh debian/postinst debian/preinst scripts/install.test.sh scripts/check-versions.sh scripts/check-docs.sh scripts/check-docs.test.sh scripts/docs-audit.sh scripts/docs-audit.test.sh scripts/bump.sh scripts/bump.test.sh scripts/release-upload.test.sh scripts/ipc-e2e.test.sh scripts/package.sh scripts/package/_common.sh scripts/package/aur.sh scripts/package/aur-bin.sh scripts/package/ppa.sh scripts/package.test.sh scripts/cgroup-setup scripts/cgroup-setup.test.sh scripts/run-runner scripts/run-runner.test.sh scripts/run-core scripts/run-core.test.sh scripts/install-init scripts/install-init.test.sh scripts/init-hook scripts/check-dinit.sh pkg/aur/whoisthat.install pkg/aur-bin/whoisthat-bin.install pkg/init/openrc/whoisthat-cgroup pkg/init/openrc/whoisthat-core pkg/init/openrc/whoisthat-runner pkg/init/runit/core-services/10-whoisthat-cgroup.sh pkg/init/runit/whoisthat-core/run pkg/init/runit/whoisthat-runner/run
       - name: install.sh tests
         run: ./scripts/install.test.sh
       - name: root helper tests (cgroup/run-core/install-init)
@@ -185,6 +185,8 @@ jobs:
           ./scripts/check-dinit.sh
       - name: check-docs.sh tests
         run: ./scripts/check-docs.test.sh
+      - name: docs-audit tests
+        run: ./scripts/docs-audit.test.sh
       - name: release upload policy tests
         run: ./scripts/release-upload.test.sh
       - name: packaging tests
