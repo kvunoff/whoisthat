@@ -200,55 +200,16 @@ xray run -test
 
 ---
 
-## IPC Wire Protocol Specification
+## IPC commands
 
-Frontends communicate Happ operations with `whoisthat-core` via length-prefixed JSON IPC messages:
+Happ operations use the standard IPC commands documented in
+[IPC & Wire Protocol](/reference/protocol): `import-happ-routing`,
+`set-group-routing-mode`, `set-active-routing-profile`, and
+`delete-routing-profile`. This page owns the Happ payload and geo-asset format,
+not the command schema.
 
-### 1. `import-happ-routing`
-Imports a raw `happ://routing/...` link into a group.
-* **Payload**:
-  ```json
-  {
-    "group_id": 1,
-    "link": "happ://routing/add/eyJOYW1lIjoiVGVzdCIs...}"
-  }
-  ```
-* **Response**: Emits `subscription-updated` on success, or `warn` (`key: "import-happ-routing-failed"`) on error.
+## See also
 
-### 2. `set-group-routing-mode`
-Configures the routing mode for a group.
-* **Payload**:
-  ```json
-  {
-    "group_id": 1,
-    "mode": "auto"
-  }
-  ```
-* **Response**: Emits `group-updated` and triggers `proxy_manager.ReloadRouting` if connected.
-
-### 3. `set-active-routing-profile`
-Selects the active Happ profile for a group.
-* **Payload**:
-  ```json
-  {
-    "group_id": 1,
-    "profile_id": "c1f7b82e9a"
-  }
-  ```
-  *(Pass `"profile_id": "off"` or `""` to deactivate).*
-* **Response**: Emits `group-updated`, initiates Geo compilation if needed, and hot-reloads live routing.
-
-### 4. `delete-routing-profile`
-Permanently deletes a profile and its on-disk Geo sandbox.
-* **Payload**:
-  ```json
-  {
-    "group_id": 1,
-    "profile_id": "c1f7b82e9a"
-  }
-  ```
-* **Response**: Emits `subscription-updated`. If the deleted profile was active, cleanly reloads routing.
-
----
-
-The user-facing workflow (delivery channels, modes, TUI modal) is in [Happ Routing Profiles](/networking/happ-routing).
+- [Happ Routing Profiles](/networking/happ-routing)
+- [IPC & Wire Protocol](/reference/protocol)
+- [Routing Engine](/architecture/routing-engine)

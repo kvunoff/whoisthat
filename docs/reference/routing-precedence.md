@@ -11,7 +11,7 @@ Xray evaluates routing rules **top to bottom; the first match wins**. WhoisThat 
 
 ---
 
-## 1. Structural Rules
+## Structural rules
 
 These are emitted by the core, not by the provider, and always come first:
 
@@ -22,11 +22,14 @@ These are emitted by the core, not by the provider, and always come first:
 | 3 | Tagged resolvers (`domestic-dns → direct`, `remote-dns → proxy`) | TUN + Happ DNS |
 | 4 | Legacy DNS (`port 53, udp → proxy`) | No Happ DNS section |
 
-The legacy rule exists so DNS queries never reach user domain rules. With Happ DNS, rules 2–3 replace it.
+The legacy Xray rule keeps DNS queries that reach Xray away from user domain
+rules. Separately, the kernel DNAT path sends system port-53 traffic to the
+configured `dns-servers` through the physical gateway; both exist in legacy
+mode. With Happ DNS, rules 2–3 replace the Xray legacy rule.
 
 ---
 
-## 2. Then the Effective Routing Source
+## Effective routing source
 
 For a group, `ResolveRouting` picks one source:
 
@@ -47,7 +50,7 @@ A Happ profile is usable when it is active, its compiled rule list is non-empty,
 
 ---
 
-## 3. Manual and Happ Rule Order
+## Manual and Happ rule order
 
 For a normal (share-link) profile, the structural rules are followed by the rules of the **effective source** — manual or Happ, never both:
 
@@ -68,7 +71,7 @@ Manual rules use the six match types described in [Routing](/usage/routing#suppo
 
 ---
 
-## 4. JSON Subscription Groups
+## JSON subscription groups
 
 JSON subscriptions keep the provider's own routing as a baseline, so they bypass the Happ/manual selection above:
 
@@ -88,7 +91,7 @@ See [JSON Subscriptions](/networking/json-subscriptions) for the format and runt
 
 ---
 
-## 5. Domain Strategy and Fallback
+## Domain strategy and fallback
 
 The final `domainStrategy` is `IPIfNonMatch` unless the profile or manual config sets another value. FakeDNS forces `IPIfNonMatch` even if the profile asked for `AsIs`, otherwise IP rules would see fake addresses.
 

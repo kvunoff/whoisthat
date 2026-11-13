@@ -159,15 +159,14 @@ When running `whoisthat doctor --json`:
 
 ---
 
-## Remediation Guide for Failures
+## Fixing failures
 
-| Failure / Warning | Technical Cause | Immediate Fix Command |
-| :--- | :--- | :--- |
-| **`daemon binary not found in PATH or standard directories`** | Daemon binary missing from standard PATH directories. | `sudo install -Dm755 core/core/whoisthat-core /usr/bin/whoisthat-core` |
-| **`missing required network capabilities for rootless TUN mode`** | Rebuilt daemon lost file capabilities on new inode. | `sudo setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep $(which whoisthat-core)` |
-| **`virtual device /dev/net/tun not found`** | Linux kernel `tun` module is not loaded. | `sudo modprobe tun && echo "tun" \| sudo tee -a /etc/modules-load.d/tun.conf` |
-| **`neither nftables nor iptables found`** | Host lacks a compatible firewall backend. | Arch: `sudo pacman -S nftables`<br>Debian/Ubuntu: `sudo apt install nftables` |
-| **`systemd linger: disabled`** (Info) | User services will stop on logout; boot autostart will not work. | `sudo loginctl enable-linger $USER` |
-| **`daemon connection: core is not running`** (Info) | Daemon is offline or crashed. | `systemctl --user start whoisthat-core` or launch `whoisthat` |
-| **`key file ... has mode ... (expected 0600)`** | Master key permissions are broader than user-only. | `chmod 0600 ~/.config/whoisthat/db.key` |
-| **`geoip.dat (... is under 10MB)`** | Global GeoIP database is truncated or stale. | Remove damaged files and restart the client: `rm -rf ~/.config/whoisthat/geo/*` |
+`doctor` reports the problem and a short `fix_hint`; the symptom-to-fix matrix
+and step-by-step remediation live in [Troubleshooting](/reference/troubleshooting).
+This page owns the categories and the JSON schema, not the repair recipes.
+
+## See also
+
+- [Troubleshooting & FAQ](/reference/troubleshooting)
+- [Configuration](/reference/configuration)
+- [CLI Reference](/reference/cli)

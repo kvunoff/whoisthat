@@ -54,10 +54,15 @@ The core forwards exact dial errors, DNS lookup failures, and firewall command e
 ## Frequently Asked Questions (FAQ)
 
 ### Can I run WhoisThat on a headless server without a GUI?
-**Yes.** You can install `whoisthat-core`, manage it via `systemctl --user`, and control connections entirely through non-interactive CLI commands (`whoisthat connect`, `whoisthat toggle`, `whoisthat status -s`, `whoisthat profile list`, `whoisthat settings set ...`). The legacy `-c`/`-t` aliases still work.
+**Yes.** You can install `whoisthat-core`, manage it via `systemctl --user`, and control connections entirely through non-interactive CLI commands (`whoisthat connect`, `whoisthat toggle`, `whoisthat status --short`, `whoisthat profile list`, `whoisthat settings set ...`). The legacy `-c`/`-t` aliases still work.
 
 ### Does WhoisThat prevent DNS leaks?
-**Yes.** In TUN mode, kernel-level DNAT rules intercept all outbound DNS requests destined for port 53. With a Happ DNS profile, queries go to the reserved sink (`198.18.0.53` / `fd00::53`) and then through Xray's tagged domestic/remote resolvers. Split-excluded apps deliberately keep resolving directly.
+It intercepts outbound DNS on destination port 53. In TUN mode, kernel-level
+DNAT rules capture port-53 traffic; with a Happ DNS profile, queries go to the
+reserved sink (`198.18.0.53` / `fd00::53`) and then through Xray's tagged
+domestic/remote resolvers. Split-excluded apps deliberately keep resolving
+directly. DoH/DoT to another port, or an application with its own resolver, is
+not intercepted.
 
 ### Why does `ping <fake-ip>` sometimes get a reply?
 FakeDNS replaces the address with a virtual one from `198.19.0.0/16` or `fc00::/18`. ICMP has no domain name to sniff, so it is never forwarded to the real host. The TUN stack may answer the echo locally instead (typically `ttl 64` and sub-millisecond latency); this synthetic reply proves nothing about remote reachability. Use TCP-based tools (`curl`, browser) to verify fake-IP routing.
@@ -69,24 +74,14 @@ FakeDNS only runs in TUN mode with `GlobalProxy=true` and split mode `off` or `e
 `quic` is deliberately not in the TUN sniffing list to avoid the screen-share latency regression. HTTP/3 traffic may therefore not be mapped back from a fake IP to its domain; force HTTP/2 or use a TCP-based test.
 
 ### How do I completely uninstall WhoisThat?
-```bash
-# 1. Stop and disable service
-systemctl --user stop whoisthat-core 2>/dev/null
-systemctl --user disable whoisthat-core 2>/dev/null
 
-# 2. Remove binaries
-# Package installs:
-sudo pacman -Rns whoisthat-bin      # or whoisthat
-# sudo apt remove whoisthat
-# sudo dnf remove whoisthat
-# sudo add-apt-repository --remove ppa:kvunoff/whoisthat   # PPA users
+Follow the uninstall section of [Maintenance, Upgrading &
+Recovery](/guide/maintenance#uninstall). It covers script installs, packages,
+the systemd unit and the data directory, including the warning about deleting
+`db.key`.
 
-# Script install:
-curl -fsSL https://raw.githubusercontent.com/kvunoff/whoisthat/main/install.sh | bash -s -- --uninstall
+## See also
 
-# Manual leftovers (legacy install location):
-sudo rm -f /usr/local/bin/whoisthat /usr/local/bin/whoisthat-core
-
-# 3. Remove configurations and database (WARNING: destroys saved profiles)
-rm -rf ~/.config/whoisthat ~/.local/share/whoisthat ~/.config/systemd/user/whoisthat-core.service
-```
+- [Doctor Diagnostics](/reference/doctor)
+- [Maintenance, Upgrading & Recovery](/guide/maintenance)
+- [CLI Reference](/reference/cli)

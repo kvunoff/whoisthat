@@ -33,7 +33,7 @@ Press <kbd>g</kbd> on a group page to switch between the two. Switching to **Cus
 
 Editing a rule (add / edit / delete / toggle / preset) on a group page that still inherits Global automatically creates the custom override, seeded from the stored custom rules if present, otherwise from Global.
 
-How the manual layer combines with Happ profiles, `auto`/`manual`/`subscription` and JSON subscriptions is in [Routing Precedence](/reference/routing-precedence#2-then-the-effective-routing-source).
+How the manual layer combines with Happ profiles, `auto`/`manual`/`subscription` and JSON subscriptions is in [Routing Precedence](/reference/routing-precedence#effective-routing-source).
 
 ---
 
