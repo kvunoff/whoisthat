@@ -140,6 +140,7 @@ export default withMermaid(defineConfig({
         collapsed: false,
         items: [
           { text: 'System Overview', link: '/architecture/overview' },
+          { text: 'Rust Client', link: '/architecture/rust-client' },
           { text: 'Go Core Daemon', link: '/architecture/go-core' },
           { text: 'IPC & Event Flow', link: '/architecture/ipc-flow' },
           { text: 'Kernel Networking', link: '/architecture/networking' },
