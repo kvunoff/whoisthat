@@ -1,0 +1,59 @@
+name: Documentation issue
+description: Report a wrong, missing, or outdated documentation page
+title: "[docs]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for documentation problems, not runtime bugs.
+        Include the page URL and what you expected to find.
+  - type: input
+    id: page
+    attributes:
+      label: Page URL or path
+      description: The page that is wrong, missing, or outdated.
+      placeholder: "https://docs.tuqise.com/usage/split-tunnel or docs/usage/split-tunnel.md"
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is wrong?
+      description: Quote the incorrect text or describe the missing section.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What should it say?
+      description: The correct behavior, command, or link, if you know it.
+  - type: dropdown
+    id: audience
+    attributes:
+      label: Who is affected?
+      options:
+        - End user
+        - Operator / sysadmin
+        - Integrator
+        - Developer
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind of problem
+      options:
+        - Incorrect fact
+        - Missing content
+        - Outdated content
+        - Broken link or anchor
+        - Unclear structure
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: WhoisThat version
+      description: Output of `whoisthat version` if the page depends on a release.
+      placeholder: "whoisthat 0.19.0 / whoisthat-core 0.5.4"

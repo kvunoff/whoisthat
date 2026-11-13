@@ -33,6 +33,7 @@ test-shell:
 	./scripts/run-core.test.sh
 	./scripts/install-init.test.sh
 	./scripts/check-dinit.sh
+	./scripts/docs-audit.test.sh
 
 # Release-driver tests: throwaway clones, local bare origin, fake gh.
 test-bump:
