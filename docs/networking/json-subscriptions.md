@@ -72,7 +72,7 @@ provider JSON rules
 
 So a user override always wins, while anything not overridden falls through to the provider's policy. Provider `domainStrategy` and balancers are preserved. Manual rules that target `proxy` are mapped to the provider's `proxy` outbound, its single proxy outbound, or the target of the provider's first catch-all rule (usually the main balancer). A generated `whoisthat-user-proxy` balancer is used only as a fallback when the provider has no usable catch-all; it excludes chained outbounds that use `dialerProxy`.
 
-The canonical order across share-link, Happ and JSON groups is in [Routing Precedence](/reference/routing-precedence#4-json-subscription-groups).
+The canonical order across share-link, Happ and JSON groups is in [Routing Precedence](/reference/routing-precedence#json-subscription-groups).
 
 Happ profiles delivered by the same subscription are used for their geo assets only; their rules are not stacked on top of the JSON routing. Importing, activating or deleting Happ profiles and changing the routing mode is disabled for JSON groups.
 

@@ -111,7 +111,7 @@ Happ profiles, Geo assets and the routing mode are configured **independently fo
 
 Manual rules have two layers: **Global** (page 0, inherited by default) and **Custom** (a group page, toggled with <kbd>g</kbd>). Editing a rule on an inheriting group switches it to Custom, seeded from the stored override or from Global; switching back keeps the custom file on disk.
 
-The full fallback table — including what happens when the active profile is unusable and how JSON subscriptions differ — is in [Routing Precedence](/reference/routing-precedence#2-then-the-effective-routing-source).
+The full fallback table — including what happens when the active profile is unusable and how JSON subscriptions differ — is in [Routing Precedence](/reference/routing-precedence#effective-routing-source).
 
 ---
 

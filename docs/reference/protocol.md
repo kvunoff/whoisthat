@@ -136,6 +136,7 @@ The core replies with `{"msg":"hello-ok","data":{"protocol_version":5}}` or `{"m
 | `traffic-stats` | `{"proxy_up": int, "proxy_down": int, "direct_up": int, "direct_down": int}` | Broadcast every 1 second while a proxy connection is active. |
 | `routing-updated` | `{"group_id": int, "config": { ... }, "source": "global" \| "custom", "custom": { ... }?}` | Fired when routing rules, the manual rule source, or active Happ profiles change. `custom` carries the stored per-group override when one exists. |
 | `warn` | `{"key": "string", "content": "string"}` | Warning or actionable hint (e.g. missing binary, invalid routing link, capability failure). |
+| `error` | `{"key": "string", "content": "string"}` | Terminal or non-recoverable error surfaced to the client; the TUI shows it as an error rather than a warning. |
 | `kill-switch-updated` | `{"enabled": bool, "armed": bool}` | Fired when Kill-Switch state changes. `enabled` is the persisted intent; `armed` is whether the kernel rules are installed. |
 | `split-tunnel-updated` | `{"mode": "off" \| "exclude" \| "include"}` | Fired when split-tunnel mode changes. |
 | `autoconnect-updated` | `{"enabled": bool, "mode": "proxy" \| "tun"}` | Fired when autoconnect parameters change. |
@@ -198,7 +199,7 @@ Subscription metadata (`sub_*`) is automatically populated from the standard `su
 
 Group naming: `add-group` with an empty `name` uses the subscription group's name, taken from the `profile-title` HTTP response header (base64-prefixed values are decoded) or, when absent, the subscription URL host. Both are stored in `sub_name`. `name` follows `sub_name` while the two are equal, so a manual rename survives later subscription refreshes. `update-group` with an empty `name` resets the group to `sub_name`.
 
-`update-group` accepts two optional fields. Omitting `auto_update` leaves the current setting; `false` disables background refreshes. Omitting `update_interval` leaves the manual override unchanged; `0` clears it, and a positive value sets it in seconds (validated as 1–8760 hours). An older protocol-3 daemon ignores these fields; protocol 4 prevents the TUI from attaching to one.
+`update-group` accepts two optional fields. Omitting `auto_update` leaves the current setting; `false` disables background refreshes. Omitting `update_interval` leaves the manual override unchanged; `0` clears it, and a positive value sets it in seconds (validated as 1–8760 hours). Older daemons ignore these fields; the current client requires protocol 5 and does not attach to a mismatched core.
 
 
 ### Routing Profile Info Structure
