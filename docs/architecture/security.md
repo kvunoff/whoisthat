@@ -11,7 +11,7 @@ Security in WhoisThat is designed around the principle of **least privilege**: m
 
 ---
 
-## 1. Encrypted Database at Rest (AES-256-GCM)
+## Encrypted database at rest (AES-256-GCM)
 
 All subscription credentials, server hostnames, tokens, and routing configurations are stored locally on disk under:
 
@@ -35,7 +35,7 @@ All subscription credentials, server hostnames, tokens, and routing configuratio
 
 ---
 
-## 2. Rootless Network Management (Capabilities)
+## Rootless network management (capabilities)
 
 Traditionally, Linux VPN clients require `sudo`, setuid binaries, or a persistent root daemon. WhoisThat eliminates root privilege escalation entirely through **Linux File Capabilities**:
 
@@ -68,9 +68,9 @@ cap_net_admin,cap_net_raw,cap_setpcap=+ep
 
 ---
 
-## 3. Leak Prevention Architecture
+## Leak prevention architecture
 
-### A. System-Wide DNS Hijacking
+### System-wide DNS hijacking
 In TUN mode, misconfigured DNS servers or local resolvers can lead to DNS leaks. WhoisThat prevents this via kernel-level DNAT rules:
 * All outbound UDP and TCP traffic on destination port 53 is intercepted.
 * **Legacy mode** (manual routing, or profiles without DNS fields): queries are DNATed to the configured `dns-servers` and leave through the physical gateway.
@@ -79,20 +79,20 @@ In TUN mode, misconfigured DNS servers or local resolvers can lead to DNS leaks.
 
 The full flow, FakeDNS rules and known limits are in [DNS & FakeDNS](/networking/dns).
 
-### B. Independent Kill-Switch (`whoisthat_ks`)
+### Independent kill-switch (`whoisthat_ks`)
 When the Kill-Switch setting is enabled:
 * A dedicated nftables table (`inet whoisthat_ks`) is installed.
 * All non-VPN traffic is unconditionally blocked on connection drops.
 * Works independently of TUN routing rules.
 
-### C. IPv6 Leak Prevention (Happy Eyeballs)
+### IPv6 leak prevention (Happy Eyeballs)
 Modern operating systems and browsers implement the Happy Eyeballs algorithm (RFC 8305), attempting dual-stack IPv4 and IPv6 connections simultaneously.
 * If a physical LAN lacks an IPv6 gateway but the VPN tunnel provides IPv6, applications in Split Tunnel `exclude` mode could inadvertently leak traffic through the tunnel's IPv6 default gateway.
 * When no physical IPv6 gateway is detected, WhoisThat installs an **unreachable route** for IPv6 in Table 100 (`ip -6 route replace unreachable default table 100`). This immediately fails marked IPv6 attempts, forcing instant fallback to physical IPv4. If a physical IPv6 gateway exists, the mark is routed to that gateway instead.
 
 ---
 
-## 4. Threat model and limitations
+## Threat model and limitations
 
 WhoisThat is a local VPN client, not a sandbox. This section states what the
 security measures protect against, what they assume, and where the boundaries

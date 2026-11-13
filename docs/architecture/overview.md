@@ -94,3 +94,12 @@ flowchart TD
 2. The `inet whoisthat_split` nftables table detects sockets originating from level 4 of this cgroup slice (or level 1 of `whoisthat-<uid>`).
 3. Sockets are marked (`fwmark 1` for exclude, `fwmark 2` for include), triggering kernel route lookup in Table 100 or Table 200.
 4. Egress NAT postrouting masquerades the source IP to match the physical interface address.
+
+## See also
+
+- [Rust Client](/architecture/rust-client)
+- [Go Core Daemon](/architecture/go-core)
+- [IPC & Event Flow](/architecture/ipc-flow)
+- [Data & Encryption](/architecture/data-and-encryption)
+- [Xray Runtime](/architecture/xray-runtime)
+- [Kernel Networking](/architecture/networking)
