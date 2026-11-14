@@ -21,7 +21,7 @@ When HWID is enabled, subscription requests include:
 | `x-device-os` | `linux` | Go `runtime.GOOS` |
 | `x-ver-os` | `6.12.0-arch1-1` | Active kernel release (`uname -r`) |
 | `x-device-model` | `Arch Linux` | `PRETTY_NAME` from `/etc/os-release` |
-| `user-agent` | `whoisthat/v0.5.4` | Configurable, always sent |
+| `user-agent` | `whoisthat/v0.5.5` | Configurable, always sent |
 
 Disabling HWID omits all four `x-*` headers. The `user-agent` is still sent
 because providers use it to select the subscription format.
@@ -47,7 +47,7 @@ whoisthat hwid status
 whoisthat hwid disable
 whoisthat hwid enable
 whoisthat hwid reset
-whoisthat hwid user-agent "whoisthat/v0.5.4"
+whoisthat hwid user-agent "whoisthat/v0.5.5"
 ```
 
 `hwid status` prints the enabled flag, the token, the user-agent and the
