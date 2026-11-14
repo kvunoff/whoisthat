@@ -31,6 +31,9 @@ type pingResult struct {
 	failReason  string
 }
 
+// Per-profile test diagnostics log at debug: the outcome is logged once at info
+// and surfaced through the throttled test-failed broadcast, so a batch of
+// unreachable servers cannot flood core.log.
 func (p *ProxyManager) test(req TestRequest) pingResult {
 	samples := req.SampleCount
 	if samples < 1 {
@@ -59,7 +62,7 @@ func (p *ProxyManager) test(req TestRequest) pingResult {
 			sampleCount: 1,
 		}
 		if ms <= 0 {
-			res.failReason = "tcp dial failed (see core.log)"
+			res.failReason = "tcp dial failed"
 		}
 		return res
 	}
@@ -76,7 +79,7 @@ func (p *ProxyManager) test(req TestRequest) pingResult {
 		if !p.serverReachable(req.Profile) {
 			// Still useful for debugging, but at default WARN it flooded the
 			// log: every tested profile produced a line even when xray later
-			// connected fine. The final result stays at WARN.
+			// connected fine. The final result is logged separately at info.
 			logger.Debugf("test %s (gid=%d id=%d): serverReachable failed for %s://%s — proceeding anyway",
 				req.Profile.Name, req.Profile.GroupId, req.Profile.Id,
 				req.Profile.Protocol, req.Profile.Address)
@@ -105,7 +108,7 @@ func (p *ProxyManager) testTcpOnly(profile structs.Profile) int {
 	start := time.Now()
 	conn, err := net.DialTimeout("tcp", target, time.Duration(timeoutSec)*time.Second)
 	if err != nil {
-		logger.Warnf("test %s (gid=%d id=%d): tcp dial %s failed: %v",
+		logger.Debugf("test %s (gid=%d id=%d): tcp dial %s failed: %v",
 			profile.Name, profile.GroupId, profile.Id, target, err)
 		return -1
 	}
@@ -142,7 +145,7 @@ func (p *ProxyManager) serverReachable(profile structs.Profile) bool {
 func (p *ProxyManager) testViaXray(profile structs.Profile, method string, samples int) pingResult {
 	port, err := p.portPool.GetPort()
 	if err != nil {
-		logger.Warnf("test %s (gid=%d id=%d): port pool exhausted: %v",
+		logger.Debugf("test %s (gid=%d id=%d): port pool exhausted: %v",
 			profile.Name, profile.GroupId, profile.Id, err)
 		return pingResult{latencyMs: -1, sampleCount: samples, lossPct: 100, failReason: "no free test port available"}
 	}
@@ -173,7 +176,7 @@ func (p *ProxyManager) testViaXray(profile structs.Profile, method string, sampl
 		parsed, err = lib.ParseUri(profile.Uri, port, -1)
 	}
 	if err != nil {
-		logger.Warnf("test %s (gid=%d id=%d): ParseUri failed for %s://%s: %v",
+		logger.Debugf("test %s (gid=%d id=%d): ParseUri failed for %s://%s: %v",
 			profile.Name, profile.GroupId, profile.Id,
 			profile.Protocol, profile.Address, err)
 		return pingResult{latencyMs: -1, sampleCount: samples, lossPct: 100, failReason: fmt.Sprintf("ParseUri failed: %v", err)}
@@ -181,14 +184,14 @@ func (p *ProxyManager) testViaXray(profile structs.Profile, method string, sampl
 
 	xray_core := xray.XrayCore{Exited: make(chan error, 1)}
 	if err := xray_core.Start(parsed, geoDir); err != nil {
-		logger.Warnf("test %s (gid=%d id=%d): xray.Start failed: %v",
+		logger.Debugf("test %s (gid=%d id=%d): xray.Start failed: %v",
 			profile.Name, profile.GroupId, profile.Id, err)
 		return pingResult{latencyMs: -1, sampleCount: samples, lossPct: 100, failReason: fmt.Sprintf("xray.Start failed: %v", err)}
 	}
 	defer xray_core.Stop()
 
 	if !waitForListener("tcp", fmt.Sprintf("127.0.0.1:%d", port), 4*time.Second) {
-		logger.Warnf("test %s (gid=%d id=%d): xray SOCKS listener did not bind on port %d within 4s",
+		logger.Debugf("test %s (gid=%d id=%d): xray SOCKS listener did not bind on port %d within 4s",
 			profile.Name, profile.GroupId, profile.Id, port)
 		return pingResult{latencyMs: -1, sampleCount: samples, lossPct: 100, failReason: fmt.Sprintf("xray SOCKS listener did not bind on port %d within 4s", port)}
 	}
