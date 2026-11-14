@@ -95,10 +95,17 @@ sign_changes() {
 }
 
 build() {
-    local series src debver changes
+    local series src debver changes orig
     local -a list
     IFS=',' read -r -a list <<< "$SERIES"
     CHANGES_FILES=()
+
+    # Launchpad keeps one .orig.tar.gz per archive+version. A second series
+    # whose copy has different bytes is rejected, so build it once and reuse it.
+    orig="$WORKDIR/ppa/whoisthat_${VERSION}.orig.tar.gz"
+    mkdir -p "$WORKDIR/ppa/orig/whoisthat-$VERSION"
+    cp -a "$WORKDIR/dist" "$WORKDIR/ppa/orig/whoisthat-$VERSION/dist"
+    tar -czf "$orig" -C "$WORKDIR/ppa/orig" "whoisthat-$VERSION"
 
     for series in "${list[@]}"; do
         series=$(printf '%s' "$series" | tr -d '[:space:]')
@@ -110,11 +117,8 @@ build() {
         mkdir -p "$src"
 
         cp -a "$WORKDIR/dist" "$src/dist"
-
-        # The orig tarball must contain a single whoisthat-<version>/ top-level
-        # directory and no debian/; create it before adding the packaging.
-        tar -czf "$WORKDIR/ppa/$series/whoisthat_${VERSION}.orig.tar.gz" \
-            -C "$WORKDIR/ppa/$series" "whoisthat-$VERSION"
+        # Same bytes for every series, or Launchpad rejects the second upload.
+        cp -a "$orig" "$WORKDIR/ppa/$series/whoisthat_${VERSION}.orig.tar.gz"
 
         cp -a "$ROOT/debian" "$src/debian"
         write_changelog "$src/debian/changelog" "$debver" "$series"

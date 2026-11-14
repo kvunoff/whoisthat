@@ -252,6 +252,9 @@ done
 
 orig="$PPA_WORK/ppa/noble/whoisthat_${VERSION}.orig.tar.gz"
 [ -f "$orig" ] && ok "orig tarball" || bad "orig tarball missing"
+# Launchpad rejects a second series if its .orig tarball differs.
+cmp -s "$orig" "$PPA_WORK/ppa/resolute/whoisthat_${VERSION}.orig.tar.gz" &&
+    ok "orig identical across series" || bad "orig differs between series"
 tar -tzf "$orig" > "$TMP/orig.list"
 sed -n '1p' "$TMP/orig.list" | grep -q "^whoisthat-${VERSION}/" &&
     ok "orig top-level directory" || bad "orig top-level directory"
