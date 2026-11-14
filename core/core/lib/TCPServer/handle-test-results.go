@@ -50,9 +50,13 @@ func (s *Server) handleTestResults() {
 				result.Profile.JitterMs, result.Profile.LossPct,
 				result.Profile.Protocol, result.Profile.Address)
 		} else {
-			logger.Warnf("test %s: failed after %d sample(s), %d%% loss (%s://%s)",
+			reason := ""
+			if result.FailReason != "" {
+				reason = ": " + result.FailReason
+			}
+			logger.Infof("test %s: failed after %d sample(s), %d%% loss (%s://%s)%s",
 				result.Profile.Name, result.SampleCount, result.Profile.LossPct,
-				result.Profile.Protocol, result.Profile.Address)
+				result.Profile.Protocol, result.Profile.Address, reason)
 		}
 		profile_updated := structs.ProfileUpdated{
 			Profile: result.Profile,
