@@ -417,7 +417,7 @@ jobs:
           - image: fedora:44
             prep: dnf install -y -q curl ca-certificates tar
           - image: archlinux:latest
-            prep: pacman -Sy --noconfirm curl ca-certificates tar
+            prep: pacman -Syu --noconfirm curl ca-certificates tar
     container:
       image: ${{ matrix.image }}
       # File capabilities on whoisthat-core need these in the bounding set.
