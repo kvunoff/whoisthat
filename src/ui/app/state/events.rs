@@ -1,11 +1,34 @@
+use std::time::{Duration, Instant};
+
 use crate::core_client::protocol::*;
 use crate::ui::app::helpers::clean_label;
 
 use super::App;
 
+/// 10s for warnings/errors: long enough to read a setcap hint; 4s otherwise.
+fn msg_ttl(text: &str) -> Duration {
+    if text.starts_with("Error") || text.starts_with("Warning") {
+        Duration::from_secs(10)
+    } else {
+        Duration::from_secs(4)
+    }
+}
+
 impl App {
     pub fn msg(&mut self, text: impl Into<String>) {
-        self.last_msg = Some(clean_label(&text.into()));
+        let text = clean_label(&text.into());
+        let until = Instant::now() + msg_ttl(&text);
+        self.last_msg = Some((text, until));
+    }
+
+    pub fn expire_msg(&mut self) {
+        if self
+            .last_msg
+            .as_ref()
+            .is_some_and(|(_, until)| Instant::now() >= *until)
+        {
+            self.last_msg = None;
+        }
     }
 
     // --- state mutations ---

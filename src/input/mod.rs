@@ -29,6 +29,7 @@ pub(crate) async fn handle_input(
 ) -> bool {
     match ev {
         AppEvent::Tick => {
+            app.expire_msg();
             app.logs_state.poll();
             app.promote_pending_update();
             if !app.is_connected() {
