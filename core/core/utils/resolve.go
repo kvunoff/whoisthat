@@ -30,11 +30,13 @@ func ResolveDomain(domain string, dnsServers []string) (*ResolvedIPs, error) {
 	ipSet4 := make(map[string]bool)
 	ipSet6 := make(map[string]bool)
 
+	// A single unreachable resolver (e.g. an IPv6 server on a v4-only host) is
+	// routine; only the aggregate failure below is worth a warning.
 	for _, server := range dnsServers {
 		addr := dnsServerAddr(server)
 		v4, err := queryDNSServer(domain, addr, dns.TypeA)
 		if err != nil {
-			logger.Warnf("A query to %s failed: %v", server, err)
+			logger.Debugf("A query to %s failed: %v", server, err)
 		} else {
 			for _, ip := range v4 {
 				ipSet4[ip] = true
@@ -43,7 +45,7 @@ func ResolveDomain(domain string, dnsServers []string) (*ResolvedIPs, error) {
 
 		v6, err := queryDNSServer(domain, addr, dns.TypeAAAA)
 		if err != nil {
-			logger.Warnf("AAAA query to %s failed: %v", server, err)
+			logger.Debugf("AAAA query to %s failed: %v", server, err)
 		} else {
 			for _, ip := range v6 {
 				ipSet6[ip] = true
