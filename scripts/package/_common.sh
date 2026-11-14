@@ -181,9 +181,20 @@ setup_ssh() {
 
     if [ "$TARGET" = ppa ] && [ "$PUBLISH" = 1 ]; then
         require_cmd ssh-keyscan ssh-keygen
-        local scan="$WORKDIR/launchpad-hostkey" fp
-        ssh-keyscan -t rsa ppa.launchpad.net > "$scan" 2>/dev/null ||
-            die "cannot fetch ppa.launchpad.net host key"
+        local scan="$WORKDIR/launchpad-hostkey" err="$WORKDIR/launchpad-hostkey.err"
+        local fp attempt
+        # Cloud runners occasionally time out a single keyscan (the default
+        # connect timeout is 5s), which used to fail the whole upload. Retry
+        # before giving up; the fingerprint check below still guards the key.
+        for attempt in 1 2 3; do
+            if ssh-keyscan -T 10 -t rsa ppa.launchpad.net >"$scan" 2>"$err"; then
+                break
+            fi
+            if [ "$attempt" = 3 ]; then
+                die "cannot fetch ppa.launchpad.net host key: $(tr '\n' ' ' <"$err")"
+            fi
+            sleep 2
+        done
         fp=$(ssh-keygen -lf "$scan" | awk '{print $2}' | head -n1)
         [ "$fp" = "$LAUNCHPAD_HOST_FP" ] ||
             die "ppa.launchpad.net host key mismatch: $fp"

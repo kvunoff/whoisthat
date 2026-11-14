@@ -121,6 +121,12 @@ EOF
 
 cat > "$BIN/ssh-keyscan" <<'EOF'
 #!/usr/bin/env bash
+# FAKE_KEYSCAN_FAIL_ONCE makes the first call fail like a timed-out runner.
+if [ -n "${FAKE_KEYSCAN_FAIL_ONCE:-}" ] && [ ! -e "$FAKE_KEYSCAN_FAIL_ONCE" ]; then
+    : > "$FAKE_KEYSCAN_FAIL_ONCE"
+    echo "connect to ppa.launchpad.net port 22: Connection timed out" >&2
+    exit 1
+fi
 printf 'ppa.launchpad.net ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQ==\n'
 EOF
 
@@ -254,9 +260,11 @@ grep -q '/debian/' "$TMP/orig.list" &&
 
 echo "package.sh: publish"
 PUB_WORK="$TMP/work-pub"
-if ./scripts/package.sh ppa --publish --workdir "$PUB_WORK" \
+# The first keyscan fails: the publish must retry instead of aborting.
+if FAKE_KEYSCAN_FAIL_ONCE="$TMP/keyscan-timeout" \
+    ./scripts/package.sh ppa --publish --workdir "$PUB_WORK" \
     --artifacts "$DIST" --series noble >/dev/null 2>&1; then
-    ok "ppa publish"
+    ok "ppa publish (keyscan retried)"
 else
     bad "ppa publish failed"
 fi
