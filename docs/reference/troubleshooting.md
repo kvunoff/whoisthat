@@ -20,7 +20,7 @@ Encountering an issue? Consult this troubleshooting matrix and frequently asked 
 | **`whoisthat` is not found after adding the PPA** | Package index was not refreshed, or the requested Ubuntu series is not enabled in the PPA. | Run `sudo apt update`, then `apt-cache policy whoisthat`. For Ubuntu 26.04, enable the Resolute series in the PPA settings first. |
 | **`Failed to connect to core: Connection refused`** on startup | Socket path is locked by a stale process or port 4897 is occupied. | Terminate any lingering instances: `pkill -9 -f whoisthat-core` and restart the client. |
 | **VPN drops when closing terminal** | Client was exited with <kbd>q</kbd> while daemon was running as a child process of the shell session. | Enable **Systemd Autostart** in Settings, or run the core daemon as a systemd user service (`systemctl --user start whoisthat-core`). |
-| **Profile tests consistently show `err`** | Firewall blocking outbound test port range, or server credentials are invalid. | Inspect `~/.config/whoisthat/core.log` for the exact dialer error; verify the `test-port-range` (default `3095–30120`) is open. |
+| **Profile tests consistently show `err`** | Firewall blocking outbound test port range, or server credentials are invalid. | Raise the log level to `debug` and inspect `~/.config/whoisthat/core.log` for the exact dialer error; verify the `test-port-range` (default `3095–30120`) is open. |
 | **Routing rule doesn't match or trigger** | Rule is disabled (grayed out) or geo databases are missing. | Press <kbd>Space</kbd> on the rule to enable it. Verify `~/.config/whoisthat/geo/geoip.dat` is at least 10 MiB and `geosite.dat` at least 1 MiB. |
 | **Kill-Switch left dangling rules after crash** | System rebooted abruptly while Kill-Switch was active. | Automatically self-heals on next core startup. To clear manually: `sudo nft delete table inet whoisthat_ks 2>/dev/null`. |
 | **"Could not enable lingering" error in Settings** | Polkit authorization failed or was dismissed. | In a terminal, run: `sudo loginctl enable-linger $USER`, then re-toggle the setting. |
@@ -46,7 +46,7 @@ whoisthat logs --level error
 whoisthat logs --source tui --follow
 whoisthat logs --since 1h --grep error
 ```
-The core forwards exact dial errors, DNS lookup failures, and firewall command exit codes directly to `core.log`. Xray's own stderr is inlined as a single `[ERRO]` line when it exits unexpectedly. A daemon panic lands in `~/.local/share/whoisthat/core-crash.log`; journald only receives stdout/stderr when the core runs as a user service. If the logs grow too large, `whoisthat logs clear --yes` truncates them and removes rotated backups.
+The core forwards exact dial errors, DNS lookup failures, and firewall command exit codes to `core.log` (per-profile test and per-resolver DNS failures are `debug`; only aggregate failures are warnings). Xray's own stderr is inlined as a single `[ERRO]` line when it exits unexpectedly. A daemon panic lands in `~/.local/share/whoisthat/core-crash.log`; journald only receives stdout/stderr when the core runs as a user service. If the logs grow too large, `whoisthat logs clear --yes` truncates them and removes rotated backups.
 :::
 
 ---
