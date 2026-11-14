@@ -1,3 +1,5 @@
+use std::time::{Duration, Instant};
+
 use super::*;
 
 fn make_app_with_profile() -> App {
@@ -42,6 +44,32 @@ fn test_update() -> crate::update_check::UpdateInfo {
         command: None,
         release_url: "https://github.com/kvunoff/whoisthat/releases/tag/v0.18.2".into(),
     }
+}
+
+#[test]
+fn test_msg_ttl_depends_on_severity() {
+    let mut app = make_app_with_profile();
+    app.msg("Ok");
+    let (_, until) = app.last_msg.clone().unwrap();
+    let ttl = until.saturating_duration_since(Instant::now());
+    assert!(ttl > Duration::from_secs(3) && ttl <= Duration::from_secs(4));
+
+    app.msg("Error: boom");
+    let (_, until) = app.last_msg.clone().unwrap();
+    let ttl = until.saturating_duration_since(Instant::now());
+    assert!(ttl > Duration::from_secs(9) && ttl <= Duration::from_secs(10));
+}
+
+#[test]
+fn test_expire_msg_clears_only_past_deadline() {
+    let mut app = make_app_with_profile();
+    app.last_msg = Some(("Ok".to_string(), Instant::now() + Duration::from_secs(1)));
+    app.expire_msg();
+    assert!(app.last_msg.is_some());
+
+    app.last_msg = Some(("Ok".to_string(), Instant::now()));
+    app.expire_msg();
+    assert!(app.last_msg.is_none());
 }
 
 #[test]

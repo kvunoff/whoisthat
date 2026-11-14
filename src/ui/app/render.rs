@@ -365,7 +365,11 @@ impl App {
         let inner_w = inner.width as usize;
         let gap = if is_compact { 1 } else { 3 };
 
-        let msg = self.last_msg.as_deref().unwrap_or("");
+        let msg = self
+            .last_msg
+            .as_ref()
+            .map(|(msg, _)| msg.as_str())
+            .unwrap_or("");
         let max_right = inner_w.saturating_sub(left_w + tun_w + uptime_w + gap + gap);
         let right = if msg.is_empty() {
             Span::raw("")

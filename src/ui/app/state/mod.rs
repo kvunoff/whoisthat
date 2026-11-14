@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
+use std::time::Instant;
 
 use ratatui::layout::Rect;
 
@@ -30,7 +31,8 @@ pub struct App {
     pub groups: Vec<GroupWithProfiles>,
     pub connection_status: ProxyStatus,
     pub tun_enabled: bool,
-    pub last_msg: Option<String>,
+    /// Status message and the instant it disappears on its own.
+    pub last_msg: Option<(String, Instant)>,
     pub show_ip: bool,
     pub check_updates: bool,
     pub log_enabled: bool,
