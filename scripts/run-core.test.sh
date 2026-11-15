@@ -145,11 +145,18 @@ pass "clean exit pauses; core-restart starts again"
 : > "$conf/core-stop"
 wait_for 40 no_pidfile || fail "cleanup stop failed"
 
+# Restart the wrapper so the exit-78 test starts from a known pause state
+# instead of racing the previous clean-exit loop.
+: > "$conf/core-stop"
+wait_for 40 no_pidfile || fail "cleanup stop failed"
+stop_wrapper
+
 # exit 78 (no authorization / busy global lock) must not tight-loop.
 echo refuse > "$MODE_FILE"
-rm -f "$conf/core-stop" "$conf/core-restart"
+rm -f "$conf/core-stop" "$conf/core-start" "$conf/core-restart" "$conf/core-run"
+: > "$conf/autostart"
 before=$(runs)
-: > "$conf/core-start"
+start_wrapper
 wait_for 40 runs_gt "$before" || fail "78-run never started"
 sleep 2.5
 after=$(runs)
