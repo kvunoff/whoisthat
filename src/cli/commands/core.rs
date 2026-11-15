@@ -27,6 +27,7 @@ async fn status(g: &GlobalArgs) -> Result<(), CliError> {
     let ep = endpoint(g, &cfg)?;
     let binary = crate::core_spawn::find_core_binary();
     let caps = crate::core_spawn::has_cap_net(Path::new(&binary));
+    let authorized = crate::config::authorized();
 
     match Session::open(g).await {
         Ok(mut session) => {
@@ -46,6 +47,7 @@ async fn status(g: &GlobalArgs) -> Result<(), CliError> {
                     "socket": ep.describe(),
                     "binary": binary,
                     "capabilities": caps,
+                    "authorized": authorized,
                     "connected": state.connection_status.connection == "connected",
                     "tun_enabled": state.tun_status,
                     "xray": xray,
@@ -60,6 +62,7 @@ async fn status(g: &GlobalArgs) -> Result<(), CliError> {
                     "Capabilities:{}",
                     if caps { " cap_net_admin" } else { " missing" }
                 );
+                println!("Authorization: {}", if authorized { "yes" } else { "no" });
                 println!(
                     "Connection:  {}{}",
                     state.connection_status.connection,
@@ -84,6 +87,7 @@ async fn status(g: &GlobalArgs) -> Result<(), CliError> {
                     "socket": ep.describe(),
                     "binary": binary,
                     "capabilities": caps,
+                    "authorized": authorized,
                 }));
             } else {
                 println!("Core:        offline");
@@ -93,6 +97,7 @@ async fn status(g: &GlobalArgs) -> Result<(), CliError> {
                     "Capabilities:{}",
                     if caps { " cap_net_admin" } else { " missing" }
                 );
+                println!("Authorization: {}", if authorized { "yes" } else { "no" });
             }
             Ok(())
         }
