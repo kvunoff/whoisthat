@@ -137,10 +137,16 @@ the matching service. `install-init remove` removes everything again.
 
 ### `whoisthat run` without sudo
 
+On systemd hosts `whoisthat run` uses `systemd-run --user` and does not need the
+runner. On non-systemd hosts it talks to the per-user runner instead; the full
+comparison, cgroup paths and failure modes are in
+[Split Tunneling](/usage/split-tunnel#launch-backends).
+
 `whoisthat-runner` is started at boot by init inside
 `/sys/fs/cgroup/whoisthat-<uid>` and runs as your user. `whoisthat run` talks to
 it over `/run/whoisthat/<uid>/whoisthat/runner.sock` (0600); forked applications
-inherit the cgroup. No sudo or password is involved.
+inherit the cgroup. No sudo or password is involved. It is not installed on
+systemd hosts (`install-init runner enable` refuses there).
 
 If the runner is not running, `whoisthat run` fails with the command needed to
 start it. The native "move the process into the cgroup" path is not used: the
@@ -148,7 +154,8 @@ kernel requires write access to the source cgroup, which a normal session does
 not have.
 
 Interactive programs work through a PTY proxy; `whoisthat run vim`, `top` and
-`ssh` behave like normal launches, including Ctrl-C and window resizing.
+`ssh` behave like normal launches, including Ctrl-C and window resizing. Detached
+launches use the runner's double-fork path; systemd uses a transient service.
 
 ### Autostart
 

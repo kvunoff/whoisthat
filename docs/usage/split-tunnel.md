@@ -50,52 +50,114 @@ When the split mode changes while TUN is active, the hijack is reconciled togeth
 
 ---
 
-## Launching Applications (`whoisthat run`)
+## Launch backends
 
-The `whoisthat run` CLI command supports two execution styles.
+`whoisthat run` picks the backend automatically. There is no user-facing switch:
+the client checks for a live systemd (`/run/systemd/system`) and uses
+`systemd-run` when present; otherwise it talks to the per-user runner. In both
+cases the application gets a new process inside a split cgroup, not a migrated
+PID.
 
-On systemd hosts the application is placed in `whoisthat_split.slice` with
-`systemd-run --user`. On other systems a per-user `whoisthat-runner` service
-(forks inside `/sys/fs/cgroup/whoisthat-<uid>`) does the same without sudo; see
-[Non-systemd systems](/guide/platforms). In both cases the application's exit
-code, environment and working directory are preserved.
+| Backend | Selected when | cgroup | Foreground | Detached |
+| :--- | :--- | :--- | :--- | :--- |
+| **systemd** | `has_systemd()` | `user.slice/user-<uid>.slice/user@<uid>.service/whoisthat_split.slice` | `systemd-run --user --collect --slice=... --scope -- <argv>` | transient service (`--same-dir`, GUI env) |
+| **runner** | no systemd | `/sys/fs/cgroup/whoisthat-<uid>` | runner PTY or pipes | double-fork inside the cgroup |
+| **unavailable** | runner not installed/running | — | explicit error + setup hint | explicit error + setup hint |
 
-### A. Background / Detached Mode (`-d`, `--detach`, `-b`)
+### systemd hosts
 
-Use detached mode when starting GUI applications (Spotify, Chrome, Telegram, Steam) so they run independently of your terminal:
+The client runs:
 
 ```bash
-# Launch Spotify bypassing the VPN
+systemd-run --user --collect --slice=whoisthat_split.slice --scope -- <argv>
+```
+
+for foreground use, and a transient service with `--same-dir` plus
+`DISPLAY`, `WAYLAND_DISPLAY` and `XDG_CURRENT_DESKTOP` for detached use. The
+application's exit code is propagated. No sudo or PID migration is involved.
+
+This path needs a running systemd user manager and `systemd-run`. If
+`systemd-run` is missing, the command fails with code `127` and says that
+systemd-tools are required; it does not silently fall back to the runner.
+
+### Non-systemd hosts
+
+The client connects to the per-user runner:
+
+```text
+/run/whoisthat/<uid>/whoisthat/runner.sock   (mode 0600)
+```
+
+The runner is started at boot by the init service and lives inside
+`/sys/fs/cgroup/whoisthat-<uid>`. It runs as your user; the root wrapper
+(`run-runner`) only places it in the cgroup and drops privileges with
+`setpriv`. Applications forked by the runner inherit that cgroup.
+
+- **Foreground with a terminal**: the runner allocates a PTY, forwards
+  stdin/stdout/stderr, signals and window resizes, and returns the application's
+  real exit code. `vim`, `top` and `ssh` behave like normal launches.
+- **Foreground without a terminal**: the runner uses pipes; closing stdin ends
+  the child's stdin, but the session stays alive until the application exits.
+- **Detached (`-d`)**: the runner double-forks with `setsid`, attaches
+  `/dev/null` to stdin/stdout/stderr, and returns after the process starts. The
+  application keeps running after the terminal closes.
+
+The client forwards its environment, working directory and umask. The runner
+re-validates the request (argv ≤ 128 KiB, env ≤ 1 MiB, absolute cwd, no NUL) and
+verifies that the peer UID matches the runner user.
+
+### Setup and failure modes
+
+The runner is a non-systemd backend; `install-init runner enable` refuses to
+install it on a systemd host.
+
+```bash
+sudo /usr/lib/whoisthat/cgroup-setup "$USER"
+sudo /usr/lib/whoisthat/install-init runner enable "$USER" "$HOME"
+```
+
+If the runner is not running, `whoisthat run` prints the socket path and the
+start command for the detected init (`rc-service`, `dinitctl`, `sv`, or a
+generic hint). If the cgroup directory is missing, the root wrapper logs
+`run-runner: ... run: sudo /usr/lib/whoisthat/cgroup-setup <uid>` and retries;
+the runner will not start until the directory exists.
+
+`whoisthat run` refuses to run under `sudo`/`pkexec`: the cgroup and UID would
+be wrong. It must be started as the target user.
+
+Exit codes: `2` means no application was given, `127` means `systemd-run` is
+missing on a systemd host, `1` means the runner/setup failed, and otherwise the
+application's own exit code is propagated.
+
+## Launching applications
+
+### Detached mode (`-d`, `--detach`, `-b`)
+
+Use detached mode for GUI applications that should outlive the terminal:
+
+```bash
 whoisthat run -d spotify
-
-# Launch Google Chrome in background
 whoisthat run -d google-chrome-stable
-
-# Launch Telegram Desktop in background
 whoisthat run -b telegram-desktop
 ```
 
-#### How Detached Mode Works:
-* On systemd, spawns the process inside a transient systemd user service (`systemd-run --user --slice=whoisthat_split.slice --same-dir`); elsewhere it asks `whoisthat-runner` to fork it into `/sys/fs/cgroup/whoisthat-<uid>`.
-* Automatically forwards your graphical session variables (`DISPLAY`, `WAYLAND_DISPLAY`, `XDG_CURRENT_DESKTOP`).
-* **The application keeps running even after you close your terminal or log out of the shell.**
+On systemd this is a transient service under `whoisthat_split.slice` with the
+graphical environment forwarded; on non-systemd it is a double-fork by the
+runner. The application keeps running after the shell exits. The `-d` flag must
+come before the application name; after it, it is an application argument.
 
-### B. Interactive / Foreground Mode
+### Interactive mode
 
-Use interactive mode for terminal utilities, CLI tools, or shell scripts where you need to inspect standard output or pass arguments:
+Use foreground mode for tools where you need the output, input or exit code:
 
 ```bash
-# Verify your external IP directly from the terminal
 whoisthat run curl 2ip.io
-
-# Play a stream in mpv through the designated route
 whoisthat run mpv "https://example.com/video.mp4"
 ```
 
-* On systemd, runs inside a transient systemd user scope (`systemd-run --user --scope --slice=whoisthat_split.slice`); elsewhere the per-user runner provides a PTY and forwards stdin/stdout, signals and window size.
-* Attaches directly to your terminal standard I/O (stdin, stdout, stderr) and returns the program's real exit code.
-
----
+On systemd this is a `--scope`; on non-systemd the runner provides a PTY when
+stdin is a terminal, otherwise pipes. Standard I/O, signals, terminal resize and
+the exit code are preserved.
 
 ## Crucial Note: Single-Instance Applications
 

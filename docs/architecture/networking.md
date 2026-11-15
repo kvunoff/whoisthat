@@ -46,11 +46,14 @@ Split mode places launched processes in a cgroup and marks their sockets:
 | systemd | `user.slice/user-<uid>.slice/user@<uid>.service/whoisthat_split.slice` | `socket cgroupv2 level 4` |
 | non-systemd | `/sys/fs/cgroup/whoisthat-<uid>` | `socket cgroupv2 level 1` |
 
-`whoisthat run` starts the app with `systemd-run --user` on systemd hosts, or
-asks `whoisthat-runner` to fork it inside the per-user cgroup elsewhere. The
-`inet whoisthat_split` table (output hook priority −150) matches the cgroup and
-sets `fwmark 1` in `exclude` mode or `fwmark 2` in `include` mode. Policy routing
-then selects Table 100 or Table 200.
+`whoisthat run` picks the launcher automatically: `systemd-run --user` on
+systemd hosts, or the per-user `whoisthat-runner` over
+`/run/whoisthat/<uid>/whoisthat/runner.sock` elsewhere. Both fork a new process
+inside the cgroup; neither migrates an existing PID. The `inet whoisthat_split`
+table (output hook priority −150) matches the cgroup and sets `fwmark 1` in
+`exclude` mode or `fwmark 2` in `include` mode. Policy routing then selects Table
+100 or Table 200. The user-facing comparison and failure modes are in
+[Split Tunneling](/usage/split-tunnel#launch-backends).
 
 Before adding a rule, the core checks that the cgroup directory exists. A rule
 for a missing cgroup breaks the whole nft transaction, so an unavailable split
