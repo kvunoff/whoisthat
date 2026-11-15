@@ -124,6 +124,10 @@ func TestTestEpochDropsCancelledRequests(t *testing.T) {
 	}
 
 	// Bump epoch now — anything enqueued under a pre-bump epoch must drop.
+	// The captured value must be non-zero: listenForTests treats epoch 0 as
+	// "never cancelled" and would dispatch the request, so the bump above is
+	// what keeps this test independent of the order it runs in.
+	testEpoch.Add(1)
 	staleEpoch := testEpoch.Load()
 	testEpoch.Add(1)
 
@@ -149,6 +153,17 @@ func TestTestEpochDropsCancelledRequests(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Errorf("stale request (gid=10 pid=1) reservation was not released by listenForTests within 500ms")
+}
+
+// TestTestViaXrayNilPortPool pins the guard that keeps a background test
+// goroutine from panicking the whole daemon: an unconfigured manager must
+// report a failed sample, not dereference a nil pool.
+func TestTestViaXrayNilPortPool(t *testing.T) {
+	p := &ProxyManager{}
+	res := p.testViaXray(structs.Profile{Name: "x"}, "http-get", 1)
+	if res.failReason != "test port pool unavailable" {
+		t.Fatalf("failReason = %q, want %q", res.failReason, "test port pool unavailable")
+	}
 }
 
 // TestWaitForListener_UnreachableReturnsFastly confirms the polling loop

@@ -143,6 +143,9 @@ func (p *ProxyManager) serverReachable(profile structs.Profile) bool {
 // config, polls its SOCKS5 listener for readiness, then issues N HTTP
 // GETs/HEADs via the SOCKS5 proxy and computes median + jitter + loss.
 func (p *ProxyManager) testViaXray(profile structs.Profile, method string, samples int) pingResult {
+	if p.portPool == nil {
+		return pingResult{latencyMs: -1, sampleCount: samples, lossPct: 100, failReason: "test port pool unavailable"}
+	}
 	port, err := p.portPool.GetPort()
 	if err != nil {
 		logger.Debugf("test %s (gid=%d id=%d): port pool exhausted: %v",
