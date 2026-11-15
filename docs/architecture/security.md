@@ -148,7 +148,7 @@ before logging. A token embedded in the URL path is not masked. Log files are
 when pasting them into an issue.
 
 **Update checks.** When `check_updates` is enabled (the default), the TUI
-requests `github.com/kvunoff/whoisthat/releases/latest` at most once every 24
+requests `github.com/kvunoff/whoisthat/releases/latest` at most once every 4
 hours. The request carries a static `whoisthat-update-check` User-Agent and no
 account, device or profile identifiers. It follows `HTTPS_PROXY` when set.
 Disable it in Settings or with `WHOISTHAT_NO_UPDATE_CHECK=1`.

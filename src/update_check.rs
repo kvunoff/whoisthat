@@ -12,7 +12,7 @@ const LATEST_URL: &str = "https://github.com/kvunoff/whoisthat/releases/latest";
 const RELEASES_URL: &str = "https://github.com/kvunoff/whoisthat/releases";
 const INSTALL_URL: &str = "https://raw.githubusercontent.com/kvunoff/whoisthat/main/install.sh";
 
-const CHECK_INTERVAL_SECS: i64 = 86_400;
+const CHECK_INTERVAL_SECS: i64 = 4 * 60 * 60;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct UpdateInfo {

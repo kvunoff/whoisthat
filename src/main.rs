@@ -288,7 +288,7 @@ async fn main() -> io::Result<()> {
     };
 
     // Check for a newer release in the background. A cached version is shown
-    // on every launch; the network is queried at most once a day.
+    // on every launch; the network is queried at most once every four hours.
     let now = update_check::now_unix();
     let exe = std::env::current_exe().unwrap_or_default();
     let dev_build = update_check::is_dev_build(&exe);

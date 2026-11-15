@@ -113,7 +113,7 @@ See [Build & Run](/developers/build) for the full loop.
 ### Update notification in the TUI
 
 The TUI checks `github.com/kvunoff/whoisthat/releases/latest` at most once every
-24 hours and shows a popup when a newer stable release exists. The last version
+4 hours and shows a popup when a newer stable release exists. The last version
 seen is cached, so the popup still appears on later launches without another
 network request.
 

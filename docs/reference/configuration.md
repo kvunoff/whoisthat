@@ -69,7 +69,7 @@ test_samples = 3
 test_endpoint = "https://cp.cloudflare.com/generate_204"
 auto_test_on_subscribe = true
 
-# Check GitHub for a newer stable TUI release at startup (at most once a day)
+# Check GitHub for a newer stable TUI release at startup (at most once every 4 hours)
 check_updates = true
 
 # Release the user asked not to be reminded about (without the "v" prefix)
