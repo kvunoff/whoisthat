@@ -32,8 +32,8 @@ pub(super) fn check_capabilities() -> CheckCategory {
             ));
         } else {
             let fix = format!(
-                "sudo setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep {}",
-                core_bin
+                "sudo /usr/lib/whoisthat/authorize-core --add {}",
+                crate::config::effective_uid()
             );
             items.push(CheckItem::fail(
                 "whoisthat-core caps",
@@ -47,6 +47,44 @@ pub(super) fn check_capabilities() -> CheckCategory {
             "cannot check capabilities because whoisthat-core binary was not found",
             None,
         ));
+    }
+
+    // 1b. Root-owned allowlist. Only matters when the binary carries caps.
+    if crate::core_spawn::has_cap_net(core_path) {
+        if crate::config::authorized() {
+            items.push(CheckItem::pass(
+                "core authorization",
+                format!(
+                    "uid {} is in {}",
+                    crate::config::effective_uid(),
+                    crate::config::AUTH_DIR
+                ),
+            ));
+        } else {
+            items.push(CheckItem::fail(
+                "core authorization",
+                "this user is not in the allowlist; whoisthat-core would refuse to start with capabilities",
+                Some(format!(
+                    "sudo /usr/lib/whoisthat/authorize-core --add {}",
+                    crate::config::effective_uid()
+                )),
+            ));
+        }
+    }
+
+    // 1c. Legacy copies with capabilities bypass the allowlist.
+    for legacy in [
+        "/usr/local/bin/whoisthat-core",
+        "/usr/local/sbin/whoisthat-core",
+    ] {
+        let path = Path::new(legacy);
+        if path.exists() && crate::core_spawn::has_cap_net(path) {
+            items.push(CheckItem::warn(
+                "legacy whoisthat-core",
+                format!("{legacy} still carries network capabilities and bypasses the allowlist"),
+                Some(format!("sudo setcap -r {legacy}")),
+            ));
+        }
     }
 
     // 2. /dev/net/tun

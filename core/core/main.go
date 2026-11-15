@@ -479,9 +479,9 @@ func bootAutoconnect(database *db.DB, proxy_manager *proxy.ProxyManager, tun_man
 	}
 
 	if !utils.CanTun() {
-		logger.Warn("boot-autoconnect: TUN mode was requested but the core binary lacks network capabilities.")
-		logger.Warn("boot-autoconnect: this usually happens after rebuilding the core binary (inode changes, caps lost).")
-		logger.Warnf("boot-autoconnect: fix: sudo setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep %s", os.Args[0])
+		logger.Warn("boot-autoconnect: TUN mode was requested but this core cannot manage the network.")
+		logger.Warn("boot-autoconnect: this usually means capabilities were lost after a rebuild, or the user is not authorized.")
+		logger.Warnf("boot-autoconnect: fix: sudo /usr/lib/whoisthat/authorize-core --add %d", utils.RealUserUid())
 		return
 	}
 

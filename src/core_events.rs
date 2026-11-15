@@ -134,10 +134,12 @@ pub(crate) async fn handle_core_event(
                     && !app.tun_enabled
                 {
                     let core_path = find_core_binary();
-                    if !has_cap_net(std::path::Path::new(&core_path)) {
+                    if !has_cap_net(std::path::Path::new(&core_path))
+                        || !crate::config::authorized()
+                    {
                         app.msg(format!(
-                            "TUN autostart failed: core binary missing capabilities. Fix: sudo setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep {}",
-                            std::path::absolute(&core_path).unwrap_or_else(|_| core_path.into()).display()
+                            "TUN autostart failed: core is not authorized. Fix: sudo /usr/lib/whoisthat/authorize-core --add {}",
+                            crate::config::effective_uid()
                         ));
                     } else {
                         app.msg("TUN autostart failed. Check core.log for details.");
@@ -213,7 +215,10 @@ pub(crate) async fn handle_core_event(
                 app.msg("Ok");
                 let _ = client.enable_tun().await;
             } else {
-                app.msg("Error: no TUN permission. Run: sudo setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep /path/to/whoisthat-core");
+                app.msg(format!(
+                    "Error: no TUN permission. Run: sudo /usr/lib/whoisthat/authorize-core --add {}",
+                    crate::config::effective_uid()
+                ));
             }
         }
 
