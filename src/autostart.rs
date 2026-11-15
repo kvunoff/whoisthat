@@ -180,6 +180,7 @@ fn remove_backend() {
 }
 
 pub fn enable(backend: Backend) -> Result<(), String> {
+    crate::core_spawn::ensure_core_authorized().map_err(|e| e.to_string())?;
     if !available().contains(&backend) {
         return Err(match backend {
             Backend::Systemd => "systemd is not running on this system".into(),

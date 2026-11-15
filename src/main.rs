@@ -114,6 +114,9 @@ async fn main() -> io::Result<()> {
         config::save_config(&cfg);
     }
     configure_logger(logger, cfg.log_enabled, &cfg.log_level);
+    if systemd_is_enabled() {
+        crate::systemd::migrate_systemd_unit();
+    }
     let tui_version = env!("CARGO_PKG_VERSION").to_string();
     log::info!(
         "tui v{} started (verbose log: {}, level: {})",
@@ -182,9 +185,6 @@ async fn main() -> io::Result<()> {
 
     if !core_alive {
         log::info!("Spawning fresh core for tui v{tui_version}");
-        if std::io::stdin().is_terminal() && config::core_autoconnect_tun() {
-            core_spawn::ensure_core_caps(&core_spawn::find_core_binary());
-        }
         core_spawn::spawn_core(&cfg.log_level)?;
         let mut retries = 0u32;
         loop {

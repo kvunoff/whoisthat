@@ -1,12 +1,17 @@
 use std::io;
+use std::io::IsTerminal;
 use std::io::Write;
 use std::os::unix::process::CommandExt;
+use std::path::Path;
 use std::process::Command;
+
+const AUTHORIZE_CORE: &str = "/usr/lib/whoisthat/authorize-core";
 
 pub(crate) fn spawn_core(log_level: &str) -> io::Result<()> {
     if let Some(err) = crate::config::runtime_base_error() {
         return Err(io::Error::other(err));
     }
+    ensure_core_authorized()?;
     match crate::lifecycle::effective_backend() {
         crate::lifecycle::Backend::Init => {
             // The init wrapper owns the core lifecycle: ask it to start and let
@@ -48,7 +53,12 @@ pub(crate) fn spawn_core(log_level: &str) -> io::Result<()> {
     Ok(())
 }
 
+/// Large installs may keep an obsolete copy earlier in PATH. Prefer the
+/// canonical package path so a stale capped binary cannot shadow it.
 pub(crate) fn find_core_binary() -> String {
+    if Path::new("/usr/bin/whoisthat-core").is_file() {
+        return "/usr/bin/whoisthat-core".to_string();
+    }
     if let Some(path) = std::env::var_os("PATH") {
         for dir in std::env::split_paths(&path) {
             let candidate = dir.join("whoisthat-core");
@@ -62,77 +72,70 @@ pub(crate) fn find_core_binary() -> String {
         "./whoisthat-core",
         "./core/core/whoisthat-core",
         "./bin/whoisthat-core",
-        "/usr/bin/whoisthat-core",
-        // Legacy install location; kept last so a stale copy cannot shadow
-        // the canonical /usr/bin binary.
+        // Legacy install location; only reached when /usr/bin is absent.
         "/usr/local/bin/whoisthat-core",
     ];
     for c in candidates {
-        if std::path::Path::new(c).exists() {
+        if Path::new(c).exists() {
             return c.to_string();
         }
     }
     "whoisthat-core".to_string()
 }
 
-pub(crate) fn has_cap_net(path: &std::path::Path) -> bool {
+pub(crate) fn has_cap_net(path: &Path) -> bool {
     match Command::new("getcap").arg(path).output() {
         Ok(output) => String::from_utf8_lossy(&output.stdout).contains("cap_net_admin"),
         _ => false,
     }
 }
 
-pub(crate) fn ensure_core_caps(core_path: &str) {
-    let core = std::fs::canonicalize(core_path)
-        .or_else(|_| std::path::absolute(core_path))
-        .unwrap_or_else(|_| core_path.into());
+fn authorize_hint() -> String {
+    format!("sudo {AUTHORIZE_CORE} --add $USER")
+}
 
-    if has_cap_net(&core) {
-        return;
+/// Refuse to spawn a core that would run with network capabilities without a
+/// root-written allowlist entry. Capless proxy/dev builds need no entry: they
+/// cannot change global network state.
+pub(crate) fn ensure_core_authorized() -> io::Result<()> {
+    if crate::config::authorized() {
+        return Ok(());
+    }
+    let bin = find_core_binary();
+    let capped = has_cap_net(Path::new(&bin));
+    if !capped && !Path::new(crate::config::AUTH_DIR).exists() {
+        return Ok(());
+    }
+    if !io::stdin().is_terminal() {
+        return Err(io::Error::other(format!(
+            "whoisthat-core is not authorized for this user; run: {}",
+            authorize_hint()
+        )));
     }
 
-    eprintln!("whoisthat: TUN mode needs network capabilities on core binary.");
-    eprint!("Set up via pkexec? [Y/n] ");
+    eprintln!(
+        "whoisthat: this user is not authorized to run whoisthat-core with network capabilities."
+    );
+    eprint!("Authorize now via pkexec? [Y/n] ");
     let _ = io::stderr().flush();
-
-    let caps = "cap_net_admin,cap_net_raw,cap_setpcap=+ep";
     let mut answer = String::new();
     if io::stdin().read_line(&mut answer).is_err() {
-        eprintln!("\nRun manually: sudo setcap {} {}", caps, core.display());
-        return;
+        return Err(io::Error::other(format!("run: {}", authorize_hint())));
     }
     let answer = answer.trim().to_lowercase();
     if !answer.is_empty() && answer != "y" && answer != "yes" {
-        eprintln!("Run manually: sudo setcap {} {}", caps, core.display());
-        return;
+        return Err(io::Error::other(format!("run: {}", authorize_hint())));
     }
 
-    let s = Command::new("pkexec")
-        .arg("setcap")
-        .arg(caps)
-        .arg(core.as_os_str())
+    let status = Command::new("pkexec")
+        .arg(AUTHORIZE_CORE)
+        .arg("--add")
         .status();
-
-    match s {
-        Ok(s) if s.success() => {
-            if has_cap_net(&core) {
-                eprintln!(
-                    "whoisthat: capabilities verified on {}. TUN mode ready.",
-                    core.display()
-                );
-            } else {
-                eprintln!(
-                    "whoisthat: pkexec reported success but caps missing on {}. Run: sudo setcap {} {}",
-                    core.display(),
-                    caps,
-                    core.display()
-                );
-            }
-        }
-        _ => eprintln!(
-            "whoisthat: failed. Run: sudo setcap {} {}",
-            caps,
-            core.display()
-        ),
+    if matches!(status, Ok(s) if s.success()) && crate::config::authorized() {
+        return Ok(());
     }
+    Err(io::Error::other(format!(
+        "authorization failed; run: {}",
+        authorize_hint()
+    )))
 }
