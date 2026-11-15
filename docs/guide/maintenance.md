@@ -92,6 +92,14 @@ Ubuntu 26.04 (Resolute), enable the Resolute series in the PPA settings first.
 If you installed WhoisThat as a `.deb` or `.rpm`, upgrade it with the package
 manager (`apt upgrade`, `dnf upgrade`) rather than the installer.
 
+Builds before the authorization allowlist had no entry in
+`/etc/whoisthat/authorized.d/`. After the first upgrade the TUI offers a
+`pkexec` prompt and adds your user; with systemd autostart and lingering the
+core can fail once with exit 78 before that prompt. Run
+`sudo /usr/lib/whoisthat/authorize-core --add $USER` manually if you prefer.
+Use `authorize-core --list`, `--remove <user>` and `--remove-all` to manage the
+allowlist; only one core runs per host.
+
 ### Manual build
 
 ```bash
@@ -99,12 +107,12 @@ make build
 sudo make install
 ```
 
-`make install` installs to `/usr/bin` and runs `setcap`. If you build by hand,
-remember that a new `go build` output has a new inode and **loses its
-capabilities**:
+`make install` installs to `/usr/bin`, applies the capabilities and adds your
+user to the allowlist. If you build by hand, remember that a new `go build`
+output has a new inode and **loses its capabilities**:
 
 ```bash
-sudo setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep /usr/bin/whoisthat-core
+sudo /usr/lib/whoisthat/authorize-core --add $USER
 whoisthat doctor
 ```
 

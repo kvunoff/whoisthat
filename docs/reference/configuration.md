@@ -228,6 +228,8 @@ errors forward the underlying error to the client.
 | `~/.local/share/whoisthat/db/routing.json` | Global manual routing rules shared by groups that inherit them. | `0600` |
 | `~/.local/share/whoisthat/db/groups/<id>/routing/manual.json` | Custom manual routing rules for one group (`manual_routing_mode = "custom"`). | `0600` |
 | `~/.config/whoisthat/db.key` | 32-byte cryptographic master key. | `0600` |
+| `/etc/whoisthat/authorized.d/<uid>` | Root-written allowlist entry: a uid may start `whoisthat-core` with network capabilities. Manage with `authorize-core --add/--remove/--list`. | `0644` |
+| `/var/lib/whoisthat/run.lock` | Host-wide `flock` that keeps exactly one core alive. | `0644` |
 | `~/.local/share/whoisthat/runtimes/xray/v26.10.31/` | Pinned official Xray-core binary (versioned runtime directory). | `0755` |
 | `~/.config/whoisthat/geo/` | Global routing databases (`geoip.dat`, `geosite.dat`). | `0755` |
 | `~/.local/share/whoisthat/db/groups/<id>/routing/geo/<profile_id>/<version>/` | Isolated Happ routing profile geo assets. | `0700` |

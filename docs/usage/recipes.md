@@ -32,7 +32,7 @@ whoisthat status --short
 ```
 
 - `autoconnect-profile` must be set **before** `autoconnect=true`; the core refuses to arm autoconnect without a target.
-- `autoconnect-mode=tun` needs the file capabilities; if `whoisthat doctor` reports them missing, re-run `setcap`.
+- `autoconnect-mode=tun` needs the file capabilities and an allowlist entry; if `whoisthat doctor` reports them missing, run `sudo /usr/lib/whoisthat/authorize-core --add $USER`.
 - Enabling the unit does not start it immediately — run `systemctl --user start` once (or log out/in).
 - For monitoring, `whoisthat status --watch --json` is the stable NDJSON stream.
 

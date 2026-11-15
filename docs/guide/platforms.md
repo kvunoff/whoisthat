@@ -133,7 +133,9 @@ sudo /usr/lib/whoisthat/install-init core enable "$USER" "$HOME"
 ```
 
 `install-init` detects the running init from `/run` and the PATH, and renders
-the matching service. `install-init remove` removes everything again.
+the matching service. `install-init core enable` also authorizes the user with
+`authorize-core`; `install-init remove` removes the services, the allowlist
+entry and the host-wide lock.
 
 ### `whoisthat run` without sudo
 

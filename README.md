@@ -82,8 +82,9 @@ sudo apt update
 sudo apt install whoisthat
 ```
 
-The PPA package sets the required file capabilities in its post-install script,
-so no manual `setcap` step is needed. It currently publishes Noble `amd64`
+The PPA package sets the required file capabilities in its post-install script.
+Authorize your user once with `sudo /usr/lib/whoisthat/authorize-core --add $USER`
+(the TUI offers a `pkexec` prompt on first start). It currently publishes Noble `amd64`
 builds; enable additional series or architectures in the PPA settings, or use
 the release `.deb` or the installer.
 
@@ -108,7 +109,7 @@ cargo build --release --locked
 # Install & set capabilities
 sudo install -Dm755 target/release/whoisthat /usr/bin/whoisthat
 sudo install -Dm755 core/core/whoisthat-core  /usr/bin/whoisthat-core
-sudo setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep /usr/bin/whoisthat-core
+sudo /usr/lib/whoisthat/authorize-core --add $USER
 ```
 
 ---

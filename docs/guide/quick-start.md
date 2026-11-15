@@ -15,7 +15,8 @@ This gets you from a fresh install to a working connection.
 - Run `whoisthat doctor` once. It checks the binaries, capabilities, IPC socket
   and storage.
 - TUN mode needs the core capabilities; proxy mode does not. If TUN is not
-  available, the TUI reports the missing capability and points to `setcap`.
+  available, the TUI reports the missing authorization and points to
+  `sudo /usr/lib/whoisthat/authorize-core --add $USER`.
 
 ## Launch
 

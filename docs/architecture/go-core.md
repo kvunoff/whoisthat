@@ -17,28 +17,32 @@ IPC server. The Rust client only sends commands and renders events.
 
 1. Parse `--version`/`--help`.
 2. Configure the rotating log and crash output.
-3. Load `config.json` (`AppConfig`). This happens before the lock so an
+3. Refuse to start (exit 78) when the process holds `CAP_NET_ADMIN` but the uid
+   has no entry in `/etc/whoisthat/authorized.d/`. Capless builds skip this.
+4. Take the host-wide `flock` on `/var/lib/whoisthat/run.lock` and exit 78 when
+   another core holds it; this keeps exactly one core on the host.
+5. Create and validate the runtime directory (owner, mode `0700`, no symlink).
+6. Load `config.json` (`AppConfig`). This happens before the per-uid lock so an
    `ipc-socket-path` override is known.
-4. Acquire the single-instance flock. A second core exits 0, so systemd
-   `Restart=on-failure` does not loop.
-5. Raise permitted network capabilities (`CAP_NET_ADMIN`, `CAP_NET_RAW`) into
-   the inheritable and ambient sets.
-6. Refuse to start if another core still owns the IPC socket.
-7. Check the per-network-namespace active-user marker; a second user must not
-   reconcile another user's rules.
-8. If no core is live, run `tunmode.ReconcileOrphanedRules()` and re-arm the
-   kill-switch when `kill-switch-enabled` is set.
-9. Ensure geo assets (`geoip.dat`, `geosite.dat`).
-10. Initialize the encrypted database and load the master key.
-11. Initialize `ProxyManager`, its pre-start kill-switch handler, and the
+7. Acquire the per-uid single-instance flock. A second core of the same uid
+   exits 0, so systemd `Restart=on-failure` does not loop.
+8. Raise permitted network capabilities (`CAP_NET_ADMIN`, `CAP_NET_RAW`) into
+   the inheritable and ambient sets for privileged children.
+9. Refuse to start if another core still owns the IPC socket, and refuse (exit
+   78) when an older core that does not take the global lock is still running.
+10. If no core is live, run `tunmode.ReconcileOrphanedRules()` and re-arm the
+    kill-switch when `kill-switch-enabled` is set.
+11. Ensure geo assets (`geoip.dat`, `geosite.dat`).
+12. Initialize the encrypted database and load the master key.
+13. Initialize `ProxyManager`, its pre-start kill-switch handler, and the
     persisted test config.
-12. Initialize `TunModeManager`.
-13. Initialize `xraymgr` and, if needed, start a background runtime download.
-14. Check for missing external binaries and prepare the warning hints.
-15. Start `TCPServer` (UDS, optional TCP).
-16. Start boot autoconnect and the subscription auto-update loop in a
+14. Initialize `TunModeManager`.
+15. Initialize `xraymgr` and, if needed, start a background runtime download.
+16. Check for missing external binaries and prepare the warning hints.
+17. Start `TCPServer` (UDS, optional TCP).
+18. Start boot autoconnect and the subscription auto-update loop in a
     goroutine.
-17. Install the SIGINT/SIGTERM handler and block.
+19. Install the SIGINT/SIGTERM handler and block.
 
 The startup order matters: the lock and socket probes run before the orphan
 reconcile, so a new core never tears down rules owned by a live one.
@@ -48,7 +52,7 @@ reconcile, so a new core never tears down rules owned by a live one.
 `lib/TCPServer` accepts connections and reads frames:
 
 - 4-byte big-endian length + JSON, maximum 64 MiB (`framing.go`);
-- UDS is gated by filesystem mode `0600`;
+- UDS is gated by filesystem mode `0600` and a `SO_PEERCRED` uid check;
 - the opt-in TCP listener requires a `hello` with the per-user token and a
   matching protocol version before any command is processed.
 
