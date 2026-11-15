@@ -35,6 +35,9 @@ export EXPECTED_OWNER
 EXPECTED_OWNER=$(id -u)
 
 uid=$(id -u)
+# GitHub runners use uid 1001; pick a different second uid either way.
+other=1001
+[ "$other" = "$uid" ] && other=1002
 authdir=$root/etc/whoisthat/authorized.d
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
@@ -55,14 +58,14 @@ run --add "$uid" || fail "idempotent --add failed"
 [ "$(ls "$authdir" | wc -l)" -eq 1 ] || fail "idempotent --add duplicated the entry"
 pass "add is idempotent"
 
-run --add 1001 || fail "--add numeric uid failed"
-[ -f "$authdir/1001" ] || fail "numeric uid entry missing"
+run --add "$other" || fail "--add numeric uid failed"
+[ -f "$authdir/$other" ] || fail "numeric uid entry missing"
 run --list | grep -q "^$uid " || fail "--list does not show the current uid"
-run --list | grep -q "^1001 " || fail "--list does not show 1001"
+run --list | grep -q "^$other " || fail "--list does not show $other"
 pass "list shows authorized uids"
 
-run --remove 1001 || fail "--remove failed"
-[ ! -e "$authdir/1001" ] || fail "removed uid still present"
+run --remove "$other" || fail "--remove failed"
+[ ! -e "$authdir/$other" ] || fail "removed uid still present"
 [ -f "$authdir/$uid" ] || fail "removing one uid dropped another"
 pass "remove drops only the requested uid"
 
