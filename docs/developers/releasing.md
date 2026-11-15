@@ -103,20 +103,16 @@ timestamps), so content is not hash-compared.
 
 Continuous integration is handled via GitHub Actions in `.github/workflows/`:
 
-* **`ci.yml`**: Runs on push and PRs targeting `main`:
-  * Rust: `cargo fmt --all --check`, `cargo clippy --all-targets --no-deps -- -D warnings`, `cargo test` on a pinned rustc.
-  * MSRV: `cargo check --all-targets --locked` on the `rust-version` declared in `Cargo.toml`.
-  * Go: `go vet ./...`, `go build ./...`, `go test ./...`, `go mod tidy -diff`, `govulncheck`.
-  * Shell: `shellcheck -S warning` over `install.sh`, `debian/postinst` and `scripts/*.sh`, then `./scripts/install.test.sh`, `./scripts/check-docs.test.sh`, `./scripts/release-upload.test.sh`, `./scripts/package.test.sh`.
-  * Bump driver: `./scripts/bump.test.sh` (separate job).
-  * Version consistency: `./scripts/check-versions.sh` (Cargo/package/PKGBUILD/aur-bin/.SRCINFO/docs/Xray pins).
-  * Static build: `cargo build --target x86_64-unknown-linux-musl` plus a `CGO_ENABLED=0` core build, asserting neither binary has an `INTERP` segment.
-  * Docs: `npm run docs:build` plus `./scripts/check-docs.sh` (IPC/config/CLI names, links, anchors, toolchain strings).
-  * Integration: privileged netns suite (`-tags=integration`), failing if no `TestNetns*` ran.
-  * IPC smoke: builds both binaries and reads a sandboxed core through `whoisthat core status --json` (`make test-e2e`).
-  * Coverage: `cargo llvm-cov` (lcov) and `go test -coverprofile` artifacts; report only, no `--fail-under` gate.
+* **`ci.yml`**: Runs on push and PRs targeting `main`. The jobs are independent
+  and cover Rust lint and tests, Go lint, tests, vulnerabilities and fuzzing,
+  shell and workflow linting, script tests, packaging, docs, the static musl
+  build, and the IPC and netns end-to-end suites. The per-job breakdown and the
+  coverage floors live in [Testing](/developers/testing).
+* **`security.yml`**: Runs weekly and on demand: `cargo audit`, `govulncheck`
+  and a longer fuzzing run, so an advisory published after a merge is caught.
 * **`release.yml`**: Triggers on every `v*` tag push (or manually with `tag`):
-  1. `verify` checks out the tag, runs `cargo test`, `go vet` and `go test`; `build` depends on it.
+  1. `verify` checks out the tag and runs the version check, the Rust tests,
+     `go vet` and `go test`; `build` depends on it.
   2. Builds amd64/arm64 static musl binaries and verifies neither ELF has an `INTERP` segment (static or static-pie).
   3. Creates the bundle tarballs, `.deb`/`.rpm` via `nfpm`, and smoke-tests the packages in Debian and Fedora containers.
   4. Attests build provenance for `dist/*`.

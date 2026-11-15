@@ -93,7 +93,8 @@ whoisthat/
 │           ├── version/     ← CoreVersion and protocol.txt
 │           └── proxy/       ← mainproxy (connect/stop/status, routing+DNS, tester+probes), xray wrapper, TUN manager + scripts
 └── .github/workflows/
-    ├── ci.yml          ← Automated CI: Rust, Go, shell, docs, versions and static musl build
+    ├── ci.yml          ← Automated CI: Rust, Go, scripts, docs, versions and static musl build
+    ├── security.yml    ← Weekly audit, vulnerability scan and long fuzzing
     ├── release.yml     ← Builds release assets, publishes drafts and AUR/PPA packages
     ├── core-sync.yml   ← Mirrors core/core into kvunoff/whoisthat-core
     └── deploy-docs.yml ← Automated documentation build and deploy to GitHub Pages
