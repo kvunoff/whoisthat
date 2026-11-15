@@ -135,6 +135,9 @@ func IPCTokenPath() string {
 // EnsureIPCToken reads the existing token or generates a new 256-bit one.
 func EnsureIPCToken() (string, error) {
 	path := IPCTokenPath()
+	if err := utils.EnsurePrivateDir(filepath.Dir(path), os.Getuid()); err != nil {
+		return "", fmt.Errorf("unsafe IPC token directory %s: %w", filepath.Dir(path), err)
+	}
 	if data, err := os.ReadFile(path); err == nil {
 		token := strings.TrimSpace(string(data))
 		if len(token) == 64 {
@@ -149,7 +152,6 @@ func EnsureIPCToken() (string, error) {
 		return "", fmt.Errorf("failed to generate IPC token: %w", err)
 	}
 	token := hex.EncodeToString(raw)
-	utils.EnsurePerms(filepath.Dir(path), 0700)
 	if err := utils.AtomicWriteFile(path, []byte(token+"\n"), 0600); err != nil {
 		return "", fmt.Errorf("failed to write IPC token %s: %w", path, err)
 	}

@@ -291,11 +291,32 @@ pub fn fallback_log_path(name: &str) -> PathBuf {
 /// Candidates for the core log: the normal config dir first, then the
 /// read-only fallback (must match core/core/main.go).
 pub fn core_log_paths() -> Vec<PathBuf> {
-    vec![config_dir().join("core.log"), fallback_log_path("core.log")]
+    let mut paths = vec![config_dir().join("core.log")];
+    let fallback = fallback_log_path("core.log");
+    if fallback.parent().is_some_and(owned_dir) {
+        paths.push(fallback);
+    }
+    paths
 }
 
 pub fn tui_log_paths() -> Vec<PathBuf> {
-    vec![data_dir().join("tui.log"), fallback_log_path("tui.log")]
+    let mut paths = vec![data_dir().join("tui.log")];
+    let fallback = fallback_log_path("tui.log");
+    if fallback.parent().is_some_and(owned_dir) {
+        paths.push(fallback);
+    }
+    paths
+}
+
+/// True when dir is missing (we will create it) or is a real directory owned
+/// by this user. A predictable /tmp path pre-created by another user must not
+/// receive logs or be read as ours.
+pub(crate) fn owned_dir(dir: &Path) -> bool {
+    match fs::symlink_metadata(dir) {
+        Ok(meta) => meta.is_dir() && !meta.file_type().is_symlink() && meta.uid() == uid(),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => true,
+        Err(_) => false,
+    }
 }
 
 /// First existing candidate, otherwise the primary path (for a "not found"
@@ -479,6 +500,26 @@ mod tests {
         let _ = fs::remove_file(&path);
         std::os::unix::fs::symlink(dir.join("target"), &path).unwrap();
         assert!(!authorized_entry(&dir, uid, uid), "symlink must be refused");
+    }
+
+    #[test]
+    fn owned_dir_rejects_symlink_and_regular_files() {
+        let dir = tmp_dir("owned-dir");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        assert!(owned_dir(&dir));
+        assert!(
+            owned_dir(&dir.join("missing")),
+            "missing dirs are created later"
+        );
+
+        let link = dir.join("link");
+        std::os::unix::fs::symlink(&dir, &link).unwrap();
+        assert!(!owned_dir(&link), "symlinks must be rejected");
+
+        let file = dir.join("file");
+        fs::write(&file, b"").unwrap();
+        assert!(!owned_dir(&file), "regular files must be rejected");
     }
 
     #[test]
