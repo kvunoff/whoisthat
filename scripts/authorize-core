@@ -1,0 +1,244 @@
+#!/bin/sh
+# Root helper: authorize a user to run whoisthat-core with network capabilities.
+#
+#   authorize-core --add USER|UID [--bin PATH]
+#   authorize-core --remove USER|UID
+#   authorize-core --remove-all
+#   authorize-core --list
+#
+# --add writes /etc/whoisthat/authorized.d/<uid> and creates the host-wide
+# /var/lib/whoisthat/run.lock. --bin is for development builds and is refused
+# when the helper was started through pkexec.
+set -eu
+umask 022
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+ETCDIR=${WHOISTHAT_ETCDIR:-/etc}
+VARLIB=${WHOISTHAT_VARLIB:-/var/lib/whoisthat}
+BINDIR=${WHOISTHAT_BINDIR:-/usr/bin}
+SETCAP=${SETCAP:-setcap}
+GETCAP=${GETCAP:-getcap}
+EXPECTED_OWNER=${EXPECTED_OWNER:-0}
+
+warn() { echo "whoisthat: $*" >&2; }
+die() { echo "whoisthat: $*" >&2; exit 1; }
+
+usage() {
+    sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'
+}
+
+require_root() {
+    if [ "${WHOISTHAT_TEST_MODE:-}" = 1 ]; then
+        return 0
+    fi
+    [ "$(id -u)" = 0 ] || die "must be run as root (try sudo)"
+}
+
+resolve_target() {
+    arg=${1:-}
+    if [ -z "$arg" ]; then
+        if [ -n "${PKEXEC_UID:-}" ]; then
+            arg=$PKEXEC_UID
+        elif [ -n "${SUDO_UID:-}" ]; then
+            arg=$SUDO_UID
+        else
+            die "no target user; pass USER or UID"
+        fi
+    fi
+    case "$arg" in
+        ''|*[!0-9]*)
+            uid=$(id -u "$arg" 2>/dev/null) || die "no such user: $arg"
+            ;;
+        *)
+            uid=$arg
+            ;;
+    esac
+    case "$uid" in
+        ''|*[!0-9]*) die "invalid uid: $uid" ;;
+    esac
+    [ "$uid" -ge 1000 ] || die "refusing uid $uid (must be >= 1000)"
+    echo "$uid"
+}
+
+username_of() {
+    id -un "$1" 2>/dev/null || awk -F: -v u="$1" '$3==u {print $1}' /etc/passwd 2>/dev/null || echo "$1"
+}
+
+validate_bin() {
+    bin=$1
+    case "$bin" in
+        /*) ;;
+        *) die "bin must be an absolute path: $bin" ;;
+    esac
+    [ -f "$bin" ] || die "bin does not exist: $bin"
+    [ ! -L "$bin" ] || die "bin must not be a symlink: $bin"
+    owner=$(stat -c %u "$bin" 2>/dev/null || echo "")
+    [ "$owner" = "$EXPECTED_OWNER" ] || die "bin must be owned by uid $EXPECTED_OWNER (found ${owner:-?}): $bin"
+    mode=$(stat -c %a "$bin" 2>/dev/null || echo "")
+    case "$mode" in
+        ''|*[!0-7]*) die "cannot read mode of $bin" ;;
+    esac
+    [ $(( 0$mode & 0022 )) -eq 0 ] || die "bin must not be group/other writable: $bin"
+}
+
+auth_file() { echo "$ETCDIR/whoisthat/authorized.d/$1"; }
+
+ensure_dirs() {
+    mkdir -p "$ETCDIR/whoisthat/authorized.d"
+    chmod 0755 "$ETCDIR/whoisthat" "$ETCDIR/whoisthat/authorized.d"
+    mkdir -p "$VARLIB"
+    chmod 0755 "$VARLIB"
+    if [ ! -e "$VARLIB/run.lock" ]; then
+        : > "$VARLIB/run.lock"
+        chmod 0644 "$VARLIB/run.lock"
+    fi
+}
+
+apply_caps() {
+    bin=$1
+    if ! command -v "$SETCAP" >/dev/null 2>&1; then
+        warn "setcap not found; TUN mode needs libcap"
+        return 0
+    fi
+    if "$SETCAP" cap_net_admin,cap_net_raw,cap_setpcap=+ep "$bin" 2>/dev/null; then
+        if command -v "$GETCAP" >/dev/null 2>&1 && "$GETCAP" "$bin" 2>/dev/null | grep -q cap_net_admin; then
+            echo "whoisthat: capabilities set on $bin"
+        else
+            warn "setcap reported success but $GETCAP does not show cap_net_admin on $bin"
+        fi
+    else
+        warn "setcap failed on $bin (TUN mode will not work; proxy mode still does)"
+    fi
+}
+
+add_user() {
+    uid=$(resolve_target "$1")
+    bin=${BINDIR}/whoisthat-core
+    if [ -n "${BIN_OVERRIDE:-}" ]; then
+        [ -z "${PKEXEC_UID:-}" ] || die "--bin cannot be used through pkexec"
+        bin=$BIN_OVERRIDE
+    fi
+    validate_bin "$bin"
+    apply_caps "$bin"
+    ensure_dirs
+
+    path=$(auth_file "$uid")
+    tmp="$path.tmp.$$"
+    : > "$tmp"
+    chmod 0644 "$tmp"
+    mv -f "$tmp" "$path"
+    echo "whoisthat: uid $uid ($(username_of "$uid")) is authorized"
+    echo "whoisthat: host-wide lock: $VARLIB/run.lock"
+}
+
+remove_user() {
+    uid=$(resolve_target "$1")
+    rm -f "$(auth_file "$uid")"
+    echo "whoisthat: uid $uid is no longer authorized"
+}
+
+remove_all() {
+    dir="$ETCDIR/whoisthat/authorized.d"
+    if [ -d "$dir" ]; then
+        for f in "$dir"/*; do
+            [ -e "$f" ] || continue
+            case "${f##*/}" in
+                ''|*[!0-9]*)
+                    warn "leaving non-numeric entry in place: $f"
+                    ;;
+                *)
+                    rm -f "$f"
+                    ;;
+            esac
+        done
+        rmdir "$dir" 2>/dev/null || true
+    fi
+    rm -f "$VARLIB/run.lock"
+    bins="$BINDIR/whoisthat-core"
+    if [ "${WHOISTHAT_TEST_MODE:-}" != 1 ]; then
+        bins="$bins /usr/local/bin/whoisthat-core /usr/local/sbin/whoisthat-core"
+    fi
+    for bin in $bins; do
+        [ -f "$bin" ] || continue
+        if command -v "$SETCAP" >/dev/null 2>&1; then
+            "$SETCAP" -r "$bin" 2>/dev/null || true
+        fi
+    done
+    echo "whoisthat: authorization removed"
+}
+
+list_users() {
+    dir="$ETCDIR/whoisthat/authorized.d"
+    [ -d "$dir" ] || return 0
+    for f in "$dir"/*; do
+        [ -e "$f" ] || continue
+        name=${f##*/}
+        case "$name" in
+            ''|*[!0-9]*) warn "ignoring non-numeric entry: $f" ;;
+            *) echo "$name $(username_of "$name")" ;;
+        esac
+    done
+}
+
+action=
+target=
+BIN_OVERRIDE=
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --add|--remove|--remove-all|--list)
+            [ -z "$action" ] || die "only one action is allowed"
+            action=$1
+            ;;
+        --bin)
+            shift
+            [ "$#" -gt 0 ] || die "--bin needs a path"
+            BIN_OVERRIDE=$1
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        --)
+            shift
+            while [ "$#" -gt 0 ]; do
+                [ -z "$target" ] || die "too many arguments"
+                target=$1
+                shift
+            done
+            break
+            ;;
+        -*)
+            die "unknown option: $1"
+            ;;
+        *)
+            [ -z "$target" ] || die "too many arguments"
+            target=$1
+            ;;
+    esac
+    shift
+done
+
+[ -n "$action" ] || { usage >&2; exit 2; }
+require_root
+
+case "$action" in
+    --add)
+        [ -z "$BIN_OVERRIDE" ] || [ -z "${PKEXEC_UID:-}" ] || die "--bin cannot be used through pkexec"
+        add_user "$target"
+        ;;
+    --remove)
+        [ -z "$BIN_OVERRIDE" ] || die "--bin is only valid with --add"
+        remove_user "$target"
+        ;;
+    --remove-all)
+        [ -z "$BIN_OVERRIDE" ] || die "--bin is only valid with --add"
+        [ -z "$target" ] || die "--remove-all takes no user"
+        remove_all
+        ;;
+    --list)
+        [ -z "$BIN_OVERRIDE" ] || die "--bin is only valid with --add"
+        [ -z "$target" ] || die "--list takes no user"
+        list_users
+        ;;
+esac
