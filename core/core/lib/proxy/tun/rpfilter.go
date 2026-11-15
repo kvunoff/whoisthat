@@ -67,7 +67,7 @@ TUN_NAME="%s"
 DEF_IFACE="%s"
 
 for IFACE in "$DEF_IFACE" "$TUN_NAME"; do
-    if ip link show "$IFACE" &>/dev/null; then
+    if ip link show "$IFACE" >/dev/null 2>&1; then
         echo "Setting rp_filter=2 for $IFACE (temporary)"
         sysctl -w net.ipv4.conf."$IFACE".rp_filter=2
     else

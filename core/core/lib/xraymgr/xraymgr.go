@@ -105,12 +105,16 @@ func (m *Manager) Init() error {
 		managedBin := filepath.Join(runtimeDir, "xray")
 		if info, err := os.Stat(managedBin); err == nil && !info.IsDir() {
 			if matches, ver, err := CheckBinaryVersion(managedBin, PinnedVersion); err == nil && matches {
-				m.binPath = managedBin
-				m.status.Status = "ready"
-				m.status.Version = ver
-				m.status.Progress = 100
-				logger.Infof("xraymgr: managed Xray %s verified ready at %s", ver, managedBin)
-				return nil
+				if err := verifyDigest(runtimeDir, managedBin); err != nil {
+					logger.Warnf("xraymgr: managed binary %s failed the integrity check: %v", managedBin, err)
+				} else {
+					m.binPath = managedBin
+					m.status.Status = "ready"
+					m.status.Version = ver
+					m.status.Progress = 100
+					logger.Infof("xraymgr: managed Xray %s verified ready at %s", ver, managedBin)
+					return nil
+				}
 			} else {
 				logger.Warnf("xraymgr: existing managed binary %s did not pass check: matches=%v, ver=%s, err=%v", managedBin, matches, ver, err)
 			}
@@ -158,6 +162,9 @@ func (m *Manager) Init() error {
 
 // adoptSystemBinary copies a matching system binary into the managed runtime directory.
 func (m *Manager) adoptSystemBinary(srcPath, destDir string) error {
+	if err := validateSystemBinary(srcPath); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(destDir, 0755); err != nil {
 		return err
 	}
@@ -178,7 +185,10 @@ func (m *Manager) adoptSystemBinary(srcPath, destDir string) error {
 	if _, err := io.Copy(destFile, srcFile); err != nil {
 		return err
 	}
-	return os.Chmod(destPath, 0755)
+	if err := os.Chmod(destPath, 0755); err != nil {
+		return err
+	}
+	return writeDigest(destDir, destPath)
 }
 
 // EnsureRuntimeAsync starts a background download if the binary is missing or not ready.
@@ -290,6 +300,9 @@ func (m *Manager) downloadAndInstall() error {
 	}
 	if !matches {
 		return fmt.Errorf("downloaded binary version %q did not match pinned version %q", actualVer, PinnedVersion)
+	}
+	if err := writeDigest(extractedDir, testBin); err != nil {
+		return fmt.Errorf("failed to record binary digest: %w", err)
 	}
 
 	// 6. Move to final runtime directory

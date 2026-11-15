@@ -47,6 +47,9 @@ func writeFakeXray(t *testing.T, dir, version string) string {
 	if err := os.WriteFile(path, []byte(script), 0755); err != nil {
 		t.Fatal(err)
 	}
+	if err := writeDigest(dir, path); err != nil {
+		t.Fatal(err)
+	}
 	return path
 }
 
@@ -350,7 +353,34 @@ func TestInit_AdoptsManagedBinary(t *testing.T) {
 	}
 }
 
+func TestInit_RejectsTamperedManagedBinary(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	runtimeDir, err := RuntimeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(runtimeDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	path := writeFakeXray(t, runtimeDir, PinnedVersion)
+	tampered := fmt.Sprintf("#!/bin/sh\nif [ \"$1\" = \"version\" ]; then\n  echo \"Xray %s\"\n  exit 0\nfi\nexit 0\n# tampered\n", PinnedVersion)
+	if err := os.WriteFile(path, []byte(tampered), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	m := NewManager()
+	if err := m.Init(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.GetXrayBin(); err == nil {
+		t.Fatal("tampered managed binary must not be reported ready")
+	}
+}
+
 func TestInit_AdoptsSystemBinary(t *testing.T) {
+	old := trustedSystemOwner
+	trustedSystemOwner = os.Getuid()
+	t.Cleanup(func() { trustedSystemOwner = old })
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	dir := t.TempDir()
 	writeFakeXray(t, dir, PinnedVersion)
@@ -378,6 +408,9 @@ func TestInit_AdoptsSystemBinary(t *testing.T) {
 }
 
 func TestInit_WrongManagedFallsBackToSystem(t *testing.T) {
+	old := trustedSystemOwner
+	trustedSystemOwner = os.Getuid()
+	t.Cleanup(func() { trustedSystemOwner = old })
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	runtimeDir, err := RuntimeDir()
 	if err != nil {
