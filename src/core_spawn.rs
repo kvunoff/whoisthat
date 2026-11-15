@@ -95,7 +95,7 @@ fn authorize_hint() -> String {
 /// root-written allowlist entry. Capless proxy/dev builds need no entry: they
 /// cannot change global network state.
 pub(crate) fn ensure_core_authorized() -> io::Result<()> {
-    if crate::config::authorized() {
+    if crate::config::authorized() && crate::config::run_lock_present() {
         return Ok(());
     }
     let bin = find_core_binary();
@@ -105,13 +105,13 @@ pub(crate) fn ensure_core_authorized() -> io::Result<()> {
     }
     if !io::stdin().is_terminal() {
         return Err(io::Error::other(format!(
-            "whoisthat-core is not authorized for this user; run: {}",
+            "whoisthat-core is not authorized for this user (or its host lock is missing); run: {}",
             authorize_hint()
         )));
     }
 
     eprintln!(
-        "whoisthat: this user is not authorized to run whoisthat-core with network capabilities."
+        "whoisthat: this user is not authorized to run whoisthat-core with network capabilities (or the host-wide lock is missing)."
     );
     eprint!("Authorize now via pkexec? [Y/n] ");
     let _ = io::stderr().flush();
