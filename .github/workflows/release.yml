@@ -59,8 +59,11 @@ jobs:
           go-version-file: core/core/go.mod
           cache-dependency-path: core/core/go.sum
 
+      - name: Version files match the tag
+        run: ./scripts/check-versions.sh --tag "$TAG"
+
       - name: Rust tests
-        run: cargo test
+        run: cargo test --locked
 
       - name: Go vet and tests
         working-directory: core/core
@@ -111,13 +114,7 @@ jobs:
           cache-dependency-path: core/core/go.sum
 
       - name: Install musl toolchain
-        run: |
-          printf 'Acquire::ForceIPv4 "true";\nAcquire::Retries "5";\n' | sudo tee /etc/apt/apt.conf.d/99whoisthat-net >/dev/null
-          sudo sed -i 's/azure\.archive\.ubuntu\.com/archive.ubuntu.com/g' /etc/apt/apt-mirrors.txt /etc/apt/sources.list /etc/apt/sources.list.d/* 2>/dev/null || true
-          # GitHub runner DNS occasionally cannot resolve the Ubuntu mirrors.
-          grep -q ' ports.ubuntu.com' /etc/hosts || sudo sh -c 'printf "91.189.91.102 ports.ubuntu.com\n185.125.190.81 archive.ubuntu.com\n185.125.190.81 security.ubuntu.com\n" >> /etc/hosts'
-          sudo apt-get update
-          sudo apt-get install -y musl-tools
+        run: ./scripts/install-musl.sh
 
       - name: Build static binaries
         env:
@@ -141,15 +138,7 @@ jobs:
             scripts/install-init scripts/init-hook dist/lib/whoisthat/
           cp -R pkg/init dist/lib/whoisthat/init
 
-          check_static() {
-            if readelf -l "$1" | grep -q 'INTERP'; then
-              echo "$1 is dynamically linked; musl build failed" >&2
-              exit 1
-            fi
-          }
-          check_static dist/whoisthat
-          check_static dist/whoisthat-runner
-          check_static dist/whoisthat-core
+          ./scripts/check-static.sh dist/whoisthat dist/whoisthat-runner dist/whoisthat-core
 
           # Generated from the native-arch binary, before packaging.
           ./dist/whoisthat completions bash > dist/whoisthat.bash
