@@ -135,7 +135,7 @@ jobs:
 
           mkdir -p dist/lib/whoisthat
           cp scripts/cgroup-setup scripts/run-runner scripts/run-core \
-            scripts/install-init scripts/init-hook dist/lib/whoisthat/
+            scripts/install-init scripts/init-hook scripts/authorize-core dist/lib/whoisthat/
           cp -R pkg/init dist/lib/whoisthat/init
 
           ./scripts/check-static.sh dist/whoisthat dist/whoisthat-runner dist/whoisthat-core

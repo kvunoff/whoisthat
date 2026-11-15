@@ -33,6 +33,11 @@ contents:
   - src: ${ARTIFACT_DIR}/lib/whoisthat/install-init
     dst: /usr/lib/whoisthat/install-init
     expand: true
+  - src: ${ARTIFACT_DIR}/lib/whoisthat/authorize-core
+    dst: /usr/lib/whoisthat/authorize-core
+    expand: true
+    file_info:
+      mode: 0o755
   - src: ${ARTIFACT_DIR}/lib/whoisthat/init-hook
     dst: /usr/lib/whoisthat/init-hook
     expand: true
@@ -90,6 +95,7 @@ contents:
 
 scripts:
   postinstall: debian/postinst
+  postremove: debian/postrm
 
 depends:
   - iproute2

@@ -468,6 +468,10 @@ uninstall_whoisthat() {
         $SUDO /usr/lib/whoisthat/install-init remove >/dev/null 2>&1 \
             || warn "could not remove the init services (install-init remove)"
     fi
+    if [ -x /usr/lib/whoisthat/authorize-core ]; then
+        $SUDO /usr/lib/whoisthat/authorize-core --remove-all >/dev/null 2>&1 \
+            || warn "could not remove the core authorization"
+    fi
 
     # A graceful stop deliberately leaves the kill-switch armed. Removing the
     # package must not leave the machine offline, so clear the rules here.
@@ -915,7 +919,7 @@ build_whoisthat() {
     cp "$src_dir/core/core/whoisthat-core" "$ARTIFACT_DIR/whoisthat-core"
     cp "$src_dir/pkg/whoisthat.desktop" "$ARTIFACT_DIR/whoisthat.desktop"
     mkdir -p "$ARTIFACT_DIR/lib/whoisthat"
-    for helper in cgroup-setup run-runner run-core install-init init-hook; do
+    for helper in cgroup-setup run-runner run-core install-init init-hook authorize-core; do
         [ -f "$src_dir/scripts/$helper" ] && cp "$src_dir/scripts/$helper" "$ARTIFACT_DIR/lib/whoisthat/$helper"
     done
     [ -d "$src_dir/pkg/init" ] && cp -R "$src_dir/pkg/init" "$ARTIFACT_DIR/lib/whoisthat/init"
@@ -979,9 +983,18 @@ install_binaries() {
         warn "Release archive has no whoisthat-runner (old release); split-tunnel launching will be unavailable."
     fi
 
-    info "Granting network capabilities to whoisthat-core..."
-    if $SUDO setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep "$BIN_DIR/.whoisthat-core.new" 2>/dev/null; then
-        info "Capabilities configured: cap_net_admin, cap_net_raw, cap_setpcap"
+    info "Authorizing whoisthat-core for ${TARGET_USER}..."
+    local target_uid
+    target_uid=$(id -u "$TARGET_USER" 2>/dev/null || echo 0)
+    local authorize="$ARTIFACT_DIR/lib/whoisthat/authorize-core"
+    if [ "$target_uid" -ge 1000 ] && [ -f "$authorize" ]; then
+        if $SUDO sh "$authorize" --bin "$BIN_DIR/.whoisthat-core.new" --add "$TARGET_USER"; then
+            info "Capabilities and allowlist entry configured"
+        else
+            warn "could not authorize whoisthat-core; run: sudo /usr/lib/whoisthat/authorize-core --add $TARGET_USER"
+        fi
+    elif $SUDO setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep "$BIN_DIR/.whoisthat-core.new" 2>/dev/null; then
+        info "Capabilities configured; authorize the user with authorize-core --add"
     else
         warn "setcap failed or filesystem does not support capabilities."
         warn "Run 'whoisthat doctor' for the manual setup command."

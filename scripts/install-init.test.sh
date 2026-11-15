@@ -30,6 +30,12 @@ EOF
 stub rc-update
 stub rc-service
 stub dinitctl
+cat > "$lib/authorize-core" <<EOF
+#!/bin/sh
+echo "authorize-core \$*" >> "$cmdlog"
+exit 0
+EOF
+chmod +x "$lib/authorize-core"
 PATH="$bin:$PATH"
 export PATH
 
@@ -66,6 +72,7 @@ marker="$root/etc/whoisthat/init-user-$uid"
 [ "$(stat -c %a "$marker")" = 644 ] || fail "marker mode must be 0644"
 grep -q "rc-update add whoisthat-core default" "$cmdlog" || fail "core not enabled"
 grep -q "rc-service whoisthat-core start" "$cmdlog" || fail "core not started"
+grep -q "authorize-core --add $user" "$cmdlog" || fail "core enable did not authorize the user"
 pass "openrc core service installed, enabled, started"
 
 export XDG_CONFIG_HOME="$root/xdg-config"

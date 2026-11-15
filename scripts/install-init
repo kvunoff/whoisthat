@@ -411,6 +411,9 @@ remove_all() {
             ;;
     esac
 
+    if [ -x "$LIBDIR/authorize-core" ]; then
+        "$LIBDIR/authorize-core" --remove-all >/dev/null 2>&1 || true
+    fi
     if [ -x "$LIBDIR/cgroup-setup" ]; then
         "$LIBDIR/cgroup-setup" --remove --all-users >/dev/null 2>&1 || true
     fi
@@ -448,6 +451,11 @@ case "$1" in
             enable)
                 [ "$#" -ge 4 ] || die "install-init core enable <user> <home>"
                 enable_core "$3" "$4"
+                if [ -x "$LIBDIR/authorize-core" ]; then
+                    "$LIBDIR/authorize-core" --add "$3" || warn "could not authorize $3"
+                else
+                    warn "authorize-core helper is not installed; authorize $3 manually"
+                fi
                 ;;
             disable)
                 [ "$#" -ge 3 ] || die "install-init core disable <user>"
