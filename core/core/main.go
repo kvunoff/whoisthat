@@ -83,10 +83,29 @@ func main() {
 	)
 	setupCrashLog()
 
-	// A second daemon must not race the first one for the IPC socket, the TUN
-	// device and the firewall. The lock is held until the process exits.
-	// Config is loaded first so the lock probe knows about an ipc-socket-path
-	// override from config.json.
+	// Only the uid authorized by the root-written allowlist may run a core with
+	// network capabilities. The check is deliberately outside testMode(): a
+	// test-mode environment variable must not become a bypass.
+	if err := utils.CheckAuthorization(); err != nil {
+		logger.Errorf("whoisthat-core: %v", err)
+		fmt.Fprintln(os.Stderr, "whoisthat-core:", err)
+		os.Exit(78) // EX_CONFIG
+	}
+	// One core owns the host-wide netns state. The lock is held until the
+	// process exits; a missing lock file is fatal only when we hold
+	// capabilities (a capless dev/proxy core cannot change global state).
+	globalLock, err := utils.AcquireGlobalLock()
+	if err != nil {
+		logger.Errorf("whoisthat-core: %v", err)
+		fmt.Fprintln(os.Stderr, "whoisthat-core:", err)
+		os.Exit(78)
+	}
+	_ = globalLock
+
+	// A second daemon of the same uid must not race the first one for the IPC
+	// socket, the TUN device and the firewall. The lock is held until the
+	// process exits. Config is loaded first so the lock probe knows about an
+	// ipc-socket-path override from config.json.
 	appconfig.LoadConfig()
 	held, lock_dir, err := acquireInstanceLock()
 	if err != nil {
@@ -109,16 +128,15 @@ func main() {
 		return
 	}
 
-	// One core per network namespace: the TUN name and nft table are global.
-	// The marker is root-created (best effort); when present it names the uid
-	// that owns the rules, so a second user must not reconcile them away.
-	if !testMode() {
-		uid := runtimeUid()
-		if err := checkActiveUser(uid); err != nil {
-			logger.Error("refusing to start:", err)
-			return
+	// Cores from older builds do not take the global lock. Refuse to run next
+	// to one so the startup reconcile cannot tear down rules that it owns.
+	if !testMode() && utils.HasNetAdmin() {
+		if uid, pid := utils.OtherCoreRunning(); pid > 0 {
+			msg := fmt.Sprintf("an older whoisthat-core is running (uid %d, pid %d); stop it first", uid, pid)
+			logger.Error(msg)
+			fmt.Fprintln(os.Stderr, "whoisthat-core:", msg)
+			os.Exit(78)
 		}
-		claimActiveUser(uid)
 	}
 
 	// Self-heal: if no other core is already listening, tear down any leftover
@@ -250,7 +268,6 @@ func main() {
 			logger.Warn("shutdown: cleanup timed out after 10s, exiting anyway")
 			os.Remove(appconfig.SocketPath())
 		}
-		releaseActiveUser()
 		os.Exit(0)
 	}()
 	select {}
@@ -356,47 +373,6 @@ func runtimeUid() int {
 	return os.Getuid()
 }
 
-const activeMarkerPath = "/run/whoisthat/active"
-
-// checkActiveUser blocks a second uid from reconciling the rules of the active
-// core. Best effort: without a root-created marker nothing is enforced.
-func checkActiveUser(uid int) error {
-	data, err := os.ReadFile(activeMarkerPath)
-	if err != nil {
-		return nil
-	}
-	owner := strings.TrimSpace(string(data))
-	if owner == "" || owner == strconv.Itoa(uid) {
-		return nil
-	}
-	return fmt.Errorf("another user (uid %s) owns whoisthat-core/tun; stop it before starting this one", owner)
-}
-
-// claimActiveUser is best effort: /run/whoisthat is root-owned, so a normal
-// user can only update the marker when the helper made it writable.
-// shortcut: the marker is only enforced when a root helper pre-creates it;
-// upgrade by having install-init write it once multi-user sessions matter.
-func claimActiveUser(uid int) {
-	err := os.WriteFile(activeMarkerPath, []byte(strconv.Itoa(uid)+"\n"), 0644)
-	if err != nil && !errors.Is(err, os.ErrNotExist) && !errors.Is(err, syscall.EACCES) {
-		logger.Warnf("active-core marker: %v", err)
-	}
-}
-
-func releaseActiveUser() {
-	data, err := os.ReadFile(activeMarkerPath)
-	if err != nil {
-		return
-	}
-	if strings.TrimSpace(string(data)) != strconv.Itoa(runtimeUid()) {
-		return
-	}
-	if err := os.Remove(activeMarkerPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-		logger.Warnf("active-core marker cleanup: %v", err)
-	}
-}
-
-// coreAlreadyRunning reports whether another whoisthat-core is already
 // coreLogPath returns the first writable location. A read-only config
 // directory (which exists, so MkdirAll succeeds) must not silently swallow the
 // log: probe the actual file and fall back to a per-user temp directory.
