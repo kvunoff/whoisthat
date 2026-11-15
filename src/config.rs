@@ -268,6 +268,19 @@ pub(crate) fn authorized() -> bool {
     authorized_entry(Path::new(AUTH_DIR), effective_uid(), 0)
 }
 
+/// True when the host-wide core lock exists. The core refuses to start with
+/// capabilities without it, so the TUI must re-run authorize-core when it is
+/// missing (for example after a manual delete or a broken upgrade).
+pub(crate) fn run_lock_present() -> bool {
+    run_lock_present_at(Path::new("/var/lib/whoisthat/run.lock"))
+}
+
+fn run_lock_present_at(path: &Path) -> bool {
+    fs::symlink_metadata(path)
+        .map(|meta| meta.is_file() && !meta.file_type().is_symlink())
+        .unwrap_or(false)
+}
+
 fn authorized_entry(dir: &Path, name_uid: u32, owner_uid: u32) -> bool {
     let path = dir.join(name_uid.to_string());
     fs::symlink_metadata(&path)
@@ -500,6 +513,22 @@ mod tests {
         let _ = fs::remove_file(&path);
         std::os::unix::fs::symlink(dir.join("target"), &path).unwrap();
         assert!(!authorized_entry(&dir, uid, uid), "symlink must be refused");
+    }
+
+    #[test]
+    fn run_lock_present_requires_a_regular_file() {
+        let dir = tmp_dir("run-lock");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        assert!(!run_lock_present_at(&dir.join("missing")));
+        let path = dir.join("run.lock");
+        fs::write(&path, b"").unwrap();
+        assert!(run_lock_present_at(&path));
+
+        let link = dir.join("link");
+        std::os::unix::fs::symlink(&path, &link).unwrap();
+        assert!(!run_lock_present_at(&link));
     }
 
     #[test]

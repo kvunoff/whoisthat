@@ -128,7 +128,10 @@ pub(crate) fn ensure_core_authorized() -> io::Result<()> {
         .arg(AUTHORIZE_CORE)
         .arg("--add")
         .status();
-    if matches!(status, Ok(s) if s.success()) && crate::config::authorized() {
+    if matches!(status, Ok(s) if s.success())
+        && crate::config::authorized()
+        && crate::config::run_lock_present()
+    {
         return Ok(());
     }
     Err(io::Error::other(format!(
