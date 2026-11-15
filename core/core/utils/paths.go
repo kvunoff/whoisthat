@@ -1,7 +1,6 @@
 package utils
 
 import (
-	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -130,7 +129,9 @@ func CheckPrivateDir(path string, uid int) error {
 // A directory owned by the current user but created with a wider mode by an
 // older release is tightened; a foreign owner or a symlink is an error.
 func EnsurePrivateDir(path string, uid int) error {
-	if err := os.Mkdir(path, 0700); err != nil && !errors.Is(err, os.ErrExist) {
+	// Create parent directories too (config/data dirs are nested), then
+	// validate the final path: a symlink or a foreign owner there is refused.
+	if err := os.MkdirAll(path, 0700); err != nil {
 		return err
 	}
 	info, err := os.Lstat(path)
