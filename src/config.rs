@@ -260,6 +260,26 @@ pub(crate) fn effective_uid() -> u32 {
     unsafe { libc_getuid() }
 }
 
+/// Root-owned allowlist that gates cores running with network capabilities.
+pub(crate) const AUTH_DIR: &str = "/etc/whoisthat/authorized.d";
+
+/// True when the allowlist contains a safe entry for this effective uid.
+pub(crate) fn authorized() -> bool {
+    authorized_entry(Path::new(AUTH_DIR), effective_uid(), 0)
+}
+
+fn authorized_entry(dir: &Path, name_uid: u32, owner_uid: u32) -> bool {
+    let path = dir.join(name_uid.to_string());
+    fs::symlink_metadata(&path)
+        .map(|meta| {
+            meta.is_file()
+                && !meta.file_type().is_symlink()
+                && meta.uid() == owner_uid
+                && meta.permissions().mode() & 0o022 == 0
+        })
+        .unwrap_or(false)
+}
+
 /// Fallback location when the XDG directory is not writable. A per-uid
 /// directory keeps the file out of a shared predictable /tmp path.
 pub fn fallback_log_path(name: &str) -> PathBuf {
@@ -418,26 +438,6 @@ fn write_atomic(path: &std::path::Path, content: &[u8]) -> std::io::Result<()> {
     result
 }
 
-/// Whether the daemon will autostart a TUN session. Only then does the TUI
-/// need capabilities before the user explicitly asks for TUN.
-pub fn core_autoconnect_tun() -> bool {
-    let path = config_dir().join("config.json");
-    std::fs::read_to_string(path)
-        .map(|text| parse_autoconnect_tun(&text))
-        .unwrap_or(false)
-}
-
-fn parse_autoconnect_tun(text: &str) -> bool {
-    let Ok(value) = serde_json::from_str::<serde_json::Value>(text) else {
-        return false;
-    };
-    value
-        .get("autoconnect-enabled")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false)
-        && value.get("autoconnect-mode").and_then(|v| v.as_str()) == Some("tun")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -451,17 +451,34 @@ mod tests {
     }
 
     #[test]
-    fn parse_autoconnect_tun_requires_enabled_tun_mode() {
-        assert!(parse_autoconnect_tun(
-            r#"{"autoconnect-enabled": true, "autoconnect-mode": "tun"}"#
-        ));
-        assert!(!parse_autoconnect_tun(
-            r#"{"autoconnect-enabled": true, "autoconnect-mode": "proxy"}"#
-        ));
-        assert!(!parse_autoconnect_tun(
-            r#"{"autoconnect-enabled": false, "autoconnect-mode": "tun"}"#
-        ));
-        assert!(!parse_autoconnect_tun("not json"));
+    fn authorized_entry_accepts_only_safe_allowlist_files() {
+        let dir = tmp_dir("authz");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let uid = effective_uid();
+        let path = dir.join(uid.to_string());
+
+        assert!(
+            !authorized_entry(&dir, uid, uid),
+            "missing entry must be refused"
+        );
+        fs::write(&path, b"").unwrap();
+        assert!(authorized_entry(&dir, uid, uid));
+
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o664)).unwrap();
+        assert!(
+            !authorized_entry(&dir, uid, uid),
+            "group-writable entry must be refused"
+        );
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+        assert!(
+            !authorized_entry(&dir, uid, uid + 1),
+            "wrong owner must be refused"
+        );
+
+        let _ = fs::remove_file(&path);
+        std::os::unix::fs::symlink(dir.join("target"), &path).unwrap();
+        assert!(!authorized_entry(&dir, uid, uid), "symlink must be refused");
     }
 
     #[test]

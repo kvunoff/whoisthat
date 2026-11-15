@@ -67,6 +67,7 @@ fn generate_unit_file(core_path: &str) -> String {
          ExecStart=\"{core}\"\n\
          Restart=on-failure\n\
          RestartSec=5\n\
+         RestartPreventExitStatus=78\n\
          \n\
          [Install]\n\
          WantedBy=default.target\n"
@@ -90,6 +91,9 @@ fn enable_linger_via_pkexec() -> bool {
 }
 
 pub(crate) fn setup_systemd_service(core_path: &str) -> Result<(), String> {
+    // The unit starts the core at login, outside the TUI, so authorization must
+    // be in place before it is enabled.
+    crate::core_spawn::ensure_core_authorized().map_err(|e| e.to_string())?;
     let core =
         std::path::absolute(core_path).map_err(|e| format!("cannot resolve core path: {e}"))?;
     let core_str = core.to_string_lossy().to_string();
@@ -133,6 +137,39 @@ pub(crate) fn setup_systemd_service(core_path: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Add RestartPreventExitStatus to units written by older releases. A missing
+/// authorization or a busy global lock exits with 78; without the directive
+/// Restart=on-failure would restart the core forever.
+pub(crate) fn migrate_systemd_unit() {
+    let path = systemd_service_path();
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return;
+    };
+    let Some(patched) = with_restart_guard(&text) else {
+        return;
+    };
+    if std::fs::write(&path, patched).is_ok() {
+        let _ = Command::new("systemctl")
+            .args(["--user", "daemon-reload"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+    }
+}
+
+fn with_restart_guard(text: &str) -> Option<String> {
+    if text.contains("RestartPreventExitStatus=78") {
+        return None;
+    }
+    let marker = "[Service]\n";
+    let at = text.find(marker)? + marker.len();
+    Some(format!(
+        "{}RestartPreventExitStatus=78\n{}",
+        &text[..at],
+        &text[at..]
+    ))
+}
+
 pub(crate) fn teardown_systemd_service() -> Result<(), String> {
     let _ = Command::new("systemctl")
         .arg("--user")
@@ -168,10 +205,23 @@ mod tests {
         let unit = generate_unit_file("/tmp/with space/100%/whoisthat-core");
 
         assert!(unit.contains("ExecStart=\"/tmp/with space/100%%/whoisthat-core\""));
+        assert!(unit.contains("RestartPreventExitStatus=78"));
         // The log level is applied over IPC, so the unit must not pin a stale
         // env value.
         assert!(!unit.contains("WHOISTHAT_LOG_LEVEL"));
         // A stray space after the executable breaks systemd's argument parsing.
         assert!(!unit.contains("\" \n"));
+    }
+
+    #[test]
+    fn restart_guard_is_inserted_once() {
+        let unit = generate_unit_file("/usr/bin/whoisthat-core");
+        assert!(with_restart_guard(&unit).is_none());
+
+        let old = unit.replace("RestartPreventExitStatus=78\n", "");
+        let patched = with_restart_guard(&old).expect("old unit must be patched");
+        assert!(patched.contains("RestartPreventExitStatus=78"));
+        assert!(patched.contains("Restart=on-failure"));
+        assert_eq!(patched.matches("RestartPreventExitStatus=78").count(), 1);
     }
 }
