@@ -96,13 +96,13 @@ func main() {
 	// One core owns the host-wide netns state. The lock is held until the
 	// process exits; a missing lock file is fatal only when we hold
 	// capabilities (a capless dev/proxy core cannot change global state).
-	globalLock, err := utils.AcquireGlobalLock()
+	lock, err := utils.AcquireGlobalLock()
 	if err != nil {
 		logger.Errorf("whoisthat-core: %v", err)
 		fmt.Fprintln(os.Stderr, "whoisthat-core:", err)
 		os.Exit(78)
 	}
-	_ = globalLock
+	globalCoreLock = lock
 
 	if err := utils.ValidateRuntime(); err != nil {
 		logger.Errorf("whoisthat-core: %v", err)
@@ -282,9 +282,12 @@ func main() {
 	select {}
 }
 
-// instanceLock stays open for the lifetime of the process. Closing it (or
-// exiting) releases the flock so the next core can start.
-var instanceLock *os.File
+// instanceLock and globalCoreLock stay open for the lifetime of the process.
+// Closing them (or exiting) releases the flocks so the next core can start.
+var (
+	instanceLock   *os.File
+	globalCoreLock *os.File
+)
 
 // acquireInstanceLock tries the primary runtime dir and also checks the known
 // fallback locations for a lock held by an older/newer core. It returns

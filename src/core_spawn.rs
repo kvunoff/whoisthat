@@ -99,8 +99,8 @@ pub(crate) fn ensure_core_authorized() -> io::Result<()> {
         return Ok(());
     }
     let bin = find_core_binary();
-    let capped = has_cap_net(Path::new(&bin));
-    if !capped && !Path::new(crate::config::AUTH_DIR).exists() {
+    if !has_cap_net(Path::new(&bin)) {
+        // A capless core cannot change global network state.
         return Ok(());
     }
     if !io::stdin().is_terminal() {
