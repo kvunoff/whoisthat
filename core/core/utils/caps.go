@@ -42,7 +42,12 @@ func CanTun() bool {
 		return true
 	}
 
-	check := exec.Command("sh")
+	shell := "/bin/sh"
+	if _, err := os.Stat(shell); err != nil {
+		shell = "sh"
+	}
+	check := exec.Command(shell)
+	check.Env = []string{"PATH=/usr/sbin:/usr/bin:/sbin:/bin", "LC_ALL=C"}
 	check.SysProcAttr = &syscall.SysProcAttr{
 		AmbientCaps: []uintptr{unix.CAP_NET_ADMIN},
 	}
