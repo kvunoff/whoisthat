@@ -143,6 +143,16 @@ while :; do
         sleep 2
         continue
     fi
+    if [ "$rc" -eq 78 ]; then
+        # Missing authorization or another core holds the global lock. Retrying
+        # every two seconds only spams the log; wait for an explicit request.
+        rm -f "$RUN"
+        echo "whoisthat: core refused to start (authorization or busy lock); waiting for core-start" >&2
+        while [ ! -f "$START" ] && [ ! -f "$RESTART" ] && [ ! -f "$STOP" ]; do
+            sleep 2
+        done
+        continue
+    fi
     if [ "$rc" -ne 0 ]; then
         if [ "$restart" = 1 ]; then
             : > "$RESTART"

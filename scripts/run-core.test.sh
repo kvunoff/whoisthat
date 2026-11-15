@@ -41,6 +41,7 @@ case "$(cat "$MODE_FILE")" in
     crash) sleep 1; exit 1 ;;
     hold) sleep 2; exit 0 ;;
     hang) sleep 300 ;;
+    refuse) exit 78 ;;
 esac
 exit 0
 EOF
@@ -143,6 +144,24 @@ pass "clean exit pauses; core-restart starts again"
 
 : > "$conf/core-stop"
 wait_for 40 no_pidfile || fail "cleanup stop failed"
+
+# exit 78 (no authorization / busy global lock) must not tight-loop.
+echo refuse > "$MODE_FILE"
+rm -f "$conf/core-stop" "$conf/core-restart"
+before=$(runs)
+: > "$conf/core-start"
+wait_for 40 runs_gt "$before" || fail "78-run never started"
+sleep 2.5
+after=$(runs)
+[ "$after" -eq $((before + 1)) ] || fail "exit 78 restarted in a loop ($before -> $after)"
+no_pidfile || fail "exit 78 left a pidfile"
+grep -q "refused to start" "$root/wrapper.log" || fail "exit 78 reason not logged"
+: > "$conf/core-start"
+wait_for 40 runs_gt "$after" || fail "core-start after 78 did not start"
+pass "exit 78 pauses and wakes on core-start"
+
+: > "$conf/core-stop"
+wait_for 40 no_pidfile || fail "stop after 78 failed"
 stop_wrapper
 grep -q "missing/invalid" "$root/wrapper.log" && fail "unexpected runtime-dir error: $(cat "$root/wrapper.log")"
 echo "run-core tests passed"
