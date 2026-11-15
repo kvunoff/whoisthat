@@ -53,12 +53,7 @@ pub(crate) fn spawn_core(log_level: &str) -> io::Result<()> {
     Ok(())
 }
 
-/// Large installs may keep an obsolete copy earlier in PATH. Prefer the
-/// canonical package path so a stale capped binary cannot shadow it.
 pub(crate) fn find_core_binary() -> String {
-    if Path::new("/usr/bin/whoisthat-core").is_file() {
-        return "/usr/bin/whoisthat-core".to_string();
-    }
     if let Some(path) = std::env::var_os("PATH") {
         for dir in std::env::split_paths(&path) {
             let candidate = dir.join("whoisthat-core");
@@ -72,7 +67,9 @@ pub(crate) fn find_core_binary() -> String {
         "./whoisthat-core",
         "./core/core/whoisthat-core",
         "./bin/whoisthat-core",
-        // Legacy install location; only reached when /usr/bin is absent.
+        "/usr/bin/whoisthat-core",
+        // Legacy install location; kept last so a stale copy cannot shadow
+        // the canonical /usr/bin binary.
         "/usr/local/bin/whoisthat-core",
     ];
     for c in candidates {

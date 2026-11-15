@@ -10,6 +10,13 @@ else
     echo "warning: setcap not found; TUN mode needs libcap" >&2
 fi
 
+# Legacy copies from an older install.sh or make install still carry
+# capabilities and do not know about the allowlist.
+for legacy in /usr/local/bin/whoisthat-core /usr/local/sbin/whoisthat-core; do
+    [ -e "$legacy" ] || continue
+    command -v setcap >/dev/null 2>&1 && setcap -r "$legacy" 2>/dev/null || true
+done
+
 # Root-owned state for the authorization allowlist and the host-wide lock.
 # The per-user entry itself needs a real user: add it with authorize-core.
 mkdir -p /etc/whoisthat/authorized.d /var/lib/whoisthat
