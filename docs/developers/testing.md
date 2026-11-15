@@ -93,6 +93,51 @@ It refuses to run as root.
 
 ---
 
+## CI
+
+Every pull request runs the workflows in `.github/workflows/`. The jobs are
+independent and parallel: each answers one question, so a failure points at an
+area instead of a single "CI failed" check.
+
+| Job | What it checks |
+| :--- | :--- |
+| `Rust / lint` | `cargo fmt`, `cargo clippy -D warnings` and `cargo audit` |
+| `Rust / test` | the Rust suite under `cargo llvm-cov`, plus the line floor |
+| `Rust / msrv` | `cargo check --all-targets --locked` on the declared minimum |
+| `Go / lint` | `gofmt`, `go vet`, `go mod tidy -diff`, the swallowed-error gate and a build |
+| `Go / test` | `go test -race -shuffle=on`, plus the line floor |
+| `Go / vuln` | `govulncheck` |
+| `Go / fuzz` | every fuzz target for a short run |
+| `Repo / hygiene` | `shellcheck`, `actionlint` and version-mirror consistency |
+| `Scripts / tests` | every `scripts/*.test.sh` and the init-detection check |
+| `Package / ppa smoke` | builds a PPA source package and checks the `.deb` contents |
+| `Docs / build` | VitePress build and `scripts/check-docs.sh` |
+| `Build / musl` | the static musl build, asserting no `INTERP` segment |
+| `E2E / ipc` | builds both binaries and reads a sandboxed core through the CLI |
+| `E2E / netns` | the privileged TUN/firewall suite in a network namespace |
+
+::: info Coverage floors
+Both floors live in `.github/workflows/ci.yml`. `make coverage` enforces the same
+numbers locally.
+:::
+
+::: info Weekly security run
+`security.yml` repeats `cargo audit`, `govulncheck` and a longer fuzzing run
+every week, so an advisory published after a merge is not invisible until the
+next push.
+:::
+
+::: tip Reproduce locally
+See [Build & Run](/developers/build) for the `make` targets. `make test` runs the
+same script tests as `Scripts / tests`.
+:::
+
+::: warning Not covered by `make test`
+`E2E / netns` needs root, `Build / musl` needs the musl toolchain, and
+`Package / ppa smoke` needs `dpkg-dev`. Run `make integration`, add the musl
+target, or run `make test-ppa` explicitly.
+:::
+
 ## Manual release QA on non-systemd
 
 CI has no non-systemd runner, so this is the release checklist:
