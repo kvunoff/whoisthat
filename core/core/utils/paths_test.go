@@ -132,6 +132,17 @@ func TestEnsurePrivateDirCreatesAndTightens(t *testing.T) {
 	}
 }
 
+func TestEnsurePrivateDirCreatesParents(t *testing.T) {
+	root := t.TempDir()
+	nested := filepath.Join(root, "a", "b", "whoisthat")
+	if err := EnsurePrivateDir(nested, os.Getuid()); err != nil {
+		t.Fatalf("EnsurePrivateDir(nested) = %v", err)
+	}
+	if err := CheckPrivateDir(nested, os.Getuid()); err != nil {
+		t.Fatalf("CheckPrivateDir(nested) = %v", err)
+	}
+}
+
 func TestEnsurePrivateDirRejectsSymlinkAndFile(t *testing.T) {
 	root := t.TempDir()
 	real := filepath.Join(root, "real")
