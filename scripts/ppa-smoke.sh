@@ -18,6 +18,7 @@ for file in whoisthat whoisthat-core whoisthat-runner whoisthat.desktop \
 done
 mkdir -p "$tmp/files/lib/whoisthat/init/openrc"
 printf 'fixture\n' > "$tmp/files/lib/whoisthat/cgroup-setup"
+printf 'fixture\n' > "$tmp/files/lib/whoisthat/authorize-core"
 printf 'fixture\n' > "$tmp/files/lib/whoisthat/init/openrc/whoisthat-core"
 tar -czf "$tmp/dist/whoisthat-linux-amd64.tar.gz" -C "$tmp/files" .
 tar -czf "$tmp/dist/whoisthat-linux-arm64.tar.gz" -C "$tmp/files" .
@@ -34,6 +35,7 @@ grep -q './usr/bin/whoisthat$' "$tmp/deb.list"
 grep -q './usr/bin/whoisthat-core$' "$tmp/deb.list"
 grep -q './usr/bin/whoisthat-runner$' "$tmp/deb.list"
 grep -q './usr/lib/whoisthat/cgroup-setup$' "$tmp/deb.list"
+grep -q './usr/lib/whoisthat/authorize-core$' "$tmp/deb.list"
 grep -q './usr/share/zsh/site-functions/_whoisthat$' "$tmp/deb.list"
 # dh_compress turns the man page into whoisthat.1.gz.
 grep -qE './usr/share/man/man1/whoisthat\.1(\.gz)?$' "$tmp/deb.list"

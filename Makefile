@@ -99,7 +99,8 @@ install:
 	sudo install -Dm755 target/release/whoisthat $(BINDIR)/whoisthat
 	sudo install -Dm755 target/release/whoisthat-runner $(BINDIR)/whoisthat-runner
 	sudo install -Dm755 core/core/whoisthat-core $(BINDIR)/whoisthat-core
-	sudo setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep $(BINDIR)/whoisthat-core
+	sudo install -Dm755 scripts/authorize-core /usr/lib/whoisthat/authorize-core
+	sudo /usr/lib/whoisthat/authorize-core --bin $(BINDIR)/whoisthat-core --add "$$(id -un)"
 	@if [ -e /usr/local/bin/whoisthat ] || [ -e /usr/local/bin/whoisthat-core ]; then \
 		echo "Removing legacy /usr/local/bin/whoisthat binaries"; \
 		sudo rm -f /usr/local/bin/whoisthat /usr/local/bin/whoisthat-core; \

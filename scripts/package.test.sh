@@ -192,6 +192,7 @@ for file in whoisthat whoisthat-core whoisthat-runner whoisthat.desktop whoistha
 done
 mkdir -p "$TMP/artifact/lib/whoisthat/init/openrc"
 printf 'fixture\n' > "$TMP/artifact/lib/whoisthat/cgroup-setup"
+printf 'fixture\n' > "$TMP/artifact/lib/whoisthat/authorize-core"
 printf 'fixture\n' > "$TMP/artifact/lib/whoisthat/init/openrc/whoisthat-core"
 tar -czf "$DIST/whoisthat-linux-amd64.tar.gz" -C "$TMP/artifact" .
 tar -czf "$DIST/whoisthat-linux-arm64.tar.gz" -C "$TMP/artifact" .

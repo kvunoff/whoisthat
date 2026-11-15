@@ -45,6 +45,7 @@ package() {
     install -Dm755 scripts/run-runner   "${pkgdir}/usr/lib/whoisthat/run-runner"
     install -Dm755 scripts/run-core     "${pkgdir}/usr/lib/whoisthat/run-core"
     install -Dm755 scripts/install-init "${pkgdir}/usr/lib/whoisthat/install-init"
+    install -Dm755 scripts/authorize-core "${pkgdir}/usr/lib/whoisthat/authorize-core"
     install -Dm755 scripts/init-hook    "${pkgdir}/usr/lib/whoisthat/init-hook"
     install -d "${pkgdir}/usr/lib/whoisthat/init"
     cp -R pkg/init/. "${pkgdir}/usr/lib/whoisthat/init/"

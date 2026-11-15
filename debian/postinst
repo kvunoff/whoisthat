@@ -10,6 +10,16 @@ else
     echo "warning: setcap not found; TUN mode needs libcap" >&2
 fi
 
+# Root-owned state for the authorization allowlist and the host-wide lock.
+# The per-user entry itself needs a real user: add it with authorize-core.
+mkdir -p /etc/whoisthat/authorized.d /var/lib/whoisthat
+chmod 0755 /etc/whoisthat /etc/whoisthat/authorized.d /var/lib/whoisthat
+if [ ! -e /var/lib/whoisthat/run.lock ]; then
+    : > /var/lib/whoisthat/run.lock
+fi
+chmod 0644 /var/lib/whoisthat/run.lock
+echo "Authorize your user with: sudo /usr/lib/whoisthat/authorize-core --add <user>" >&2
+
 # Refresh the caches so the menu entry and icon appear without a re-login.
 command -v update-desktop-database >/dev/null 2>&1 &&
     update-desktop-database /usr/share/applications >/dev/null 2>&1 || true
