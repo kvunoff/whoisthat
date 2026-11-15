@@ -1,0 +1,64 @@
+name: Security
+
+# Weekly, away from the pull-request gate: catches advisories and fuzz failures
+# that appear after a change has already been merged.
+on:
+  schedule:
+    - cron: '0 5 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security
+  cancel-in-progress: false
+
+jobs:
+  rust-audit:
+    name: Rust / audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      # cargo audit resolves dependencies through cargo metadata, so it needs a
+      # toolchain even though the audit binary itself is prebuilt.
+      - uses: dtolnay/rust-toolchain@1.98.1
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit@0.22.2
+      - run: cargo audit
+
+  go-vuln:
+    name: Go / vuln
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: core/core/go.mod
+          cache-dependency-path: core/core/go.sum
+      - name: Vulnerability scan
+        working-directory: core/core
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+
+  fuzz:
+    name: Go / fuzz
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: core/core/go.mod
+          cache-dependency-path: core/core/go.sum
+      - name: Fuzz
+        run: make test-fuzz FUZZTIME=5m
