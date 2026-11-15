@@ -49,9 +49,9 @@ pub(super) fn check_capabilities() -> CheckCategory {
         ));
     }
 
-    // 1b. Root-owned allowlist. Only matters when the binary carries caps.
+    // 1b. Root-owned allowlist and host-wide lock. Only matter with caps.
     if crate::core_spawn::has_cap_net(core_path) {
-        if crate::config::authorized() {
+        if crate::config::authorized() && crate::config::run_lock_present() {
             items.push(CheckItem::pass(
                 "core authorization",
                 format!(
@@ -61,9 +61,14 @@ pub(super) fn check_capabilities() -> CheckCategory {
                 ),
             ));
         } else {
+            let detail = if !crate::config::authorized() {
+                "this user is not in the allowlist"
+            } else {
+                "the host-wide lock is missing"
+            };
             items.push(CheckItem::fail(
                 "core authorization",
-                "this user is not in the allowlist; whoisthat-core would refuse to start with capabilities",
+                format!("{detail}; whoisthat-core would refuse to start with capabilities"),
                 Some(format!(
                     "sudo /usr/lib/whoisthat/authorize-core --add {}",
                     crate::config::effective_uid()
