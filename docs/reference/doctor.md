@@ -47,9 +47,10 @@ The diagnostic engine performs comprehensive, non-destructive system inspections
 
 ### Binaries & Runtimes
 * **`whoisthat` (Client)**: Resolves the active binary path (`std::env::current_exe()`) and confirms it matches the compiled crate version (`CARGO_PKG_VERSION`).
-* **`whoisthat-core` (Daemon)**: Searches `PATH`, `./whoisthat-core`, `./core/core/whoisthat-core`, `./bin/whoisthat-core`, `/usr/bin`, and the legacy `/usr/local/bin` (in that order) for the daemon binary.
+* **`whoisthat-core` (Daemon)**: Prefers `/usr/bin/whoisthat-core`, then searches `PATH`, `./whoisthat-core`, `./core/core/whoisthat-core`, `./bin/whoisthat-core`, and the legacy `/usr/local/bin`.
 * **`xray-core` (Proxy Runtime)**: Probes for available Xray-core runtimes in `~/.local/share/whoisthat/runtimes/xray/` and system `PATH`. Checks if version matches the pinned **v26.10.31** release.
 * **System CLI Tools**: Validates the presence of essential Linux networking utilities: `ip` (`iproute2`), `getcap` & `setcap` (`libcap`), and `pkexec` (`polkit`).
+* **Core authorization**: When the binary carries capabilities, verifies that the current uid has an entry in `/etc/whoisthat/authorized.d/` and warns about legacy `/usr/local` copies that still carry capabilities.
 
 ### Linux Capabilities & Kernel
 * **`whoisthat-core caps`**: Runs `getcap` against the daemon binary to verify all three required capabilities are granted:
@@ -140,7 +141,7 @@ When running `whoisthat doctor --json`:
           "name": "whoisthat-core caps",
           "status": "warn",
           "message": "missing required network capabilities for rootless TUN mode",
-          "fix_hint": "sudo setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep /usr/bin/whoisthat-core"
+          "fix_hint": "sudo /usr/lib/whoisthat/authorize-core --add 1000"
         }
       ]
     }

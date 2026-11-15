@@ -19,15 +19,15 @@ cd core/core
 go build -o whoisthat-core
 cd ../..
 
-# 2. Grant capabilities to the newly built binary
-sudo setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep ./core/core/whoisthat-core
+# 2. Grant capabilities and authorize this user for the local build
+sudo /usr/lib/whoisthat/authorize-core --bin ./core/core/whoisthat-core --add "$(id -u)"
 
 # 3. Launch the Rust TUI
 cargo run
 ```
 
 ::: warning Inode Invalidation Gotcha
-Every time you run `go build`, Linux assigns a new filesystem **inode** to the output binary, which automatically wipes any previously attached file capabilities (`setcap`). Remember to reapply capabilities after recompiling `whoisthat-core`. The TUI detects this on startup and offers a one-time `pkexec` prompt if capabilities are missing, but only in an interactive terminal and only when TUN autostart is configured; otherwise it points at the `setcap` command.
+Every time you run `go build`, Linux assigns a new filesystem **inode** to the output binary, which automatically wipes any previously attached file capabilities. Re-run `authorize-core --bin` after recompiling `whoisthat-core`. The TUI detects a missing authorization on startup and offers a one-time `pkexec` prompt, but only in an interactive terminal; otherwise it prints the `authorize-core --add` command. A build without file capabilities still works in proxy mode.
 :::
 
 ::: tip Standalone core repository

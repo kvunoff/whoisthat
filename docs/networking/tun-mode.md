@@ -95,10 +95,10 @@ This guarantees that:
 `whoisthat doctor` reports the file capabilities. Before enabling TUN, the core
 also probes them by creating and immediately destroying a transient `wt-capcheck`
 adapter. If capabilities are missing (for example after a fresh compile), the TUI
-points to the `setcap` command. A `pkexec` prompt is offered only when the daemon
-is spawned from an interactive terminal while TUN autostart is configured, never
-on the TUN toggle itself. The kernel-side details are in
-[Kernel Networking](/architecture/networking#capabilities-and-verification).
+points to `sudo /usr/lib/whoisthat/authorize-core --add $USER`. A `pkexec` prompt
+is offered when the daemon is spawned from an interactive terminal and the
+current user is not authorized, never on the TUN toggle itself. The kernel-side
+details are in
 
 ## See also
 

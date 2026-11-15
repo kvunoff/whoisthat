@@ -93,7 +93,9 @@ sudo apt install whoisthat
 ```
 
 The PPA ships the same static binaries as the release archives and sets file
-capabilities in its post-install script, so no manual `setcap` is needed. It
+capabilities in its post-install script. Add your user once with
+`sudo /usr/lib/whoisthat/authorize-core --add $USER`; the TUI also offers this
+through a `pkexec` prompt on the first start. It
 currently publishes Noble `amd64` builds; enable other series or `arm64` in the
 PPA settings, or use the release `.deb` or the installer.
 
@@ -158,7 +160,7 @@ Runtime requirements for the full feature set:
 | `iptables` | Legacy fallback for kill-switch and DNS hijack; split still needs nftables |
 | cgroup v2 (`/sys/fs/cgroup/cgroup.controllers`) | Split tunneling (`whoisthat run`) |
 | systemd user manager or OpenRC/dinit/runit | Autostart and split-tunnel launching |
-| `libcap` (`setcap`/`getcap`) | Rootless TUN via file capabilities |
+| `libcap` (`setcap`/`getcap`) | Rootless TUN via file capabilities and `authorize-core` |
 | `x86_64` or `aarch64` | Prebuilt Xray runtime |
 
 Proxy mode needs only the binaries and a reachable server. TUN, split tunneling
@@ -172,12 +174,12 @@ make build
 sudo make install
 ```
 
-`make install` installs the client, core and runner, and applies `setcap`. If you
-build by hand, remember that a new `go build` output has a new inode and **loses
-its capabilities**:
+`make install` installs the client, core and runner, applies the capabilities
+and adds your user to the allowlist. If you build by hand, remember that a new
+`go build` output has a new inode and **loses its capabilities**:
 
 ```bash
-sudo setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep /usr/bin/whoisthat-core
+sudo /usr/lib/whoisthat/authorize-core --add $USER
 whoisthat doctor
 ```
 
@@ -190,7 +192,7 @@ cd whoisthat
 cargo build --release --locked
 sudo install -Dm755 target/release/whoisthat /usr/bin/whoisthat
 sudo install -Dm755 core/core/whoisthat-core /usr/bin/whoisthat-core
-sudo setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep /usr/bin/whoisthat-core
+sudo /usr/lib/whoisthat/authorize-core --add $USER
 ```
 
 For a development build without installing, see [Build & Run](/developers/build).
@@ -201,12 +203,12 @@ TUN mode creates virtual interfaces and routing rules without root. It uses file
 capabilities:
 
 ```bash
-sudo setcap cap_net_admin,cap_net_raw,cap_setpcap=+ep /usr/bin/whoisthat-core
+sudo /usr/lib/whoisthat/authorize-core --add $USER
 ```
 
 If the core lacks capabilities and TUN autostart is configured, the TUI offers a
 one-time `pkexec` prompt before it starts. In every other case it reports the
-missing capabilities and points to the `setcap` command. The capability model is
+missing authorization and points to the `authorize-core --add` command. The capability model is
 explained in [TUN Mode & Capabilities](/networking/tun-mode).
 
 ## Verify

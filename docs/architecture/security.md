@@ -63,8 +63,17 @@ cap_net_admin,cap_net_raw,cap_setpcap=+ep
 ```
 
 * **No setuid**: No binary runs with effective UID 0 (`root`).
-* **Inherited Subprocesses**: The core process runs as your normal unprivileged user while granting child network utilities just enough authority to manage network interfaces.
+* **Inherited Subprocesses**: The core process runs as your normal unprivileged user while granting child network utilities just enough authority to manage network interfaces. Privileged children (`sh`, `ip`, `nft`, Xray) are resolved to root-owned, non-group/other-writable files and run with a fixed `PATH`; the managed Xray binary is also checked against its recorded SHA-256.
 * **Functional Verification**: The daemon verifies real capability functioning by creating and destroying a transient test adapter (`wt-capcheck`) before TUN setup, guaranteeing capabilities work before initiating connections. The TUI itself only inspects the binary with `getcap`.
+* **Authorization allowlist**: file capabilities belong to the binary, not to a
+  user, so any local uid that executes it would inherit them. A core that holds
+  `CAP_NET_ADMIN` refuses to start unless the current uid has a root-written
+  entry in `/etc/whoisthat/authorized.d/`. Create it with
+  `sudo /usr/lib/whoisthat/authorize-core --add $USER`; the same helper applies
+  the capabilities. A capless build (proxy mode, development) needs no entry.
+* **One core per host**: `/var/lib/whoisthat/run.lock` is held with `flock` for
+  the core's lifetime, so a second user cannot reconcile away the first user's
+  TUN, kill-switch or routing state.
 
 ---
 
@@ -104,7 +113,8 @@ are.
 | :--- | :--- |
 | Same Unix user | **Trusted.** Any process running as your UID can read your config/key and control the daemon. |
 | `root` | **Trusted.** Root can read everything and change any rule. |
-| Other local users | **Untrusted.** Protected by `0600` sockets/files and the TCP token. |
+| Authorized uid | The uid listed in `/etc/whoisthat/authorized.d/`. Only an authorized uid may start a core with network capabilities. |
+| Other local users | **Untrusted.** They cannot run a capped core without an allowlist entry; sockets/files are `0600`/`0700`, and the TCP token is loopback-only. |
 | Remote network | **Untrusted.** That is what the proxy/VPN is for. |
 | Subscription providers | **Untrusted input.** URLs, headers, names and routing profiles are parsed defensively. |
 | Xray release chain | **Trusted.** The pinned archive is checksum-verified; the checksum is fetched only from GitHub, never from the mirror. |
@@ -119,8 +129,10 @@ are.
   listener is loopback-only and requires a token from `ipc.token` (`0600`) plus a
   protocol match, with a 5-second handshake deadline.
 - **Least privilege.** No setuid binary and no root daemon. The core runs as your
-  user with `cap_net_admin,cap_net_raw,cap_setpcap`; capabilities are raised only
-  when TUN needs them, and the TUI never runs with them.
+  user with `cap_net_admin,cap_net_raw,cap_setpcap`; ambient capabilities are
+  raised at startup for the core and its `ip`/`nft`/Xray children, and the
+  root-owned allowlist decides whether a core may start at all. The TUI never
+  runs with capabilities.
 - **Leak prevention.** TUN DNS hijack, `SO_MARK`/policy routing, the independent
   kill-switch and the IPv6 unreachable route are designed to keep traffic from
   escaping outside the intended path.
@@ -135,6 +147,11 @@ permissions. Malware, a malicious script or a compromised editor running as your
 user can connect to `core.sock` and control the VPN, read `db.key` and decrypt
 the database, or read logs that may contain subscription URLs. There is no
 per-command authorization or user confirmation.
+
+**Users are not isolated.** TUN, kill-switch and DNS are system-wide: there is
+one core and one active tunnel per host. Several users may be authorized, but
+they take turns; the first one holds the global lock. Per-user simultaneous
+VPNs are not supported.
 
 **Encryption is only at rest.** The database key is stored on the same machine,
 protected only by file mode. There is no passphrase, KDF or hardware-backed key.
@@ -183,6 +200,9 @@ expose a remote management API; do not tunnel port 4897 to another machine.
 
 - Keep `db.key`, `config.json` and the database at `0600`/`0700`; back up the key
   separately from the data directory.
+- Authorize only the users who need the VPN:
+  `sudo /usr/lib/whoisthat/authorize-core --add <user>`; review
+  `authorize-core --list` and remove stale entries.
 - Use full-disk encryption and a dedicated desktop user for VPN work.
 - Leave `tcp-enabled` off unless you need it.
 - Keep subscription URLs and `--reveal` output out of screenshots, tickets and

@@ -94,7 +94,7 @@ remove copies elsewhere.
 | Keybindings and mouse actions | `usage/navigation.md` |
 | Settings screen behavior | `usage/settings.md` |
 | Log format, rotation, and log-file paths | `usage/logs.md` |
-| Capabilities, setcap, ambient capabilities | `networking/tun-mode.md` |
+| Capabilities, authorize-core, ambient capabilities | `networking/tun-mode.md` |
 | Upgrade, downgrade, uninstall, backup, restore, repair | `guide/maintenance.md` |
 | Init systems, autostart, lifecycle, runtime directory | `guide/platforms.md` |
 | Deep links (`wit://`) | `integrations/deeplinks.md` |

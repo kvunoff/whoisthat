@@ -129,10 +129,13 @@ hosting and Docker publishing work without manual routing.
 ## Capabilities and verification
 
 The core runs as the user with `cap_net_admin,cap_net_raw,cap_setpcap`. Ambient
-capabilities are raised only when needed, and child `ip`, `nft`, and Xray
-processes inherit them. Before TUN setup the core creates and destroys a
-transient `wt-capcheck` adapter to prove the capabilities actually work; `doctor`
-inspects the binary with `getcap` and reports a missing or stale capability set.
+capabilities are raised at startup and child `ip`, `nft`, and Xray processes
+inherit them; those children are resolved to root-owned, non-group/other-writable
+files. A core with `CAP_NET_ADMIN` only starts when the uid has a root-written
+entry in `/etc/whoisthat/authorized.d/`, and a host-wide lock keeps one core
+alive. Before TUN setup the core creates and destroys a transient `wt-capcheck`
+adapter to prove the capabilities actually work; `doctor` inspects the binary
+with `getcap` and the allowlist.
 
 ## Source map
 
