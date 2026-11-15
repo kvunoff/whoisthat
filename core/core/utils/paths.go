@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -97,6 +98,65 @@ func validPrivateDir(path string, uid int) bool {
 		return false
 	}
 	return info.Mode().Perm() == 0700
+}
+
+// CheckPrivateDir reports whether path is a real directory owned by uid with
+// mode 0700. It never changes anything.
+func CheckPrivateDir(path string, uid int) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("%s is a symlink", path)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("%s is not a directory", path)
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return fmt.Errorf("cannot stat %s", path)
+	}
+	if int(stat.Uid) != uid {
+		return fmt.Errorf("%s is owned by uid %d, expected %d", path, stat.Uid, uid)
+	}
+	if info.Mode().Perm() != 0700 {
+		return fmt.Errorf("%s has mode %04o, expected 0700", path, info.Mode().Perm())
+	}
+	return nil
+}
+
+// EnsurePrivateDir creates path with mode 0700 or validates an existing one.
+// A directory owned by the current user but created with a wider mode by an
+// older release is tightened; a foreign owner or a symlink is an error.
+func EnsurePrivateDir(path string, uid int) error {
+	if err := os.Mkdir(path, 0700); err != nil && !errors.Is(err, os.ErrExist) {
+		return err
+	}
+	info, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	if info.Mode()&os.ModeSymlink == 0 && info.IsDir() {
+		if stat, ok := info.Sys().(*syscall.Stat_t); ok && int(stat.Uid) == uid && info.Mode().Perm() != 0700 {
+			if err := os.Chmod(path, 0700); err != nil {
+				return err
+			}
+		}
+	}
+	return CheckPrivateDir(path, uid)
+}
+
+// ValidateRuntime creates/validates the runtime base and its whoisthat
+// subdirectory before any lock, token or socket is placed there.
+func ValidateRuntime() error {
+	uid := os.Getuid()
+	for _, dir := range []string{RuntimeBase(), RuntimeDir()} {
+		if err := EnsurePrivateDir(dir, uid); err != nil {
+			return fmt.Errorf("runtime directory: %w", err)
+		}
+	}
+	return nil
 }
 
 // SocketIsLive reports whether something is accepting connections on the unix

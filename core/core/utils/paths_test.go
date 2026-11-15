@@ -101,3 +101,56 @@ func TestRuntimeBaseFallsBackToXDG(t *testing.T) {
 		t.Errorf("RuntimeBase() = %q, want %q", got, runtimeDir)
 	}
 }
+
+func TestEnsurePrivateDirCreatesAndTightens(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "priv")
+
+	if err := EnsurePrivateDir(dir, os.Getuid()); err != nil {
+		t.Fatalf("EnsurePrivateDir(create) = %v", err)
+	}
+	if err := CheckPrivateDir(dir, os.Getuid()); err != nil {
+		t.Fatalf("CheckPrivateDir(fresh) = %v", err)
+	}
+
+	if err := os.Chmod(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := EnsurePrivateDir(dir, os.Getuid()); err != nil {
+		t.Fatalf("EnsurePrivateDir(tighten) = %v", err)
+	}
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0700 {
+		t.Errorf("mode = %04o, want 0700", got)
+	}
+
+	if err := CheckPrivateDir(dir, os.Getuid()+1); err == nil {
+		t.Error("a foreign owner must be rejected")
+	}
+}
+
+func TestEnsurePrivateDirRejectsSymlinkAndFile(t *testing.T) {
+	root := t.TempDir()
+	real := filepath.Join(root, "real")
+	if err := os.Mkdir(real, 0700); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	if err := EnsurePrivateDir(link, os.Getuid()); err == nil {
+		t.Error("a symlink must be rejected")
+	}
+
+	file := filepath.Join(root, "file")
+	if err := os.WriteFile(file, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckPrivateDir(file, os.Getuid()); err == nil {
+		t.Error("a regular file must be rejected")
+	}
+}

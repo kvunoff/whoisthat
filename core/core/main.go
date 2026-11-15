@@ -65,13 +65,15 @@ func main() {
 	configDir := utils.ConfigDir()
 	logPath := coreLogPath(configDir)
 
-	log.SetOutput(&lumberjack.Logger{
-		Filename:   logPath,
-		MaxSize:    20,
-		MaxBackups: 2,
-		MaxAge:     0,
-		Compress:   false,
-	})
+	if logPath != "" {
+		log.SetOutput(&lumberjack.Logger{
+			Filename:   logPath,
+			MaxSize:    20,
+			MaxBackups: 2,
+			MaxAge:     0,
+			Compress:   false,
+		})
+	}
 
 	log.SetFlags(log.LstdFlags)
 	logger.SetLevel(os.Getenv("WHOISTHAT_LOG_LEVEL"))
@@ -102,6 +104,12 @@ func main() {
 	}
 	_ = globalLock
 
+	if err := utils.ValidateRuntime(); err != nil {
+		logger.Errorf("whoisthat-core: %v", err)
+		fmt.Fprintln(os.Stderr, "whoisthat-core:", err)
+		os.Exit(78)
+	}
+
 	// A second daemon of the same uid must not race the first one for the IPC
 	// socket, the TUN device and the firewall. The lock is held until the
 	// process exits. Config is loaded first so the lock probe knows about an
@@ -109,10 +117,11 @@ func main() {
 	appconfig.LoadConfig()
 	held, lock_dir, err := acquireInstanceLock()
 	if err != nil {
-		// The runtime dir may be unavailable; the socket probe below still
-		// keeps us from stealing a live core's socket.
-		logger.Warnf("instance lock unavailable: %v", err)
-	} else if !held {
+		logger.Errorf("whoisthat-core: instance lock unavailable: %v", err)
+		fmt.Fprintln(os.Stderr, "whoisthat-core: instance lock unavailable:", err)
+		os.Exit(78)
+	}
+	if !held {
 		logger.Infof("another whoisthat-core is already running (lock: %s); exiting", lock_dir)
 		return // exit 0: a non-zero code would loop under systemd Restart=on-failure
 	}
@@ -297,7 +306,7 @@ func acquireInstanceLock() (bool, string, error) {
 			return false, other, nil
 		}
 	}
-	if err := os.MkdirAll(dir, 0700); err != nil {
+	if err := utils.EnsurePrivateDir(dir, os.Getuid()); err != nil {
 		return false, dir, err
 	}
 	f, err := os.OpenFile(filepath.Join(dir, "core.lock"), os.O_CREATE|os.O_RDWR, 0600)
@@ -318,8 +327,11 @@ func acquireInstanceLock() (bool, string, error) {
 // lockHeld reports whether another process holds core.lock in dir. Stale lock
 // files are not an obstacle: only an actual flock counts.
 func lockHeld(dir string) (bool, error) {
-	info, err := os.Stat(dir)
-	if err != nil || !info.IsDir() {
+	info, err := os.Lstat(dir)
+	if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+		return false, nil
+	}
+	if stat, ok := info.Sys().(*syscall.Stat_t); !ok || int(stat.Uid) != os.Getuid() {
 		return false, nil
 	}
 	f, err := os.OpenFile(filepath.Join(dir, "core.lock"), os.O_CREATE|os.O_RDWR, 0600)
@@ -377,8 +389,10 @@ func runtimeUid() int {
 // directory (which exists, so MkdirAll succeeds) must not silently swallow the
 // log: probe the actual file and fall back to a per-user temp directory.
 func coreLogPath(configDir string) string {
-	candidate := filepath.Join(configDir, "core.log")
-	if err := os.MkdirAll(configDir, 0700); err == nil {
+	if err := utils.EnsurePrivateDir(configDir, os.Getuid()); err != nil {
+		fmt.Fprintln(os.Stderr, "whoisthat-core: refusing to use the config directory for logs:", err)
+	} else {
+		candidate := filepath.Join(configDir, "core.log")
 		probe, err := os.OpenFile(candidate, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
 		if err == nil {
 			_ = probe.Close()
@@ -386,9 +400,11 @@ func coreLogPath(configDir string) string {
 		}
 	}
 
-	fallbackDir := filepath.Join(os.TempDir(), fmt.Sprintf("whoisthat-%d", utils.RealUserUid()))
-	_ = os.MkdirAll(fallbackDir, 0700)
-	utils.EnsurePerms(fallbackDir, 0700)
+	fallbackDir := filepath.Join(os.TempDir(), fmt.Sprintf("whoisthat-%d", os.Getuid()))
+	if err := utils.EnsurePrivateDir(fallbackDir, os.Getuid()); err != nil {
+		fmt.Fprintln(os.Stderr, "whoisthat-core: refusing to use the fallback log directory:", err)
+		return ""
+	}
 	return filepath.Join(fallbackDir, "core.log")
 }
 
@@ -397,7 +413,7 @@ func coreLogPath(configDir string) string {
 // crash leaves no trace anywhere.
 func setupCrashLog() {
 	dataDir := utils.DataDir()
-	if err := os.MkdirAll(dataDir, 0700); err != nil {
+	if err := utils.EnsurePrivateDir(dataDir, os.Getuid()); err != nil {
 		return
 	}
 	path := filepath.Join(dataDir, "core-crash.log")

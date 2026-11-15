@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"sync"
 
+	"golang.org/x/sys/unix"
+
 	cmd "whoisthat-core/commands"
 	"whoisthat-core/db"
 	"whoisthat-core/lib"
@@ -149,8 +151,8 @@ func (s *Server) Start() {
 	// filesystem permissions (0600, user-owned dir), so only the owning user
 	// can command the cap_net_admin-holding core.
 	sockPath := appconfig.SocketPath()
-	if err := os.MkdirAll(filepath.Dir(sockPath), 0700); err != nil {
-		logger.Warn("failed to create socket dir:", err)
+	if err := utils.EnsurePrivateDir(filepath.Dir(sockPath), os.Getuid()); err != nil {
+		logger.Fatal("refusing to use an unsafe socket directory:", err)
 	}
 	// Remove a stale socket left by a previous core. A live one must never be
 	// replaced: a core from an older build holds no flock, and stealing its
@@ -217,6 +219,28 @@ func (s *Server) Broadcast(msg []byte) {
 	}
 }
 
+func peerUID(conn net.Conn) (uint32, bool) {
+	uc, ok := conn.(*net.UnixConn)
+	if !ok {
+		return 0, false
+	}
+	raw, err := uc.SyscallConn()
+	if err != nil {
+		return 0, false
+	}
+	var uid uint32
+	var found bool
+	if err := raw.Control(func(fd uintptr) {
+		cred, err := unix.GetsockoptUcred(int(fd), unix.SOL_SOCKET, unix.SO_PEERCRED)
+		if err == nil && cred != nil {
+			uid, found = cred.Uid, true
+		}
+	}); err != nil {
+		return 0, false
+	}
+	return uid, found
+}
+
 func (s *Server) handleConnection(cc *clientConn, clientID string, requireAuth bool) {
 	conn := cc.conn
 	defer func() {
@@ -227,6 +251,13 @@ func (s *Server) handleConnection(cc *clientConn, clientID string, requireAuth b
 		}
 		s.mutex.Unlock()
 	}()
+
+	if !requireAuth {
+		if uid, ok := peerUID(conn); ok && uid != uint32(os.Getuid()) {
+			logger.Warnf("UDS client rejected: peer uid %d != %d", uid, os.Getuid())
+			return
+		}
+	}
 
 	reader := bufio.NewReader(conn)
 	if requireAuth && !s.authenticateTCP(cc, reader) {

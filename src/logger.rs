@@ -231,28 +231,35 @@ pub(crate) fn init_logger() -> &'static FileLogger {
 
     let primary = data_dir.join("tui.log");
     let fallback = config::fallback_log_path("tui.log");
-    let (file, path) = match open_log(&primary) {
-        Ok(file) => (file, primary),
-        Err(_) => match open_log(&fallback) {
-            Ok(file) => {
-                // Only the per-user temp directory is hardened to 0700. The
-                // XDG data dir is left as-is: xray may run as a dedicated uid
-                // and still needs to traverse it to reach its runtime.
-                if let Some(dir) = fallback.parent() {
-                    let _ = fs::set_permissions(dir, fs::Permissions::from_mode(0o700));
-                }
-                (file, fallback)
-            }
-            Err(_) => (
-                OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open("/dev/null")
-                    .expect("failed to open /dev/null"),
-                primary,
-            ),
-        },
-    };
+
+    let mut chosen: Option<(fs::File, PathBuf)> = None;
+    if primary.parent().is_some_and(config::owned_dir)
+        && let Ok(file) = open_log(&primary)
+    {
+        chosen = Some((file, primary.clone()));
+    }
+    if chosen.is_none()
+        && fallback.parent().is_some_and(config::owned_dir)
+        && let Ok(file) = open_log(&fallback)
+    {
+        // Only the per-user temp directory is hardened to 0700. The XDG data
+        // dir is left as-is: xray may run as a dedicated uid and still needs
+        // to traverse it to reach its runtime.
+        if let Some(dir) = fallback.parent() {
+            let _ = fs::set_permissions(dir, fs::Permissions::from_mode(0o700));
+        }
+        chosen = Some((file, fallback.clone()));
+    }
+    let (file, path) = chosen.unwrap_or_else(|| {
+        (
+            OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open("/dev/null")
+                .expect("failed to open /dev/null"),
+            primary.clone(),
+        )
+    });
 
     cleanup(&path);
 
