@@ -100,7 +100,9 @@ remove copies elsewhere.
 | Deep links (`wit://`) | `integrations/deeplinks.md` |
 | HWID headers | `integrations/hwid.md` |
 | Update checks and `WHOISTHAT_NO_UPDATE_CHECK` | `reference/configuration.md` |
-| User-facing TUN, DNS, split, and kill-switch behavior | `networking/*` |
+| User-facing TUN and DNS behavior | `networking/*` |
+| User-facing split-tunnel behavior and launch backends | `usage/split-tunnel.md` |
+| User-facing kill-switch behavior | `usage/kill-switch.md` |
 | Kernel networking internals | `architecture/networking.md` |
 | Routing compilation, Happ/JSON, and reload | `architecture/routing-engine.md` |
 | Security model and threat model | `architecture/security.md` |
@@ -122,7 +124,7 @@ description: "Install WhoisThat from the install script, packages, AUR, or sourc
 audience: "user"        # user | operator | integrator | developer
 type: "tutorial"        # landing | tutorial | how-to | reference | explanation
 status: "current"       # current | experimental | legacy | deprecated
-since: "0.19.0"         # optional
+since: "0.19.2"         # optional
 changed_in: "0.21.0"    # optional
 deprecated_in: "0.22.0" # required when status is deprecated
 removed_in: "0.23.0"    # required when status is deprecated
@@ -140,7 +142,7 @@ Rules:
   Use `replaced_by: "none"` only when there is genuinely no replacement.
 - `replaced_by` is an internal path that exists, or `none`.
 - `since`, `changed_in`, `deprecated_in`, and `removed_in` use the client
-  version from `Cargo.toml` (`0.19.0`), not the core or protocol version.
+  version from `Cargo.toml` (`0.19.2`), not the core or protocol version.
 - `review_by` is a date. A monthly audit reports overdue pages; it does not
   block pull requests.
 - Frontmatter is the first block of the file, before any HTML or heading.
