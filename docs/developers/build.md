@@ -11,7 +11,7 @@ This page covers the local build loop and the unified `make` targets. For the fu
 
 ## Local development loop
 
-No installation step is required during development. The Rust TUI resolves `whoisthat-core` in this order: `PATH`, `./whoisthat-core`, `./core/core/whoisthat-core`, `./bin/whoisthat-core`, `/usr/bin`, and the legacy `/usr/local/bin`.
+Proxy mode needs no installation. The Rust TUI resolves `whoisthat-core` in this order: `PATH`, `./whoisthat-core`, `./core/core/whoisthat-core`, `./bin/whoisthat-core`, `/usr/bin`, and the legacy `/usr/local/bin`.
 
 ```bash
 # 1. Build the Go core daemon (must be built first)
@@ -19,15 +19,23 @@ cd core/core
 go build -o whoisthat-core
 cd ../..
 
-# 2. Grant capabilities and authorize this user for the local build
-sudo /usr/lib/whoisthat/authorize-core --bin ./core/core/whoisthat-core --add "$(id -u)"
+# 2. For TUN mode, stage the core as root-owned and authorize this user
+sudo install -Dm755 core/core/whoisthat-core /usr/lib/whoisthat/dev/whoisthat-core
+sudo /usr/lib/whoisthat/authorize-core --bin /usr/lib/whoisthat/dev/whoisthat-core --add "$(id -u)"
 
-# 3. Launch the Rust TUI
-cargo run
+# 3. Launch the Rust TUI with the staged core first on PATH
+PATH="/usr/lib/whoisthat/dev:$PATH" cargo run
 ```
 
+`authorize-core --bin` only accepts a root-owned binary, so a raw `go build`
+output owned by your user is not accepted. Staging it under
+`/usr/lib/whoisthat/dev` keeps the packaged `/usr/bin/whoisthat-core` untouched
+and puts the dev core first on `PATH`. The helper comes from a package or
+`make install`; from a clean checkout, run `sudo scripts/authorize-core` with
+the same arguments.
+
 ::: warning Inode Invalidation Gotcha
-Every time you run `go build`, Linux assigns a new filesystem **inode** to the output binary, which automatically wipes any previously attached file capabilities. Re-run `authorize-core --bin` after recompiling `whoisthat-core`. The TUI detects a missing authorization on startup and offers a one-time `pkexec` prompt, but only in an interactive terminal; otherwise it prints the `authorize-core --add` command. A build without file capabilities still works in proxy mode.
+Every time you run `go build`, Linux assigns a new filesystem **inode** to the output binary, which automatically wipes any previously attached file capabilities. Repeat the staging and `authorize-core --bin` steps after recompiling `whoisthat-core`. The TUI detects a missing authorization when it spawns a core and offers a one-time `pkexec` prompt, but only in an interactive terminal; otherwise it prints the `authorize-core --add` command. A build without file capabilities still works in proxy mode, so proxy-only work can skip step 2.
 :::
 
 ::: tip Standalone core repository
@@ -53,7 +61,7 @@ make test-ppa     # build a PPA source package and inspect the .deb contents
 make coverage     # Rust lcov + Go coverprofile with the same line floors as CI
 make docs         # VitePress build
 make docs-check   # docs names/links/versions vs the code
-make install      # install both binaries and set capabilities
+make install      # install binaries, set capabilities, authorize the user
 ```
 
 The TUI needs **Rust 1.88 or newer** (`Cargo.toml` declares `rust-version`).

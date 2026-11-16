@@ -3,6 +3,7 @@ title: "Maintenance, Upgrading & Recovery"
 description: "Upgrade, downgrade, back up, repair, and uninstall WhoisThat without losing data."
 audience: "user"
 type: "how-to"
+changed_in: "0.19.3"
 ---
 
 # Maintenance, Upgrading & Recovery
@@ -92,19 +93,23 @@ Ubuntu 26.04 (Resolute), enable the Resolute series in the PPA settings first.
 If you installed WhoisThat as a `.deb` or `.rpm`, upgrade it with the package
 manager (`apt upgrade`, `dnf upgrade`) rather than the installer.
 
-Builds before the authorization allowlist had no entry in
-`/etc/whoisthat/authorized.d/`. After the first upgrade the TUI offers a
-`pkexec` prompt and adds your user; with systemd autostart and lingering the
-core can fail once with exit 78 before that prompt. Run
-`sudo /usr/lib/whoisthat/authorize-core --add $USER` manually if you prefer.
-Use `authorize-core --list`, `--remove <user>` and `--remove-all` to manage the
-allowlist; only one core runs per host.
+Installations from before the authorization allowlist had no entry in
+`/etc/whoisthat/authorized.d/`. Until your user is authorized, a capped core
+exits with status 78. The TUI offers a `pkexec` prompt the next time it starts
+the core or enables autostart, and patches the user unit with
+`RestartPreventExitStatus=78`; a unit written by an older release can restart
+the core until that happens. Run
+`sudo /usr/lib/whoisthat/authorize-core --add $USER` to stop that immediately.
+The allowlist is managed with
+`sudo /usr/lib/whoisthat/authorize-core --list`, `--remove <user>` and
+`--remove-all`; only one core runs per host. See
+[TUN Mode & Capabilities](/networking/tun-mode) for the model.
 
 ### Manual build
 
 ```bash
 make build
-sudo make install
+make install
 ```
 
 `make install` installs to `/usr/bin`, applies the capabilities and adds your
@@ -324,8 +329,10 @@ sudo add-apt-repository --remove ppa:kvunoff/whoisthat
 The script installer stops the user service and removes unowned binaries, the
 systemd unit, and the desktop entries. It deliberately leaves files owned by
 dpkg/rpm in place. Package removal only deletes package-owned files; stop the
-user service first if it is running. **Configuration and data are preserved**
-either way:
+user service first if it is running. Both paths also clear the allowlist, the
+host-wide lock and the file capabilities, so a later reinstall needs
+`sudo /usr/lib/whoisthat/authorize-core --add $USER` again. **Configuration and
+data are preserved** either way:
 
 - `~/.config/whoisthat/` — settings, key, logs, geo assets
 - `~/.local/share/whoisthat/` — encrypted database, backups, Xray runtimes
