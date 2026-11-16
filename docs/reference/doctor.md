@@ -47,16 +47,16 @@ The diagnostic engine performs comprehensive, non-destructive system inspections
 
 ### Binaries & Runtimes
 * **`whoisthat` (Client)**: Resolves the active binary path (`std::env::current_exe()`) and confirms it matches the compiled crate version (`CARGO_PKG_VERSION`).
-* **`whoisthat-core` (Daemon)**: Searches `PATH`, `./whoisthat-core`, `./core/core/whoisthat-core`, `./bin/whoisthat-core`, `/usr/bin`, and the legacy `/usr/local/bin` for the daemon binary.
+* **`whoisthat-core` (Core)**: Searches `PATH`, `./whoisthat-core`, `./core/core/whoisthat-core`, `./bin/whoisthat-core`, `/usr/bin`, and the legacy `/usr/local/bin` for the core binary.
 * **`xray-core` (Proxy Runtime)**: Probes for available Xray-core runtimes in `~/.local/share/whoisthat/runtimes/xray/` and system `PATH`. Checks if version matches the pinned **v26.10.31** release.
 * **System CLI Tools**: Validates the presence of essential Linux networking utilities: `ip` (`iproute2`), `getcap` & `setcap` (`libcap`), and `pkexec` (`polkit`).
-* **Core authorization**: When the binary carries capabilities, verifies that the current uid has an entry in `/etc/whoisthat/authorized.d/` and warns about legacy `/usr/local` copies that still carry capabilities.
 
 ### Linux Capabilities & Kernel
 * **`whoisthat-core caps`**: Runs `getcap` against the daemon binary to verify all three required capabilities are granted:
   * `cap_net_admin`: Required for creating virtual TUN adapters and manipulating routing tables.
   * `cap_net_raw`: Required for raw socket binding and packet marking.
   * `cap_setpcap`: Required for elevating capabilities into the ambient set.
+* **Core authorization**: When the binary carries capabilities, verifies the uid entry in `/etc/whoisthat/authorized.d/` and that the host-wide `/var/lib/whoisthat/run.lock` exists, and warns about legacy `/usr/local` copies that still carry capabilities. A missing entry or lock is reported as a failure with the `authorize-core --add` hint.
 * **`/dev/net/tun` Device**: Confirms `/dev/net/tun` exists and is a valid character device with read/write access.
 * **Firewall Backend**: Detects whether modern **nftables** or legacy **iptables** is active. Warns if neither is available.
 * **cgroup v2 Controller**: Checks for `/sys/fs/cgroup/cgroup.controllers`. Confirms the unified cgroup v2 hierarchy is active for application split tunneling (`whoisthat run`).
