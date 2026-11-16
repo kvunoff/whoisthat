@@ -341,6 +341,29 @@ whoisthat core version
   otherwise it sends `die` and waits for the single-instance lock to be released.
 * An open TUI can respawn a stopped core automatically; stop the TUI first if that matters.
 * `--tcp`/`--socket` never trigger a spawn, because the new daemon would listen on the default UDS.
+* `core status` prints the resolved binary, `Capabilities` and
+  `Authorization: yes/no`. These fields are reported even when the core is
+  offline.
+
+`core status --json` returns:
+
+| Field | Type | Notes |
+| :--- | :--- | :--- |
+| `running` | bool | The core socket is reachable |
+| `version` | string \| null | Core version; `null` when offline |
+| `protocol` | int \| null | IPC protocol; `null` when offline |
+| `socket` | string | Resolved IPC endpoint |
+| `binary` | string | Core binary found by the client |
+| `capabilities` | bool | `getcap` reports `cap_net_admin` on that binary |
+| `authorized` | bool | The current uid has a safe entry in `/etc/whoisthat/authorized.d/` |
+| `connected` | bool | Only when running: a VPN session is active |
+| `tun_enabled` | bool | Only when running: TUN mode is on |
+| `xray` | object \| null | Only when running: `{version, target, status}`, or `null` when unknown |
+
+If a mutating command spawns the core directly and it refuses to start with
+status 78 (uid not authorized, or another core holds the host-wide lock), the
+CLI exits with code `3` and prints the `authorize-core --add` hint. `--no-spawn`
+never starts a core.
 
 ---
 

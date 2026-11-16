@@ -52,7 +52,9 @@ The object is not shaped for Waybar/Polybar directly: those expect `text`,
 ## Smaller objects
 
 `whoisthat mode status --json` returns the mode view; `whoisthat core status
---json` returns daemon health. They are for widgets that need only that slice.
+--json` returns core health. The field contract for `core status --json` is in
+the [CLI Reference](/reference/cli). Both are for widgets that need only that
+slice.
 
 ## See also
 
