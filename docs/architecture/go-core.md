@@ -20,7 +20,8 @@ IPC server. The Rust client only sends commands and renders events.
 3. Refuse to start (exit 78) when the process holds `CAP_NET_ADMIN` but the uid
    has no entry in `/etc/whoisthat/authorized.d/`. Capless builds skip this.
 4. Take the host-wide `flock` on `/var/lib/whoisthat/run.lock` and exit 78 when
-   another core holds it; this keeps exactly one core on the host.
+   another core holds it; this keeps exactly one core on the host. A capless
+   build continues when the lock file is absent; a capped core fails closed.
 5. Create and validate the runtime directory (owner, mode `0700`, no symlink).
 6. Load `config.json` (`AppConfig`). This happens before the per-uid lock so an
    `ipc-socket-path` override is known.
