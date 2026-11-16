@@ -52,8 +52,8 @@ The essential keys:
   (`cap_net_admin,cap_net_raw,cap_setpcap`) let the core manage the interface and
   routing without a setuid binary. A root-owned allowlist
   (`/etc/whoisthat/authorized.d/`) decides which users may start a capped core,
-  and a host-wide lock keeps one core alive. A privileged fallback exists for
-  hosts where capabilities are not available; it is documented in
+  and a host-wide lock keeps one core alive. Packages run the core as your user;
+  a manual root path is legacy and not supported by `authorize-core`. See
   [TUN Mode & Capabilities](/networking/tun-mode).
 - **One proxy engine.** VLESS (Reality, Vision, xHTTP, gRPC, WebSocket), VMess,
   Trojan, Shadowsocks (2022), SOCKS5 and Hysteria2 run on pinned Xray-core

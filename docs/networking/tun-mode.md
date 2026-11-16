@@ -3,6 +3,7 @@ title: "TUN Mode & Network Capabilities"
 description: "How system-wide TUN mode routes traffic and why it works without root."
 audience: "user"
 type: "explanation"
+changed_in: "0.19.3"
 ---
 
 # TUN Mode & Network Capabilities
@@ -39,10 +40,18 @@ When running under file capabilities (`cap_net_admin,cap_net_raw,cap_setpcap=+ep
   ```
 * All packets bearing `fwmark 1` bypass the TUN device entirely and exit directly through your physical gateway.
 
-### Root Mode (Fallback)
-If running under a dedicated root daemon:
+### Root Mode (Legacy)
+The code still contains the old root fallback:
+
 * The core picks the first unused UID in the `61000–61999` range.
 * Kernel policy rule `ip rule add uidrange <uid>-<uid> table 100` directs that user's traffic to the physical gateway.
+
+::: warning Legacy path
+Current packages run the core as your user. `authorize-core` refuses uids below
+1000, and a root process that holds `CAP_NET_ADMIN` is refused unless a manual
+allowlist entry exists. The root path is therefore not part of the supported
+install; use the capability mode above.
+:::
 
 ---
 
@@ -90,18 +99,45 @@ This guarantees that:
 
 ---
 
+## Authorization and the host-wide lock
+
+File capabilities belong to the binary, not to a user. A core that holds
+`CAP_NET_ADMIN` therefore refuses to start unless the current uid has a
+root-written entry in `/etc/whoisthat/authorized.d/`. The helper applies the
+capabilities, writes the entry and creates the host-wide lock:
+
+```bash
+sudo /usr/lib/whoisthat/authorize-core --add $USER
+```
+
+The helper authorizes regular users (uid 1000 and above) and supports
+`--list`, `--remove <user>` and `--remove-all`. `--bin <path>` is for installers
+and other root-owned staging copies; it is refused through `pkexec`.
+
+Only one core runs per host. The holder of `/var/lib/whoisthat/run.lock` owns
+the TUN, kill-switch and DNS state; several uids may be authorized, but they
+take turns. A core that is not authorized, or cannot acquire the lock, exits
+with status 78. Capless builds used for proxy mode and development need neither
+the allowlist entry nor the lock.
+
+The security model and the same-user trust boundary are in
+[Security & Cryptography](/architecture/security).
+
 ## Verifying capabilities
 
-`whoisthat doctor` reports the file capabilities. Before enabling TUN, the core
-also probes them by creating and immediately destroying a transient `wt-capcheck`
-adapter. If capabilities are missing (for example after a fresh compile), the TUI
-points to `sudo /usr/lib/whoisthat/authorize-core --add $USER`. A `pkexec` prompt
-is offered when the daemon is spawned from an interactive terminal and the
-current user is not authorized, never on the TUN toggle itself. The kernel-side
-details are in
+`whoisthat doctor` reports the file capabilities, the allowlist entry and the
+host-wide lock. Before enabling TUN, the core also probes the capabilities by
+creating and immediately destroying a transient `wt-capcheck` adapter.
+
+When the TUI starts a core and the binary carries capabilities, it checks the
+allowlist and the lock first. On an interactive terminal it offers a one-time
+`pkexec` prompt; otherwise it prints the `authorize-core --add` command. It
+never prompts on the TUN toggle itself. The kernel-side details are in
+[Kernel Networking](/architecture/networking#capabilities-and-verification).
 
 ## See also
 
 - [Kernel Networking](/architecture/networking)
 - [DNS & FakeDNS](/networking/dns)
 - [Kill-Switch](/usage/kill-switch)
+- [Security & Cryptography](/architecture/security)

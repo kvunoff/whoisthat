@@ -125,12 +125,18 @@ are.
   AES-256-GCM encrypted in `~/.local/share/whoisthat/db/`. The key lives outside
   that directory in `~/.config/whoisthat/db.key` (`0600`), so copying the data
   directory does not copy the key.
-- **IPC.** The Unix socket is `0600` and restricted to your user. The opt-in TCP
+- **Local files.** Runtime and log directories are validated before use: the
+  directory must be real, owned by the process uid, mode `0700`, and not a
+  symlink. A predictable `/tmp/whoisthat-<uid>` created by another user is
+  refused.
+- **IPC.** The Unix socket is `0600` and restricted to your user. The core also
+  checks `SO_PEERCRED` and rejects a client with a different uid. The opt-in TCP
   listener is loopback-only and requires a token from `ipc.token` (`0600`) plus a
   protocol match, with a 5-second handshake deadline.
-- **Least privilege.** No setuid binary and no root daemon. The core runs as your
-  user with `cap_net_admin,cap_net_raw,cap_setpcap`; ambient capabilities are
-  raised at startup for the core and its `ip`/`nft`/Xray children, and the
+- **Least privilege.** No setuid binary, and the packages run no root daemon.
+  The core runs as your user with `cap_net_admin,cap_net_raw,cap_setpcap`;
+  ambient capabilities are raised at startup for the core and its
+  `ip`/`nft`/Xray children, and the
   root-owned allowlist decides whether a core may start at all. The TUI never
   runs with capabilities.
 - **Leak prevention.** TUN DNS hijack, `SO_MARK`/policy routing, the independent
