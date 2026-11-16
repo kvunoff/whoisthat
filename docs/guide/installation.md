@@ -20,8 +20,9 @@ with each other. Remove the previous installation before switching.
 ## Install script
 
 The installer detects `x86_64` or `aarch64`, downloads the prebuilt static musl
-binaries from the latest GitHub release, verifies their SHA-256 checksums, and
-configures network capabilities. No Rust or Go toolchain is required.
+binaries from the latest GitHub release, verifies their SHA-256 checksums,
+configures network capabilities and authorizes the invoking user. No Rust or Go
+toolchain is required.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/kvunoff/whoisthat/main/install.sh | bash
@@ -58,6 +59,7 @@ The release and installer provide:
 | `/usr/lib/whoisthat/cgroup-setup` | creates the per-user cgroup and runtime directory |
 | `/usr/lib/whoisthat/run-core` | non-systemd core wrapper |
 | `/usr/lib/whoisthat/install-init` | installs/removes init services and templates |
+| `/usr/lib/whoisthat/authorize-core` | applies capabilities, writes the allowlist entry and creates the host-wide lock |
 | `/usr/lib/whoisthat/init-hook` | boot hook for cgroup markers |
 | `/usr/lib/whoisthat/run-runner` | starts the per-user runner at boot |
 | `/usr/lib/whoisthat/init/<init>/` | OpenRC, dinit and runit templates (installer/AUR) |
@@ -93,11 +95,12 @@ sudo apt install whoisthat
 ```
 
 The PPA ships the same static binaries as the release archives and sets file
-capabilities in its post-install script. Add your user once with
+capabilities in its post-install script. It also creates the allowlist
+directory and the host-wide lock. Add your user once with
 `sudo /usr/lib/whoisthat/authorize-core --add $USER`; the TUI also offers this
-through a `pkexec` prompt on the first start. It
-currently publishes Noble `amd64` builds; enable other series or `arm64` in the
-PPA settings, or use the release `.deb` or the installer.
+through a `pkexec` prompt on the first start. It currently publishes Noble
+`amd64` builds; enable other series or `arm64` in the PPA settings, or use the
+release `.deb` or the installer.
 
 ```bash
 apt-cache policy whoisthat
@@ -116,8 +119,10 @@ sudo dnf install ./whoisthat-<version>-1.x86_64.rpm
 ```
 
 The packages re-apply file capabilities and desktop caches in their post-install
-script. Configuration and the encrypted database are never touched by package
-upgrades or removal.
+script, and create `/etc/whoisthat/authorized.d` plus the host-wide lock. They
+do not authorize a user: run
+`sudo /usr/lib/whoisthat/authorize-core --add $USER` once. Configuration and the
+encrypted database are never touched by package upgrades or removal.
 
 ## Arch Linux (AUR)
 
@@ -140,6 +145,10 @@ with the script, remove it first:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/kvunoff/whoisthat/main/install.sh | sudo bash -s -- --uninstall
 ```
+
+The AUR packages run `/usr/lib/whoisthat/authorize-core --add` for the invoking
+user when `SUDO_USER` is available. Otherwise run the command from
+[Network capabilities](#network-capabilities) once.
 
 ## Manual build from source
 
@@ -171,7 +180,7 @@ and the kill-switch need the kernel and firewall pieces above. See
 
 ```bash
 make build
-sudo make install
+make install
 ```
 
 `make install` installs the client, core and runner, applies the capabilities
@@ -192,6 +201,7 @@ cd whoisthat
 cargo build --release --locked
 sudo install -Dm755 target/release/whoisthat /usr/bin/whoisthat
 sudo install -Dm755 core/core/whoisthat-core /usr/bin/whoisthat-core
+sudo install -Dm755 scripts/authorize-core /usr/lib/whoisthat/authorize-core
 sudo /usr/lib/whoisthat/authorize-core --add $USER
 ```
 
@@ -200,16 +210,19 @@ For a development build without installing, see [Build & Run](/developers/build)
 ## Network capabilities
 
 TUN mode creates virtual interfaces and routing rules without root. It uses file
-capabilities:
+capabilities, gated by a root-owned allowlist. The helper applies the
+capabilities, writes your allowlist entry and creates the host-wide lock:
 
 ```bash
 sudo /usr/lib/whoisthat/authorize-core --add $USER
 ```
 
-If the core lacks capabilities and TUN autostart is configured, the TUI offers a
-one-time `pkexec` prompt before it starts. In every other case it reports the
-missing authorization and points to the `authorize-core --add` command. The capability model is
-explained in [TUN Mode & Capabilities](/networking/tun-mode).
+A capless build used for proxy mode or development needs no entry. When the TUI
+starts a core (or enables autostart) and the binary carries capabilities, it
+checks the allowlist and the lock first. On an interactive terminal it offers a
+one-time `pkexec` prompt; otherwise it reports the missing authorization and
+prints the `authorize-core --add` command. The full model is in
+[TUN Mode & Capabilities](/networking/tun-mode).
 
 ## Verify
 

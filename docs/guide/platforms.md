@@ -23,8 +23,9 @@ documented below as manual setup; sysvinit/Devuan are out of scope.
 | Autostart | user unit + linger | init service or a `.desktop` entry |
 | Split-tunnel cgroup | `user@<uid>.service` | `/sys/fs/cgroup/whoisthat-<uid>` |
 
-The daemon runs as your user by default. TUN has a privileged fallback for hosts
-where file capabilities are unavailable; it is documented in
+The packages run the core as your user. TUN uses file capabilities gated by the
+root-owned allowlist; the legacy manual root path is not part of the supported
+install. The capability path and the legacy note are in
 [TUN Mode & Capabilities](/networking/tun-mode).
 
 ## Systemd user service
@@ -58,10 +59,16 @@ Type=simple
 ExecStart=/usr/bin/whoisthat-core
 Restart=on-failure
 RestartSec=5
+RestartPreventExitStatus=78
 
 [Install]
 WantedBy=default.target
 ```
+
+Exit 78 means the core refused to start: the user is not authorized, the
+host-wide lock is missing, or another core holds it.
+`RestartPreventExitStatus=78` stops a restart loop while the user fixes the
+authorization.
 
 Enabling the unit does **not** start it immediately. Run
 `systemctl --user start whoisthat-core` (or log out and back in) to launch it now.
@@ -189,13 +196,16 @@ whoisthat core restart
 The init wrapper (`/usr/lib/whoisthat/run-core`) keeps the core alive and
 restarts it after a crash. Starts, stops and restarts are requested through
 user-owned marker files; the wrapper and the TUI always agree on the runtime
-directory `/run/whoisthat/<uid>`.
+directory `/run/whoisthat/<uid>`. Exit 78 means the core refused to start
+(no authorization, a missing lock or a busy lock); the wrapper pauses instead
+of retrying every two seconds and waits for the next `core-start` or
+`core-restart`.
 
 ### Limitations
 
-- One runner and one core per user; the core still owns one network namespace
-  (one TUN name and one nft table), so simultaneous VPN sessions of different
-  users are not supported.
+- One runner per user and one core per host; the core owns one network
+  namespace (one TUN name and one nft table), so simultaneous VPN sessions of
+  different users are not supported.
 - The runner service is installed for the user who ran the installer.
 - `setpriv` from util-linux is required to drop privileges in the boot wrapper.
 - A custom `XDG_CONFIG_HOME`/`XDG_DATA_HOME` must be passed to the init service
