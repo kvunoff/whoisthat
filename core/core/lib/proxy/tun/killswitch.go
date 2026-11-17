@@ -88,6 +88,13 @@ func SetupKillSwitchBlock(proxyIPs []string, tunName string, dnsServers []string
 	if len(direct) == 0 {
 		logger.Warn("kill-switch: no direct-rule targets resolved; arming with no exceptions")
 	}
+	// Excluded hosts are routed off the TUN so they keep the physical path even
+	// though the TUN owns the default route. Best-effort: a missing route only
+	// costs latency, the accept exception above still keeps them alive.
+	if err := addDirectHostRoutes(d4, d6, tunName); err != nil {
+		logger.Warn("kill-switch: could not pin direct routes off the tunnel:", err)
+	}
+
 	// K-2: refuse to arm over a DoT-only resolver we cannot neutralise.
 	if err := neutraliseDoT(tunName); err != nil {
 		return err
@@ -107,6 +114,7 @@ func SetupKillSwitchBlock(proxyIPs []string, tunName string, dnsServers []string
 // error unless the rules are verifiably gone, so callers never claim "off"
 // while traffic is still being dropped.
 func RemoveKillSwitchBlock() error {
+	removeDirectHostRoutes()
 	nftErr := removeNftKillSwitch()
 	iptErr := removeIptablesKillSwitch()
 

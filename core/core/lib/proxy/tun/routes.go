@@ -2,8 +2,12 @@ package tunmode
 
 import (
 	"fmt"
+	"net"
 	"strings"
+	"sync"
 	"time"
+
+	"whoisthat-core/lib/logger"
 )
 
 // ---------------------------------------------------------------------------
@@ -281,4 +285,95 @@ ip -6 route del default via %s dev %s table 100 2>/dev/null || true
 `, mark, gateway6, iface, gateway6, iface)
 	_, err := runScriptWithSh(script)
 	return err
+}
+
+// Host routes for the hosts excluded from the tunnel.
+//
+// The TUN owns the default route, so an accept exception alone still lets the
+// excluded destination take the tunnel path (and then come back). Pinning it to
+// the physical gateway keeps it off the TUN entirely, which is what "direct"
+// means. Best-effort by design: the exception already keeps it reachable.
+var (
+	directRouteMu   sync.Mutex
+	directRouteList []string // "<cidr> <dev> <gateway> <family>"
+)
+
+// physicalDefault returns the gateway and device of the default route that is
+// not the TUN.
+func physicalDefault(family string, tunName string) (string, string) {
+	out, err := runScriptWithSh("ip " + family + " route show default")
+	if err != nil {
+		return "", ""
+	}
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Fields(line)
+		var gw, dev string
+		for i, f := range fields {
+			if f == "via" && i+1 < len(fields) {
+				gw = fields[i+1]
+			}
+			if f == "dev" && i+1 < len(fields) {
+				dev = fields[i+1]
+			}
+		}
+		if gw == "" || dev == "" || dev == tunName {
+			continue
+		}
+		return gw, dev
+	}
+	return "", ""
+}
+
+func addDirectHostRoutes(v4, v6 []string, tunName string) error {
+	directRouteMu.Lock()
+	defer directRouteMu.Unlock()
+	var errs []string
+	for _, set := range []struct {
+		family string
+		flag   string
+		nets   []string
+	}{{"-4", "/32", v4}, {"-6", "/128", v6}} {
+		gw, dev := physicalDefault(set.family, tunName)
+		if gw == "" || dev == "" {
+			continue
+		}
+		for _, n := range set.nets {
+			if _, _, err := net.ParseCIDR(n); err != nil {
+				continue
+			}
+			cidr := n
+			if !strings.Contains(n, "/") {
+				cidr = n + set.flag
+			}
+			if _, err := runScriptWithSh(fmt.Sprintf("ip %s route replace %s via %s dev %s", set.family, cidr, gw, dev)); err != nil {
+				errs = append(errs, cidr)
+				continue
+			}
+			directRouteList = append(directRouteList, cidr+" "+dev+" "+gw+" "+set.family)
+		}
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("failed for %v", errs)
+	}
+	return nil
+}
+
+func removeDirectHostRoutes() {
+	directRouteMu.Lock()
+	defer directRouteMu.Unlock()
+	logger.Infof("kill-switch: removing %d pinned direct routes", len(directRouteList))
+	for _, entry := range directRouteList {
+		f := strings.Fields(entry)
+		if len(f) != 4 {
+			continue
+		}
+		// Delete by prefix only: a second arm can have replaced the entry with
+		// slightly different attributes, and a dev/via-qualified delete then
+		// returns ENOENT and leaves it behind.
+		if _, err := runScriptWithSh(fmt.Sprintf("ip %s route del %s", f[3], f[0])); err != nil {
+			logger.Warn("kill-switch: route del failed:", err)
+			_, _ = runScriptWithSh(fmt.Sprintf("ip %s route del %s dev %s", f[3], f[0], f[1]))
+		}
+	}
+	directRouteList = nil
 }
