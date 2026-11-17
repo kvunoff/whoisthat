@@ -51,8 +51,8 @@ for i, r in enumerate(rules):
   cleanup_pin
   [ "${WT_KEEP:-0}" = "1" ] && return
   step "teardown: disarm + disconnect"
-  "$WT" settings set kill-switch=false -j >/dev/null 2>&1
-  "$WT" disconnect -j >/dev/null 2>&1
+  timeout 30 "$WT" settings set kill-switch=false -j >/dev/null 2>&1
+  timeout 30 "$WT" disconnect -j >/dev/null 2>&1
 }
 trap teardown EXIT
 
