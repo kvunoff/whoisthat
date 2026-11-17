@@ -44,7 +44,8 @@ teardown() {
 import json,sys
 try: rules = json.load(sys.stdin).get("rules", [])
 except Exception: sys.exit(0)
-for i, r in enumerate(rules):
+# rule indexes are 1-based
+for i, r in enumerate(rules, 1):
     if "refresh-probe.example" in json.dumps(r):
         print(i)
 ' 2>/dev/null | while read -r idx; do "$WT" route rm "$idx" -j >/dev/null 2>&1; done
@@ -71,7 +72,7 @@ step "connect $PROFILE"
 # --wait can hang forever when the core drops the CLI as a slow client; the
 # connection itself still completes, so bound the wait and fall back to status.
 timeout 90 "$WT" connect "$PROFILE" --wait -j >/dev/null 2>&1 || true
-for i in $(seq 1 30); do
+for _ in $(seq 1 30); do
   "$WT" status 2>/dev/null | grep -q '\[Connected\]' && break
   sleep 1
 done
@@ -79,13 +80,13 @@ done
 step "mode tun"
 timeout 60 "$WT" mode tun -j >/dev/null 2>&1 || { verdict fail mode-tun "switch refused"; exit 1; }
 step "wait for tun"
-for i in $(seq 1 90); do ip -4 route show | grep -q whoisthattun && break; sleep 1; done
+for _ in $(seq 1 90); do ip -4 route show | grep -q whoisthattun && break; sleep 1; done
 ip -4 route show | grep -q whoisthattun || { verdict fail tun-up "tun never appeared"; exit 1; }
 verdict running tun-ready
 
 step "arm"
 "$WT" settings set kill-switch=true -j >/dev/null 2>&1 || { verdict fail arm "arm failed"; exit 1; }
-for i in $(seq 1 20); do
+for _ in $(seq 1 20); do
   [ "$("$WT" settings get kill-switch-armed -j 2>/dev/null | grep -c true)" = "1" ] && break
   sleep 1
 done
@@ -98,7 +99,7 @@ step "add a direct rule while armed"
 
 step "wait for the exception set to grow"
 after=$before
-for i in $(seq 1 20); do
+for _ in $(seq 1 20); do
   after=$(exceptions)
   [ "${after:-0}" -gt "$before" ] && break
   sleep 1
@@ -116,4 +117,4 @@ else
   note="$note nft=unreadable"
 fi
 
-verdict pass done "$note"
+verdict pass 'done' "$note"

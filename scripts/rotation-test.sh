@@ -50,9 +50,9 @@ step "connect $PROFILE"
 # --wait can hang forever when the core drops the CLI as a slow client; the
 # connection itself still completes, so bound the wait and fall back to status.
 # A connect can also land on a still-settling teardown, so retry it.
-for attempt in 1 2 3; do
+for _ in 1 2 3; do
   timeout 90 "$WT" connect "$PROFILE" --wait -j >/dev/null 2>&1 || true
-  for i in $(seq 1 30); do
+  for _ in $(seq 1 30); do
     "$WT" status 2>/dev/null | grep -q '\[Connected\]' && break
     sleep 1
   done
@@ -64,7 +64,7 @@ done
 step "mode tun"
 timeout 60 "$WT" mode tun -j >/dev/null 2>&1 || { verdict fail mode-tun "switch refused"; exit 1; }
 step "wait for tun"
-for i in $(seq 1 90); do ip -4 route show | grep -q whoisthattun && break; sleep 1; done
+for _ in $(seq 1 90); do ip -4 route show | grep -q whoisthattun && break; sleep 1; done
 ip -4 route show | grep -q whoisthattun || { verdict fail tun-up "tun never appeared"; exit 1; }
 verdict running tun-ready
 
@@ -84,7 +84,7 @@ sleep 2
 timeout 60 "$WT" settings set kill-switch=true -j >/dev/null 2>&1 || { verdict fail rearm "re-arm failed"; exit 1; }
 # A refresh kicks off background profile tests; arming can take a while.
 armed=0
-for i in $(seq 1 30); do
+for _ in $(seq 1 30); do
   armed=$(timeout 20 "$WT" settings get kill-switch-armed -j 2>/dev/null | grep -c true)
   [ "$armed" = "1" ] && break
   sleep 1
@@ -99,4 +99,4 @@ step "the agent channel must still reach out"
 api=$(curl -sS -m 8 -o /dev/null -w '%{http_code}' "https://$API/v1/models")
 [ "$api" != "000" ] || { verdict fail egress "$note api=$api"; exit 1; }
 
-verdict pass done "$note api=$api"
+verdict pass 'done' "$note api=$api"

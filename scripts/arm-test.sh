@@ -69,7 +69,7 @@ step "connect $PROFILE"
 # --wait can hang forever when the core drops the CLI as a slow client; the
 # connection itself still completes, so bound the wait and fall back to status.
 timeout 90 "$WT" connect "$PROFILE" --wait -j >/dev/null 2>&1 || true
-for i in $(seq 1 30); do
+for _ in $(seq 1 30); do
   "$WT" status 2>/dev/null | grep -q '\[Connected\]' && break
   sleep 1
 done
@@ -79,14 +79,14 @@ step "mode tun"
 timeout 60 "$WT" mode tun -j >/dev/null 2>&1 || { verdict fail mode-tun "switch refused"; exit 1; }
 
 step "wait for $TUN (poll, never sleep)"
-for i in $(seq 1 90); do
+for _ in $(seq 1 90); do
   ip -4 route show | grep -q "$TUN" && break
   sleep 1
 done
 ip -4 route show | grep -q "$TUN" || { verdict fail tun-up "tun never appeared"; exit 1; }
 
 step "wait for egress through $TUN"
-for i in $(seq 1 60); do
+for _ in $(seq 1 60); do
   [ "$(ip -4 route get 1.1.1.1 2>/dev/null | grep -c "$TUN")" -ge 1 ] && break
   sleep 1
 done
@@ -112,7 +112,7 @@ leak6=$(curl -6 -sS -m 6 https://api64.ipify.org 2>/dev/null | grep -o ':' >/dev
 dns=$(getent ahostsv4 example.com >/dev/null 2>&1 && echo ok || echo fail)
 
 if [ "$fail" -eq 0 ]; then
-  verdict pass done "exceptions=$exc api=$api web=$web egress=$egress dns=$dns $leak6"
+  verdict pass 'done' "exceptions=$exc api=$api web=$web egress=$egress dns=$dns $leak6"
 else
   verdict fail assertions "${note# } exceptions=$exc api=$api web=$web egress=${egress:-none} dns=$dns $leak6"
   exit 1

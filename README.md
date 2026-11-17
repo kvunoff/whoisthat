@@ -50,6 +50,16 @@ WhoisThat runs a local SOCKS5/HTTP proxy or a system-wide TUN interface from a t
 - **Encrypted state.** Profiles, subscriptions and custom rules are stored locally with AES-256-GCM.
 - **Terminal workflow.** Braille traffic charts, `wit://` imports and NDJSON status for Waybar/Polybar.
 
+### IPv6 while the switch is armed
+
+IPv6 is blocked entirely while the kill-switch is armed rather than tunnelled.
+There is no v6 route into the TUN, so anything leaving over v6 would bypass the
+tunnel; blocking keeps the guarantee absolute. Clients that retry an AAAA answer
+over v4 (Happy Eyeballs, most browsers and `curl`) are unaffected, and a
+v6-only destination is expected to fail while armed. Destinations excluded by a
+direct rule get a v6 host route to the physical gateway like their v4
+counterparts, so they keep working.
+
 ---
 
 ## Installation
