@@ -125,8 +125,10 @@ func scriptPath() string {
 
 func runScriptWithSh(script string) (string, error) {
 	cmd := utils.SafeCommand("sh")
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		AmbientCaps: []uintptr{unix.CAP_NET_ADMIN, unix.CAP_NET_RAW},
+	// Ambient caps need the caller to hold them in permitted; setting them
+	// unconditionally makes an unprivileged run fail with EPERM.
+	if caps := utils.HeldCapabilities(unix.CAP_NET_ADMIN, unix.CAP_NET_RAW); len(caps) > 0 {
+		cmd.SysProcAttr = &syscall.SysProcAttr{AmbientCaps: caps}
 	}
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
