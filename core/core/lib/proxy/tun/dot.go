@@ -80,6 +80,11 @@ func neutraliseDoT(tunName string) error {
 	if !dotSaved { // keep the first-seen value across repeated arms
 		dotLink, dotPrior, dotSaved = tunName, prior, true
 	}
+	// Already off (a re-arm, or a second arm in the same session): skip, because
+	// resolvectl exits 1 when the link is already in the requested state.
+	if strings.EqualFold(prior, "no") {
+		return nil
+	}
 	if _, err := resolvectlRun("dnsovertls", tunName, "no"); err != nil {
 		return fmt.Errorf("kill-switch not armed: cannot disable DNS-over-TLS on %s: %w", tunName, err)
 	}
