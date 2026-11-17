@@ -35,15 +35,15 @@ func SafeLookPath(name string) (string, error) {
 	return "", &exec.Error{Name: name, Err: exec.ErrNotFound}
 }
 
-// SafeEnv returns env with PATH replaced by SafePath.
-func SafeEnv(env []string) []string {
-	out := make([]string, 0, len(env)+1)
-	for _, e := range env {
-		if !strings.HasPrefix(e, "PATH=") {
-			out = append(out, e)
-		}
-	}
-	return append(out, "PATH="+SafePath)
+// SafeEnv returns a minimal environment: PATH pinned to SafePath and a fixed
+// locale.
+//
+// Children run with ambient CAP_NET_ADMIN/CAP_NET_RAW, and ambient caps do not
+// put the loader into secure mode, so anything inherited (LD_PRELOAD,
+// LD_LIBRARY_PATH, PYTHONPATH, ...) executes with those caps. Callers append
+// what they genuinely need (XRAY_LOCATION_ASSET).
+func SafeEnv(_ []string) []string {
+	return []string{"PATH=" + SafePath, "LC_ALL=C"}
 }
 
 // SafeCommand is exec.Command with an absolute, pinned binary and PATH. When

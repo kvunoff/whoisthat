@@ -52,6 +52,10 @@ func (cmd *Cmd) SetKillSwitch(data structs.SetKillSwitchData, proxy_manager kill
 			cmd.send("kill-switch-updated", structs.SetKillSwitchData{Enabled: false, Armed: false})
 			return
 		}
+		// Flip the intent first: a routing reload that lands between the two
+		// steps would still see the switch enabled and re-arm it, leaving the
+		// config saying "off" while the drop rules are live.
+		appconfig.SetKillSwitch(false)
 		if err := removeKillSwitchBlock(); err != nil {
 			logger.Warn("kill-switch: failed to remove block:", err)
 			// The rules may still be dropping traffic. Reporting "off" while the
@@ -61,7 +65,6 @@ func (cmd *Cmd) SetKillSwitch(data structs.SetKillSwitchData, proxy_manager kill
 			return
 		}
 		logger.Info("kill-switch: block removed")
-		appconfig.SetKillSwitch(false)
 		cmd.send("kill-switch-updated", structs.SetKillSwitchData{Enabled: false, Armed: false})
 		return
 	}

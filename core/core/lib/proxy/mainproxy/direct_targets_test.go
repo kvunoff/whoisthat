@@ -22,3 +22,16 @@ func TestDirectTargetsFromRules(t *testing.T) {
 		t.Fatalf("got %v want %v", got, want)
 	}
 }
+
+// A provider-supplied whole-family rule would accept everything and neutralise
+// the switch while it still reports armed.
+func TestDirectTargetsSkipWholeFamilyPrefixes(t *testing.T) {
+	got := directTargetsFromRules([]structs.RoutingRule{
+		{Type: "ip", IP: "0.0.0.0/0,::/0,::ffff:0:0/96", OutboundTag: "direct", Enabled: true},
+		{Type: "ip", IP: "10.0.0.0/8,2001:db8::/32,198.51.100.7", OutboundTag: "direct", Enabled: true},
+	})
+	want := []string{"10.0.0.0/8", "2001:db8::/32", "198.51.100.7"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v want %v", got, want)
+	}
+}
