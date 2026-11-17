@@ -71,11 +71,11 @@ ip link del dev "$TUN_NAME" 2>/dev/null || true
 func setupDnsIpRoutes(dns_ip string, dns_ip6 string, interface_ip string, interface_ip6 string) error {
 	script := "\nset -e\n"
 	if dns_ip != "" && interface_ip != "" {
-		script += fmt.Sprintf("ip route add %s via %s\n", dns_ip, interface_ip)
-		script += "ip route add 127.0.0.53 via " + interface_ip + "\n"
+		script += fmt.Sprintf("ip route replace %s via %s\n", dns_ip, interface_ip)
+		script += "ip route replace 127.0.0.53 via " + interface_ip + "\n"
 	}
 	if dns_ip6 != "" && interface_ip6 != "" {
-		script += fmt.Sprintf("ip -6 route add %s via %s\n", dns_ip6, interface_ip6)
+		script += fmt.Sprintf("ip -6 route replace %s via %s\n", dns_ip6, interface_ip6)
 	}
 	_, err := runScriptWithSh(script)
 	return err
@@ -106,11 +106,14 @@ func deleteDnsIpRoutes6(dns_ip6 string, interface_ip6 string) error {
 
 func setupProxyIpRoutes(proxy_ipv4s []string, proxy_ipv6s []string, default_interface_ip string, default_interface_ipv6 string) error {
 	script := "\nset -e\n"
+	// replace, not add: a route for one of these targets may already exist
+	// (pinned host route, previous run, another manager) and `add` fails hard
+	// under set -e, taking the whole tun bring-up down with it.
 	for _, ip := range proxy_ipv4s {
-		script += fmt.Sprintf("ip route add %s via %s\n", ip, default_interface_ip)
+		script += fmt.Sprintf("ip route replace %s via %s\n", ip, default_interface_ip)
 	}
 	for _, ip := range proxy_ipv6s {
-		script += fmt.Sprintf("ip -6 route add %s via %s\n", ip, default_interface_ipv6)
+		script += fmt.Sprintf("ip -6 route replace %s via %s\n", ip, default_interface_ipv6)
 	}
 	_, err := runScriptWithSh(script)
 	return err
