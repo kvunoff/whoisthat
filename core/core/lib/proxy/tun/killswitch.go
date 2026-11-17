@@ -1,14 +1,17 @@
 package tunmode
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
 	"os/exec"
 	"regexp"
 	"strings"
+	"whoisthat-core/utils"
 
 	"whoisthat-core/lib/logger"
+	"whoisthat-core/lib/netmark"
 )
 
 // Kill-switch: an independent filter chain that drops every locally-generated
@@ -36,7 +39,7 @@ const (
 	// killSwitchDirectMark is the fwmark used for "go out via the physical
 	// gateway" sockets: Xray's freedom outbound and split-exclude apps.
 	// Keep in sync with splitExcludeMark in split.go.
-	killSwitchDirectMark = 1
+	killSwitchDirectMark = netmark.DirectMark
 
 	// killSwitchDNSSink4/6 are the reserved addresses the TUN DNS hijack will
 	// redirect port 53 to. Nothing listens on them directly; they must stay
@@ -74,6 +77,17 @@ var validTunNameRe = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]*$`)
 // configured TUN interface (empty when TUN is unused), dnsServers the resolver
 // list from the app config.
 func SetupKillSwitchBlock(proxyIPs []string, tunName string, dnsServers []string) error {
+	direct := currentDirectExceptions()
+	d4, d6 := splitNetsValid(direct)
+	logger.Infof("kill-switch: direct-rule targets %v", direct)
+	// Visible at arm time: a missing exception shows up as a low count.
+	logger.Infof("kill-switch: %d direct-rule accept exceptions (v4 %d, v6 %d)", len(d4)+len(d6), len(d4), len(d6))
+	// Tripwire: an empty target list usually means the extractor saw no rules
+	// (or none resolved) rather than that none exist, and the arm then drops the
+	// excluded hosts. Warn instead of quietly arming with nothing.
+	if len(direct) == 0 {
+		logger.Warn("kill-switch: no direct-rule targets resolved; arming with no exceptions")
+	}
 	// K-2: refuse to arm over a DoT-only resolver we cannot neutralise.
 	if err := neutraliseDoT(tunName); err != nil {
 		return err
@@ -96,7 +110,7 @@ func RemoveKillSwitchBlock() error {
 	nftErr := removeNftKillSwitch()
 	iptErr := removeIptablesKillSwitch()
 
-	armed, probeErr := KillSwitchArmed()
+	armed, probeErr := killSwitchInstalled()
 	if probeErr != nil {
 		return fmt.Errorf("cannot verify kill-switch removal: %w", probeErr)
 	}
@@ -133,19 +147,29 @@ done
 `
 }
 
-// KillSwitchArmed reports whether the block is actually present. It checks
-// both nftables and the legacy iptables chains: a mixed or partially migrated
-// host must not be reported as disarmed.
+// KillSwitchArmed reports whether the block is actually enforcing: for nftables
+// the live ruleset must have the output chain with policy drop and at least one
+// IPv4 and one IPv6 rule (K-3). A table that merely exists, an empty chain or a
+// v4-only half install is NOT armed. The legacy iptables chains count as armed
+// when the jump is present. A mixed host must not be reported as disarmed.
 //
 // A missing binary means that backend is not in use (not an error). An
-// inspection that fails for another reason (permissions, broken binary) is
-// returned as an error: callers must not treat it as "not armed".
-func KillSwitchArmed() (bool, error) {
-	nftArmed, nftErr := nftKillSwitchArmed()
+// inspection that fails for another reason (permissions, broken binary,
+// unparseable output) is returned as an error: callers must not treat it as
+// "not armed".
+func KillSwitchArmed() (bool, error) { return killSwitchProbeAll(false) }
+
+// killSwitchInstalled reports whether ANY kill-switch state is present, even a
+// half-built one that would still drop traffic. Used to verify removal.
+func killSwitchInstalled() (bool, error) { return killSwitchProbeAll(true) }
+
+func killSwitchProbeAll(anyPresence bool) (bool, error) {
+	nftState, nftErr := nftKillSwitchState()
 	v4Armed, v4Err := iptablesKillSwitchArmed("iptables")
 	v6Armed, v6Err := iptablesKillSwitchArmed("ip6tables")
 
-	if nftArmed || v4Armed || v6Armed {
+	nftHit := nftState.armed || (anyPresence && nftState.installed)
+	if nftHit || v4Armed || v6Armed {
 		return true, nil
 	}
 	for _, err := range []error{nftErr, v4Err, v6Err} {
@@ -159,24 +183,89 @@ func KillSwitchArmed() (bool, error) {
 // Test seams: the probes are what turns "the firewall lies" into a testable
 // error, so let unit tests simulate exit codes without real capabilities.
 var (
-	killSwitchLookPath  = exec.LookPath
+	killSwitchLookPath  = utils.SafeLookPath
 	killSwitchRun       = runCommandWithCaps
 	killSwitchRunScript = runScriptWithSh
 )
 
-func nftKillSwitchArmed() (bool, error) {
+type nftKSState struct {
+	installed bool // table or chain present in any form
+	armed     bool // chain present, policy drop, v4 and v6 rules present
+}
+
+func nftKillSwitchState() (nftKSState, error) {
 	if _, err := killSwitchLookPath("nft"); err != nil {
-		return false, nil
+		return nftKSState{}, nil
 	}
-	out, err := killSwitchRun("nft", "list", "chain", "inet", "whoisthat_ks", "output")
-	if err == nil {
-		return true, nil
+	out, err := killSwitchRun("nft", "-j", "list", "table", "inet", "whoisthat_ks")
+	if err != nil {
+		// nft uses strerror; runCommandWithCaps pins LC_ALL=C for this string.
+		if strings.Contains(out, "No such file or directory") {
+			return nftKSState{}, nil
+		}
+		return nftKSState{}, fmt.Errorf("cannot inspect nftables kill-switch table: %w: %s", err, strings.TrimSpace(out))
 	}
-	// nft uses strerror; runCommandWithCaps pins LC_ALL=C for this string.
-	if strings.Contains(out, "No such file or directory") {
-		return false, nil
+	return parseNftKillSwitch(out)
+}
+
+// parseNftKillSwitch evaluates `nft -j list table inet whoisthat_ks` output.
+func parseNftKillSwitch(out string) (nftKSState, error) {
+	var doc struct {
+		Nftables []struct {
+			Chain *struct {
+				Name   string `json:"name"`
+				Policy string `json:"policy"`
+			} `json:"chain"`
+			Rule *struct {
+				Chain string            `json:"chain"`
+				Expr  []json.RawMessage `json:"expr"`
+			} `json:"rule"`
+		} `json:"nftables"`
 	}
-	return false, fmt.Errorf("cannot inspect nftables kill-switch table: %w: %s", err, strings.TrimSpace(out))
+	if err := json.Unmarshal([]byte(out), &doc); err != nil {
+		return nftKSState{}, fmt.Errorf("cannot parse nft kill-switch ruleset: %w", err)
+	}
+	st := nftKSState{installed: true}
+	var chain, drop bool
+	var v4, v6 int
+	for _, item := range doc.Nftables {
+		if c := item.Chain; c != nil && c.Name == "output" {
+			chain = true
+			drop = c.Policy == "drop"
+		}
+		if r := item.Rule; r != nil && r.Chain == "output" {
+			switch nftRuleFamily(r.Expr) {
+			case "ip":
+				v4++
+			case "ip6":
+				v6++
+			}
+		}
+	}
+	st.armed = chain && drop && v4 > 0 && v6 > 0
+	return st, nil
+}
+
+// nftRuleFamily returns "ip" or "ip6" when a rule matches on that payload
+// protocol, otherwise "".
+func nftRuleFamily(exprs []json.RawMessage) string {
+	for _, raw := range exprs {
+		var e struct {
+			Match *struct {
+				Left struct {
+					Payload *struct {
+						Protocol string `json:"protocol"`
+					} `json:"payload"`
+				} `json:"left"`
+			} `json:"match"`
+		}
+		if json.Unmarshal(raw, &e) == nil && e.Match != nil && e.Match.Left.Payload != nil {
+			if p := e.Match.Left.Payload.Protocol; p == "ip" || p == "ip6" {
+				return p
+			}
+		}
+	}
+	return ""
 }
 
 func iptablesKillSwitchArmed(bin string) (bool, error) {
@@ -244,15 +333,16 @@ func buildKillSwitchNftScript(proxyIPs []string, tunName string, dnsServers []st
 	direct4, direct6 := splitNetsValid(direct)
 
 	var b strings.Builder
-	b.WriteString("set -e\n")
-	// Repair an interrupted install: a table without its chain must not be
-	// treated as armed. policy drop makes the bootstrap fail-closed before the
-	// allowlist exists; the batch below refills it atomically.
-	b.WriteString("if ! nft list chain inet whoisthat_ks output >/dev/null 2>&1; then\n")
-	b.WriteString("    nft add table inet whoisthat_ks 2>/dev/null || true\n")
-	b.WriteString("    nft add chain inet whoisthat_ks output '{ type filter hook output priority 0; policy drop; }'\n")
-	b.WriteString("fi\n")
-	b.WriteString("nft -f - <<'WHOISTHAT_KS_EOF'\n")
+	// K-6: one transaction. `add table/chain` are idempotent, and the kernel
+	// applies or rejects the whole batch, so there is no window with a
+	// drop-policy chain and an empty allowlist. If the batch is rejected a
+	// previously armed table is untouched (atomic); a table that did not exist
+	// before this attempt is deleted so nothing half-built remains.
+	b.WriteString("PREV=0\n")
+	b.WriteString("nft list table inet whoisthat_ks >/dev/null 2>&1 && PREV=1\n")
+	b.WriteString("if ! nft -f - <<'WHOISTHAT_KS_EOF'\n")
+	b.WriteString("add table inet whoisthat_ks\n")
+	b.WriteString("add chain inet whoisthat_ks output { type filter hook output priority 0; policy drop; }\n")
 	b.WriteString("flush chain inet whoisthat_ks output\n")
 
 	b.WriteString("add rule inet whoisthat_ks output oif lo accept\n")
@@ -262,6 +352,8 @@ func buildKillSwitchNftScript(proxyIPs []string, tunName string, dnsServers []st
 	for _, ip := range killSwitchV6 {
 		fmt.Fprintf(&b, "add rule inet whoisthat_ks output ip6 daddr %s accept\n", ip)
 	}
+	// DHCP client broadcast (K-1): sent before the host has an address.
+	b.WriteString("add rule inet whoisthat_ks output ip daddr 255.255.255.255 udp dport 67 accept\n")
 
 	// Resolution must keep working while the tunnel is being (re)established.
 	for _, ip := range append(append([]string{}, dns4...), killSwitchDNSSink4) {
@@ -296,6 +388,11 @@ func buildKillSwitchNftScript(proxyIPs []string, tunName string, dnsServers []st
 
 	b.WriteString("add rule inet whoisthat_ks output drop\n")
 	b.WriteString("WHOISTHAT_KS_EOF\n")
+	b.WriteString("then\n")
+	b.WriteString("    [ \"$PREV\" = 1 ] || nft delete table inet whoisthat_ks 2>/dev/null || true\n")
+	b.WriteString("    echo 'kill-switch: nft batch rejected, nothing applied' >&2\n")
+	b.WriteString("    exit 1\n")
+	b.WriteString("fi\n")
 	return b.String()
 }
 
@@ -324,6 +421,8 @@ func buildKillSwitchIptablesScript(proxyIPs []string, tunName string, dnsServers
 	for _, ip := range killSwitchV4 {
 		fmt.Fprintf(&b, "iptables -A WHOISTHAT_KS -d %s -j ACCEPT\n", ip)
 	}
+	// DHCP client broadcast (K-1): sent before the host has an address.
+	b.WriteString("iptables -A WHOISTHAT_KS -d 255.255.255.255 -p udp --dport 67 -j ACCEPT\n")
 	for _, ip := range append(append([]string{}, dns4...), killSwitchDNSSink4) {
 		fmt.Fprintf(&b, "iptables -A WHOISTHAT_KS -d %s -j ACCEPT\n", ip)
 	}
