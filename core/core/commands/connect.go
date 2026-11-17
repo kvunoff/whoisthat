@@ -3,6 +3,7 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"time"
 	appconfig "whoisthat-core/lib/AppConfig"
 	"whoisthat-core/lib/logger"
 	proxy "whoisthat-core/lib/proxy/mainproxy"
@@ -21,10 +22,36 @@ func (cmd *Cmd) Disconnect(data structs.DisconnectData, proxy_manager *proxy.Pro
 	// already disables its allowlist rule.
 }
 
+// connectTimeout bounds the whole connect (handshake and TUN bring-up). A
+// half-open handshake never returns, and the core has a single connection
+// lock: without a bound one dead server wedges every arm/disarm/settings write.
+var connectTimeout = 60 * time.Second
+
+// connectBody is a test seam so the deadline can be exercised without a core.
+var connectBody = (*Cmd).connectLocked
+
 func (cmd *Cmd) Connect(data structs.ConnectData, proxy_manager *proxy.ProxyManager, tun_manager *tunmode.TunModeManager) {
 	ConnectionMutex.Lock()
 	defer ConnectionMutex.Unlock()
 
+	// The body cannot be cancelled (the handshake lives in xray and the TUN
+	// helpers), so it is abandoned on timeout: the lock is released here and
+	// the stuck call may finish, or stay stuck, on its own. Upkeep: replace with
+	// real context plumbing through ProxyManager.Connect when one exists.
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		connectBody(cmd, data, proxy_manager, tun_manager)
+	}()
+	select {
+	case <-done:
+	case <-time.After(connectTimeout):
+		logger.Warnf("connect: no result after %s; releasing the connection lock", connectTimeout)
+		cmd.warn("connect-failed", fmt.Sprintf("connect timed out after %s; the server may be unreachable", connectTimeout))
+	}
+}
+
+func (cmd *Cmd) connectLocked(data structs.ConnectData, proxy_manager *proxy.ProxyManager, tun_manager *tunmode.TunModeManager) {
 	profile, err := cmd.DB.GetProfile(data.Profile.GroupId, data.Profile.Id)
 	if err != nil {
 		logger.Warn("connect: failed to get profile:", err)
