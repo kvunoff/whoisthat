@@ -74,11 +74,26 @@ var validTunNameRe = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]*$`)
 // configured TUN interface (empty when TUN is unused), dnsServers the resolver
 // list from the app config.
 func SetupKillSwitchBlock(proxyIPs []string, tunName string, dnsServers []string) error {
+	direct := currentDirectExceptions()
+	d4, d6 := splitNetsValid(direct)
+	logger.Infof("kill-switch: direct-rule targets %v", direct)
+	// Visible at arm time: a missing exception shows up as a low count.
+	logger.Infof("kill-switch: %d direct-rule accept exceptions (v4 %d, v6 %d)", len(d4)+len(d6), len(d4), len(d6))
+	// Tripwire: an empty target list usually means the extractor saw no rules
+	// (or none resolved) rather than that none exist, and the arm then drops the
+	// excluded hosts. Warn instead of quietly arming with nothing.
+	if len(direct) == 0 {
+		logger.Warn("kill-switch: no direct-rule targets resolved; arming with no exceptions")
+	}
+	// K-2: refuse to arm over a DoT-only resolver we cannot neutralise.
+	if err := neutraliseDoT(tunName); err != nil {
+		return err
+	}
 	switch probeFirewall() {
 	case firewallNftables:
-		return setupKillSwitchBlockNftables(proxyIPs, tunName, dnsServers)
+		return setupKillSwitchBlockNftables(proxyIPs, tunName, dnsServers, direct...)
 	default:
-		return setupKillSwitchBlockIptables(proxyIPs, tunName, dnsServers)
+		return setupKillSwitchBlockIptables(proxyIPs, tunName, dnsServers, direct...)
 	}
 }
 
@@ -230,10 +245,11 @@ func splitIPsValid(ips []string) (v4, v6 []string) {
 
 // buildKillSwitchNftScript renders the nftables variant. Pure function so the
 // rule set can be asserted in unit tests without touching the host firewall.
-func buildKillSwitchNftScript(proxyIPs []string, tunName string, dnsServers []string) string {
+func buildKillSwitchNftScript(proxyIPs []string, tunName string, dnsServers []string, direct ...string) string {
 	tunName = sanitizeTunName(tunName)
 	proxy4, proxy6 := splitIPsValid(proxyIPs)
 	dns4, dns6 := splitIPsValid(dnsServers)
+	direct4, direct6 := splitNetsValid(direct)
 
 	var b strings.Builder
 	b.WriteString("set -e\n")
@@ -277,16 +293,26 @@ func buildKillSwitchNftScript(proxyIPs []string, tunName string, dnsServers []st
 		fmt.Fprintf(&b, "add rule inet whoisthat_ks output ip6 daddr %s accept\n", ip)
 	}
 
+	// Direct-rule destinations (and what they resolve to): the route picks the
+	// path, the firewall only has to let them out. Still no rule for teardown.
+	for _, ip := range direct4 {
+		fmt.Fprintf(&b, "add rule inet whoisthat_ks output ip daddr %s accept\n", ip)
+	}
+	for _, ip := range direct6 {
+		fmt.Fprintf(&b, "add rule inet whoisthat_ks output ip6 daddr %s accept\n", ip)
+	}
+
 	b.WriteString("add rule inet whoisthat_ks output drop\n")
 	b.WriteString("WHOISTHAT_KS_EOF\n")
 	return b.String()
 }
 
 // buildKillSwitchIptablesScript renders the legacy iptables variant.
-func buildKillSwitchIptablesScript(proxyIPs []string, tunName string, dnsServers []string) string {
+func buildKillSwitchIptablesScript(proxyIPs []string, tunName string, dnsServers []string, direct ...string) string {
 	tunName = sanitizeTunName(tunName)
 	proxy4, proxy6 := splitIPsValid(proxyIPs)
 	dns4, dns6 := splitIPsValid(dnsServers)
+	direct4, direct6 := splitNetsValid(direct)
 
 	var b strings.Builder
 	b.WriteString("set -e\n")
@@ -316,6 +342,9 @@ func buildKillSwitchIptablesScript(proxyIPs []string, tunName string, dnsServers
 	for _, ip := range proxy4 {
 		fmt.Fprintf(&b, "iptables -A WHOISTHAT_KS -d %s -j ACCEPT\n", ip)
 	}
+	for _, ip := range direct4 {
+		fmt.Fprintf(&b, "iptables -A WHOISTHAT_KS -d %s -j ACCEPT\n", ip)
+	}
 	b.WriteString("iptables -A WHOISTHAT_KS -j DROP\n")
 	b.WriteString("iptables -I OUTPUT 1 -j WHOISTHAT_KS\n")
 
@@ -335,18 +364,21 @@ func buildKillSwitchIptablesScript(proxyIPs []string, tunName string, dnsServers
 	for _, ip := range proxy6 {
 		fmt.Fprintf(&b, "ip6tables -A WHOISTHAT_KS -d %s -j ACCEPT\n", ip)
 	}
+	for _, ip := range direct6 {
+		fmt.Fprintf(&b, "ip6tables -A WHOISTHAT_KS -d %s -j ACCEPT\n", ip)
+	}
 	b.WriteString("ip6tables -A WHOISTHAT_KS -j DROP\n")
 	b.WriteString("ip6tables -I OUTPUT 1 -j WHOISTHAT_KS\n")
 
 	return b.String()
 }
 
-func setupKillSwitchBlockNftables(proxyIPs []string, tunName string, dnsServers []string) error {
-	_, err := runScriptWithSh(buildKillSwitchNftScript(proxyIPs, tunName, dnsServers))
+func setupKillSwitchBlockNftables(proxyIPs []string, tunName string, dnsServers []string, direct ...string) error {
+	_, err := runScriptWithSh(buildKillSwitchNftScript(proxyIPs, tunName, dnsServers, direct...))
 	return err
 }
 
-func setupKillSwitchBlockIptables(proxyIPs []string, tunName string, dnsServers []string) error {
-	_, err := runScriptWithSh(buildKillSwitchIptablesScript(proxyIPs, tunName, dnsServers))
+func setupKillSwitchBlockIptables(proxyIPs []string, tunName string, dnsServers []string, direct ...string) error {
+	_, err := runScriptWithSh(buildKillSwitchIptablesScript(proxyIPs, tunName, dnsServers, direct...))
 	return err
 }

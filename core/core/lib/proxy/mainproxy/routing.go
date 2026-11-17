@@ -401,6 +401,15 @@ func (p *ProxyManager) reloadCoreLocked(tunName string) error {
 
 	p.startExitWatcher()
 
+	// Re-resolve and re-arm: the direct rules (or what they resolve to) may
+	// have changed. The handler is a no-op while the kill-switch is off.
+	p.directTargets.set(directTargetsFromRules(selection.Config.Rules))
+	if len(p.proxyIPs) > 0 {
+		if err := p.runPreStartHandler(p.proxyIPs); err != nil {
+			logger.Warnf("kill-switch: re-arm after routing reload failed: %v", err)
+		}
+	}
+
 	logger.Infof("core reloaded successfully for %s (tun=%v)", profile.Name, p.tunEnabled)
 	return nil
 }
