@@ -188,7 +188,7 @@ RULE_UID=%d
 
 ip rule add uidrange $RULE_UID-$RULE_UID lookup 100 2>/dev/null || true
 ip route replace $GATEWAY/32 dev $IFACE table 100
-ip route replace default via $GATEWAY table 100
+ip route replace default via $GATEWAY dev $IFACE table 100
 `, interface_name, gateway_ip, uid)
 	_, err := runScriptWithSh(script)
 	return err
@@ -202,7 +202,7 @@ RULE_UID=%d
 
 ip rule del uidrange $RULE_UID-$RULE_UID lookup 100 2>/dev/null || true
 ip route del $GATEWAY/32 dev $IFACE table 100 2>/dev/null || true
-ip route del default via $GATEWAY table 100 2>/dev/null || true
+ip route del default via $GATEWAY dev $IFACE table 100 2>/dev/null || true
 `, interface_name, gateway_ip, uid)
 	_, err := runScriptWithSh(script)
 	return err
@@ -217,7 +217,7 @@ RULE_UID=%d
 
 ip -6 rule add uidrange $RULE_UID-$RULE_UID lookup 100 2>/dev/null || true
 ip -6 route replace $GATEWAY6/128 dev $IFACE table 100
-ip -6 route replace default via $GATEWAY6 table 100
+ip -6 route replace default via $GATEWAY6 dev $IFACE table 100
 `, interface_name, gateway_ip6, uid)
 	_, err := runScriptWithSh(script)
 	return err
@@ -231,7 +231,7 @@ RULE_UID=%d
 
 ip -6 rule del uidrange $RULE_UID-$RULE_UID lookup 100 2>/dev/null || true
 ip -6 route del $GATEWAY6/128 dev $IFACE table 100 2>/dev/null || true
-ip -6 route del default via $GATEWAY6 table 100 2>/dev/null || true
+ip -6 route del default via $GATEWAY6 dev $IFACE table 100 2>/dev/null || true
 `, interface_name, gateway_ip6, uid)
 	_, err := runScriptWithSh(script)
 	return err
@@ -246,8 +246,8 @@ func addFwmarkRouting(mark int, iface string, gateway string) error {
 set -e
 ip rule add fwmark %d table 100 2>/dev/null || true
 ip route replace %s/32 dev %s table 100
-ip route replace default via %s table 100
-`, mark, gateway, iface, gateway)
+ip route replace default via %s dev %s table 100
+`, mark, gateway, iface, gateway, iface)
 	_, err := runScriptWithSh(script)
 	return err
 }
@@ -256,8 +256,8 @@ func removeFwmarkRouting(mark int, iface string, gateway string) error {
 	script := fmt.Sprintf(`
 ip rule del fwmark %d table 100 2>/dev/null || true
 ip route del %s/32 dev %s table 100 2>/dev/null || true
-ip route del default via %s table 100 2>/dev/null || true
-`, mark, gateway, iface, gateway)
+ip route del default via %s dev %s table 100 2>/dev/null || true
+`, mark, gateway, iface, gateway, iface)
 	_, err := runScriptWithSh(script)
 	return err
 }
@@ -267,8 +267,8 @@ func addFwmarkRouting6(mark int, iface string, gateway6 string) error {
 set -e
 ip -6 rule add fwmark %d table 100 2>/dev/null || true
 ip -6 route replace %s/128 dev %s table 100
-ip -6 route replace default via %s table 100
-`, mark, gateway6, iface, gateway6)
+ip -6 route replace default via %s dev %s table 100
+`, mark, gateway6, iface, gateway6, iface)
 	_, err := runScriptWithSh(script)
 	return err
 }
@@ -277,8 +277,8 @@ func removeFwmarkRouting6(mark int, iface string, gateway6 string) error {
 	script := fmt.Sprintf(`
 ip -6 rule del fwmark %d table 100 2>/dev/null || true
 ip -6 route del %s/128 dev %s table 100 2>/dev/null || true
-ip -6 route del default via %s table 100 2>/dev/null || true
-`, mark, gateway6, iface, gateway6)
+ip -6 route del default via %s dev %s table 100 2>/dev/null || true
+`, mark, gateway6, iface, gateway6, iface)
 	_, err := runScriptWithSh(script)
 	return err
 }
