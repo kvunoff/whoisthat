@@ -249,6 +249,11 @@ func (cmd *Cmd) updateSubscriptionLocked(data structs.UpdateSubscriptionData, pr
 		total := proxy_manager.TestGroup(profiles, method, 0)
 		proxy_manager.SeedTestProgress(data.GroupId, total)
 	}
+	// A provider or CDN address change lands here; domain exceptions of an
+	// armed switch resolve only on re-arm, so redo it now. No-op when not armed.
+	if proxy_manager != nil {
+		cmd.refreshKillSwitch(proxy_manager)
+	}
 	return true
 }
 

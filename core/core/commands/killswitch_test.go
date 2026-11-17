@@ -3,10 +3,13 @@ package cmd
 import (
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	appconfig "whoisthat-core/lib/AppConfig"
+	proxy "whoisthat-core/lib/proxy/mainproxy"
+	tunmode "whoisthat-core/lib/proxy/tun"
 	"whoisthat-core/structs"
 )
 
@@ -279,4 +282,46 @@ func TestRefreshKillSwitchDoesNotBlockOnHeldMutex(t *testing.T) {
 		t.Fatal("refresh blocked on a held ConnectionMutex")
 	}
 	ConnectionMutex.Unlock()
+}
+
+// A subscription refresh re-arms with the current server set, so the ruleset
+// (and the exceptions resolved inside it) is rebuilt rather than left stale.
+func TestRefreshKillSwitchRearmsWithChangedAddresses(t *testing.T) {
+	resetKillSwitchConfig(t)
+	st := stubKillSwitch(t, nil, nil, true)
+	appconfig.SetKillSwitch(true)
+	cmd, _ := newKillSwitchCmd()
+
+	cmd.refreshKillSwitch(fakeKSProxy{ips: []string{"203.0.113.9"}})
+	cmd.refreshKillSwitch(fakeKSProxy{ips: []string{"203.0.113.77"}})
+	if st.setupCalls != 2 || len(st.ips) != 1 || st.ips[0] != "203.0.113.77" {
+		t.Fatalf("setup calls = %d, ips = %v; want a second arm with the new address", st.setupCalls, st.ips)
+	}
+}
+
+// A connect that never returns must not keep the core's only connection lock.
+func TestConnectTimeoutReleasesConnectionMutex(t *testing.T) {
+	oldBody, oldTimeout := connectBody, connectTimeout
+	release := make(chan struct{})
+	connectBody = func(*Cmd, structs.ConnectData, *proxy.ProxyManager, *tunmode.TunModeManager) { <-release }
+	connectTimeout = 50 * time.Millisecond
+	t.Cleanup(func() { close(release); connectBody, connectTimeout = oldBody, oldTimeout })
+	cmd, ch := newKillSwitchCmd()
+
+	done := make(chan struct{})
+	go func() { cmd.Connect(structs.ConnectData{}, nil, nil); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Connect did not return after its deadline")
+	}
+	if !ConnectionMutex.TryLock() {
+		t.Fatal("ConnectionMutex still held after a timed-out connect")
+	}
+	ConnectionMutex.Unlock()
+
+	raw := <-ch
+	if !strings.Contains(string(raw), "connect-failed") || !strings.Contains(string(raw), "timed out") {
+		t.Fatalf("no clear timeout warning: %s", raw)
+	}
 }

@@ -113,8 +113,8 @@ func (cmd *Cmd) SetKillSwitch(data structs.SetKillSwitchData, proxy_manager kill
 	cmd.send("kill-switch-updated", structs.SetKillSwitchData{Enabled: true, Armed: true})
 }
 
-// refreshKillSwitch re-resolves the exception set after the routing table
-// changed while the switch is armed. Without it, a destination the user has
+// refreshKillSwitch re-resolves the exception set after the routing table or a
+// subscription changed while the switch is armed. Without it, a destination the user has
 // just marked direct stays dropped until the next arm (typically the next
 // connect), which is the opposite of what the rule says.
 func (cmd *Cmd) refreshKillSwitch(proxy_manager killSwitchProxy) {
@@ -134,10 +134,10 @@ func (cmd *Cmd) refreshKillSwitch(proxy_manager killSwitchProxy) {
 	killSwitchMu.Lock()
 	defer killSwitchMu.Unlock()
 	if err := setupKillSwitchBlock(ips, cfg.TunName, cfg.DnsServers); err != nil {
-		logger.Warn("kill-switch: refresh after routing change failed:", err)
+		logger.Warn("kill-switch: refresh failed:", err)
 		return
 	}
-	logger.Infof("kill-switch: exceptions refreshed after routing change (%d server IPs)", len(ips))
+	logger.Infof("kill-switch: exceptions refreshed (%d server IPs)", len(ips))
 }
 
 // killSwitchState reports the persisted intent plus the actual kernel state.

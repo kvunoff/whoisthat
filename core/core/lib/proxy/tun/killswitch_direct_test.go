@@ -60,3 +60,25 @@ func TestKillSwitchDirectExceptionsRejectInjectionAndSurviveLookupFailure(t *tes
 		t.Fatalf("injection boundary broken:\n%s", script)
 	}
 }
+
+// A domain exception must follow the name: after the address changes, a
+// re-arm builds the new accept and no longer carries the stale one.
+func TestDirectExceptionsReplaceStaleAddressOnReresolve(t *testing.T) {
+	orig := lookupDirectHost
+	t.Cleanup(func() { lookupDirectHost = orig })
+	addr := "198.51.100.20"
+	lookupDirectHost = func(string) ([]net.IP, error) { return []net.IP{net.ParseIP(addr)}, nil }
+	SetDirectTargetSource(func() []string { return []string{"api.example.test"} })
+	t.Cleanup(func() { SetDirectTargetSource(nil) })
+
+	before := buildKillSwitchNftScript([]string{"192.0.2.10"}, "tun0", nil, currentDirectExceptions()...)
+	addr = "198.51.100.77"
+	after := buildKillSwitchNftScript([]string{"192.0.2.10"}, "tun0", nil, currentDirectExceptions()...)
+
+	if !strings.Contains(before, "ip daddr 198.51.100.20 accept") {
+		t.Fatalf("initial exception missing:\n%s", before)
+	}
+	if !strings.Contains(after, "ip daddr 198.51.100.77 accept") || strings.Contains(after, "198.51.100.20") {
+		t.Fatalf("stale exception not replaced:\n%s", after)
+	}
+}
