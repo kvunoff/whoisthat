@@ -66,7 +66,14 @@ else
 fi
 
 step "connect $PROFILE"
-"$WT" connect "$PROFILE" --wait -j >/dev/null 2>&1 || { verdict fail connect "connect failed"; exit 1; }
+# --wait can hang forever when the core drops the CLI as a slow client; the
+# connection itself still completes, so bound the wait and fall back to status.
+timeout 90 "$WT" connect "$PROFILE" --wait -j >/dev/null 2>&1 || true
+for i in $(seq 1 30); do
+  "$WT" status 2>/dev/null | grep -q '\[Connected\]' && break
+  sleep 1
+done
+"$WT" status 2>/dev/null | grep -q '\[Connected\]' || { verdict fail connect "connect failed"; exit 1; }
 
 step "mode tun"
 timeout 60 "$WT" mode tun -j >/dev/null 2>&1 || { verdict fail mode-tun "switch refused"; exit 1; }

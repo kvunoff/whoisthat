@@ -145,4 +145,7 @@ func (cmd *Cmd) reloadRoutingIfNeeded(proxy_manager *proxy.ProxyManager, changed
 	}
 
 	cmd.reloadRouting(proxy_manager, appconfig.GetConfig().TunName)
+	// The new selection may accept or drop different hosts; an armed switch has
+	// to learn that now, not on the next connect.
+	cmd.refreshKillSwitch(proxy_manager)
 }

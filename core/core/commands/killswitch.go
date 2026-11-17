@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"sync"
+
 	appconfig "whoisthat-core/lib/AppConfig"
 	"whoisthat-core/lib/logger"
 	tunmode "whoisthat-core/lib/proxy/tun"
@@ -17,6 +19,11 @@ type killSwitchProxy interface {
 
 // Test seams: the command layer decides *when* to arm, so its tests must not
 // touch the real firewall.
+// killSwitchMu serialises the firewall writes themselves. ConnectionMutex cannot
+// do it: a routing reload refreshes from outside that lock, and two concurrent
+// nft rewrites interleave into a half-written ruleset.
+var killSwitchMu sync.Mutex
+
 var (
 	setupKillSwitchBlock  = tunmode.SetupKillSwitchBlock
 	removeKillSwitchBlock = tunmode.RemoveKillSwitchBlock
@@ -56,7 +63,10 @@ func (cmd *Cmd) SetKillSwitch(data structs.SetKillSwitchData, proxy_manager kill
 		// steps would still see the switch enabled and re-arm it, leaving the
 		// config saying "off" while the drop rules are live.
 		appconfig.SetKillSwitch(false)
-		if err := removeKillSwitchBlock(); err != nil {
+		killSwitchMu.Lock()
+		err := removeKillSwitchBlock()
+		killSwitchMu.Unlock()
+		if err != nil {
 			logger.Warn("kill-switch: failed to remove block:", err)
 			// The rules may still be dropping traffic. Reporting "off" while the
 			// block is armed would be a lie, so keep the switch on and let the
@@ -87,7 +97,10 @@ func (cmd *Cmd) SetKillSwitch(data structs.SetKillSwitchData, proxy_manager kill
 		return
 	}
 
-	if err := setupKillSwitchBlock(ips, cfg.TunName, cfg.DnsServers); err != nil {
+	killSwitchMu.Lock()
+	err := setupKillSwitchBlock(ips, cfg.TunName, cfg.DnsServers)
+	killSwitchMu.Unlock()
+	if err != nil {
 		logger.Warn("kill-switch: failed to apply block:", err)
 		cmd.warn("set-kill-switch-failed", "failed to arm kill-switch")
 		appconfig.SetKillSwitch(true)
@@ -98,6 +111,33 @@ func (cmd *Cmd) SetKillSwitch(data structs.SetKillSwitchData, proxy_manager kill
 	logger.Infof("kill-switch: block applied, whitelisted IPs: %v", ips)
 	appconfig.SetKillSwitch(true)
 	cmd.send("kill-switch-updated", structs.SetKillSwitchData{Enabled: true, Armed: true})
+}
+
+// refreshKillSwitch re-resolves the exception set after the routing table
+// changed while the switch is armed. Without it, a destination the user has
+// just marked direct stays dropped until the next arm (typically the next
+// connect), which is the opposite of what the rule says.
+func (cmd *Cmd) refreshKillSwitch(proxy_manager killSwitchProxy) {
+	if utils.TestMode() || !appconfig.GetConfig().KillSwitchEnabled || proxy_manager == nil {
+		return
+	}
+	armed, err := probeKillSwitchArmed()
+	if err != nil || !armed {
+		return
+	}
+	ips := proxy_manager.GetProxyIPs()
+	if len(ips) == 0 {
+		// An empty allowlist would drop the tunnel; keep what is installed.
+		return
+	}
+	cfg := appconfig.GetConfig()
+	killSwitchMu.Lock()
+	defer killSwitchMu.Unlock()
+	if err := setupKillSwitchBlock(ips, cfg.TunName, cfg.DnsServers); err != nil {
+		logger.Warn("kill-switch: refresh after routing change failed:", err)
+		return
+	}
+	logger.Infof("kill-switch: exceptions refreshed after routing change (%d server IPs)", len(ips))
 }
 
 // killSwitchState reports the persisted intent plus the actual kernel state.

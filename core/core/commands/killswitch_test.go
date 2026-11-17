@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"testing"
+	"time"
 
 	appconfig "whoisthat-core/lib/AppConfig"
 	"whoisthat-core/structs"
@@ -224,4 +225,58 @@ func TestSetKillSwitchTestModeDoesNotTouchFirewall(t *testing.T) {
 	if event := lastKillSwitchEvent(t, ch); !event.Enabled || event.Armed {
 		t.Fatalf("event = %+v, want enabled=true armed=false", event)
 	}
+}
+
+// A rule added while armed only reached the firewall on the next arm before;
+// the excluded host stayed dropped in the meantime.
+func TestRefreshKillSwitchReappliesWhenArmed(t *testing.T) {
+	resetKillSwitchConfig(t)
+	st := stubKillSwitch(t, nil, nil, true)
+	appconfig.SetKillSwitch(true)
+	cmd, _ := newKillSwitchCmd()
+
+	cmd.refreshKillSwitch(fakeKSProxy{ips: []string{"203.0.113.9"}})
+	if st.setupCalls != 1 {
+		t.Fatalf("setup calls = %d, want 1", st.setupCalls)
+	}
+	if len(st.ips) != 1 || st.ips[0] != "203.0.113.9" {
+		t.Fatalf("ips = %v", st.ips)
+	}
+}
+
+func TestRefreshKillSwitchSkipsWhenDisarmedOrEmpty(t *testing.T) {
+	resetKillSwitchConfig(t)
+	st := stubKillSwitch(t, nil, nil, false)
+	appconfig.SetKillSwitch(true)
+	cmd, _ := newKillSwitchCmd()
+
+	cmd.refreshKillSwitch(fakeKSProxy{ips: []string{"203.0.113.9"}})
+	if st.setupCalls != 0 {
+		t.Fatalf("disarmed: setup calls = %d, want 0", st.setupCalls)
+	}
+
+	st2 := stubKillSwitch(t, nil, nil, true)
+	cmd.refreshKillSwitch(fakeKSProxy{})
+	if st2.setupCalls != 0 {
+		t.Fatalf("empty ips: setup calls = %d, want 0", st2.setupCalls)
+	}
+}
+
+// connect and disarm hold ConnectionMutex while routing reloads; a refresh that
+// blocked on it deadlocked the whole core.
+func TestRefreshKillSwitchDoesNotBlockOnHeldMutex(t *testing.T) {
+	resetKillSwitchConfig(t)
+	stubKillSwitch(t, nil, nil, true)
+	appconfig.SetKillSwitch(true)
+	cmd, _ := newKillSwitchCmd()
+
+	ConnectionMutex.Lock()
+	done := make(chan struct{})
+	go func() { cmd.refreshKillSwitch(fakeKSProxy{ips: []string{"203.0.113.9"}}); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("refresh blocked on a held ConnectionMutex")
+	}
+	ConnectionMutex.Unlock()
 }
