@@ -29,7 +29,8 @@ var (
 	privilegedOwner = 0
 )
 
-func probeFirewall() firewallBackend {
+// probeFirewall is a seam for the tests.
+var probeFirewall = func() firewallBackend {
 	fwOnce.Do(func() {
 		// Allow forcing a backend. Useful when the nftables `type route hook
 		// output` reroute-on-mark misbehaves on a given kernel: set

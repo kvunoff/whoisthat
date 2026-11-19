@@ -2,8 +2,13 @@ package tunmode
 
 import (
 	"fmt"
+	"net"
+	"net/netip"
 	"strings"
+	"sync"
 	"time"
+
+	"whoisthat-core/lib/logger"
 )
 
 // ---------------------------------------------------------------------------
@@ -278,4 +283,166 @@ ip -6 route del default via %s table 100 2>/dev/null || true
 `, mark, gateway6, iface, gateway6)
 	_, err := runScriptWithSh(script)
 	return err
+}
+
+// Host routes for the hosts excluded from the tunnel.
+//
+// The TUN owns the default route, so an accept exception alone still lets the
+// excluded destination take the tunnel path (and then come back). Pinning it to
+// the physical gateway keeps it off the TUN entirely, which is what "direct"
+// means. Best-effort by design: the exception already keeps it reachable.
+var (
+	directRouteMu sync.Mutex
+)
+
+// physicalDefault returns the gateway and device of the default route that is
+// not the TUN.
+func physicalDefault(family string, tunName string) (string, string) {
+	out, err := runScript("ip " + family + " route show default")
+	if err != nil {
+		return "", ""
+	}
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Fields(line)
+		var gw, dev string
+		for i, f := range fields {
+			if f == "via" && i+1 < len(fields) {
+				gw = fields[i+1]
+			}
+			if f == "dev" && i+1 < len(fields) {
+				dev = fields[i+1]
+			}
+		}
+		if gw == "" || dev == "" || dev == tunName {
+			continue
+		}
+		return gw, dev
+	}
+	return "", ""
+}
+
+// runScript is a seam for the tests; it shells out through sh in production.
+var runScript = runScriptWithSh
+
+// pinProto marks the routes this package installs, so ownership survives a
+// restart: after a crash the in-memory list is gone, but a route tagged with it
+// is still recognisably ours (and a user route still is not).
+const pinProto = "198"
+
+// parseOnLink pulls the scope-link prefixes out of `ip route show dev X` output.
+// The default route in the same output carries no prefix and is skipped.
+func parseOnLink(out string) []netip.Prefix {
+	var out2 []netip.Prefix
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 0 || fields[0] == "default" {
+			continue
+		}
+		if p, err := netip.ParsePrefix(fields[0]); err == nil {
+			out2 = append(out2, p)
+		}
+	}
+	return out2
+}
+
+// coveredByOnLink reports whether cidr is the device's own on-link prefix or
+// sits inside one. Those must not be `ip route replace`d: replacing the route
+// for a prefix broader than the on-link subnet (a /16 rule on a /24 LAN) sends
+// every host on the subnet through the gateway and drops the local route.
+func coveredByOnLink(cidr string, onlink []netip.Prefix) bool {
+	p, err := netip.ParsePrefix(cidr)
+	if err != nil {
+		return false
+	}
+	p = p.Masked()
+	for _, o := range onlink {
+		// The exception covers the on-link subnet (a /16 rule over a /24 LAN)…
+		if p.Bits() <= o.Bits() && p.Contains(o.Addr()) {
+			return true
+		}
+		// …or sits inside it.
+		if o.Contains(p.Addr()) {
+			return true
+		}
+	}
+	return false
+}
+
+func addDirectHostRoutes(v4, v6 []string, tunName string) error {
+	directRouteMu.Lock()
+	defer directRouteMu.Unlock()
+	// Ownership is carried by the route tag, not by memory: flush our own tags
+	// first so nothing survives a restart and no bookkeeping can drift. A pin
+	// whose rule has gone since the last arm is dropped here.
+	for _, family := range []string{"-4", "-6"} {
+		_, _ = runScript(fmt.Sprintf("ip %s route flush proto %s", family, pinProto))
+	}
+	var errs []string
+	seen := map[string]bool{}
+	for _, set := range []struct {
+		family string
+		flag   string
+		nets   []string
+	}{{"-4", "/32", v4}, {"-6", "/128", v6}} {
+		gw, dev := physicalDefault(set.family, tunName)
+		// Both values are interpolated into a root shell unquoted; `ip` output
+		// is not a trust boundary, so validate before they get there.
+		if gw == "" || dev == "" || net.ParseIP(gw) == nil || !validTunNameRe.MatchString(dev) {
+			continue
+		}
+		onlinkOut, err := runScript(fmt.Sprintf("ip %s route show dev %s scope link", set.family, dev))
+		if err != nil {
+			// Without the on-link view the guard cannot run. Skipping pinning
+			// only costs the host its direct path; replacing blind could take
+			// the LAN route with it.
+			logger.Warnf("kill-switch: cannot read on-link routes on %s: %v", dev, err)
+			continue
+		}
+		onlink := parseOnLink(onlinkOut)
+		for _, n := range set.nets {
+			// A bare IP is not a CIDR: append the host flag before validating.
+			cidr := n
+			if !strings.Contains(n, "/") {
+				cidr = n + set.flag
+			}
+			p, err := netip.ParsePrefix(cidr)
+			if err != nil {
+				continue
+			}
+			cidr = p.Masked().String()
+			if seen[cidr] {
+				continue
+			}
+			if coveredByOnLink(cidr, onlink) {
+				logger.Infof("kill-switch: %s already on-link via %s, not replacing its route", cidr, dev)
+				continue
+			}
+			// `exact`: a bare `route show <prefix>` also lists more specifics,
+			// so a narrower user route would look like a route for this prefix.
+			if out, err := runScript(fmt.Sprintf("ip %s route show exact %s", set.family, cidr)); err == nil && strings.TrimSpace(out) != "" {
+				// A route the user already had is theirs: it would have to be
+				// deleted again on disarm, which loses their setup.
+				logger.Infof("kill-switch: %s already has a route, leaving it in place", cidr)
+				seen[cidr] = true
+				continue
+			}
+			if _, err := runScript(fmt.Sprintf("ip %s route replace %s via %s dev %s proto %s", set.family, cidr, gw, dev, pinProto)); err != nil {
+				errs = append(errs, cidr)
+				continue
+			}
+			seen[cidr] = true
+		}
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("failed for %v", errs)
+	}
+	return nil
+}
+
+func removeDirectHostRoutes() {
+	directRouteMu.Lock()
+	defer directRouteMu.Unlock()
+	for _, family := range []string{"-4", "-6"} {
+		_, _ = runScript(fmt.Sprintf("ip %s route flush proto %s", family, pinProto))
+	}
 }

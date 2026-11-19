@@ -1,0 +1,66 @@
+package mainproxy
+
+import (
+	"reflect"
+	"testing"
+
+	"whoisthat-core/structs"
+)
+
+func TestDirectTargetsFromRules(t *testing.T) {
+	got := directTargetsFromRules([]structs.RoutingRule{
+		{Type: "domain", Domain: "full:api.example.test, geosite:cn, *.wild.test", OutboundTag: "direct", Enabled: true},
+		{Type: "ip", IP: "203.0.113.0/24,geoip:private,2001:db8::1", OutboundTag: "direct", Enabled: true},
+		{Type: "domain", Domain: "proxied.test", OutboundTag: "proxy", Enabled: true},
+		{Type: "domain", Domain: "off.test", OutboundTag: "direct", Enabled: false},
+		{Type: "domain", Domain: "API.example.test", OutboundTag: "direct", Enabled: true},
+	})
+	want := []string{"api.example.test", "203.0.113.0/24", "2001:db8::1"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v want %v", got, want)
+	}
+}
+
+// A provider-supplied whole-family rule would accept everything and neutralise
+// the switch while it still reports armed.
+func TestDirectTargetsSkipWholeFamilyPrefixes(t *testing.T) {
+	got := directTargetsFromRules([]structs.RoutingRule{
+		{Type: "ip", IP: "0.0.0.0/0,::/0,::ffff:0:0/96", OutboundTag: "direct", Enabled: true},
+		{Type: "ip", IP: "10.0.0.0/8,2001:db8::/32,198.51.100.7", OutboundTag: "direct", Enabled: true},
+	})
+	want := []string{"10.0.0.0/8", "2001:db8::/32", "198.51.100.7"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v want %v", got, want)
+	}
+}
+
+func TestTooWide(t *testing.T) {
+	wide := []string{
+		"0.0.0.0/0", "::/0", "::ffff:0:0/96", "::ffff:0.0.0.0/96",
+		"0:0:0:0:0:ffff:0:0/96", "::ffff:0:0/8", "::ffff:0.0.0.0/9", "10.0.0.0/7", "2001:db8::/15", "not-a-cidr/33",
+	}
+	for _, v := range wide {
+		if !tooWide(v) {
+			t.Errorf("tooWide(%q) = false, want true", v)
+		}
+	}
+	narrow := []string{"10.0.0.0/8", "192.168.0.0/16", "2001:db8::/16", "198.51.100.20", "::ffff:10.0.0.0/104"}
+	for _, v := range narrow {
+		if tooWide(v) {
+			t.Errorf("tooWide(%q) = true, want false", v)
+		}
+	}
+}
+
+func TestHasMatcherPrefix(t *testing.T) {
+	for _, v := range []string{"geosite:cn", "geoip:ru", "regexp:.*\\.example", "keyword:ads", "ext:ads.txt:example.org", "ext-ip:1.2.3.4:443"} {
+		if !hasMatcherPrefix(v) {
+			t.Errorf("hasMatcherPrefix(%q) = false", v)
+		}
+	}
+	for _, v := range []string{"example.org", "198.51.100.20", "domain:example.org", "geosite_like"} {
+		if hasMatcherPrefix(v) {
+			t.Errorf("hasMatcherPrefix(%q) = true", v)
+		}
+	}
+}

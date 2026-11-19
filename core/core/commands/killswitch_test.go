@@ -225,3 +225,28 @@ func TestSetKillSwitchTestModeDoesNotTouchFirewall(t *testing.T) {
 		t.Fatalf("event = %+v, want enabled=true armed=false", event)
 	}
 }
+
+// A failed removal leaves the block armed, so the intent must go back to true
+// rather than the config saying off while traffic is still dropping.
+func TestSetKillSwitchDisableFailureRestoresIntent(t *testing.T) {
+	resetKillSwitchConfig(t)
+	st := stubKillSwitch(t, nil, errors.New("nft gone"), true)
+	cmd, ch := newKillSwitchCmd()
+	pm := fakeKSProxy{status: structs.ProxyStatus{Connection: "connected"}}
+
+	cmd.SetKillSwitch(structs.SetKillSwitchData{Enabled: true}, pm)
+	if !appconfig.GetConfig().KillSwitchEnabled {
+		t.Fatal("intent not persisted before the disable")
+	}
+	cmd.SetKillSwitch(structs.SetKillSwitchData{Enabled: false}, pm)
+
+	if st.removeCalls != 1 {
+		t.Fatalf("remove calls = %d, want 1", st.removeCalls)
+	}
+	if !appconfig.GetConfig().KillSwitchEnabled {
+		t.Fatal("intent stayed off although the block is still armed")
+	}
+	if event := lastKillSwitchEvent(t, ch); !event.Enabled || !event.Armed {
+		t.Fatalf("event = %+v, want enabled=true armed=true", event)
+	}
+}

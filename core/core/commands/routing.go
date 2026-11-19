@@ -144,5 +144,8 @@ func (cmd *Cmd) reloadRoutingIfNeeded(proxy_manager *proxy.ProxyManager, changed
 		}
 	}
 
+	// The reload re-arms the switch through its pre-start handler, with the new
+	// selection, so an exception added or removed here is live on that reload
+	// and needs no second pass of its own.
 	cmd.reloadRouting(proxy_manager, appconfig.GetConfig().TunName)
 }

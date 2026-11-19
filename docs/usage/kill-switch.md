@@ -17,6 +17,47 @@ your existing firewall, so it does not conflict with `ufw`, `firewalld`, Docker,
 or custom rules. The packet flow and allowlist are described in
 [Networking internals](/architecture/networking#kill-switch).
 
+## Direct rules
+
+`--outbound direct` rules are exceptions, not part of the tunnel: something sent
+that way is meant to keep leaving over the physical interface. While the switch
+is armed those destinations would otherwise be dropped by the catch-all, so they
+are resolved when the switch arms (through the system resolver, so `/etc/hosts`
+wins over DNS) and each resolved address gets its own accept rule, above the
+drop. The set is rebuilt on every arm, and a routing edit re-arms it: a rule
+added mid-session takes effect on that reload. The batch is applied in one
+transaction, so if that re-arm fails the previous ruleset is still the one in
+force — fail-closed, but the new rule is not live — and the reload reports the
+failure.
+
+Two limits are deliberate. A name that does not resolve is skipped with a
+warning rather than blocking the arm, so the switch stays fail-closed for that
+destination. An exception shorter than `/8` (v4) or `/16` (v6) is rejected as
+too coarse to be a meaningful exception. A prefix that already covers, or sits
+inside, one of the interface's own on-link routes is left alone instead of being
+re-pinned, so a `/16` rule does not cut a `/24` LAN off the wire. A prefix that
+already carries a route of its own is also left alone; only the host routes this
+switch installs (tagged `proto 198`) are removed when the switch disarms.
+
+The per-prefix floor only judges addresses one at a time, so a provider-supplied
+list could otherwise carry many broad prefixes that together cover much of the
+internet; the total is capped at 64 for that reason. Resolution stops after the wave that
+reaches that many addresses and considers at most the first 128 entries, and the
+result is truncated again with v4 entries kept before v6.
+
+When the switch is armed, excluded hosts are additionally pinned to the physical
+gateway so they keep the physical path even though the TUN owns the default
+route. A re-arm clears and re-installs those pins, so for a moment they are back
+on the tunnel path; the exceptions keep them reachable throughout. Teardown
+clears the pins only once the ruleset is verifiably gone, so a failed removal
+leaves the exceptions both pinned and accepted.
+
+Resolution is point-in-time, not continuous: a `domain:` rule (which in Xray
+means the apex and its subdomains) opens only the addresses the apex resolves to
+at arm time, and a host behind a rotated CDN keeps only the addresses it had
+then. Subdomains are not resolved separately. Re-arm after a rotation, or list
+the addresses explicitly when it matters.
+
 ## Enabled vs armed
 
 `kill-switch-enabled` is the user's **intent**. The daemon reports the actual

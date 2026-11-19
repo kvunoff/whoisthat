@@ -2,6 +2,8 @@ package mainproxy
 
 import (
 	"encoding/json"
+	"errors"
+	"strings"
 	"testing"
 
 	appconfig "whoisthat-core/lib/AppConfig"
@@ -796,4 +798,44 @@ func hasDestOverride(sniffing map[string]interface{}, value string) bool {
 		}
 	}
 	return false
+}
+
+func TestRearmKillSwitchPropagatesFailure(t *testing.T) {
+	old := preStartHook
+	defer func() { preStartHook = old }()
+	p := &ProxyManager{}
+	p.proxyIPs = []string{"203.0.113.9"}
+
+	// The rules must be re-resolved before the hook fires, or the re-arm rebuilds
+	// the previous exception set.
+	rules := []structs.RoutingRule{{Type: "domain", Domain: "example.org", OutboundTag: "direct", Enabled: true}}
+	preStartHook = func(*ProxyManager, []string) error { return errors.New("nft down") }
+	err := p.rearmKillSwitch(rules)
+	if err == nil || !strings.Contains(err.Error(), "could not be re-armed") {
+		t.Fatalf("err = %v, want the wrapped re-arm failure", err)
+	}
+
+	preStartHook = func(pp *ProxyManager, _ []string) error {
+		if got := pp.DirectTargets(); len(got) != 1 || got[0] != "example.org" {
+			t.Errorf("direct targets at hook time = %v, want the new rules", got)
+		}
+		return nil
+	}
+	if err := p.rearmKillSwitch(rules); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRearmKillSwitchSkipsWithoutProxyIPs(t *testing.T) {
+	old := preStartHook
+	defer func() { preStartHook = old }()
+	called := false
+	preStartHook = func(*ProxyManager, []string) error { called = true; return nil }
+
+	if err := (&ProxyManager{}).rearmKillSwitch(nil); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if called {
+		t.Fatal("re-arm ran without proxy IPs")
+	}
 }

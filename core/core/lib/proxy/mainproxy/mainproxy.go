@@ -81,6 +81,10 @@ type ProxyManager struct {
 	preStartMu sync.RWMutex
 	onPreStart PreStartFunc
 
+	// directTargets: destinations of direct-outbound rules, accepted by the
+	// armed kill-switch. Refreshed on connect and on every routing reload.
+	directTargets directTargetStore
+
 	// exit-watcher state. The mutex is separate from p.mu so retire/start stay
 	// safe from any caller, including Stop() which already holds p.mu.
 	watchMu       sync.Mutex
@@ -405,6 +409,7 @@ func (p *ProxyManager) Connect(profile structs.Profile, tunName string, tunEnabl
 	// Install the enabled kill-switch allowlist with the exact IPs Xray is
 	// about to use, before it starts. The block is never removed around the
 	// connect, so there is no unprotected window.
+	p.directTargets.set(directTargetsFromRules(selection.Config.Rules))
 	if err := p.runPreStartHandler(profileIPs); err != nil {
 		if p.portPool != nil && apiPort != 0 {
 			p.portPool.ReleasePort(apiPort)
