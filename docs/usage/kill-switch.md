@@ -32,6 +32,38 @@ disconnected, and refreshed before every Xray start. It survives disconnect, an
 Xray crash, and an explicit `whoisthat core stop`; it is removed only by
 `kill-switch=false`.
 
+## Direct rules
+
+A routing rule with `--outbound direct` is an exception, not part of the
+tunnel: that destination is meant to keep leaving over the physical interface.
+While the switch is armed those addresses would otherwise be dropped by the
+catch-all, so they are resolved when the switch arms (through the system
+resolver, so `/etc/hosts` wins over DNS), accepted above the drop, and pinned to
+the physical gateway so they do not fall back into the TUN. The set is rebuilt
+on every arm, and a routing edit re-arms it, so a rule added mid-session takes
+effect on that reload.
+
+The pinned Xray does not apply `sockopt.mark` to its freedom outbound, which is
+why the switch accepts these destinations by address rather than relying on the
+direct fwmark. That also means a domain rule opens only the addresses it
+resolves to at arm time: a host behind a rotating CDN keeps only the addresses
+it had then, and subdomains are not resolved separately. Re-arm after a
+rotation, or list the addresses explicitly when it matters.
+
+Two limits are deliberate. A name that does not resolve is skipped with a
+warning, so the switch stays fail-closed for that destination instead of
+failing to arm. An exception shorter than `/8` (v4) or `/16` (v6) is rejected
+as too coarse to be meaningful, and the total is capped at 64 so a provider
+list cannot add up to the same thing. Addresses already covered by one of the
+interface's on-link routes, or that already have a route of their own, are left
+alone: replacing them would cut the LAN off the wire or lose a user route. Only
+the host routes this switch installs (tagged `proto 198`) are removed when it
+disarms. In proxy mode there is no TUN default route to escape, so no pins are
+installed.
+
+Private LAN, link-local, and multicast destinations are already allowed by the
+switch, so they keep working with or without a direct rule.
+
 ## Include-mode incompatibility
 
 Kill-Switch is **not compatible with `split-tunnel: include`**. Include mode

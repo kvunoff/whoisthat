@@ -97,9 +97,14 @@ allows only:
 - loopback (`127.0.0.0/8`, `::1`);
 - private LAN, link-local, and multicast ranges;
 - configured DNS servers and the TUN DNS sink;
-- sockets marked `fwmark 1` (direct outbound, split-exclude, daemon downloads);
+- sockets marked `fwmark 1` (split-exclude and daemon downloads; the pinned
+  Xray's freedom outbound does not apply `sockopt.mark`, so direct-rule
+  destinations are accepted by address instead);
 - traffic leaving through the TUN adapter;
 - the active VPN server IPs.
+
+Direct-rule destinations are resolved when the switch arms, accepted above the
+drop, and pinned to the physical gateway so they do not fall back into the TUN.
 
 Everything else is dropped. The allowlist is rebuilt in one transaction right
 before Xray starts, using the exact server IPs Xray is about to use. The block is
