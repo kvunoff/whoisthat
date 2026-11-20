@@ -77,10 +77,10 @@ var validTunNameRe = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]*$`)
 // list from the app config.
 func SetupKillSwitchBlock(proxyIPs []string, tunName string, dnsServers []string) error {
 	direct := currentDirectExceptions()
-	if n := len(direct); n > 0 {
+	direct4, direct6 := splitNetsValid(direct)
+	if n := len(direct4) + len(direct6); n > 0 {
 		logger.Infof("kill-switch: %d direct-rule targets resolved as exceptions", n)
 	}
-	direct4, direct6 := splitNetsValid(direct)
 	wasArmed, probeErr := killSwitchArmedProbe()
 	// A failed probe is not "not armed": assume the old ruleset may still be
 	// there and keep the pins, which is the harmless direction.

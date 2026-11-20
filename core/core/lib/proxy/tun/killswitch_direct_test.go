@@ -88,13 +88,27 @@ func TestDirectTargetSourceIsReadAtArmTime(t *testing.T) {
 func TestSplitNetsValidRejectsBroadAndInvalid(t *testing.T) {
 	v4, v6 := splitNetsValid([]string{
 		"0.0.0.0/0", "10.0.0.0/7", "::ffff:0:0/95", "::fffe:0:0/95", "not-a-cidr",
+		"10.0.0.0/8", "192.168.3.10", "fe80::1", "::1", "224.0.0.1",
 		"10.0.0.0/8", "2001:db8::/32", "198.51.100.20", " 198.51.100.20 ",
-		"::ffff:198.51.100.0/120",
+		"203.0.113.0/24", "::ffff:198.51.100.0/120",
 	})
-	if strings.Join(v4, ",") != "10.0.0.0/8,198.51.100.20,198.51.100.0/24" {
+	if strings.Join(v4, ",") != "198.51.100.20,203.0.113.0/24,198.51.100.0/24" {
 		t.Fatalf("v4 = %v", v4)
 	}
 	if strings.Join(v6, ",") != "2001:db8::/32" {
 		t.Fatalf("v6 = %v", v6)
+	}
+}
+
+// The fixed allowlist already covers private, link-local, loopback and
+// multicast destinations; a direct rule for them must not add a pin that
+// shadows the LAN/VPN route.
+func TestSplitNetsValidSkipsFixedAllowlist(t *testing.T) {
+	v4, v6 := splitNetsValid([]string{
+		"10.1.2.0/24", "192.168.3.10", "127.0.0.1", "224.0.0.1",
+		"fe80::1", "fc00::1", "::1",
+	})
+	if len(v4) != 0 || len(v6) != 0 {
+		t.Fatalf("fixed allowlist leaked into exceptions: v4=%v v6=%v", v4, v6)
 	}
 }
