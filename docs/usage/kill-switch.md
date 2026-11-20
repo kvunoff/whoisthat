@@ -62,7 +62,10 @@ disarms. In proxy mode there is no TUN default route to escape, so no pins are
 installed.
 
 Private LAN, link-local, and multicast destinations are already allowed by the
-switch, so they keep working with or without a direct rule.
+switch, so they keep working with or without a direct rule. An exception is per
+address, not per rule: if a direct rule also matches a port or protocol, the
+whole destination is accepted while the switch is armed, because the firewall
+has no per-rule context.
 
 ## Include-mode incompatibility
 
