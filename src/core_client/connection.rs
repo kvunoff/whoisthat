@@ -11,6 +11,27 @@ use super::protocol::{EXPECTED_CORE_PROTOCOL_VERSION, TcpMessage};
 /// core/core/lib/TCPServer/TCPServer.go:MaxFrameSize (64 MiB).
 const MAX_FRAME_SIZE: usize = 64 * 1024 * 1024;
 
+/// Maximum accepted TCP hello response. The handshake payload is a tiny
+/// `{msg, data}` object; keeping it far below the normal frame cap stops a
+/// misbehaving peer from making the client allocate 64 MiB before it has
+/// authenticated.
+const MAX_HELLO_SIZE: usize = 64 * 1024;
+
+#[derive(serde::Deserialize)]
+struct HelloFrame {
+    msg: String,
+    #[serde(default)]
+    data: HelloData,
+}
+
+#[derive(serde::Deserialize, Default)]
+struct HelloData {
+    #[serde(default)]
+    protocol_version: Option<u32>,
+    #[serde(default)]
+    error: Option<String>,
+}
+
 /// How to reach the core. UDS is the secure default (filesystem-permission
 /// gated); TCP is the legacy/remote fallback and only used when configured.
 #[derive(Debug, Clone)]
@@ -199,22 +220,14 @@ impl CoreWriteHalf {
 /// Authenticate the opt-in TCP transport with the shared token file written by
 /// the core (0600 in the user's runtime directory). UDS is already protected by
 /// filesystem permissions and does not use this handshake.
-async fn tcp_handshake(stream: &mut TcpStream) -> std::io::Result<()> {
-    let token_path = crate::config::ipc_token_path();
-    let token = std::fs::read_to_string(&token_path).map_err(|e| {
-        std::io::Error::new(
-            std::io::ErrorKind::PermissionDenied,
-            format!(
-                "cannot read TCP IPC token at {}: {}. Start whoisthat-core with tcp-enabled first.",
-                token_path, e
-            ),
-        )
-    })?;
-
+///
+/// The token is a parameter so the loopback test can drive the handshake
+/// without touching XDG_RUNTIME_DIR.
+async fn tcp_handshake(stream: &mut TcpStream, token: &str) -> std::io::Result<()> {
     let payload = serde_json::json!({
         "msg": "hello",
         "data": {
-            "token": token.trim(),
+            "token": token,
             "protocol_version": EXPECTED_CORE_PROTOCOL_VERSION,
         },
     });
@@ -232,29 +245,63 @@ async fn tcp_handshake(stream: &mut TcpStream) -> std::io::Result<()> {
 
     let mut len_buf = [0u8; 4];
     stream.read_exact(&mut len_buf).await?;
-    let len = u32::from_be_bytes(len_buf);
-    if len == 0 || len as usize > MAX_FRAME_SIZE {
+    let len = hello_len(u32::from_be_bytes(len_buf))?;
+    let mut buf = vec![0u8; len];
+    stream.read_exact(&mut buf).await?;
+    classify_hello_response(&buf)
+}
+
+/// Read the TCP IPC token from the user's runtime directory.
+fn read_ipc_token() -> std::io::Result<String> {
+    let token_path = crate::config::ipc_token_path();
+    std::fs::read_to_string(&token_path).map_err(|e| {
+        std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            format!(
+                "cannot read TCP IPC token at {}: {}. Start whoisthat-core with tcp-enabled first.",
+                token_path, e
+            ),
+        )
+    })
+}
+
+/// Bound the hello frame before allocating its body.
+fn hello_len(len: u32) -> std::io::Result<usize> {
+    if len == 0 || len as usize > MAX_HELLO_SIZE {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
-            "invalid hello response length",
+            format!("invalid hello response length: {len}"),
         ));
     }
-    let mut buf = vec![0u8; len as usize];
-    stream.read_exact(&mut buf).await?;
-    let msg: TcpMessage = serde_json::from_slice(&buf)
+    Ok(len as usize)
+}
+
+/// Parse and validate the TCP hello response. A size cap only bounds the
+/// allocation; this keeps the payload typed and checks the handshake contract.
+fn classify_hello_response(buf: &[u8]) -> std::io::Result<()> {
+    let frame: HelloFrame = serde_json::from_slice(buf)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
 
-    match msg.msg.as_str() {
-        "hello-ok" => Ok(()),
+    match frame.msg.as_str() {
+        "hello-ok" => match frame.data.protocol_version {
+            Some(v) if v == EXPECTED_CORE_PROTOCOL_VERSION => Ok(()),
+            Some(v) => Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("unexpected core protocol version: {v}"),
+            )),
+            None => Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "hello response is missing protocol_version",
+            )),
+        },
         "hello-error" => {
-            let reason = msg
+            let reason = frame
                 .data
-                .get("error")
-                .and_then(|v| v.as_str())
-                .unwrap_or("TCP IPC authentication failed");
+                .error
+                .unwrap_or_else(|| "TCP IPC authentication failed".to_string());
             Err(std::io::Error::new(
                 std::io::ErrorKind::PermissionDenied,
-                reason.to_string(),
+                reason,
             ))
         }
         other => Err(std::io::Error::new(
@@ -276,7 +323,8 @@ impl CoreConnection {
             Endpoint::Tcp { host, port } => {
                 let mut s = TcpStream::connect(format!("{}:{}", host, port)).await?;
                 s.set_nodelay(true)?;
-                tcp_handshake(&mut s).await?;
+                let token = read_ipc_token()?;
+                tcp_handshake(&mut s, token.trim()).await?;
                 Stream::Tcp(s)
             }
         };
@@ -406,5 +454,113 @@ mod tests {
             .await
             .unwrap_err();
         assert_eq!(err.kind(), std::io::ErrorKind::TimedOut);
+    }
+}
+
+#[cfg(test)]
+mod hello_response_tests {
+    use super::*;
+
+    fn classify(json: serde_json::Value) -> std::io::Result<()> {
+        classify_hello_response(&serde_json::to_vec(&json).unwrap())
+    }
+
+    fn ok(version: u32) -> serde_json::Value {
+        serde_json::json!({"msg": "hello-ok", "data": {"protocol_version": version}})
+    }
+
+    #[test]
+    fn hello_len_enforces_the_handshake_cap() {
+        assert!(hello_len(0).is_err());
+        assert!(hello_len(MAX_HELLO_SIZE as u32 + 1).is_err());
+        assert!(hello_len(u32::MAX).is_err());
+        assert_eq!(hello_len(MAX_HELLO_SIZE as u32).unwrap(), MAX_HELLO_SIZE);
+        assert_eq!(hello_len(128).unwrap(), 128);
+    }
+
+    #[test]
+    fn accepts_matching_hello_ok() {
+        classify(ok(EXPECTED_CORE_PROTOCOL_VERSION)).unwrap();
+    }
+
+    #[test]
+    fn rejects_mismatched_or_missing_version() {
+        let mismatched = classify(ok(EXPECTED_CORE_PROTOCOL_VERSION + 1)).unwrap_err();
+        assert_eq!(mismatched.kind(), std::io::ErrorKind::InvalidData);
+
+        for value in [
+            serde_json::json!({"msg": "hello-ok"}),
+            serde_json::json!({"msg": "hello-ok", "data": null}),
+            serde_json::json!({"msg": "hello-ok", "data": {}}),
+            serde_json::json!({"msg": "hello-ok", "data": {"protocol_version": "5"}}),
+            serde_json::json!({"msg": "hello-ok", "data": {"protocol_version": -1}}),
+            serde_json::json!({"msg": "hello-ok", "data": {"protocol_version": 5.0}}),
+        ] {
+            let err = classify(value.clone()).unwrap_err();
+            assert_eq!(err.kind(), std::io::ErrorKind::InvalidData, "case {value}");
+        }
+    }
+
+    #[test]
+    fn hello_error_uses_the_server_reason() {
+        let err = classify(serde_json::json!({
+            "msg": "hello-error",
+            "data": {"protocol_version": 0, "error": "invalid authentication token"}
+        }))
+        .unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::PermissionDenied);
+        assert_eq!(err.to_string(), "invalid authentication token");
+    }
+
+    #[test]
+    fn hello_error_without_reason_uses_the_fallback() {
+        let err = classify(serde_json::json!({
+            "msg": "hello-error",
+            "data": {"protocol_version": 0}
+        }))
+        .unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::PermissionDenied);
+        assert_eq!(err.to_string(), "TCP IPC authentication failed");
+    }
+
+    #[test]
+    fn hello_error_with_a_non_string_reason_is_invalid() {
+        let err = classify(serde_json::json!({
+            "msg": "hello-error",
+            "data": {"protocol_version": 0, "error": 123}
+        }))
+        .unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn unknown_message_and_malformed_payloads_are_rejected() {
+        for value in [
+            serde_json::json!({"msg": "hello-other", "data": {}}),
+            serde_json::json!({"data": {"protocol_version": 5}}),
+        ] {
+            let err = classify(value).unwrap_err();
+            assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+        }
+
+        assert!(classify_hello_response(b"not json").is_err());
+        assert!(classify_hello_response(&[0xff, 0xfe]).is_err());
+
+        let mut trailing = serde_json::to_vec(&ok(EXPECTED_CORE_PROTOCOL_VERSION)).unwrap();
+        trailing.extend_from_slice(b"trailing");
+        assert!(classify_hello_response(&trailing).is_err());
+    }
+
+    #[test]
+    fn unknown_fields_are_ignored_for_forward_compatibility() {
+        classify(serde_json::json!({
+            "msg": "hello-ok",
+            "id": "ignored",
+            "data": {
+                "protocol_version": EXPECTED_CORE_PROTOCOL_VERSION,
+                "future_field": true
+            }
+        }))
+        .unwrap();
     }
 }
