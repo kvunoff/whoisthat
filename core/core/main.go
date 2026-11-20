@@ -185,7 +185,9 @@ func main() {
 	proxy_manager.Init()
 	// Install the kill-switch allowlist with the exact IPs Xray is about to
 	// use, right before it starts. This keeps the block armed for the whole
-	// connect instead of opening a leak window.
+	// connect instead of opening a leak window. The handler resolves the
+	// direct-rule exceptions from the current routing selection.
+	tunmode.SetDirectTargetSource(proxy_manager.DirectTargets)
 	proxy_manager.SetPreStartHandler(func(ips []string) error {
 		if testMode() || !appconfig.GetConfig().KillSwitchEnabled {
 			return nil

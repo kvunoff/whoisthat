@@ -21,9 +21,10 @@ import (
 //   - loopback (127.0.0.0/8, ::1) and the `lo` interface
 //   - private / link-local / multicast LAN ranges (printers, NAS, mDNS, NDP)
 //   - the configured DNS servers (resolution before/after TUN is up)
-//   - sockets marked with the "direct" fwmark (Xray's freedom outbound and
-//     split-exclude traffic). Setting SO_MARK requires CAP_NET_ADMIN, which in
-//     the rootless setup only whoisthat-core holds.
+//   - destinations of enabled `direct` routing rules, resolved at arm time.
+//     The pinned Xray does not apply sockopt.mark to its freedom outbound, so
+//     these need their own accept rules; split-exclude traffic is marked by
+//     nft and matches the fwmark rule instead.
 //   - the TUN interface itself, when one is configured. Everything routed into
 //     TUN is encapsulated by the tunnel; the rule stops matching as soon as the
 //     interface is deleted on disconnect, so the fail-closed behaviour stands.
@@ -34,8 +35,9 @@ import (
 
 const (
 	// killSwitchDirectMark is the fwmark used for "go out via the physical
-	// gateway" sockets: Xray's freedom outbound and split-exclude apps.
-	// Keep in sync with splitExcludeMark in split.go.
+	// gateway" sockets. Split-exclude traffic gets it from nft; the pinned
+	// Xray's freedom outbound does NOT apply sockopt.mark, which is why direct
+	// rules also need explicit destination accepts (killswitch_direct.go).
 	killSwitchDirectMark = 1
 
 	// killSwitchDNSSink4/6 are the reserved addresses the TUN DNS hijack will
@@ -74,11 +76,15 @@ var validTunNameRe = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]*$`)
 // configured TUN interface (empty when TUN is unused), dnsServers the resolver
 // list from the app config.
 func SetupKillSwitchBlock(proxyIPs []string, tunName string, dnsServers []string) error {
+	direct := currentDirectExceptions()
+	if n := len(direct); n > 0 {
+		logger.Infof("kill-switch: %d direct-rule targets resolved as exceptions", n)
+	}
 	switch probeFirewall() {
 	case firewallNftables:
-		return setupKillSwitchBlockNftables(proxyIPs, tunName, dnsServers)
+		return setupKillSwitchBlockNftables(proxyIPs, tunName, dnsServers, direct...)
 	default:
-		return setupKillSwitchBlockIptables(proxyIPs, tunName, dnsServers)
+		return setupKillSwitchBlockIptables(proxyIPs, tunName, dnsServers, direct...)
 	}
 }
 
@@ -230,10 +236,11 @@ func splitIPsValid(ips []string) (v4, v6 []string) {
 
 // buildKillSwitchNftScript renders the nftables variant. Pure function so the
 // rule set can be asserted in unit tests without touching the host firewall.
-func buildKillSwitchNftScript(proxyIPs []string, tunName string, dnsServers []string) string {
+func buildKillSwitchNftScript(proxyIPs []string, tunName string, dnsServers []string, direct ...string) string {
 	tunName = sanitizeTunName(tunName)
 	proxy4, proxy6 := splitIPsValid(proxyIPs)
 	dns4, dns6 := splitIPsValid(dnsServers)
+	direct4, direct6 := splitNetsValid(direct)
 
 	var b strings.Builder
 	b.WriteString("set -e\n")
@@ -277,16 +284,26 @@ func buildKillSwitchNftScript(proxyIPs []string, tunName string, dnsServers []st
 		fmt.Fprintf(&b, "add rule inet whoisthat_ks output ip6 daddr %s accept\n", ip)
 	}
 
+	// Enabled direct routing rules: the packet is accepted by destination
+	// because the freedom outbound does not carry the direct fwmark.
+	for _, ip := range direct4 {
+		fmt.Fprintf(&b, "add rule inet whoisthat_ks output ip daddr %s accept\n", ip)
+	}
+	for _, ip := range direct6 {
+		fmt.Fprintf(&b, "add rule inet whoisthat_ks output ip6 daddr %s accept\n", ip)
+	}
+
 	b.WriteString("add rule inet whoisthat_ks output drop\n")
 	b.WriteString("WHOISTHAT_KS_EOF\n")
 	return b.String()
 }
 
 // buildKillSwitchIptablesScript renders the legacy iptables variant.
-func buildKillSwitchIptablesScript(proxyIPs []string, tunName string, dnsServers []string) string {
+func buildKillSwitchIptablesScript(proxyIPs []string, tunName string, dnsServers []string, direct ...string) string {
 	tunName = sanitizeTunName(tunName)
 	proxy4, proxy6 := splitIPsValid(proxyIPs)
 	dns4, dns6 := splitIPsValid(dnsServers)
+	direct4, direct6 := splitNetsValid(direct)
 
 	var b strings.Builder
 	b.WriteString("set -e\n")
@@ -316,6 +333,9 @@ func buildKillSwitchIptablesScript(proxyIPs []string, tunName string, dnsServers
 	for _, ip := range proxy4 {
 		fmt.Fprintf(&b, "iptables -A WHOISTHAT_KS -d %s -j ACCEPT\n", ip)
 	}
+	for _, ip := range direct4 {
+		fmt.Fprintf(&b, "iptables -A WHOISTHAT_KS -d %s -j ACCEPT\n", ip)
+	}
 	b.WriteString("iptables -A WHOISTHAT_KS -j DROP\n")
 	b.WriteString("iptables -I OUTPUT 1 -j WHOISTHAT_KS\n")
 
@@ -335,18 +355,21 @@ func buildKillSwitchIptablesScript(proxyIPs []string, tunName string, dnsServers
 	for _, ip := range proxy6 {
 		fmt.Fprintf(&b, "ip6tables -A WHOISTHAT_KS -d %s -j ACCEPT\n", ip)
 	}
+	for _, ip := range direct6 {
+		fmt.Fprintf(&b, "ip6tables -A WHOISTHAT_KS -d %s -j ACCEPT\n", ip)
+	}
 	b.WriteString("ip6tables -A WHOISTHAT_KS -j DROP\n")
 	b.WriteString("ip6tables -I OUTPUT 1 -j WHOISTHAT_KS\n")
 
 	return b.String()
 }
 
-func setupKillSwitchBlockNftables(proxyIPs []string, tunName string, dnsServers []string) error {
-	_, err := runScriptWithSh(buildKillSwitchNftScript(proxyIPs, tunName, dnsServers))
+func setupKillSwitchBlockNftables(proxyIPs []string, tunName string, dnsServers []string, direct ...string) error {
+	_, err := runScriptWithSh(buildKillSwitchNftScript(proxyIPs, tunName, dnsServers, direct...))
 	return err
 }
 
-func setupKillSwitchBlockIptables(proxyIPs []string, tunName string, dnsServers []string) error {
-	_, err := runScriptWithSh(buildKillSwitchIptablesScript(proxyIPs, tunName, dnsServers))
+func setupKillSwitchBlockIptables(proxyIPs []string, tunName string, dnsServers []string, direct ...string) error {
+	_, err := runScriptWithSh(buildKillSwitchIptablesScript(proxyIPs, tunName, dnsServers, direct...))
 	return err
 }
