@@ -149,7 +149,14 @@ func addDirectHostRoutes(v4, v6 []string, tunName string) error {
 			}
 			// `exact`: a bare `route show <prefix>` also lists more specifics,
 			// so a narrower user route would look like a route for this prefix.
-			if out, err := directRouteRun(fmt.Sprintf("ip %s route show exact %s", set.family, key)); err == nil && strings.TrimSpace(out) != "" {
+			out, err := directRouteRun(fmt.Sprintf("ip %s route show exact %s", set.family, key))
+			if err != nil {
+				// Without the lookup the replace could take a user route with
+				// it; skip instead of guessing.
+				logger.Warnf("kill-switch: cannot inspect route %s: %v", key, err)
+				continue
+			}
+			if strings.TrimSpace(out) != "" {
 				// A route the user already had is theirs: it would have to be
 				// deleted again on disarm, which loses their setup.
 				logger.Infof("kill-switch: %s already has a route, leaving it in place", key)
