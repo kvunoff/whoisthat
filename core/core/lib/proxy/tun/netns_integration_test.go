@@ -247,3 +247,73 @@ func TestNetnsNetmarkSetsDirectMark(t *testing.T) {
 		t.Fatalf("SO_MARK = %d, want %d", mark, netmark.DirectMark)
 	}
 }
+
+// A direct routing rule must survive an armed switch even though the pinned
+// Xray does not put the direct fwmark on its freedom outbound: the destination
+// needs its own accept, and a public one needs a pin off the TUN. Private and
+// on-link targets are covered by the fixed allowlist or by their own route and
+// must not be pinned.
+func TestNetnsKillSwitchAcceptsDirectRuleTargets(t *testing.T) {
+	enterTestNetns(t)
+	if backend := probeFirewall(); backend != firewallNftables {
+		t.Skipf("nftables backend required, got %v", backend)
+	}
+
+	// A physical default plus an on-link subnet: one target is public (needs a
+	// pin), the other is inside the subnet (must be left alone).
+	if _, err := runScriptWithSh(`
+ip link add phys0 type dummy
+ip link set phys0 up
+ip addr add 203.0.113.1/24 dev phys0
+ip route add default via 203.0.113.1 dev phys0 metric 600
+`); err != nil {
+		t.Skipf("cannot set up a physical path: %v", err)
+	}
+
+	SetDirectTargetSource(func() []string {
+		return []string{"198.51.100.20", "203.0.113.10", "10.1.2.3"}
+	})
+	t.Cleanup(func() { SetDirectTargetSource(nil) })
+
+	if err := SetupKillSwitchBlock([]string{"192.0.2.10"}, "wittest0", []string{"1.1.1.1"}); err != nil {
+		t.Fatalf("SetupKillSwitchBlock: %v", err)
+	}
+	t.Cleanup(func() { _ = RemoveKillSwitchBlock() })
+
+	chain, err := runScriptWithSh("nft list chain inet whoisthat_ks output")
+	if err != nil {
+		t.Fatalf("nft list chain: %v", err)
+	}
+	for _, target := range []string{"198.51.100.20", "203.0.113.10"} {
+		if !strings.Contains(chain, "ip daddr "+target+" accept") {
+			t.Errorf("chain does not accept %s:\n%s", target, chain)
+		}
+	}
+	if strings.Contains(chain, "10.1.2.3") {
+		t.Errorf("private target was added to the exception list:\n%s", chain)
+	}
+
+	pin, err := runScriptWithSh("ip -4 route show exact 198.51.100.20/32")
+	if err != nil {
+		t.Fatalf("route show exact: %v", err)
+	}
+	if !strings.Contains(pin, "proto 198") {
+		t.Fatalf("public target not pinned:\n%s", pin)
+	}
+	onlink, err := runScriptWithSh("ip -4 route show exact 203.0.113.10/32")
+	if err != nil {
+		t.Fatalf("route show exact on-link: %v", err)
+	}
+	if strings.Contains(onlink, "proto 198") {
+		t.Fatalf("on-link target was pinned:\n%s", onlink)
+	}
+
+	if err := RemoveKillSwitchBlock(); err != nil {
+		t.Fatalf("RemoveKillSwitchBlock: %v", err)
+	}
+	if out, err := runScriptWithSh("ip -4 route show exact 198.51.100.20/32"); err != nil {
+		t.Fatalf("route show exact after teardown: %v", err)
+	} else if strings.TrimSpace(out) != "" {
+		t.Fatalf("pin survived teardown:\n%s", out)
+	}
+}
