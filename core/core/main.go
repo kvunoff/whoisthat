@@ -196,7 +196,11 @@ func main() {
 			return fmt.Errorf("%w: server IP unknown", proxy.ErrKillSwitchNotArmed)
 		}
 		cfg := appconfig.GetConfig()
-		if err := tunmode.SetupKillSwitchBlock(ips, cfg.TunName, cfg.DnsServers); err != nil {
+		tunName := cfg.TunName
+		if !proxy_manager.TunEnabled() {
+			tunName = ""
+		}
+		if err := tunmode.SetupKillSwitchBlock(ips, tunName, cfg.DnsServers); err != nil {
 			return fmt.Errorf("%w: %v", proxy.ErrKillSwitchNotArmed, err)
 		}
 		logger.Infof("kill-switch: allowlist applied before start, %d IPs", len(ips))

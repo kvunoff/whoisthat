@@ -12,15 +12,18 @@ import (
 type fakeKSProxy struct {
 	status structs.ProxyStatus
 	ips    []string
+	tun    bool
 }
 
 func (f fakeKSProxy) GetStatus() structs.ProxyStatus { return f.status }
 func (f fakeKSProxy) GetProxyIPs() []string          { return f.ips }
+func (f fakeKSProxy) TunEnabled() bool               { return f.tun }
 
 type ksStubs struct {
 	setupCalls  int
 	removeCalls int
 	ips         []string
+	tunName     string
 }
 
 func stubKillSwitch(t *testing.T, setupErr, removeErr error, armed bool) *ksStubs {
@@ -30,6 +33,7 @@ func stubKillSwitch(t *testing.T, setupErr, removeErr error, armed bool) *ksStub
 	setupKillSwitchBlock = func(ips []string, tunName string, dnsServers []string) error {
 		st.setupCalls++
 		st.ips = append([]string(nil), ips...)
+		st.tunName = tunName
 		return setupErr
 	}
 	removeKillSwitchBlock = func() error {
@@ -223,5 +227,34 @@ func TestSetKillSwitchTestModeDoesNotTouchFirewall(t *testing.T) {
 	}
 	if event := lastKillSwitchEvent(t, ch); !event.Enabled || event.Armed {
 		t.Fatalf("event = %+v, want enabled=true armed=false", event)
+	}
+}
+
+// A proxy-mode connect has no TUN to leave, so the arm must not add an
+// interface rule or try to pin direct routes off a device that does not exist.
+func TestSetKillSwitchOmitsTunNameInProxyMode(t *testing.T) {
+	resetKillSwitchConfig(t)
+	st := stubKillSwitch(t, nil, nil, true)
+	cmd, _ := newKillSwitchCmd()
+
+	cmd.SetKillSwitch(structs.SetKillSwitchData{Enabled: true}, fakeKSProxy{tun: false})
+
+	if st.setupCalls != 1 {
+		t.Fatalf("setup calls = %d, want 1", st.setupCalls)
+	}
+	if st.tunName != "" {
+		t.Fatalf("tun name = %q, want empty in proxy mode", st.tunName)
+	}
+}
+
+func TestSetKillSwitchPassesTunNameInTunMode(t *testing.T) {
+	resetKillSwitchConfig(t)
+	st := stubKillSwitch(t, nil, nil, true)
+	cmd, _ := newKillSwitchCmd()
+
+	cmd.SetKillSwitch(structs.SetKillSwitchData{Enabled: true}, fakeKSProxy{tun: true})
+
+	if want := appconfig.GetConfig().TunName; st.tunName != want {
+		t.Fatalf("tun name = %q, want %q", st.tunName, want)
 	}
 }

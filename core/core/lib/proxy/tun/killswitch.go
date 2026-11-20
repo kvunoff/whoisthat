@@ -91,6 +91,10 @@ func SetupKillSwitchBlock(proxyIPs []string, tunName string, dnsServers []string
 		if err := addDirectHostRoutes(direct4, direct6, tunName); err != nil {
 			logger.Warn("kill-switch: could not pin direct routes off the tunnel:", err)
 		}
+	} else {
+		// Proxy mode: there is no TUN default to escape, and a stale pin from
+		// a previous TUN session is no longer needed.
+		removeDirectHostRoutes()
 	}
 
 	var setupErr error

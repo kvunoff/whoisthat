@@ -6,6 +6,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"whoisthat-core/db"
 	"whoisthat-core/lib"
@@ -85,6 +86,10 @@ type ProxyManager struct {
 	// armed kill-switch. Refreshed on connect and on every routing reload.
 	directTargets directTargetStore
 
+	// tunActive mirrors tunEnabled for the kill-switch pre-start handler,
+	// which runs while p.mu is held.
+	tunActive atomic.Bool
+
 	// exit-watcher state. The mutex is separate from p.mu so retire/start stay
 	// safe from any caller, including Stop() which already holds p.mu.
 	watchMu       sync.Mutex
@@ -102,6 +107,10 @@ func (p *ProxyManager) SetUnexpectedExitHandler(fn func(string)) {
 	p.onUnexpectedExit = fn
 	p.exitHandlerMu.Unlock()
 }
+
+// TunEnabled reports the mode of the last Connect/SetTunMode. It is atomic
+// because the kill-switch pre-start handler reads it while p.mu is held.
+func (p *ProxyManager) TunEnabled() bool { return p.tunActive.Load() }
 
 func (p *ProxyManager) notifyUnexpectedExit(reason string) {
 	p.exitHandlerMu.RLock()
@@ -261,6 +270,7 @@ func (p *ProxyManager) Connect(profile structs.Profile, tunName string, tunEnabl
 	defer p.mu.Unlock()
 
 	p.tunEnabled = tunEnabled
+	p.tunActive.Store(tunEnabled)
 	p.tunName = tunName
 
 	if p.core.IsRunning() {
@@ -470,6 +480,7 @@ func (p *ProxyManager) SetTunMode(tunName string, enabled bool) error {
 	defer p.mu.Unlock()
 
 	p.tunEnabled = enabled
+	p.tunActive.Store(enabled)
 	p.tunName = tunName
 
 	if p.status.Connection != "connected" || p.core == nil || !p.core.IsRunning() {
@@ -484,6 +495,7 @@ func (p *ProxyManager) Stop() {
 	defer p.mu.Unlock()
 	logger.Info("disconnecting")
 	p.tunEnabled = false
+	p.tunActive.Store(false)
 	// Retire the Exited-watcher goroutine.
 	p.retireExitWatcher()
 	if p.statsCancel != nil {
