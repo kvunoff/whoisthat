@@ -24,6 +24,10 @@ func (s *directTargetStore) get() []string {
 // resolves and accepts them (see tunmode.SetDirectTargetSource).
 func (p *ProxyManager) DirectTargets() []string { return p.directTargets.get() }
 
+// mappedV4 is the IPv4-mapped IPv6 range. A prefix that overlaps it without
+// staying inside it accepts the whole v4 space through the v6 family.
+var mappedV4 = netip.MustParsePrefix("::ffff:0:0/96")
+
 // tooWide reports whether an exception prefix is so broad that accepting it
 // effectively switches the kill-switch off. Rules can come from the provider
 // (Source == "happ"), so this is not a purely local decision.
@@ -41,14 +45,17 @@ func tooWide(v string) bool {
 	if err != nil {
 		return true
 	}
-	addr, bits := prefix.Addr(), prefix.Bits()
-	if addr.Is4In6() {
+	bits := prefix.Bits()
+	if prefix.Addr().Is4In6() {
 		if bits < 96 {
 			return true
 		}
 		return bits-96 < 8
 	}
-	if addr.Is4() {
+	if bits < 96 && mappedV4.Overlaps(prefix) {
+		return true
+	}
+	if prefix.Addr().Is4() {
 		return bits < 8
 	}
 	return bits < 16
