@@ -52,14 +52,17 @@ func TestTooWide(t *testing.T) {
 	wide := []string{
 		"0.0.0.0/0", "::/0", "::ffff:0:0/96", "::ffff:0.0.0.0/96",
 		"0:0:0:0:0:ffff:0:0/96", "::ffff:0:0/95", "::ffff:0:0/8",
-		"10.0.0.0/7", "2001:db8::/15", "not-a-cidr/33",
+		"::fffe:0:0/95", "10.0.0.0/7", "2001:db8::/15", "not-a-cidr/33",
 	}
 	for _, v := range wide {
 		if !tooWide(v) {
 			t.Errorf("tooWide(%q) = false, want true", v)
 		}
 	}
-	narrow := []string{"10.0.0.0/8", "192.168.0.0/16", "2001:db8::/16", "198.51.100.20", "::ffff:10.0.0.0/104"}
+	narrow := []string{
+		"10.0.0.0/8", "192.168.0.0/16", "2001:db8::/16", "198.51.100.20",
+		"::ffff:10.0.0.0/104", "::ffff:192.0.2.0/120",
+	}
 	for _, v := range narrow {
 		if tooWide(v) {
 			t.Errorf("tooWide(%q) = true, want false", v)
