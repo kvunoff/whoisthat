@@ -623,3 +623,118 @@ mod hello_response_tests {
         .unwrap();
     }
 }
+
+#[cfg(test)]
+mod tcp_handshake_tests {
+    use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+
+    async fn read_client_hello(stream: &mut TcpStream) {
+        let mut len_buf = [0u8; 4];
+        stream.read_exact(&mut len_buf).await.unwrap();
+        let len = u32::from_be_bytes(len_buf) as usize;
+        let mut hello = vec![0u8; len];
+        stream.read_exact(&mut hello).await.unwrap();
+        let value: serde_json::Value = serde_json::from_slice(&hello).unwrap();
+        assert_eq!(value["msg"], "hello");
+        assert_eq!(value["data"]["token"], "secret");
+        assert_eq!(
+            value["data"]["protocol_version"],
+            EXPECTED_CORE_PROTOCOL_VERSION
+        );
+    }
+
+    async fn write_frame(stream: &mut TcpStream, body: &[u8]) {
+        stream
+            .write_all(&(body.len() as u32).to_be_bytes())
+            .await
+            .unwrap();
+        stream.write_all(body).await.unwrap();
+        stream.flush().await.unwrap();
+    }
+
+    async fn drive(response: serde_json::Value) -> std::io::Result<()> {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            read_client_hello(&mut stream).await;
+            write_frame(&mut stream, &serde_json::to_vec(&response).unwrap()).await;
+        });
+        let mut client = TcpStream::connect(addr).await.unwrap();
+        let result = tcp_handshake(&mut client, "secret").await;
+        server.await.unwrap();
+        result
+    }
+
+    #[tokio::test]
+    async fn loopback_accepts_hello_ok() {
+        drive(serde_json::json!({
+            "msg": "hello-ok",
+            "data": {"protocol_version": EXPECTED_CORE_PROTOCOL_VERSION}
+        }))
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn loopback_surfaces_hello_error() {
+        let err = drive(serde_json::json!({
+            "msg": "hello-error",
+            "data": {"protocol_version": 0, "error": "invalid authentication token"}
+        }))
+        .await
+        .unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::PermissionDenied);
+        assert_eq!(err.to_string(), "invalid authentication token");
+    }
+
+    #[tokio::test]
+    async fn loopback_rejects_mismatched_version() {
+        let err = drive(serde_json::json!({
+            "msg": "hello-ok",
+            "data": {"protocol_version": EXPECTED_CORE_PROTOCOL_VERSION + 1}
+        }))
+        .await
+        .unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+    }
+
+    #[tokio::test]
+    async fn loopback_rejects_oversized_length_before_reading_the_body() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            read_client_hello(&mut stream).await;
+            stream
+                .write_all(&(MAX_HELLO_SIZE as u32 + 1).to_be_bytes())
+                .await
+                .unwrap();
+            stream.flush().await.unwrap();
+        });
+        let mut client = TcpStream::connect(addr).await.unwrap();
+        let err = tcp_handshake(&mut client, "secret").await.unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn loopback_times_out_when_the_peer_stalls() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            read_client_hello(&mut stream).await;
+            tokio::time::sleep(Duration::from_secs(2)).await;
+        });
+        let mut client = TcpStream::connect(addr).await.unwrap();
+        let err = tcp_handshake_with_timeout(&mut client, "secret", Duration::from_millis(50))
+            .await
+            .unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::TimedOut);
+        server.abort();
+        let _ = server.await;
+    }
+}
