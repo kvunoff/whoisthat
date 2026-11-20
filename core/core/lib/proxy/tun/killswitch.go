@@ -80,12 +80,34 @@ func SetupKillSwitchBlock(proxyIPs []string, tunName string, dnsServers []string
 	if n := len(direct); n > 0 {
 		logger.Infof("kill-switch: %d direct-rule targets resolved as exceptions", n)
 	}
+	direct4, direct6 := splitNetsValid(direct)
+	wasArmed, probeErr := killSwitchArmedProbe()
+	// A failed probe is not "not armed": assume the old ruleset may still be
+	// there and keep the pins, which is the harmless direction.
+	if probeErr != nil {
+		wasArmed = true
+	}
+	if tunName != "" {
+		if err := addDirectHostRoutes(direct4, direct6, tunName); err != nil {
+			logger.Warn("kill-switch: could not pin direct routes off the tunnel:", err)
+		}
+	}
+
+	var setupErr error
 	switch probeFirewall() {
 	case firewallNftables:
-		return setupKillSwitchBlockNftables(proxyIPs, tunName, dnsServers, direct...)
+		setupErr = setupKillSwitchBlockNftables(proxyIPs, tunName, dnsServers, direct...)
 	default:
-		return setupKillSwitchBlockIptables(proxyIPs, tunName, dnsServers, direct...)
+		setupErr = setupKillSwitchBlockIptables(proxyIPs, tunName, dnsServers, direct...)
 	}
+	if setupErr != nil && !wasArmed {
+		// The pins were installed for an arm that then failed; with nothing
+		// armed they only steer hosts at a tunnel that drops them. A failed
+		// re-arm is different: the old ruleset is still in force and the fresh
+		// pins still apply to it.
+		removeDirectHostRoutes()
+	}
+	return setupErr
 }
 
 // RemoveKillSwitchBlock tears the chain down. Idempotent.
@@ -103,8 +125,11 @@ func RemoveKillSwitchBlock() error {
 		return fmt.Errorf("cannot verify kill-switch removal: %w", probeErr)
 	}
 	if armed {
+		// Rules still drop, so the pins still have a job; only clear them once
+		// the switch is verifiably gone.
 		return fmt.Errorf("kill-switch rules are still installed (nft: %v, iptables: %v)", nftErr, iptErr)
 	}
+	removeDirectHostRoutes()
 	return nil
 }
 
@@ -161,6 +186,9 @@ var (
 	killSwitchLookPath  = exec.LookPath
 	killSwitchRun       = runCommandWithCaps
 	killSwitchRunScript = runScriptWithSh
+
+	// killSwitchArmedProbe is a seam for the route rollback decision.
+	killSwitchArmedProbe = KillSwitchArmed
 )
 
 func nftKillSwitchArmed() (bool, error) {
