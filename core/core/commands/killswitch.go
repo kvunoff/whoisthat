@@ -13,6 +13,7 @@ import (
 type killSwitchProxy interface {
 	GetStatus() structs.ProxyStatus
 	GetProxyIPs() []string
+	TunEnabled() bool
 }
 
 // Test seams: the command layer decides *when* to arm, so its tests must not
@@ -70,6 +71,10 @@ func (cmd *Cmd) SetKillSwitch(data structs.SetKillSwitchData, proxy_manager kill
 	// state is reported separately as kill_switch_armed, so the UI can show
 	// "ON (not armed)" instead of silently claiming protection.
 	cfg := appconfig.GetConfig()
+	tunName := cfg.TunName
+	if proxy_manager == nil || !proxy_manager.TunEnabled() {
+		tunName = ""
+	}
 	ips := []string{}
 	connected := proxy_manager != nil && proxy_manager.GetStatus().Connection == "connected"
 	if connected {
@@ -84,7 +89,7 @@ func (cmd *Cmd) SetKillSwitch(data structs.SetKillSwitchData, proxy_manager kill
 		return
 	}
 
-	if err := setupKillSwitchBlock(ips, cfg.TunName, cfg.DnsServers); err != nil {
+	if err := setupKillSwitchBlock(ips, tunName, cfg.DnsServers); err != nil {
 		logger.Warn("kill-switch: failed to apply block:", err)
 		cmd.warn("set-kill-switch-failed", "failed to arm kill-switch")
 		appconfig.SetKillSwitch(true)
