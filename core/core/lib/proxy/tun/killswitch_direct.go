@@ -123,6 +123,32 @@ func resolveDirectExceptions(targets []string) []string {
 	return out
 }
 
+// fixedAllowlistPrefixes is the set the kill-switch always accepts (loopback,
+// private, link-local, multicast). A direct rule covering one of these needs no
+// exception or pin: the accept already exists, and a pin would only shadow a
+// LAN or VPN route.
+var fixedAllowlistPrefixes = func() []netip.Prefix {
+	var out []netip.Prefix
+	for _, s := range append(append([]string{}, killSwitchV4...), killSwitchV6...) {
+		if p, err := netip.ParsePrefix(s); err == nil {
+			out = append(out, p)
+		}
+	}
+	return out
+}()
+
+func insideFixedAllowlist(p netip.Prefix) bool {
+	for _, a := range fixedAllowlistPrefixes {
+		if a.Addr().Is4() != p.Addr().Is4() {
+			continue
+		}
+		if a.Bits() <= p.Bits() && a.Contains(p.Addr()) {
+			return true
+		}
+	}
+	return false
+}
+
 // splitNetsValid splits IP/CIDR literals into de-duplicated v4 and v6 lists.
 // Like splitIPsValid it is an injection boundary: only values that parse are
 // ever embedded into the root script, and they are emitted in canonical form.
@@ -133,24 +159,38 @@ func splitNetsValid(items []string) (v4, v6 []string) {
 	for _, raw := range items {
 		raw = strings.TrimSpace(raw)
 		var key string
+		var p netip.Prefix
 		var is4, wasNet bool
 		if ip := net.ParseIP(raw); ip != nil {
-			key, is4 = ip.String(), ip.To4() != nil
-		} else if p, err := netip.ParsePrefix(raw); err == nil {
+			addr, ok := netip.AddrFromSlice(ip)
+			if !ok {
+				continue
+			}
+			addr = addr.Unmap()
+			bits := 128
+			if addr.Is4() {
+				bits = 32
+			}
+			p = netip.PrefixFrom(addr, bits)
+			key, is4 = addr.String(), addr.Is4()
+		} else if parsed, err := netip.ParsePrefix(raw); err == nil {
 			wasNet = true
-			if p.Addr().Is4In6() {
-				if p.Bits() < 96 {
+			if parsed.Addr().Is4In6() {
+				if parsed.Bits() < 96 {
 					logger.Warnf("kill-switch: direct exception %q is too broad, ignoring", raw)
 					continue
 				}
-				p = netip.PrefixFrom(p.Addr().Unmap(), p.Bits()-96)
+				parsed = netip.PrefixFrom(parsed.Addr().Unmap(), parsed.Bits()-96)
 			}
-			p = p.Masked()
+			p = parsed.Masked()
 			key, is4 = p.String(), p.Addr().Is4()
 		} else {
 			if raw != "" {
 				logger.Warnf("kill-switch: ignoring invalid direct exception %q", raw)
 			}
+			continue
+		}
+		if insideFixedAllowlist(p) {
 			continue
 		}
 		// Re-checked here as well as in the extractor: this is the boundary
