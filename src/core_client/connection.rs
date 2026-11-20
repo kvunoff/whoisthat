@@ -17,6 +17,9 @@ const MAX_FRAME_SIZE: usize = 64 * 1024 * 1024;
 /// authenticated.
 const MAX_HELLO_SIZE: usize = 64 * 1024;
 
+/// Bound the TCP handshake the same way the core bounds its auth read.
+const HELLO_TIMEOUT: Duration = Duration::from_secs(5);
+
 #[derive(serde::Deserialize)]
 struct HelloFrame {
     msg: String,
@@ -224,6 +227,22 @@ impl CoreWriteHalf {
 /// The token is a parameter so the loopback test can drive the handshake
 /// without touching XDG_RUNTIME_DIR.
 async fn tcp_handshake(stream: &mut TcpStream, token: &str) -> std::io::Result<()> {
+    tcp_handshake_with_timeout(stream, token, HELLO_TIMEOUT).await
+}
+
+async fn tcp_handshake_with_timeout(
+    stream: &mut TcpStream,
+    token: &str,
+    timeout: Duration,
+) -> std::io::Result<()> {
+    tokio::time::timeout(timeout, tcp_handshake_io(stream, token))
+        .await
+        .map_err(|_| {
+            std::io::Error::new(std::io::ErrorKind::TimedOut, "TCP IPC handshake timed out")
+        })?
+}
+
+async fn tcp_handshake_io(stream: &mut TcpStream, token: &str) -> std::io::Result<()> {
     let payload = serde_json::json!({
         "msg": "hello",
         "data": {
@@ -276,6 +295,21 @@ fn hello_len(len: u32) -> std::io::Result<usize> {
     Ok(len as usize)
 }
 
+/// Strip control characters and cap remote-controlled text before it reaches a
+/// CLI/TUI error message.
+fn sanitize_reason(reason: String) -> String {
+    let cleaned: String = reason
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(200)
+        .collect();
+    if cleaned.is_empty() {
+        "TCP IPC authentication failed".to_string()
+    } else {
+        cleaned
+    }
+}
+
 /// Parse and validate the TCP hello response. A size cap only bounds the
 /// allocation; this keeps the payload typed and checks the handshake contract.
 fn classify_hello_response(buf: &[u8]) -> std::io::Result<()> {
@@ -301,7 +335,7 @@ fn classify_hello_response(buf: &[u8]) -> std::io::Result<()> {
                 .unwrap_or_else(|| "TCP IPC authentication failed".to_string());
             Err(std::io::Error::new(
                 std::io::ErrorKind::PermissionDenied,
-                reason,
+                sanitize_reason(reason),
             ))
         }
         other => Err(std::io::Error::new(
@@ -549,6 +583,31 @@ mod hello_response_tests {
         let mut trailing = serde_json::to_vec(&ok(EXPECTED_CORE_PROTOCOL_VERSION)).unwrap();
         trailing.extend_from_slice(b"trailing");
         assert!(classify_hello_response(&trailing).is_err());
+    }
+
+    #[test]
+    fn hello_error_strips_control_characters_and_truncates() {
+        let err = classify(serde_json::json!({
+            "msg": "hello-error",
+            "data": {"protocol_version": 0, "error": "\u{1b}[31mboom\n"}
+        }))
+        .unwrap_err();
+        assert_eq!(err.to_string(), "[31mboom");
+
+        let long = "x".repeat(300);
+        let err = classify(serde_json::json!({
+            "msg": "hello-error",
+            "data": {"protocol_version": 0, "error": long}
+        }))
+        .unwrap_err();
+        assert_eq!(err.to_string().len(), 200);
+
+        let err = classify(serde_json::json!({
+            "msg": "hello-error",
+            "data": {"protocol_version": 0, "error": "\u{1b}\n"}
+        }))
+        .unwrap_err();
+        assert_eq!(err.to_string(), "TCP IPC authentication failed");
     }
 
     #[test]
