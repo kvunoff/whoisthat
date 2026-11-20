@@ -267,6 +267,23 @@ func (p *ProxyManager) ReloadRouting(tunName string) error {
 	return p.reloadCoreLocked(tunName)
 }
 
+// rearmKillSwitch publishes the new direct-rule targets and re-arms the
+// switch. The handler itself is a no-op while the kill-switch is off. A failed
+// re-arm means a rule the user just added is not live, so the reload reports
+// it instead of only logging.
+func (p *ProxyManager) rearmKillSwitch(rules []structs.RoutingRule) error {
+	p.directTargets.set(directTargetsFromRules(rules))
+	if len(p.proxyIPs) == 0 {
+		logger.Debug("kill-switch: no proxy IPs, skipping re-arm after routing reload")
+		return nil
+	}
+	if err := p.runPreStartHandler(p.proxyIPs); err != nil {
+		logger.Warnf("kill-switch: re-arm after routing reload failed: %v", err)
+		return fmt.Errorf("routing applied, but the kill-switch could not be re-armed: %w", err)
+	}
+	return nil
+}
+
 // reloadCoreLocked regenerates xray configuration with current routing and tun settings,
 // pre-flight tests it, and swaps the active core instance. Caller must hold p.mu.
 func (p *ProxyManager) reloadCoreLocked(tunName string) error {
@@ -402,5 +419,5 @@ func (p *ProxyManager) reloadCoreLocked(tunName string) error {
 	p.startExitWatcher()
 
 	logger.Infof("core reloaded successfully for %s (tun=%v)", profile.Name, p.tunEnabled)
-	return nil
+	return p.rearmKillSwitch(selection.Config.Rules)
 }
