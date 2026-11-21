@@ -22,6 +22,7 @@ Manages client-side settings, visual preferences, and IPC endpoint resolution:
 core_tcp_port = 4897
 
 # Host for legacy TCP connection (default: "127.0.0.1")
+# Must be a loopback host; remote TCP is not supported.
 core_host = "127.0.0.1"
 
 # Legacy one-shot migration flag: promotes the old TUI autoconnect into the
@@ -91,6 +92,7 @@ kill_switch_enabled = false
 ipc_socket_path = ""
 
 # Connect via legacy loopback TCP instead of Unix Domain Socket
+# (core_host must be loopback)
 use_tcp = false
 ```
 
