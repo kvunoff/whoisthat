@@ -31,7 +31,7 @@ pub struct GlobalArgs {
     /// Override the core Unix socket path
     #[arg(long, global = true, value_name = "PATH", conflicts_with = "tcp")]
     pub socket: Option<std::path::PathBuf>,
-    /// Reach the core over loopback TCP (requires tcp-enabled in config.json)
+    /// Reach the core over loopback TCP (127.0.0.1 or ::1; requires tcp-enabled)
     #[arg(long, global = true, value_name = "HOST:PORT")]
     pub tcp: Option<String>,
     /// Timeout for core replies, seconds (command defaults: 10, 60, 120)

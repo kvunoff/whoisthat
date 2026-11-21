@@ -5,7 +5,9 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 
 use crate::config::{self, AppConfig};
-use crate::core_client::connection::{CoreConnection, CoreReadHalf, CoreWriteHalf, Endpoint};
+use crate::core_client::connection::{
+    CoreConnection, CoreReadHalf, CoreWriteHalf, Endpoint, is_loopback_host,
+};
 use crate::core_client::protocol::*;
 
 use super::args::GlobalArgs;
@@ -215,6 +217,11 @@ fn parse_tcp(value: &str) -> Result<Endpoint, CliError> {
     let port: u16 = port
         .parse()
         .map_err(|_| CliError::Usage(format!("invalid TCP port in: {value}")))?;
+    if !is_loopback_host(host) {
+        return Err(CliError::Usage(format!(
+            "--tcp requires a loopback host (127.0.0.1, ::1, or localhost); got {host:?}"
+        )));
+    }
     Ok(Endpoint::Tcp {
         host: host.to_string(),
         port,
@@ -335,6 +342,19 @@ mod tests {
                 assert_eq!(port, 4897);
             }
             _ => panic!("expected TCP"),
+        }
+        for good in ["127.0.0.2:4897", "localhost:4897", "LOCALHOST:4897"] {
+            assert!(parse_tcp(good).is_ok(), "{good} should be accepted");
+        }
+        for bad in [
+            "192.168.1.5:4897",
+            "[2001:db8::1]:4897",
+            "example.com:4897",
+            "0.0.0.0:4897",
+            "[::]:4897",
+            ":4897",
+        ] {
+            assert!(parse_tcp(bad).is_err(), "{bad} should be rejected");
         }
         assert!(parse_tcp("nope").is_err());
     }

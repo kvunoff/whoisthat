@@ -45,8 +45,8 @@ pub struct AppConfig {
     #[serde(default)]
     pub ipc_socket_path: String,
     /// Reach the core over legacy TCP instead of the Unix domain socket.
-    /// Off by default; enable only for remote/advanced setups where the core
-    /// runs with tcp-enabled.
+    /// Off by default; enable only when the core runs with tcp-enabled.
+    /// The host must be loopback; remote TCP is not supported.
     #[serde(default)]
     pub use_tcp: bool,
     #[serde(default)]
