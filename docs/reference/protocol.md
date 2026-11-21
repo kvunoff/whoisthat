@@ -22,7 +22,7 @@ This document provides a complete technical specification for the length-prefixe
 
 * **Length Header**: Exactly 4 bytes containing an unsigned 32-bit integer (`uint32`) in big-endian (network) byte order.
 * **Payload**: UTF-8 encoded JSON object.
-* **Maximum Frame**: 64 MiB on both sides. Larger frames are rejected before allocation/parsing.
+* **Maximum Frame**: 64 MiB on both sides. Larger frames are rejected before allocation/parsing. The pre-auth TCP `hello` is additionally capped at 64 KiB.
 * **Request correlation (optional)**: a client may include an `"id"` string in a request; notifications produced while handling it carry the same `"id"`. The current TUI is event-driven and does not require it.
 * **Protocol Version**: `5` (shared by `core/core/lib/version/protocol.txt`). The TCP handshake rejects a mismatch; on UDS the TUI compares `application-state.protocol_version` and kills/respawns a mismatched core instead of reattaching.
 

@@ -21,7 +21,9 @@ Each frame is a 4-byte big-endian length followed by UTF-8 JSON:
 [uint32 length][{"msg":"...","data":{...}}]
 ```
 
-The 64 MiB cap is enforced on both sides. UDS is the default (`0600`,
+The 64 MiB cap is enforced on both sides. The pre-auth TCP `hello` is capped at
+64 KiB, so an unauthenticated client cannot make the core allocate a full frame
+before the token check. UDS is the default (`0600`,
 `$XDG_RUNTIME_DIR/whoisthat/core.sock` or the runtime-dir fallback). The TCP
 listener is loopback-only and requires a `hello` with the token from
 `ipc.token` plus protocol version 5. A failed handshake is closed without
