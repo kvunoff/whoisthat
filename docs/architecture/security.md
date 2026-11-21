@@ -132,7 +132,8 @@ are.
 - **IPC.** The Unix socket is `0600` and restricted to your user. The core also
   checks `SO_PEERCRED` and rejects a client with a different uid. The opt-in TCP
   listener is loopback-only and requires a token from `ipc.token` (`0600`) plus a
-  protocol match, with a 5-second handshake deadline.
+  protocol match, with a 5-second handshake deadline. The client also refuses a
+  non-loopback endpoint before sending the token.
 - **Least privilege.** No setuid binary, and the packages run no root daemon.
   The core runs as your user with `cap_net_admin,cap_net_raw,cap_setpcap`;
   ambient capabilities are raised at startup for the core and its

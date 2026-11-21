@@ -29,7 +29,7 @@ These work before or after the subcommand:
 | `-q`, `--quiet` | Suppress human progress notes on stderr. |
 | `--no-color` | Disable ANSI colours (also honours `NO_COLOR`). |
 | `--socket <PATH>` | Override the core Unix socket (conflicts with `--tcp`). |
-| `--tcp <HOST:PORT>` | Reach the core over loopback TCP (`tcp-enabled` must be on). Remote TCP is not supported by the daemon. |
+| `--tcp <HOST:PORT>` | Reach the core over loopback TCP (`tcp-enabled` must be on). Only loopback hosts are accepted; remote TCP is not supported and is rejected before the token is sent. |
 | `--timeout <SECS>` | Reply timeout. Command defaults: 10 s, 60 s for subscriptions, 120 s for batch tests. |
 | `--no-spawn` | Never start `whoisthat-core` automatically. |
 | `-v`, `--version` | Print the TUI and core versions. |
