@@ -384,3 +384,33 @@ func TestTCPAuthRequiresToken(t *testing.T) {
 		})
 	}
 }
+
+func TestTCPAuthRejectsOversizedHello(t *testing.T) {
+	server, client := net.Pipe()
+	defer server.Close()
+	defer client.Close()
+
+	s := &Server{tcpToken: "secret"}
+	cc := newClientConn(server)
+	defer closeClient(cc)
+
+	done := make(chan bool, 1)
+	go func() {
+		done <- s.authenticateTCP(cc, bufio.NewReader(server))
+	}()
+
+	var length [4]byte
+	binary.BigEndian.PutUint32(length[:], MaxHelloSize+1)
+	if _, err := client.Write(length[:]); err != nil {
+		t.Fatalf("write length: %v", err)
+	}
+
+	select {
+	case ok := <-done:
+		if ok {
+			t.Fatal("oversized hello accepted")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("authenticateTCP did not return")
+	}
+}

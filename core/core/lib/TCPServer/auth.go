@@ -22,7 +22,7 @@ func (s *Server) authenticateTCP(cc *clientConn, reader *bufio.Reader) bool {
 	_ = cc.conn.SetReadDeadline(time.Now().Add(ipcAuthTimeout))
 	defer cc.conn.SetReadDeadline(time.Time{})
 
-	msg, err := readTCPMessage(reader)
+	msg, err := readTCPMessageLimit(reader, MaxHelloSize)
 	if err != nil {
 		logger.Warn("TCP IPC: failed to read hello:", err)
 		return false
