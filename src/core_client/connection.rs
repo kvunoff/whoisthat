@@ -52,6 +52,15 @@ impl Endpoint {
     }
 }
 
+/// The TCP IPC transport is loopback-only: the core never listens on a remote
+/// interface, and the hello carries the shared token.
+pub(crate) fn is_loopback_host(host: &str) -> bool {
+    host.eq_ignore_ascii_case("localhost")
+        || host
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|ip| ip.is_loopback())
+}
+
 /// A framed connection to the core over either transport. The wire format
 /// (4-byte big-endian length prefix + JSON) is identical on both, so only the
 /// underlying stream differs.
@@ -355,7 +364,21 @@ impl CoreConnection {
         let stream = match endpoint {
             Endpoint::Unix(path) => Stream::Unix(UnixStream::connect(path).await?),
             Endpoint::Tcp { host, port } => {
+                if !is_loopback_host(host) {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        format!("TCP IPC is loopback-only; refusing to connect to {host}"),
+                    ));
+                }
                 let mut s = TcpStream::connect(format!("{}:{}", host, port)).await?;
+                // `localhost` can resolve outside loopback on a poisoned
+                // /etc/hosts. Close the socket before the token is read.
+                if !s.peer_addr()?.ip().is_loopback() {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "TCP IPC peer is not loopback; refusing to send the token",
+                    ));
+                }
                 s.set_nodelay(true)?;
                 let token = read_ipc_token()?;
                 tcp_handshake(&mut s, token.trim()).await?;
@@ -736,5 +759,46 @@ mod tcp_handshake_tests {
         assert_eq!(err.kind(), std::io::ErrorKind::TimedOut);
         server.abort();
         let _ = server.await;
+    }
+}
+
+#[cfg(test)]
+mod loopback_policy_tests {
+    use super::*;
+
+    #[test]
+    fn loopback_hosts_are_accepted() {
+        for host in ["127.0.0.1", "127.0.0.2", "::1", "localhost", "LOCALHOST"] {
+            assert!(is_loopback_host(host), "{host} should be loopback");
+        }
+    }
+
+    #[test]
+    fn remote_hosts_are_rejected() {
+        for host in [
+            "192.0.2.1",
+            "2001:db8::1",
+            "example.com",
+            "0.0.0.0",
+            "::",
+            "",
+        ] {
+            assert!(!is_loopback_host(host), "{host} should not be loopback");
+        }
+    }
+
+    #[tokio::test]
+    async fn connect_endpoint_refuses_non_loopback_before_connecting() {
+        let endpoint = Endpoint::Tcp {
+            host: "192.0.2.1".into(),
+            port: 1,
+        };
+        match CoreConnection::connect_endpoint(&endpoint).await {
+            Ok(_) => panic!("connected to a non-loopback endpoint"),
+            Err(err) => {
+                assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+                assert!(err.to_string().contains("loopback"));
+            }
+        }
     }
 }
