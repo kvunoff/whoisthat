@@ -2,124 +2,31 @@ package mainproxy
 
 import (
 	"encoding/json"
-	"os"
-	"path/filepath"
 	"testing"
-	"whoisthat-core/structs"
 )
 
-// withSysfsBase substitutes the package-level sysfs root with a caller-provided
-// tempdir and restores it on test completion. Returns the substitutes root so
-// the caller can populate it.
-func withSysfsBase(t *testing.T) string {
-	t.Helper()
-	dir := t.TempDir()
-	prev := sysfsBase
-	sysfsBase = dir
-	t.Cleanup(func() { sysfsBase = prev })
-	return dir
-}
-
-// TestReadSysfsInt_Valid parses a decimal integer followed by a trailing
-// newline (the canonical sysfs byte-counter format).
-func TestReadSysfsInt_Valid(t *testing.T) {
-	dir := withSysfsBase(t)
-	path := filepath.Join(dir, "rx_bytes")
-	if err := os.WriteFile(path, []byte("654321\n"), 0644); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-	got, err := readSysfsInt(path)
+// TestInjectStatsConfig_Policy verifies the stats switches are merged into an
+// existing policy section instead of replacing provider levels.
+func TestInjectStatsConfig_Policy(t *testing.T) {
+	base := `{"policy":{"system":{"statsOutboundUplink":false,"someLevel":1}},"inbounds":[]}`
+	out, err := injectStatsConfig([]byte(base), 0)
 	if err != nil {
-		t.Fatalf("readSysfsInt: %v", err)
+		t.Fatalf("injectStatsConfig: %v", err)
 	}
-	if got != 654321 {
-		t.Errorf("readSysfsInt = %d, want 654321", got)
+	var cfg map[string]interface{}
+	if err := json.Unmarshal(out, &cfg); err != nil {
+		t.Fatalf("unmarshal: %v", err)
 	}
-}
-
-// TestReadSysfsInt_MissingFile surfaces the ENOENT path — main endpoint of
-// readIfaceBytes when the TUN device is not currently up.
-func TestReadSysfsInt_MissingFile(t *testing.T) {
-	dir := withSysfsBase(t)
-	_, err := readSysfsInt(filepath.Join(dir, "nope"))
-	if err == nil {
-		t.Fatal("readSysfsInt: expected error on missing file, got nil")
+	policy := cfg["policy"].(map[string]interface{})
+	system := policy["system"].(map[string]interface{})
+	if system["statsOutboundUplink"] != true || system["statsOutboundDownlink"] != true {
+		t.Errorf("stats switches = %+v, want both true", system)
 	}
-}
-
-// TestReadIfaceBytes_ReadsBothCounters creates a mock sysfs tree for one
-// interface and verifies rx/tx are both pulled and mapped correctly.
-func TestReadIfaceBytes_ReadsBothCounters(t *testing.T) {
-	dir := withSysfsBase(t)
-	statsDir := filepath.Join(dir, "wt0", "statistics")
-	if err := os.MkdirAll(statsDir, 0755); err != nil {
-		t.Fatalf("mkdir: %v", err)
+	if system["someLevel"] != float64(1) {
+		t.Errorf("provider policy lost: %+v", system)
 	}
-	if err := os.WriteFile(filepath.Join(statsDir, "rx_bytes"), []byte("1000\n"), 0644); err != nil {
-		t.Fatalf("write rx: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(statsDir, "tx_bytes"), []byte("2000\n"), 0644); err != nil {
-		t.Fatalf("write tx: %v", err)
-	}
-	rx, tx, err := readIfaceBytes("wt0")
-	if err != nil {
-		t.Fatalf("readIfaceBytes: %v", err)
-	}
-	if rx != 1000 {
-		t.Errorf("rx = %d, want 1000", rx)
-	}
-	if tx != 2000 {
-		t.Errorf("tx = %d, want 2000", tx)
-	}
-}
-
-// TestReadIfaceBytes_NoDevice verifies that a missing device directory returns
-// an error (rx_bytes file not found). This is the TUN-down case.
-func TestReadIfaceBytes_NoDevice(t *testing.T) {
-	withSysfsBase(t) // empty tempdir → no interfaces
-	_, _, err := readIfaceBytes("nonexistent0")
-	if err == nil {
-		t.Fatal("readIfaceBytes: expected error for missing device, got nil")
-	}
-}
-
-// TestReadIfaceBytes_PartialDevice: rx_bytes present but tx_bytes missing
-// must surface the error rather than silently returning tx=0.
-func TestReadIfaceBytes_PartialDevice(t *testing.T) {
-	dir := withSysfsBase(t)
-	statsDir := filepath.Join(dir, "wt1", "statistics")
-	if err := os.MkdirAll(statsDir, 0755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(statsDir, "rx_bytes"), []byte("1000\n"), 0644); err != nil {
-		t.Fatalf("write rx: %v", err)
-	}
-	// tx_bytes intentionally absent
-	_, _, err := readIfaceBytes("wt1")
-	if err == nil {
-		t.Fatal("readIfaceBytes: expected error when tx_bytes missing, got nil")
-	}
-}
-
-// TestCollectStats_CancelStopsLoop verifies that closing the cancel channel
-// terminates the collector goroutine promptly. Uses apiPort=0 + tunName=""
-// so neither ss nor sysfs actually runs (querySsStats errors out → continue,
-// which is fine — we only care about the cancel arm).
-func TestCollectStats_CancelStopsLoop(t *testing.T) {
-	p := &ProxyManager{}
-	cancel := make(chan struct{})
-	out := make(chan structs.TrafficStats, 1)
-	done := make(chan struct{})
-	go func() {
-		p.collectStats(0, 0, []string{"proxy"}, "", cancel, out)
-		close(done)
-	}()
-	close(cancel)
-	select {
-	case <-done:
-		// good — goroutine returned
-	case <-chan struct{}(nil):
-		t.Fatal("collectStats did not exit after cancel")
+	if _, has := cfg["stats"]; !has {
+		t.Error("stats section missing")
 	}
 }
 

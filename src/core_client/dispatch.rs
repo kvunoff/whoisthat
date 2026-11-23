@@ -33,7 +33,7 @@ pub enum CoreEvent {
         content: String,
     },
     Error(String),
-    TrafficStats(TrafficStats),
+    TrafficSample(TrafficSample),
     RoutingUpdated {
         group_id: i32,
         config: RoutingConfig,
@@ -266,7 +266,7 @@ pub(crate) fn dispatch(msg: TcpMessage) -> CoreEvent {
             content: d.content,
         }),
         "error" => try_dispatch!(msg, "error", Warning, |d| CoreEvent::Error(d.content)),
-        "traffic-stats" => try_dispatch!(msg, "traffic-stats", TrafficStats, TrafficStats),
+        "traffic-sample" => try_dispatch!(msg, "traffic-sample", TrafficSample, TrafficSample),
         "routing-updated" => try_dispatch!(msg, "routing-updated", RoutingUpdated, |d| {
             CoreEvent::RoutingUpdated {
                 group_id: d.group_id,
@@ -601,18 +601,21 @@ mod tests {
     }
 
     #[test]
-    fn test_dispatch_traffic_stats() {
+    fn test_dispatch_traffic_sample() {
         let event = dispatch(make_msg(
-            "traffic-stats",
+            "traffic-sample",
             json!({
-                "proxy_up": 100, "proxy_down": 200, "direct_up": 0, "direct_down": 0
+                "session_id": "1-1000", "proxy_up": 100, "proxy_down": 200,
+                "proxy_rate_up": 10, "proxy_rate_down": 20
             }),
         ));
-        if let CoreEvent::TrafficStats(s) = event {
+        if let CoreEvent::TrafficSample(s) = event {
+            assert_eq!(s.session_id, "1-1000");
             assert_eq!(s.proxy_up, 100);
             assert_eq!(s.proxy_down, 200);
+            assert_eq!(s.proxy_rate_down, 20);
         } else {
-            panic!("expected TrafficStats");
+            panic!("expected TrafficSample");
         }
     }
 

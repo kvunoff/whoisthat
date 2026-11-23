@@ -7,7 +7,7 @@ use ratatui::symbols::Marker;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Axis, Block, BorderType, Borders, Chart, Dataset, GraphType, Paragraph};
 
-use crate::core_client::protocol::TrafficStats;
+use crate::core_client::protocol::TrafficSample;
 use crate::ui::app::format_bytes;
 use crate::ui::theme::*;
 
@@ -26,6 +26,8 @@ pub type ChartPoints = Vec<(f64, f64)>;
 #[derive(Debug, Clone)]
 pub struct TrafficHistory {
     pub history: VecDeque<TrafficPoint>,
+    /// Core-owned cumulative totals for the current session. Clients never
+    /// accumulate deltas: a dropped frame cannot drift them.
     pub total_proxy_down: i64,
     pub total_proxy_up: i64,
     pub total_direct_down: i64,
@@ -33,6 +35,8 @@ pub struct TrafficHistory {
     pub peak_down: f64,
     pub peak_up: f64,
     pub max_history: usize,
+    /// Resets the view when the core starts a new connection generation.
+    pub session_id: String,
 }
 
 impl Default for TrafficHistory {
@@ -61,26 +65,30 @@ impl TrafficHistory {
             peak_down: 0.0,
             peak_up: 0.0,
             max_history: DEFAULT_HISTORY_LEN,
+            session_id: String::new(),
         }
     }
 
-    pub fn push(&mut self, stats: &TrafficStats) {
-        let down = stats.proxy_down.max(0) as f64;
-        let up = stats.proxy_up.max(0) as f64;
-        let dir_down = stats.direct_down.max(0) as f64;
-        let dir_up = stats.direct_up.max(0) as f64;
-
-        if down > self.peak_down {
-            self.peak_down = down;
-        }
-        if up > self.peak_up {
-            self.peak_up = up;
+    /// Apply a core snapshot. Rates feed the chart; cumulative totals are read
+    /// directly from the snapshot, so a dropped broadcast cannot drift them.
+    pub fn push(&mut self, stats: &TrafficSample) {
+        if !stats.session_id.is_empty() && stats.session_id != self.session_id {
+            self.reset(&stats.session_id);
         }
 
-        self.total_proxy_down += stats.proxy_down.max(0);
-        self.total_proxy_up += stats.proxy_up.max(0);
-        self.total_direct_down += stats.direct_down.max(0);
-        self.total_direct_up += stats.direct_up.max(0);
+        let down = stats.proxy_rate_down.max(0) as f64;
+        let up = stats.proxy_rate_up.max(0) as f64;
+        // Both freedom outbounds and kernel-level bypass count as direct.
+        let dir_down = (stats.direct_rate_down + stats.bypass_rate_down).max(0) as f64;
+        let dir_up = (stats.direct_rate_up + stats.bypass_rate_up).max(0) as f64;
+
+        self.peak_down = self.peak_down.max(down);
+        self.peak_up = self.peak_up.max(up);
+
+        self.total_proxy_down = stats.proxy_down.max(0);
+        self.total_proxy_up = stats.proxy_up.max(0);
+        self.total_direct_down = (stats.direct_down + stats.bypass_down).max(0);
+        self.total_direct_up = (stats.direct_up + stats.bypass_up).max(0);
 
         if self.history.len() >= self.max_history {
             self.history.pop_front();
@@ -91,6 +99,25 @@ impl TrafficHistory {
             direct_down: dir_down,
             direct_up: dir_up,
         });
+    }
+
+    fn reset(&mut self, session_id: &str) {
+        self.history.clear();
+        for _ in 0..self.max_history {
+            self.history.push_back(TrafficPoint {
+                proxy_down: 0.0,
+                proxy_up: 0.0,
+                direct_down: 0.0,
+                direct_up: 0.0,
+            });
+        }
+        self.total_proxy_down = 0;
+        self.total_proxy_up = 0;
+        self.total_direct_down = 0;
+        self.total_direct_up = 0;
+        self.peak_down = 0.0;
+        self.peak_up = 0.0;
+        self.session_id = session_id.to_string();
     }
 
     pub fn push_zero(&mut self) {
@@ -514,6 +541,7 @@ mod tests {
         assert_eq!(th.total_proxy_up, 0);
         assert_eq!(th.peak_down, 0.0);
         assert_eq!(th.peak_up, 0.0);
+        assert_eq!(th.session_id, "");
 
         let (down, up) = th.chart_points();
         assert_eq!(down.len(), DEFAULT_HISTORY_LEN);
@@ -521,22 +549,27 @@ mod tests {
         assert_eq!(down[0].1, 0.0);
     }
 
+    fn sample(session: &str, proxy_down: i64, proxy_up: i64) -> TrafficSample {
+        TrafficSample {
+            session_id: session.to_string(),
+            proxy_down,
+            proxy_up,
+            proxy_rate_down: proxy_down,
+            proxy_rate_up: proxy_up,
+            ..TrafficSample::default()
+        }
+    }
+
     #[test]
     fn test_traffic_history_push() {
         let mut th = TrafficHistory::new();
-        let stats = TrafficStats {
-            proxy_down: 1024 * 1024,
-            proxy_up: 512 * 1024,
-            direct_down: 100,
-            direct_up: 50,
-        };
-        th.push(&stats);
+        th.push(&sample("1-1000", 1024 * 1024, 512 * 1024));
 
         assert_eq!(th.history.len(), DEFAULT_HISTORY_LEN);
         assert_eq!(th.total_proxy_down, 1024 * 1024);
         assert_eq!(th.total_proxy_up, 512 * 1024);
-        assert_eq!(th.total_direct_down, 100);
-        assert_eq!(th.total_direct_up, 50);
+        assert_eq!(th.total_direct_down, 0);
+        assert_eq!(th.total_direct_up, 0);
         assert_eq!(th.peak_down, (1024 * 1024) as f64);
         assert_eq!(th.peak_up, (512 * 1024) as f64);
 
@@ -546,16 +579,40 @@ mod tests {
     }
 
     #[test]
+    fn test_traffic_history_totals_come_from_snapshot() {
+        let mut th = TrafficHistory::new();
+        th.push(&sample("1-1000", 1000, 500));
+        // A later snapshot carries the session total, not a delta: totals must
+        // not grow by summing frames.
+        th.push(&TrafficSample {
+            session_id: "1-1000".to_string(),
+            proxy_down: 4000,
+            proxy_up: 900,
+            proxy_rate_down: 3000,
+            proxy_rate_up: 400,
+            ..TrafficSample::default()
+        });
+        assert_eq!(th.total_proxy_down, 4000);
+        assert_eq!(th.total_proxy_up, 900);
+    }
+
+    #[test]
+    fn test_traffic_history_resets_on_new_session() {
+        let mut th = TrafficHistory::new();
+        th.push(&sample("1-1000", 1000, 500));
+        th.push(&sample("2-2000", 10, 5));
+        assert_eq!(th.session_id, "2-2000");
+        assert_eq!(th.total_proxy_down, 10);
+        assert_eq!(th.peak_down, 10.0);
+        assert_eq!(th.history.len(), DEFAULT_HISTORY_LEN);
+    }
+
+    #[test]
     fn test_max_y_bound() {
         let mut th = TrafficHistory::new();
         assert_eq!(th.max_y_bound(), 10.0 * 1024.0);
 
-        th.push(&TrafficStats {
-            proxy_down: 100 * 1024,
-            proxy_up: 0,
-            direct_down: 0,
-            direct_up: 0,
-        });
+        th.push(&sample("1-1000", 100 * 1024, 0));
         assert!((th.max_y_bound() - 115.0 * 1024.0).abs() < 0.01);
     }
 }

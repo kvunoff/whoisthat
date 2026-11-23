@@ -66,7 +66,7 @@ pub struct App {
 
     pub settings_state: SettingsState,
     pub logs_state: LogsState,
-    pub traffic_stats: TrafficStats,
+    pub traffic_stats: TrafficSample,
     pub traffic_history: TrafficHistory,
     pub routing: RoutingConfig,
     pub profile_details: HashMap<(i32, i32), ProfileDetails>,
@@ -140,7 +140,7 @@ impl App {
             recovery_prompted: false,
             settings_state: SettingsState::new(),
             logs_state: LogsState::new(),
-            traffic_stats: TrafficStats::default(),
+            traffic_stats: TrafficSample::default(),
             traffic_history: TrafficHistory::new(),
             routing: RoutingConfig::default(),
             profile_details: HashMap::new(),

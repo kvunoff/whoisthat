@@ -9,6 +9,7 @@ import (
 	appconfig "whoisthat-core/lib/AppConfig"
 	"whoisthat-core/lib/logger"
 	"whoisthat-core/lib/proxy/xray"
+	"whoisthat-core/lib/traffic"
 	"whoisthat-core/structs"
 )
 
@@ -406,15 +407,10 @@ func (p *ProxyManager) reloadCoreLocked(tunName string) error {
 
 	p.core = newCore
 
-	// Restart stats collector with the new core instance
-	if p.statsCancel != nil {
-		close(p.statsCancel)
-		p.statsCancel = nil
-	}
-	p.statsCancel = make(chan struct{})
+	// Restart the traffic sampler for the new core generation.
 	p.statsApiPort = apiPort
 	p.statsTags = statsTags
-	go p.collectStats(app_config.SocksPort, p.statsApiPort, statsTags, tunName, p.statsCancel, p.StatsChanged)
+	p.startMeter(traffic.NopSource{})
 
 	p.startExitWatcher()
 

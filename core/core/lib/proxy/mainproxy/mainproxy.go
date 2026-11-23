@@ -3,6 +3,7 @@ package mainproxy
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"strings"
 	"sync"
@@ -14,6 +15,7 @@ import (
 	portpool "whoisthat-core/lib/PortPool"
 	"whoisthat-core/lib/logger"
 	"whoisthat-core/lib/proxy/xray"
+	"whoisthat-core/lib/traffic"
 	"whoisthat-core/structs"
 	"whoisthat-core/utils"
 )
@@ -43,11 +45,10 @@ type ProxyManager struct {
 	mu                sync.Mutex
 	core              coreProc
 	StatusChanged     chan structs.ProxyStatus
-	StatsChanged      chan structs.TrafficStats
+	StatsChanged      chan structs.TrafficSample
 	testChannel       chan TestRequest
 	TestResultChannel chan TestResult
 	portPool          *portpool.PortPool
-	statsCancel       chan struct{}
 	statsApiPort      int
 	DB                *db.DB
 	proxyIPs          []string
@@ -56,6 +57,13 @@ type ProxyManager struct {
 	statsTags         []string
 	tunEnabled        bool
 	tunName           string
+
+	// Traffic accounting. The meter owns sampling; trafficSnapshot is a
+	// separate atomic copy for synchronous application-state reads, so the
+	// broadcast channel is never consumed by a reader.
+	trafficSnapshot atomic.Value
+	trafficSeq      uint64
+	meter           *traffic.Meter
 
 	// Per-group batch progress tracker. SeedTestProgress initializes a
 	// group's (tested, total) tuple; IncrementTestProgress atomically
@@ -156,7 +164,8 @@ func (p *ProxyManager) Init() {
 		total  int
 	}{}
 	p.StatusChanged = make(chan structs.ProxyStatus, 8)
-	p.StatsChanged = make(chan structs.TrafficStats, 8)
+	p.StatsChanged = make(chan structs.TrafficSample, 1)
+	p.trafficSnapshot.Store(structs.TrafficSample{})
 	p.testConfig = structs.TestConfig{
 		Concurrency:    16,
 		TimeoutSeconds: 5,
@@ -176,6 +185,44 @@ func (p *ProxyManager) Init() {
 	p.core = newCore()
 	test_port_range := appconfig.GetConfig().TestPortRange
 	p.portPool = portpool.CreatePortPool(test_port_range.Start, test_port_range.End)
+
+	// In test mode the core has no Xray process, so a deterministic source
+	// keeps the traffic contract observable end-to-end.
+	if utils.TestMode() {
+		p.startMeter(&traffic.SyntheticSource{})
+	}
+}
+
+// GetTraffic returns the latest snapshot for application-state. It never reads
+// the broadcast channel: doing so would swallow a frame and race the meter.
+func (p *ProxyManager) GetTraffic() structs.TrafficSample {
+	if v := p.trafficSnapshot.Load(); v != nil {
+		return v.(structs.TrafficSample)
+	}
+	return structs.TrafficSample{}
+}
+
+func (p *ProxyManager) setTraffic(s structs.TrafficSample) {
+	p.trafficSnapshot.Store(s)
+}
+
+// startMeter swaps the sampler for a new connection generation. Caller holds
+// p.mu. The source is replaced with the real Xray/firewall sources in a later
+// change; NopSource keeps the frame stream alive meanwhile.
+func (p *ProxyManager) startMeter(src traffic.Source) {
+	p.stopMeter()
+	p.trafficSeq++
+	session := fmt.Sprintf("%d-%d", p.trafficSeq, time.Now().UnixMilli())
+	p.meter = traffic.New(src, session, p.StatsChanged, p.setTraffic)
+	p.meter.Start()
+}
+
+func (p *ProxyManager) stopMeter() {
+	if p.meter == nil {
+		return
+	}
+	p.meter.Stop()
+	p.meter = nil
 }
 
 // retireExitWatcher signals the active exit-watcher goroutine to stop.
@@ -243,6 +290,7 @@ func (p *ProxyManager) watchExit(done chan struct{}, gen uint64) {
 				Connection: "disconnected",
 				Reason:     reason,
 			}
+			p.stopMeter()
 			status := p.status
 			p.mu.Unlock()
 			// Non-blocking send: StatusChanged is buffered (8) and the
@@ -438,24 +486,13 @@ func (p *ProxyManager) Connect(profile structs.Profile, tunName string, tunEnabl
 	logger.Infof("connected to %s (%s://%s)",
 		profile.Name, profile.Protocol, profile.Address)
 
-	// Stop the previous stats goroutine and release the apiPort it was using
-	// (defends against leaks when Connect is called without an intervening
-	// Stop, e.g. switching profiles).
-	if p.statsCancel != nil {
-		close(p.statsCancel)
-		p.statsCancel = nil
-	}
+	// Release the port reserved by the previous generation and start a new
+	// sampler. The real Xray/firewall sources are wired in the next change.
 	if p.statsApiPort != 0 && p.portPool != nil {
 		p.portPool.ReleasePort(p.statsApiPort)
-		p.statsApiPort = 0
 	}
-
-	// Start stats collector. For xray use the gRPC StatsService on apiPort;
-	// for hysteria2 (and the apiPort=0 fallback) use ss -tie on the SOCKS port.
-	// Direct traffic is read from sysfs for the TUN device when one is configured.
-	p.statsCancel = make(chan struct{})
 	p.statsApiPort = apiPort
-	go p.collectStats(app_config.SocksPort, p.statsApiPort, statsTags, tunName, p.statsCancel, p.StatsChanged)
+	p.startMeter(traffic.NopSource{})
 
 	p.status = structs.ProxyStatus{
 		Connection:  "connected",
@@ -496,12 +533,10 @@ func (p *ProxyManager) Stop() {
 	logger.Info("disconnecting")
 	p.tunEnabled = false
 	p.tunActive.Store(false)
-	// Retire the Exited-watcher goroutine.
+	// Retire the Exited-watcher goroutine and the traffic sampler. The meter
+	// publishes one final frame with connected=false.
 	p.retireExitWatcher()
-	if p.statsCancel != nil {
-		close(p.statsCancel)
-		p.statsCancel = nil
-	}
+	p.stopMeter()
 	if p.statsApiPort != 0 {
 		if p.portPool != nil {
 			p.portPool.ReleasePort(p.statsApiPort)
@@ -514,11 +549,6 @@ func (p *ProxyManager) Stop() {
 	}
 	select {
 	case p.StatusChanged <- p.status:
-	default:
-	}
-	// Send zero stats on disconnect
-	select {
-	case p.StatsChanged <- structs.TrafficStats{}:
 	default:
 	}
 }

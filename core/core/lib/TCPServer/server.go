@@ -109,7 +109,7 @@ func (s *Server) Start() {
 	go s.handleTunModeStatusChange()
 	go s.handleStatusChange()
 	go s.handleTestResults()
-	go s.handleStatsChange()
+	go s.handleTrafficSamples()
 	s.handleXrayStatus()
 
 	// If the proxy subprocess dies on its own, the TUN device must not be left

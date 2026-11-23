@@ -477,7 +477,7 @@ mod tests {
             .await
             .unwrap();
         write
-            .send("traffic-stats", &serde_json::json!({}))
+            .send("traffic-sample", &serde_json::json!({}))
             .await
             .unwrap();
         write

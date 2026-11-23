@@ -106,14 +106,20 @@ impl App {
         };
 
         let ts = &self.traffic_stats;
+        // Rates come straight from the core snapshot; direct includes both the
+        // freedom outbounds and kernel-level bypass.
+        let proxy_up = ts.proxy_rate_up.max(0);
+        let proxy_down = ts.proxy_rate_down.max(0);
+        let direct_up = (ts.direct_rate_up + ts.bypass_rate_up).max(0);
+        let direct_down = (ts.direct_rate_down + ts.bypass_rate_down).max(0);
 
         if is_tiny {
             // Height 1: 1 line without block border
             let mut spans = vec![
                 Span::styled(format!("{} {} ", icon, status_text), icon_style),
                 Span::styled("│ ", s_faint()),
-                Span::styled(format!("↑{}", format_bytes(ts.proxy_up)), s_success()),
-                Span::styled(format!(" ↓{} ", format_bytes(ts.proxy_down)), s_success()),
+                Span::styled(format!("↑{}", format_bytes(proxy_up)), s_success()),
+                Span::styled(format!(" ↓{} ", format_bytes(proxy_down)), s_success()),
             ];
             if !is_compact && self.show_ip && !self.public_ip.is_empty() {
                 spans.push(Span::styled("│ ", s_faint()));
@@ -145,8 +151,8 @@ impl App {
                 Span::styled("│ ", s_faint()),
                 Span::styled(format!("{} {} ", icon, status_text), icon_style),
                 Span::styled("│ ", s_faint()),
-                Span::styled(format!("↑{}", format_bytes(ts.proxy_up)), s_success()),
-                Span::styled(format!(" ↓{}", format_bytes(ts.proxy_down)), s_success()),
+                Span::styled(format!("↑{}", format_bytes(proxy_up)), s_success()),
+                Span::styled(format!(" ↓{}", format_bytes(proxy_down)), s_success()),
             ];
             if !is_compact && self.show_ip && !self.public_ip.is_empty() {
                 spans.push(Span::styled(" │ ", s_faint()));
@@ -185,11 +191,11 @@ impl App {
 
         let stats_line = Line::from(vec![
             Span::styled(" P:", s_faint()),
-            Span::styled(format!("↑{}", format_bytes(ts.proxy_up)), s_success()),
-            Span::styled(format!(" ↓{}", format_bytes(ts.proxy_down)), s_success()),
+            Span::styled(format!("↑{}", format_bytes(proxy_up)), s_success()),
+            Span::styled(format!(" ↓{}", format_bytes(proxy_down)), s_success()),
             Span::styled("  D:", s_faint()),
-            Span::styled(format!("↑{}", format_bytes(ts.direct_up)), s_dim()),
-            Span::styled(format!(" ↓{}", format_bytes(ts.direct_down)), s_dim()),
+            Span::styled(format!("↑{}", format_bytes(direct_up)), s_dim()),
+            Span::styled(format!(" ↓{}", format_bytes(direct_down)), s_dim()),
         ]);
         f.render_widget(Paragraph::new(stats_line), rows[1]);
     }

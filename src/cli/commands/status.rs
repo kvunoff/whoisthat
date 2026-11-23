@@ -35,6 +35,17 @@ pub struct CliStatus {
     pub tx_speed_human: String,
 }
 
+/// Speeds are core-derived rates, clamped before they reach the stable JSON
+/// contract. Bypass traffic is part of the physical-side total.
+fn speeds_from_traffic(traffic: Option<&TrafficSample>) -> (i64, i64) {
+    let Some(t) = traffic else {
+        return (0, 0);
+    };
+    let rx = (t.proxy_rate_down + t.direct_rate_down + t.bypass_rate_down).max(0);
+    let tx = (t.proxy_rate_up + t.direct_rate_up + t.bypass_rate_up).max(0);
+    (rx, tx)
+}
+
 impl CliStatus {
     pub fn offline() -> Self {
         Self {
@@ -107,6 +118,7 @@ impl CliStatus {
             }
         });
 
+        let (rx, tx) = speeds_from_traffic(state.traffic.as_ref());
         Self {
             core_running: true,
             connected: is_conn,
@@ -119,16 +131,15 @@ impl CliStatus {
             profile_name,
             protocol,
             xray_version,
-            rx_speed_bytes: 0,
-            tx_speed_bytes: 0,
-            rx_speed_human: "0 B/s".to_string(),
-            tx_speed_human: "0 B/s".to_string(),
+            rx_speed_bytes: rx,
+            tx_speed_bytes: tx,
+            rx_speed_human: format_speed_bytes(rx),
+            tx_speed_human: format_speed_bytes(tx),
         }
     }
 
-    pub fn update_traffic(&mut self, stats: &TrafficStats) {
-        let rx = stats.proxy_down + stats.direct_down;
-        let tx = stats.proxy_up + stats.direct_up;
+    pub fn update_traffic(&mut self, stats: &TrafficSample) {
+        let (rx, tx) = speeds_from_traffic(Some(stats));
         self.rx_speed_bytes = rx;
         self.tx_speed_bytes = tx;
         self.rx_speed_human = format_speed_bytes(rx);
@@ -224,8 +235,8 @@ pub async fn run(g: &GlobalArgs, short: bool, watch: bool) -> Result<(), CliErro
         // Give the 1 Hz stats collector a chance to produce a first sample.
         let _ = tokio::time::timeout(Duration::from_millis(1100), async {
             while let Ok(msg) = read_half.recv().await {
-                if msg.msg == "traffic-stats"
-                    && let Ok(stats) = serde_json::from_value::<TrafficStats>(msg.data)
+                if msg.msg == "traffic-sample"
+                    && let Ok(stats) = serde_json::from_value::<TrafficSample>(msg.data)
                 {
                     current.update_traffic(&stats);
                     break;
@@ -243,8 +254,8 @@ pub async fn run(g: &GlobalArgs, short: bool, watch: bool) -> Result<(), CliErro
 
     while let Ok(msg) = read_half.recv().await {
         match msg.msg.as_str() {
-            "traffic-stats" => {
-                if let Ok(stats) = serde_json::from_value::<TrafficStats>(msg.data) {
+            "traffic-sample" => {
+                if let Ok(stats) = serde_json::from_value::<TrafficSample>(msg.data) {
                     current.update_traffic(&stats);
                     print_status(&current, short, g.json)?;
                 }
@@ -287,13 +298,7 @@ pub async fn run(g: &GlobalArgs, short: bool, watch: bool) -> Result<(), CliErro
             }
             "application-state" => {
                 if let Ok(state) = serde_json::from_value::<ApplicationState>(msg.data) {
-                    let rx = current.rx_speed_bytes;
-                    let tx = current.tx_speed_bytes;
                     current = CliStatus::from_app_state(&state);
-                    current.rx_speed_bytes = rx;
-                    current.tx_speed_bytes = tx;
-                    current.rx_speed_human = format_speed_bytes(rx);
-                    current.tx_speed_human = format_speed_bytes(tx);
                     print_status(&current, short, g.json)?;
                 }
             }

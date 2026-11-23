@@ -49,11 +49,18 @@ pub(crate) async fn handle_core_event(
             let config_state = s.config_status.state.clone();
             let db_state = s.db_status.state.clone();
             let db_day = s.db_status.snapshot_at.clone();
+            let traffic = s.traffic.clone();
             if !s.core_version.is_empty() && cfg.core_version != s.core_version {
                 cfg.core_version = s.core_version.clone();
                 config::save_config(cfg);
             }
             app.apply_state(*s);
+            // Cold start: the core's snapshot already carries current rates,
+            // so the header and chart do not wait for the next 1 Hz frame.
+            if let Some(t) = traffic {
+                app.traffic_history.push(&t);
+                app.traffic_stats = t;
+            }
             // Do not push recovered/daemon values into the offline cache while
             // the core's own settings file is damaged: that would make the
             // loss permanent. The user restores first, then the cache follows.
@@ -232,7 +239,7 @@ pub(crate) async fn handle_core_event(
             app.msg(format!("Error: {}", e));
         }
 
-        CoreEvent::TrafficStats(ts) => {
+        CoreEvent::TrafficSample(ts) => {
             app.traffic_history.push(&ts);
             app.traffic_stats = ts;
         }

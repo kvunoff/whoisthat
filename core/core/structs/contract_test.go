@@ -152,6 +152,25 @@ func ipcContractFixtures() map[string]any {
 		ConnectedAt: 1712345678,
 		Reason:      "none",
 	}
+	trafficSample := TrafficSample{
+		SessionID:      "7-1712345678000",
+		TimestampMs:    1712345678000,
+		IntervalMs:     1000,
+		Connected:      true,
+		Source:         "xray",
+		ProxyUp:        12000,
+		ProxyDown:      48000,
+		DirectUp:       3000,
+		DirectDown:     9000,
+		BypassUp:       500,
+		BypassDown:     1500,
+		ProxyRateUp:    1000,
+		ProxyRateDown:  4000,
+		DirectRateUp:   250,
+		DirectRateDown: 750,
+		BypassRateUp:   40,
+		BypassRateDown: 125,
+	}
 	applicationState := ApplicationState{
 		Groups: []GroupWithProfiles{{
 			Group:           group,
@@ -178,6 +197,7 @@ func ipcContractFixtures() map[string]any {
 		TestConfig:      testConfig,
 		ConfigStatus:    ConfigStatus{State: "ok", Error: "none"},
 		DBStatus:        DBStatus{State: "ok", Error: "none", SnapshotAt: "20261102"},
+		Traffic:         trafficSample,
 	}
 	routingConfig := RoutingConfig{
 		DomainStrategy: "IPIfNonMatch",
@@ -214,5 +234,6 @@ func ipcContractFixtures() map[string]any {
 		"set_test_config_request": SetTestConfigData{Config: testConfig},
 		"set_autoconnect_request": SetAutoconnectData{Enabled: true, GroupId: 3, ProfileId: 7, Mode: "tun"},
 		"test_config_updated":     TestConfigUpdated{Config: testConfig},
+		"traffic_sample":          trafficSample,
 	}
 }

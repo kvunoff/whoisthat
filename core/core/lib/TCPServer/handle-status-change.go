@@ -21,9 +21,9 @@ func (s *Server) handleTunModeStatusChange() {
 	}
 }
 
-func (s *Server) handleStatsChange() {
-	for stats := range s.proxy_manager.StatsChanged {
-		s.Broadcast(lib.CreateJsonNotification("traffic-stats", stats))
+func (s *Server) handleTrafficSamples() {
+	for sample := range s.proxy_manager.StatsChanged {
+		s.Broadcast(lib.CreateJsonNotification("traffic-sample", sample))
 	}
 }
 
