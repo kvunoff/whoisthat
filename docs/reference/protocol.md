@@ -24,7 +24,7 @@ This document provides a complete technical specification for the length-prefixe
 * **Payload**: UTF-8 encoded JSON object.
 * **Maximum Frame**: 64 MiB on both sides. Larger frames are rejected before allocation/parsing. The pre-auth TCP `hello` is additionally capped at 64 KiB.
 * **Request correlation (optional)**: a client may include an `"id"` string in a request; notifications produced while handling it carry the same `"id"`. The current TUI is event-driven and does not require it.
-* **Protocol Version**: `5` (shared by `core/core/lib/version/protocol.txt`). The TCP handshake rejects a mismatch; on UDS the TUI compares `application-state.protocol_version` and kills/respawns a mismatched core instead of reattaching.
+* **Protocol Version**: `6` (shared by `core/core/lib/version/protocol.txt`). The TCP handshake rejects a mismatch; on UDS the TUI compares `application-state.protocol_version` and kills/respawns a mismatched core instead of reattaching.
 
 ### Request correlation
 
@@ -60,10 +60,10 @@ persisted intent, `armed` is the actual kernel state.
 UDS clients are authenticated by filesystem permissions. The opt-in TCP transport additionally requires a token that the core writes to `$XDG_RUNTIME_DIR/whoisthat/ipc.token` (`0600`). The first frame on a TCP connection must be:
 
 ```json
-{"msg":"hello","data":{"token":"<64 hex chars>","protocol_version":5}}
+{"msg":"hello","data":{"token":"<64 hex chars>","protocol_version":6}}
 ```
 
-The core replies with `{"msg":"hello-ok","data":{"protocol_version":5}}` or `{"msg":"hello-error","data":{"error":"..."}}` and closes the connection. Commands sent before a successful handshake are never processed.
+The core replies with `{"msg":"hello-ok","data":{"protocol_version":6}}` or `{"msg":"hello-error","data":{"error":"..."}}` and closes the connection. Commands sent before a successful handshake are never processed.
 
 ---
 
@@ -151,7 +151,7 @@ IPC clients must subscribe to `traffic-sample` and read its rate fields; the
 `status --json` CLI contract is unchanged.
 :::
 
-## Migration from v0.19.4
+## Migration from v0.19.5
 
 A raw IPC client that consumed `traffic-stats` should:
 
@@ -166,7 +166,7 @@ A raw IPC client that consumed `traffic-stats` should:
 
 `whoisthat status --json` and `--watch --json` keep their existing fields.
 
-## Changed in v0.19.4
+## Changed in v0.19.5
 
 The core now owns cumulative traffic totals and rate computation, classifies
 proxy and direct traffic by outbound tags from the generated Xray config, and

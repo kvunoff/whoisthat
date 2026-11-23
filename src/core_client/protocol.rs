@@ -253,7 +253,7 @@ pub struct DbStatus {
 /// `core/core/lib/version/protocol.txt` (embedded by both sides); the test
 /// below fails if they drift.
 /// A running core is reused while versions match; on mismatch it is restarted.
-pub const EXPECTED_CORE_PROTOCOL_VERSION: u32 = 5;
+pub const EXPECTED_CORE_PROTOCOL_VERSION: u32 = 6;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct XrayStatusInfo {
