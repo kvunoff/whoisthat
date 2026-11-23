@@ -239,7 +239,9 @@ while IFS= read -r md; do
         missing "$rel: frontmatter block is missing"
         continue
     fi
-    if ! tail -n +2 "$md" | grep -qx -- '---'; then
+    # awk avoids the tail|grep -q pipeline: with pipefail, grep's early exit
+    # can SIGPIPE tail and turn a valid frontmatter into a false failure.
+    if ! awk 'NR > 1 && $0 == "---" { found = 1; exit } END { exit !found }' "$md"; then
         missing "$rel: frontmatter closing --- is missing"
         continue
     fi
