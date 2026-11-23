@@ -80,7 +80,76 @@ while [ "$SECONDS" -lt "$deadline" ]; do
       *) echo "ipc-e2e: core version mismatch, the CLI saw: $state" >&2; exit 1 ;;
     esac
 
-    echo "ipc-e2e: ok (core v$WANT_VERSION, protocol $WANT_PROTOCOL)"
+    # --- traffic contract -------------------------------------------------
+    # In TEST_MODE the core runs a deterministic synthetic meter, so the
+    # snapshot and the frame stream can be checked without Xray.
+    state=$("$TUI_BIN" status --socket "$SOCKET" --json 2>/dev/null) || {
+      echo "ipc-e2e: status --json failed" >&2
+      exit 1
+    }
+    case "$state" in
+      *'"rx_speed_bytes":'*) ;;
+      *) echo "ipc-e2e: status --json missing speed fields: $state" >&2; exit 1 ;;
+    esac
+
+    # The first snapshot of a fresh session has no elapsed interval, so its
+    # rates are legitimately zero. The stream must produce non-zero rates by
+    # the second frame.
+    watch=$(timeout 4 "$TUI_BIN" status --watch --socket "$SOCKET" --json 2>/dev/null || true)
+    frames=$(printf '%s\n' "$watch" | grep -c 'rx_speed_bytes' || true)
+    nonzero=$(printf '%s\n' "$watch" | grep -c '"rx_speed_bytes":[1-9]' || true)
+    if [ "$frames" -lt 2 ] || [ "$nonzero" -lt 1 ]; then
+      echo "ipc-e2e: expected a traffic-sample stream with rates, got $frames frames ($nonzero non-zero)" >&2
+      exit 1
+    fi
+
+    if command -v python3 >/dev/null 2>&1; then
+      python3 - "$SOCKET" <<'PY' || exit 1
+import json, socket, struct, sys, time
+
+sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+sock.settimeout(3)
+sock.connect(sys.argv[1])
+request = b'{"msg":"get-application-state","data":{}}'
+sock.sendall(struct.pack(">I", len(request)) + request)
+names = set()
+traffic = None
+samples = []
+deadline = time.time() + 3
+buf = b""
+while time.time() < deadline:
+    try:
+        chunk = sock.recv(65536)
+    except socket.timeout:
+        break
+    if not chunk:
+        break
+    buf += chunk
+    while len(buf) >= 4:
+        length = struct.unpack(">I", buf[:4])[0]
+        if len(buf) < 4 + length:
+            break
+        payload, buf = buf[4:4 + length], buf[4 + length:]
+        frame = json.loads(payload)
+        name = frame.get("msg")
+        names.add(name)
+        if name == "application-state":
+            traffic = frame.get("data", {}).get("traffic")
+        elif name == "traffic-sample":
+            samples.append(frame.get("data", {}))
+if "traffic-sample" not in names:
+    sys.exit("ipc-e2e: no traffic-sample frame on the raw socket")
+if "traffic-stats" in names:
+    sys.exit("ipc-e2e: removed traffic-stats frame is still broadcast")
+if not isinstance(traffic, dict) or not traffic.get("session_id"):
+    sys.exit("ipc-e2e: application-state has no traffic snapshot")
+if not all(s.get("session_id") for s in samples):
+    sys.exit("ipc-e2e: traffic-sample frames have no session_id")
+print("ipc-e2e: traffic snapshots ok")
+PY
+    fi
+
+    echo "ipc-e2e: ok (core v$WANT_VERSION, protocol $WANT_PROTOCOL, traffic frames)"
     exit 0
   fi
   sleep 0.2
