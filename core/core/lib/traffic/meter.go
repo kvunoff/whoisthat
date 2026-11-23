@@ -62,6 +62,9 @@ func (m *Meter) Stop() {
 	close(cancel)
 	<-done
 	m.emit(false)
+	if closer, ok := m.source.(interface{ Close() }); ok {
+		closer.Close()
+	}
 }
 
 func (m *Meter) loop(cancel <-chan struct{}, done chan<- struct{}) {
