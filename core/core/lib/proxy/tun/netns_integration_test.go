@@ -317,3 +317,28 @@ ip route add default via 203.0.113.1 dev phys0 metric 600
 		t.Fatalf("pin survived teardown:\n%s", out)
 	}
 }
+
+// TestNetnsBypassAccountingRules verifies under real root that the generated
+// connmark rules install byte counters which the accounting reader can find.
+// It complements the unit fixtures in counters_test.go with the real nft JSON.
+func TestNetnsBypassAccountingRules(t *testing.T) {
+	enterTestNetns(t)
+
+	if err := setupConntrackRulesNftables("wittest0", "lo"); err != nil {
+		t.Fatalf("setupConntrackRulesNftables: %v", err)
+	}
+	out, err := runCommandWithCapsOutput("nft", "-j", "list", "ruleset")
+	if err != nil {
+		t.Fatalf("nft -j list ruleset: %v", err)
+	}
+	up, down, found, err := parseNftCounters(out)
+	if err != nil {
+		t.Fatalf("parseNftCounters: %v", err)
+	}
+	if !found {
+		t.Fatal("no wt-bypass-* accounting rules were installed")
+	}
+	if up != 0 || down != 0 {
+		t.Errorf("fresh counters = %d/%d, want 0/0", up, down)
+	}
+}
