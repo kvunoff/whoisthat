@@ -36,7 +36,9 @@ token.
 1. The client connects to the UDS or TCP endpoint.
 2. On attach it sends `get-application-state`.
 3. The core replies with `application-state` and starts broadcasting live
-   events to that connection.
+   events to that connection. The reply carries the current `traffic` snapshot,
+   so a fresh client renders rates immediately instead of waiting for the next
+   tick.
 4. The TUI applies the snapshot, then keeps the read loop open for
    `CoreEvent`s.
 

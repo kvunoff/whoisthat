@@ -151,6 +151,27 @@ IPC clients must subscribe to `traffic-sample` and read its rate fields; the
 `status --json` CLI contract is unchanged.
 :::
 
+## Migration from v0.19.4
+
+A raw IPC client that consumed `traffic-stats` should:
+
+1. subscribe to `traffic-sample` instead;
+2. read `proxy_rate_up`/`proxy_rate_down`, `direct_rate_*` and `bypass_rate_*`
+   for current speeds instead of treating the four old fields as rates;
+3. read `proxy_up`/`proxy_down`, `direct_*` and `bypass_*` for session totals
+   instead of accumulating deltas locally;
+4. reset its view whenever `session_id` changes;
+5. treat `source: partial`, `unavailable` or `resync` as degraded rather than
+   zero traffic.
+
+`whoisthat status --json` and `--watch --json` keep their existing fields.
+
+## Changed in v0.19.4
+
+The core now owns cumulative traffic totals and rate computation, classifies
+proxy and direct traffic by outbound tags from the generated Xray config, and
+accounts bypass traffic from firewall counters.
+
 ---
 
 ## Core Data Structures
