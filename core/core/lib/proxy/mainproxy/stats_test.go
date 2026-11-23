@@ -19,8 +19,10 @@ func TestInjectStatsConfig_Policy(t *testing.T) {
 	}
 	policy := cfg["policy"].(map[string]interface{})
 	system := policy["system"].(map[string]interface{})
-	if system["statsOutboundUplink"] != true || system["statsOutboundDownlink"] != true {
-		t.Errorf("stats switches = %+v, want both true", system)
+	for _, key := range []string{"statsInboundUplink", "statsInboundDownlink", "statsOutboundUplink", "statsOutboundDownlink"} {
+		if system[key] != true {
+			t.Errorf("stats switch %s = %v, want true", key, system[key])
+		}
 	}
 	if system["someLevel"] != float64(1) {
 		t.Errorf("provider policy lost: %+v", system)

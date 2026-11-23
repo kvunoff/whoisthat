@@ -54,7 +54,6 @@ type ProxyManager struct {
 	proxyIPs          []string
 	profileIPs        []string
 	bootstrapHosts    map[string][]string
-	statsTags         []string
 	tunEnabled        bool
 	tunName           string
 
@@ -225,6 +224,17 @@ func (p *ProxyManager) stopMeter() {
 	p.meter = nil
 }
 
+// newTrafficSource classifies the exact config handed to Xray, so provider
+// JSON, balancers and chained outbounds all map to the right category.
+func (p *ProxyManager) newTrafficSource(apiPort int, configJSON []byte) traffic.Source {
+	categories, err := traffic.ClassifyOutbounds(configJSON)
+	if err != nil {
+		logger.Warnf("traffic: cannot classify outbounds, stats disabled: %v", err)
+		return traffic.NopSource{}
+	}
+	return traffic.NewXraySource(apiPort, categories)
+}
+
 // retireExitWatcher signals the active exit-watcher goroutine to stop.
 // Idempotent and nil-safe.
 func (p *ProxyManager) retireExitWatcher() {
@@ -364,7 +374,6 @@ func (p *ProxyManager) Connect(profile structs.Profile, tunName string, tunEnabl
 	var xray_config []byte
 	var profileIPs []string
 	var selection structs.RoutingSelection
-	statsTags := []string{"proxy"}
 
 	if profile.Managed && p.DB != nil {
 		// JSON subscription: the provider config is the routing baseline and
@@ -388,7 +397,7 @@ func (p *ProxyManager) Connect(profile structs.Profile, tunName string, tunEnabl
 		}
 		p.bootstrapHosts = hosts
 
-		cfg, tags, err := p.prepareManagedConfig(profile, app_config.SocksPort, app_config.HttpPort, tunArg, apiPort, geoDir, manual, hosts)
+		cfg, _, err := p.prepareManagedConfig(profile, app_config.SocksPort, app_config.HttpPort, tunArg, apiPort, geoDir, manual, hosts)
 		if err != nil {
 			if p.portPool != nil && apiPort != 0 {
 				p.portPool.ReleasePort(apiPort)
@@ -396,9 +405,6 @@ func (p *ProxyManager) Connect(profile structs.Profile, tunName string, tunEnabl
 			return err
 		}
 		xray_config = cfg
-		if len(tags) > 0 {
-			statsTags = tags
-		}
 		logger.Infof("routing: provider JSON (%d outbounds, %d manual rules, source=manual)",
 			countOutbounds(xray_config), len(manual.Rules))
 	} else {
@@ -444,7 +450,6 @@ func (p *ProxyManager) Connect(profile structs.Profile, tunName string, tunEnabl
 	}
 
 	p.profileIPs = profileIPs
-	p.statsTags = statsTags
 
 	// Pre-flight: validate the generated config before spawning xray so a bad
 	// profile/routing/DNS config surfaces as an actionable connect error instead
@@ -486,13 +491,14 @@ func (p *ProxyManager) Connect(profile structs.Profile, tunName string, tunEnabl
 	logger.Infof("connected to %s (%s://%s)",
 		profile.Name, profile.Protocol, profile.Address)
 
-	// Release the port reserved by the previous generation and start a new
-	// sampler. The real Xray/firewall sources are wired in the next change.
+	// Retire the previous sampler (closing its gRPC client) before releasing
+	// the StatsService port it was using.
+	p.stopMeter()
 	if p.statsApiPort != 0 && p.portPool != nil {
 		p.portPool.ReleasePort(p.statsApiPort)
 	}
 	p.statsApiPort = apiPort
-	p.startMeter(traffic.NopSource{})
+	p.startMeter(p.newTrafficSource(apiPort, xray_config))
 
 	p.status = structs.ProxyStatus{
 		Connection:  "connected",

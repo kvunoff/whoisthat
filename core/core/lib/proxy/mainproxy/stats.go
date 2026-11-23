@@ -23,6 +23,8 @@ func injectStatsConfig(configJSON []byte, apiPort int) ([]byte, error) {
 	if system == nil {
 		system = map[string]interface{}{}
 	}
+	system["statsInboundUplink"] = true
+	system["statsInboundDownlink"] = true
 	system["statsOutboundUplink"] = true
 	system["statsOutboundDownlink"] = true
 	policy["system"] = system
