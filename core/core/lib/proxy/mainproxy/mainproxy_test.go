@@ -9,6 +9,7 @@ import (
 
 	portpool "whoisthat-core/lib/PortPool"
 	"whoisthat-core/lib/proxy/xray"
+	"whoisthat-core/lib/traffic"
 	"whoisthat-core/structs"
 )
 
@@ -20,7 +21,7 @@ func newTestProxyManager() *ProxyManager {
 	return &ProxyManager{
 		status:        structs.ProxyStatus{Connection: "disconnected"},
 		StatusChanged: make(chan structs.ProxyStatus, 8),
-		StatsChanged:  make(chan structs.TrafficStats, 8),
+		StatsChanged:  make(chan structs.TrafficSample, 8),
 		core:          &xray.XrayCore{Exited: make(chan error)},
 	}
 }
@@ -235,6 +236,10 @@ func TestReloadRouting_Hysteria(t *testing.T) {
 func TestStop_ClearsStatusAndStats(t *testing.T) {
 	p := newTestProxyManager()
 	p.status = structs.ProxyStatus{Connection: "connected"}
+	p.trafficSnapshot.Store(structs.TrafficSample{})
+	p.meter = traffic.New(traffic.NopSource{}, "1-1", p.StatsChanged, p.setTraffic)
+	p.meter.Start()
+	<-p.StatsChanged // initial frame
 
 	p.Stop()
 
@@ -247,11 +252,14 @@ func TestStop_ClearsStatusAndStats(t *testing.T) {
 	}
 	select {
 	case st := <-p.StatsChanged:
-		if st != (structs.TrafficStats{}) {
-			t.Fatalf("StatsChanged = %+v, want zero stats", st)
+		if st.Connected {
+			t.Fatalf("final frame connected=true, want false: %+v", st)
+		}
+		if st.SessionID == "" {
+			t.Fatalf("final frame has no session id: %+v", st)
 		}
 	case <-time.After(time.Second):
-		t.Fatal("StatsChanged got no zero update")
+		t.Fatal("StatsChanged got no final frame")
 	}
 }
 

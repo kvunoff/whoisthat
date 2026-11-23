@@ -223,6 +223,10 @@ pub struct ApplicationState {
     /// Encrypted database state; drives the one-click profiles restore.
     #[serde(rename = "db_status", default)]
     pub db_status: DbStatus,
+    /// Core-authoritative traffic snapshot, so a freshly attached client can
+    /// render current rates without waiting for the next broadcast.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub traffic: Option<TrafficSample>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
@@ -539,8 +543,21 @@ pub struct IsRootAnswer {
     pub is_root: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct TrafficStats {
+/// Cumulative snapshot of the current connection session. Up/Down are
+/// cumulative wire bytes; the rate fields are bytes per second over
+/// `interval_ms`. The core owns both; clients only render them.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub struct TrafficSample {
+    #[serde(default)]
+    pub session_id: String,
+    #[serde(default)]
+    pub timestamp_ms: i64,
+    #[serde(default)]
+    pub interval_ms: i64,
+    #[serde(default)]
+    pub connected: bool,
+    #[serde(default)]
+    pub source: String,
     #[serde(default)]
     pub proxy_up: i64,
     #[serde(default)]
@@ -549,6 +566,22 @@ pub struct TrafficStats {
     pub direct_up: i64,
     #[serde(default)]
     pub direct_down: i64,
+    #[serde(default)]
+    pub bypass_up: i64,
+    #[serde(default)]
+    pub bypass_down: i64,
+    #[serde(default)]
+    pub proxy_rate_up: i64,
+    #[serde(default)]
+    pub proxy_rate_down: i64,
+    #[serde(default)]
+    pub direct_rate_up: i64,
+    #[serde(default)]
+    pub direct_rate_down: i64,
+    #[serde(default)]
+    pub bypass_rate_up: i64,
+    #[serde(default)]
+    pub bypass_rate_down: i64,
 }
 
 // routing types
@@ -788,5 +821,6 @@ mod tests {
         assert_ipc_roundtrip::<SetTestConfigData>(&fixtures, "set_test_config_request");
         assert_ipc_roundtrip::<SetAutoconnectData>(&fixtures, "set_autoconnect_request");
         assert_ipc_roundtrip::<TestConfigUpdated>(&fixtures, "test_config_updated");
+        assert_ipc_roundtrip::<TrafficSample>(&fixtures, "traffic_sample");
     }
 }

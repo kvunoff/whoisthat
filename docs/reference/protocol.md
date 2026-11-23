@@ -37,7 +37,7 @@ without an id.
 | :--- | :--- | :---: |
 | Direct command replies | `application-state`, `profile-details`, `group-added`, `group-updated`, `profiles-added`, `subscription-updated`, `routing-updated`, `kill-switch-updated`, `split-tunnel-updated`, `tun-name-updated`, `hwid-updated`, `test-config-updated`, `is-root-answer` | yes |
 | Request-scoped warnings | `warn` with keys such as `connect-failed`, `update-subscription-failed`, `test-group-failed` | yes |
-| Background/broadcast events | `status-changed`, `tun-status-changed`, `traffic-stats`, `test-progress` (after the first frame), `profile-updated` (test results), `xray-progress`, `warn died` | no |
+| Background/broadcast events | `status-changed`, `tun-status-changed`, `traffic-sample`, `test-progress` (after the first frame), `profile-updated` (test results), `xray-progress`, `warn died` | no |
 | Commands without a reply | `die`, `cancel-tests`, `set-log-level` | — |
 
 Some commands emit **two** id-carrying frames. Wait for the terminal one, not the first:
@@ -133,7 +133,7 @@ The core replies with `{"msg":"hello-ok","data":{"protocol_version":5}}` or `{"m
 | `tun-name-updated` | `{"tun_name": "string"}` | Fired when the TUN interface name changes. |
 | `is-root-answer` | `{"IsRoot": bool}` | Result of `CanTun()`: whether the daemon can create a TUN device (root **or** `CAP_NET_ADMIN`), not literally euid 0. |
 | `hwid-updated` | `{"enabled": bool, "hwid": "str", "user_agent": "str", ...}` | Fired when HWID parameters are changed or reset. |
-| `traffic-stats` | `{"proxy_up": int, "proxy_down": int, "direct_up": int, "direct_down": int}` | Broadcast every 1 second while a proxy connection is active. |
+| `traffic-sample` | Cumulative snapshot: `session_id`, `timestamp_ms`, `interval_ms`, `connected`, `source`, `proxy_up/down`, `direct_up/down`, `bypass_up/down`, `proxy_rate_up/down`, `direct_rate_up/down`, `bypass_rate_up/down` | Broadcast every 1 second. Up/Down are cumulative bytes for the session; the rate fields are bytes per second over `interval_ms`. The core owns the totals, so clients render instead of accumulating deltas. `session_id` changes on each connect/reload/stop and resets the client's view. `source` is `xray`, `partial`, `unavailable` or `resync`. `direct` covers Xray freedom outbounds; `bypass` covers traffic that leaves through the physical gateway without Xray (L3 bytes). `application-state` carries the same snapshot as `traffic` for cold start. |
 | `routing-updated` | `{"group_id": int, "config": { ... }, "source": "global" \| "custom", "custom": { ... }?}` | Fired when routing rules, the manual rule source, or active Happ profiles change. `custom` carries the stored per-group override when one exists. |
 | `warn` | `{"key": "string", "content": "string"}` | Warning or actionable hint (e.g. missing binary, invalid routing link, capability failure). |
 | `error` | `{"key": "string", "content": "string"}` | Terminal or non-recoverable error surfaced to the client; the TUI shows it as an error rather than a warning. |
@@ -143,6 +143,13 @@ The core replies with `{"msg":"hello-ok","data":{"protocol_version":5}}` or `{"m
 | `test-progress` | `{"group_id": int, "tested": int, "total": int}` | Broadcast during batch latency scans. |
 | `test-config-updated` | `{"config": { ...TestConfig }}` | Fired when test timeout, samples, concurrency, endpoint or auto-test flag change. |
 | `xray-progress` | `{"status": "downloading" \| ..., "version": "str", "progress": int, "bytes_downloaded": int?, "total_bytes": int?, "error": "str"?}` | Streamed while the pinned Xray runtime is downloading or failing. |
+
+::: warning Removed notification
+`traffic-stats` was removed in the next protocol epoch. It carried four
+per-second deltas that mixed TUN interface counters with proxy counters. Raw
+IPC clients must subscribe to `traffic-sample` and read its rate fields; the
+`status --json` CLI contract is unchanged.
+:::
 
 ---
 
@@ -274,7 +281,8 @@ print(f"Connected to WhoisThat Core v{state['data']['core_version']}")
 # Stream notifications
 while True:
     notification = read_message()
-    if notification and notification.get("msg") == "traffic-stats":
-        stats = notification["data"]
-        print(f"Traffic: ↓ {stats['proxy_down']} B/s ↑ {stats['proxy_up']} B/s")
+    if notification and notification.get("msg") == "traffic-sample":
+        sample = notification["data"]
+        print(f"Traffic: ↓ {sample['proxy_rate_down']} B/s ↑ {sample['proxy_rate_up']} B/s")
+        print(f"Session total: ↓ {sample['proxy_down']} B ↑ {sample['proxy_up']} B")
 ```

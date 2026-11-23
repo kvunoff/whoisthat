@@ -56,7 +56,7 @@ Two patterns coexist:
 | Pattern | Example | What to wait for |
 | :--- | :--- | :--- |
 | Direct reply | `get-application-state`, `profile-details` | the id-carrying reply |
-| Broadcast reply | `status-changed`, `traffic-stats`, `test-progress` | a matching broadcast, usually with a predicate |
+| Broadcast reply | `status-changed`, `traffic-sample`, `test-progress` | a matching broadcast, usually with a predicate |
 | Two frames | `update-routing` / `set-manual-routing-source` | `group-updated`, then `routing-updated` |
 | Two frames | `add-group` / `update-group` | `group-added`/`group-updated`, then `subscription-updated` |
 | Two frames | `test-group` | the first `test-progress` carries the id; later ones are broadcasts |
@@ -71,7 +71,7 @@ kill-switch reply carries both `enabled` (intent) and `armed` (kernel state).
 Events without a request id go to every connected client:
 
 - `status-changed`, `tun-status-changed`;
-- `traffic-stats` (1/s while connected);
+- `traffic-sample` (1/s while connected; a cumulative snapshot with rates, not deltas);
 - `test-progress` after the first frame;
 - `profile-updated` from background test results;
 - `subscription-updated` from the scheduler;

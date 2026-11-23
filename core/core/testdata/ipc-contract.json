@@ -124,6 +124,25 @@
       "state": "ok",
       "error": "none",
       "snapshot_at": "20261102"
+    },
+    "traffic": {
+      "session_id": "7-1712345678000",
+      "timestamp_ms": 1712345678000,
+      "interval_ms": 1000,
+      "connected": true,
+      "source": "xray",
+      "proxy_up": 12000,
+      "proxy_down": 48000,
+      "direct_up": 3000,
+      "direct_down": 9000,
+      "bypass_up": 500,
+      "bypass_down": 1500,
+      "proxy_rate_up": 1000,
+      "proxy_rate_down": 4000,
+      "direct_rate_up": 250,
+      "direct_rate_down": 750,
+      "bypass_rate_up": 40,
+      "bypass_rate_down": 125
     }
   },
   "connect_request": {
@@ -313,6 +332,25 @@
       "test_endpoint": "https://cp.cloudflare.com/generate_204",
       "auto_test_on_subscribe": true
     }
+  },
+  "traffic_sample": {
+    "session_id": "7-1712345678000",
+    "timestamp_ms": 1712345678000,
+    "interval_ms": 1000,
+    "connected": true,
+    "source": "xray",
+    "proxy_up": 12000,
+    "proxy_down": 48000,
+    "direct_up": 3000,
+    "direct_down": 9000,
+    "bypass_up": 500,
+    "bypass_down": 1500,
+    "proxy_rate_up": 1000,
+    "proxy_rate_down": 4000,
+    "direct_rate_up": 250,
+    "direct_rate_down": 750,
+    "bypass_rate_up": 40,
+    "bypass_rate_down": 125
   },
   "update_group_request": {
     "id": 3,

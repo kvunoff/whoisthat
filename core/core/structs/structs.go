@@ -147,6 +147,9 @@ type ApplicationState struct {
 	// silently.
 	ConfigStatus ConfigStatus `json:"config_status,omitzero"`
 	DBStatus     DBStatus     `json:"db_status,omitzero"`
+	// Traffic is the core's authoritative snapshot. A freshly attached client
+	// renders current rates without waiting for the next broadcast.
+	Traffic TrafficSample `json:"traffic,omitzero"`
 }
 
 type ConfigStatus struct {
@@ -407,11 +410,27 @@ type TunStatus struct {
 	IsEnabled bool `json:"is_enabled"`
 }
 
-type TrafficStats struct {
-	ProxyUp    int64 `json:"proxy_up"`
-	ProxyDown  int64 `json:"proxy_down"`
-	DirectUp   int64 `json:"direct_up"`
-	DirectDown int64 `json:"direct_down"`
+// TrafficSample is a cumulative snapshot of the current connection session.
+// Up/Down are cumulative wire bytes; *Rate* are bytes per second over
+// IntervalMs, computed by the core. Clients display; they do not accumulate.
+type TrafficSample struct {
+	SessionID      string `json:"session_id"`
+	TimestampMs    int64  `json:"timestamp_ms"`
+	IntervalMs     int64  `json:"interval_ms"`
+	Connected      bool   `json:"connected"`
+	Source         string `json:"source"`
+	ProxyUp        int64  `json:"proxy_up"`
+	ProxyDown      int64  `json:"proxy_down"`
+	DirectUp       int64  `json:"direct_up"`
+	DirectDown     int64  `json:"direct_down"`
+	BypassUp       int64  `json:"bypass_up"`
+	BypassDown     int64  `json:"bypass_down"`
+	ProxyRateUp    int64  `json:"proxy_rate_up"`
+	ProxyRateDown  int64  `json:"proxy_rate_down"`
+	DirectRateUp   int64  `json:"direct_rate_up"`
+	DirectRateDown int64  `json:"direct_rate_down"`
+	BypassRateUp   int64  `json:"bypass_rate_up"`
+	BypassRateDown int64  `json:"bypass_rate_down"`
 }
 
 const LANRuleIP = "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7,fe80::/10,::1/128"
