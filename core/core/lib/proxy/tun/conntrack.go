@@ -32,12 +32,22 @@ TUN_NAME="%s"
 DEF_IFACE="%s"
 
 for IPT in iptables ip6tables; do
+  # A user chain whose RETURN continues traversal gives the ORIGINAL-direction
+  # rule its own byte counter without changing packet fate.
+  "$IPT" -t mangle -N WT_BYPASS_DOWN 2>/dev/null || "$IPT" -t mangle -F WT_BYPASS_DOWN
+  "$IPT" -t mangle -A WT_BYPASS_DOWN -j RETURN
+
   "$IPT" -t mangle -A PREROUTING -i "$DEF_IFACE" \
-    -m conntrack --ctstate NEW -j CONNMARK --set-mark 1
+    -m conntrack --ctstate NEW -m comment --comment "wt-connmark-new" -j CONNMARK --set-mark 1
+  "$IPT" -t mangle -A PREROUTING -i "$DEF_IFACE" \
+    -m conntrack --ctdir ORIGINAL -m connmark --mark 1 \
+    -m comment --comment "wt-bypass-down" -j WT_BYPASS_DOWN
   "$IPT" -t mangle -A PREROUTING \
-    -m conntrack --ctdir REPLY -m connmark --mark 1 -j MARK --set-mark 1
+    -m conntrack --ctdir REPLY -m connmark --mark 1 \
+    -m comment --comment "wt-bypass-up" -j MARK --set-mark 1
   "$IPT" -t mangle -A OUTPUT \
-    -m conntrack --ctdir REPLY -m connmark --mark 1 -j MARK --set-mark 1
+    -m conntrack --ctdir REPLY -m connmark --mark 1 \
+    -m comment --comment "wt-bypass-up" -j MARK --set-mark 1
 done
 `, tun_name, def_iface)
 	_, err := runScriptWithSh(script)
@@ -74,8 +84,9 @@ func setupConntrackRulesNftables(tun_name string, def_iface string) error {
 	// SO_MARK=1 xray sets on its own direct sockets (those flows are locally
 	// initiated, never tagged here).
 	//
-	// Counters are attached to every rule for live inspection via
-	// "nft list table ip whoisthat_mangle".
+	// The reply- and original-direction rules carry wt-bypass-* comments and
+	// byte counters; counters.go reads them via `nft -j`. The NEW-flow tagging
+	// rule has no counter: it would only count the SYN packet.
 	script := fmt.Sprintf(`
 set -e
 TUN_NAME="%s"
@@ -91,11 +102,13 @@ nft 'add chain ip whoisthat_mangle prerouting { type filter hook prerouting prio
 nft 'add chain ip whoisthat_mangle output { type route hook output priority -150; policy accept; }'
 
 nft add rule ip whoisthat_mangle prerouting \
-  iifname "$DEF_IFACE" ct state new counter ct mark set 1
+  iifname "$DEF_IFACE" ct state new ct mark set 1
 nft add rule ip whoisthat_mangle prerouting \
-  ct mark 1 ct direction reply counter meta mark set 1
+  ct mark 1 ct direction original counter comment "wt-bypass-down"
+nft add rule ip whoisthat_mangle prerouting \
+  ct mark 1 ct direction reply meta mark set 1 counter comment "wt-bypass-up"
 nft add rule ip whoisthat_mangle output \
-  ct mark 1 ct direction reply counter meta mark set 1
+  ct mark 1 ct direction reply meta mark set 1 counter comment "wt-bypass-up"
 
 # ---- IPv6 ----
 nft add table ip6 whoisthat_mangle
@@ -103,11 +116,13 @@ nft 'add chain ip6 whoisthat_mangle prerouting { type filter hook prerouting pri
 nft 'add chain ip6 whoisthat_mangle output { type route hook output priority -150; policy accept; }'
 
 nft add rule ip6 whoisthat_mangle prerouting \
-  iifname "$DEF_IFACE" ct state new counter ct mark set 1
+  iifname "$DEF_IFACE" ct state new ct mark set 1
 nft add rule ip6 whoisthat_mangle prerouting \
-  ct mark 1 ct direction reply counter meta mark set 1
+  ct mark 1 ct direction original counter comment "wt-bypass-down"
+nft add rule ip6 whoisthat_mangle prerouting \
+  ct mark 1 ct direction reply meta mark set 1 counter comment "wt-bypass-up"
 nft add rule ip6 whoisthat_mangle output \
-  ct mark 1 ct direction reply counter meta mark set 1
+  ct mark 1 ct direction reply meta mark set 1 counter comment "wt-bypass-up"
 `, tun_name, def_iface)
 	_, err := runScriptWithSh(script)
 	return err
@@ -135,12 +150,27 @@ delete_all() {
 }
 
 for IPT in iptables ip6tables; do
+    # New (commented) forms, then the pre-upgrade forms so a running system
+    # is cleaned up after the update.
+    delete_all "$IPT" PREROUTING -i "$DEF_IFACE" \
+      -m conntrack --ctstate NEW -m comment --comment "wt-connmark-new" -j CONNMARK --set-mark 1
     delete_all "$IPT" PREROUTING -i "$DEF_IFACE" \
       -m conntrack --ctstate NEW -j CONNMARK --set-mark 1
+    delete_all "$IPT" PREROUTING -i "$DEF_IFACE" \
+      -m conntrack --ctdir ORIGINAL -m connmark --mark 1 \
+      -m comment --comment "wt-bypass-down" -j WT_BYPASS_DOWN
+    delete_all "$IPT" PREROUTING \
+      -m conntrack --ctdir REPLY -m connmark --mark 1 \
+      -m comment --comment "wt-bypass-up" -j MARK --set-mark 1
     delete_all "$IPT" PREROUTING \
       -m conntrack --ctdir REPLY -m connmark --mark 1 -j MARK --set-mark 1
     delete_all "$IPT" OUTPUT \
+      -m conntrack --ctdir REPLY -m connmark --mark 1 \
+      -m comment --comment "wt-bypass-up" -j MARK --set-mark 1
+    delete_all "$IPT" OUTPUT \
       -m conntrack --ctdir REPLY -m connmark --mark 1 -j MARK --set-mark 1
+    "$IPT" -t mangle -F WT_BYPASS_DOWN 2>/dev/null || true
+    "$IPT" -t mangle -X WT_BYPASS_DOWN 2>/dev/null || true
 done
 `, def_iface)
 	_, err := runScriptWithSh(script)

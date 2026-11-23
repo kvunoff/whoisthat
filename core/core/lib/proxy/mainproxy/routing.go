@@ -403,7 +403,7 @@ func (p *ProxyManager) reloadCoreLocked(tunName string) error {
 
 	// Restart the traffic sampler for the new core generation.
 	p.statsApiPort = apiPort
-	p.startMeter(p.newTrafficSource(apiPort, xray_config))
+	p.startMeter(p.newTrafficSource(apiPort, xray_config, p.tunEnabled))
 
 	p.startExitWatcher()
 
