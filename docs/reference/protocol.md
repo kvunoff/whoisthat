@@ -3,6 +3,7 @@ title: "TCP & IPC Wire Protocol Reference"
 description: "Complete IPC command and notification schema for WhoisThat clients."
 audience: "integrator"
 type: "reference"
+changed_in: "0.19.5"
 ---
 
 # TCP & IPC Wire Protocol Reference
@@ -144,14 +145,15 @@ The core replies with `{"msg":"hello-ok","data":{"protocol_version":6}}` or `{"m
 | `test-config-updated` | `{"config": { ...TestConfig }}` | Fired when test timeout, samples, concurrency, endpoint or auto-test flag change. |
 | `xray-progress` | `{"status": "downloading" \| ..., "version": "str", "progress": int, "bytes_downloaded": int?, "total_bytes": int?, "error": "str"?}` | Streamed while the pinned Xray runtime is downloading or failing. |
 
-::: warning Removed notification
-`traffic-stats` was removed in the next protocol epoch. It carried four
-per-second deltas that mixed TUN interface counters with proxy counters. Raw
-IPC clients must subscribe to `traffic-sample` and read its rate fields; the
-`status --json` CLI contract is unchanged.
+::: warning Removed in protocol 6
+`traffic-stats` was removed without a deprecation window: this is a hard
+protocol break, not a legacy alias. It carried four per-second deltas that
+mixed TUN interface counters with proxy counters. Raw IPC clients must
+subscribe to `traffic-sample` and read its rate fields; the `status --json`
+CLI contract is unchanged.
 :::
 
-## Migration from v0.19.5
+## Migration from the previous release
 
 A raw IPC client that consumed `traffic-stats` should:
 
@@ -166,7 +168,7 @@ A raw IPC client that consumed `traffic-stats` should:
 
 `whoisthat status --json` and `--watch --json` keep their existing fields.
 
-## Changed in v0.19.5
+## Changed in client 0.19.5
 
 The core now owns cumulative traffic totals and rate computation, classifies
 proxy and direct traffic by outbound tags from the generated Xray config, and
@@ -307,3 +309,10 @@ while True:
         print(f"Traffic: ↓ {sample['proxy_rate_down']} B/s ↑ {sample['proxy_rate_up']} B/s")
         print(f"Session total: ↓ {sample['proxy_down']} B ↑ {sample['proxy_up']} B")
 ```
+
+## See also
+
+- [Real-Time Traffic Monitoring](/usage/traffic)
+- [Status JSON](/reference/status-json)
+- [IPC & Event Flow](/architecture/ipc-flow)
+- [CLI Reference](/reference/cli)

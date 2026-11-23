@@ -3,6 +3,7 @@ title: "Real-Time Traffic Monitoring"
 description: "Read the real-time traffic tab: rates, totals, and Braille graphs."
 audience: "user"
 type: "reference"
+changed_in: "0.19.5"
 ---
 
 # Real-Time Traffic Monitoring

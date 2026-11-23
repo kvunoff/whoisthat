@@ -350,6 +350,7 @@ Keep a living table of areas, canonical pages, and owners in this guide:
 | split tunnel | `usage/split-tunnel.md`, `architecture/networking.md` | networking |
 | routing | `usage/routing.md`, `networking/routing-rules.md`, `reference/routing-precedence.md`, `architecture/routing-engine.md` | routing |
 | CLI and config | `reference/cli.md`, `reference/configuration.md` | core |
+| traffic accounting | `usage/traffic.md`, `reference/protocol.md`, `architecture/go-core.md` | core |
 
 Update the table in the same change that adds, removes, or moves a page. When
 there is more than one maintainer, add `CODEOWNERS` for these areas. Until then,
