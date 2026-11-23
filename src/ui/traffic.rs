@@ -15,10 +15,33 @@ const DEFAULT_HISTORY_LEN: usize = 60;
 
 #[derive(Debug, Clone, Copy)]
 pub struct TrafficPoint {
+    /// Core sample time (ms). The chart is positioned by time, not by frame
+    /// count, so a dropped broadcast shows as a gap instead of stretching the
+    /// whole 60-second window.
+    pub timestamp_ms: i64,
     pub proxy_down: f64,
     pub proxy_up: f64,
     pub direct_down: f64,
     pub direct_up: f64,
+}
+
+const WINDOW_MS: i64 = 60_000;
+
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+fn zero_point(timestamp_ms: i64) -> TrafficPoint {
+    TrafficPoint {
+        timestamp_ms,
+        proxy_down: 0.0,
+        proxy_up: 0.0,
+        direct_down: 0.0,
+        direct_up: 0.0,
+    }
 }
 
 pub type ChartPoints = Vec<(f64, f64)>;
@@ -48,13 +71,11 @@ impl Default for TrafficHistory {
 impl TrafficHistory {
     pub fn new() -> Self {
         let mut history = VecDeque::with_capacity(DEFAULT_HISTORY_LEN);
-        for _ in 0..DEFAULT_HISTORY_LEN {
-            history.push_back(TrafficPoint {
-                proxy_down: 0.0,
-                proxy_up: 0.0,
-                direct_down: 0.0,
-                direct_up: 0.0,
-            });
+        let now = now_ms();
+        for i in 0..DEFAULT_HISTORY_LEN {
+            history.push_back(zero_point(
+                now - (DEFAULT_HISTORY_LEN as i64 - 1 - i as i64) * 1000,
+            ));
         }
         Self {
             history,
@@ -90,10 +111,13 @@ impl TrafficHistory {
         self.total_direct_down = (stats.direct_down + stats.bypass_down).max(0);
         self.total_direct_up = (stats.direct_up + stats.bypass_up).max(0);
 
-        if self.history.len() >= self.max_history {
-            self.history.pop_front();
-        }
-        self.history.push_back(TrafficPoint {
+        let timestamp_ms = if stats.timestamp_ms > 0 {
+            stats.timestamp_ms
+        } else {
+            now_ms()
+        };
+        self.push_point(TrafficPoint {
+            timestamp_ms,
             proxy_down: down,
             proxy_up: up,
             direct_down: dir_down,
@@ -101,15 +125,36 @@ impl TrafficHistory {
         });
     }
 
+    fn push_point(&mut self, point: TrafficPoint) {
+        self.history.push_back(point);
+        // Drop samples outside the 60-second window and cap the buffer so a
+        // clock jump cannot grow it without bound. Use the maximum timestamp
+        // rather than the tail so out-of-order samples cannot hide the window.
+        let newest = self
+            .history
+            .iter()
+            .map(|p| p.timestamp_ms)
+            .max()
+            .unwrap_or(0);
+        while self
+            .history
+            .front()
+            .is_some_and(|p| newest - p.timestamp_ms > WINDOW_MS)
+        {
+            self.history.pop_front();
+        }
+        while self.history.len() > self.max_history {
+            self.history.pop_front();
+        }
+    }
+
     fn reset(&mut self, session_id: &str) {
         self.history.clear();
-        for _ in 0..self.max_history {
-            self.history.push_back(TrafficPoint {
-                proxy_down: 0.0,
-                proxy_up: 0.0,
-                direct_down: 0.0,
-                direct_up: 0.0,
-            });
+        let now = now_ms();
+        for i in 0..self.max_history {
+            self.history.push_back(zero_point(
+                now - (self.max_history as i64 - 1 - i as i64) * 1000,
+            ));
         }
         self.total_proxy_down = 0;
         self.total_proxy_up = 0;
@@ -121,24 +166,22 @@ impl TrafficHistory {
     }
 
     pub fn push_zero(&mut self) {
-        if self.history.len() >= self.max_history {
-            self.history.pop_front();
-        }
-        self.history.push_back(TrafficPoint {
-            proxy_down: 0.0,
-            proxy_up: 0.0,
-            direct_down: 0.0,
-            direct_up: 0.0,
-        });
+        self.push_point(zero_point(now_ms()));
     }
 
     pub fn chart_points(&self) -> (ChartPoints, ChartPoints) {
-        let len = self.history.len();
-        let offset = self.max_history.saturating_sub(len);
-        let mut down = Vec::with_capacity(len);
-        let mut up = Vec::with_capacity(len);
-        for (i, p) in self.history.iter().enumerate() {
-            let x = (offset + i) as f64;
+        let newest = self
+            .history
+            .iter()
+            .map(|p| p.timestamp_ms)
+            .max()
+            .unwrap_or(0);
+        let mut down = Vec::with_capacity(self.history.len());
+        let mut up = Vec::with_capacity(self.history.len());
+        for p in &self.history {
+            // Right edge = now, left edge = 60 seconds ago.
+            let age_s = ((newest - p.timestamp_ms).max(0) as f64) / 1000.0;
+            let x = (59.0 - age_s).max(0.0);
             down.push((x, p.proxy_down));
             up.push((x, p.proxy_up));
         }
@@ -614,5 +657,29 @@ mod tests {
 
         th.push(&sample("1-1000", 100 * 1024, 0));
         assert!((th.max_y_bound() - 115.0 * 1024.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_chart_is_positioned_by_time() {
+        let mut th = TrafficHistory::new();
+        th.session_id = "1-1000".to_string();
+        th.history.clear();
+        for (ts, rate) in [(100_000, 100), (105_000, 200)] {
+            th.push(&TrafficSample {
+                session_id: "1-1000".to_string(),
+                timestamp_ms: ts,
+                proxy_rate_down: rate,
+                proxy_down: rate,
+                ..TrafficSample::default()
+            });
+        }
+        // The initial zero points are outside this synthetic window.
+        assert_eq!(th.history.len(), 2);
+        let (down, _) = th.chart_points();
+        let gap = down.last().unwrap().0 - down[down.len() - 2].0;
+        assert!(
+            (gap - 5.0).abs() < 0.01,
+            "5-second gap must be 5 chart units, got {gap}"
+        );
     }
 }
