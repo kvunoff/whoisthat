@@ -127,7 +127,22 @@ func buildSplitSetupScript(mode string, uid int, tunName, physIface, physGateway
 		// nft resolves the cgroup path when the rule is added: a rule for a
 		// path that does not exist aborts the whole script, so only reference
 		// directories that are really there.
-		fmt.Fprintf(&b, "[ -d \"$root/%s\" ] && nft 'add rule inet whoisthat_split output socket cgroupv2 level %d \"%s\" meta mark set %d'\n", rel, level, rel, mark)
+		if mode == "exclude" {
+			// Only exclude-mode traffic bypasses Xray. Tag its conntrack entry
+			// with a dedicated bit (never ct mark 1, which whoisthat_mangle
+			// overwrites with set) so the reply direction can be counted.
+			fmt.Fprintf(&b, "[ -d \"$root/%s\" ] && nft 'add rule inet whoisthat_split output socket cgroupv2 level %d \"%s\" ct mark set ct mark or %s meta mark set %d counter comment \"%s\"'\n", rel, level, rel, bypassMarkBit, mark, bypassUpComment)
+		} else {
+			// Include-mode apps go through the TUN and are already counted by
+			// Xray; adding a counter here would double-count them.
+			fmt.Fprintf(&b, "[ -d \"$root/%s\" ] && nft 'add rule inet whoisthat_split output socket cgroupv2 level %d \"%s\" meta mark set %d'\n", rel, level, rel, mark)
+		}
+	}
+
+	if mode == "exclude" {
+		b.WriteString("nft 'add chain inet whoisthat_split input { type filter hook input priority -150; policy accept; }' 2>/dev/null || true\n")
+		b.WriteString("nft flush chain inet whoisthat_split input\n")
+		fmt.Fprintf(&b, "nft 'add rule inet whoisthat_split input ct mark and %s != 0 ct direction reply counter comment \"%s\"'\n", bypassMarkBit, bypassDownComment)
 	}
 
 	// Sockets bound to the wrong source IP before output routing must be

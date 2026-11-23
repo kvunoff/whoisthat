@@ -14,6 +14,7 @@ import (
 	appconfig "whoisthat-core/lib/AppConfig"
 	portpool "whoisthat-core/lib/PortPool"
 	"whoisthat-core/lib/logger"
+	tunmode "whoisthat-core/lib/proxy/tun"
 	"whoisthat-core/lib/proxy/xray"
 	"whoisthat-core/lib/traffic"
 	"whoisthat-core/structs"
@@ -225,14 +226,20 @@ func (p *ProxyManager) stopMeter() {
 }
 
 // newTrafficSource classifies the exact config handed to Xray, so provider
-// JSON, balancers and chained outbounds all map to the right category.
-func (p *ProxyManager) newTrafficSource(apiPort int, configJSON []byte) traffic.Source {
+// JSON, balancers and chained outbounds all map to the right category. Bypass
+// counters only exist while TUN is up; without them the sample is still
+// complete, not degraded.
+func (p *ProxyManager) newTrafficSource(apiPort int, configJSON []byte, tunEnabled bool) traffic.Source {
 	categories, err := traffic.ClassifyOutbounds(configJSON)
 	if err != nil {
 		logger.Warnf("traffic: cannot classify outbounds, stats disabled: %v", err)
 		return traffic.NopSource{}
 	}
-	return traffic.NewXraySource(apiPort, categories)
+	var firewall traffic.FirewallReader
+	if tunEnabled {
+		firewall = tunmode.BypassCounters
+	}
+	return traffic.NewCompositeSource(traffic.NewXraySource(apiPort, categories), firewall)
 }
 
 // retireExitWatcher signals the active exit-watcher goroutine to stop.
@@ -498,7 +505,7 @@ func (p *ProxyManager) Connect(profile structs.Profile, tunName string, tunEnabl
 		p.portPool.ReleasePort(p.statsApiPort)
 	}
 	p.statsApiPort = apiPort
-	p.startMeter(p.newTrafficSource(apiPort, xray_config))
+	p.startMeter(p.newTrafficSource(apiPort, xray_config, tunEnabled))
 
 	p.status = structs.ProxyStatus{
 		Connection:  "connected",

@@ -57,11 +57,20 @@ func TestSplitExcludeModeReusesTable100(t *testing.T) {
 	if !strings.Contains(script, "meta mark set 1") {
 		t.Errorf("exclude script must set mark %d, script: %s", splitExcludeMark, script)
 	}
-	if !strings.Contains(script, "nft 'add rule inet whoisthat_split output socket cgroupv2 level 4 \"user.slice/user-1000.slice/user@1000.service/whoisthat_split.slice\" meta mark set 1'") {
-		t.Errorf("exclude script missing level 4 rule: %s", script)
+	if !strings.Contains(script, "level 4 \"user.slice/user-1000.slice/user@1000.service/whoisthat_split.slice\"") ||
+		!strings.Contains(script, "level 5 \"user.slice/user-1000.slice/user@1000.service/whoisthat.slice/whoisthat-split.slice\"") {
+		t.Errorf("exclude script missing cgroup rules: %s", script)
 	}
-	if !strings.Contains(script, "nft 'add rule inet whoisthat_split output socket cgroupv2 level 5 \"user.slice/user-1000.slice/user@1000.service/whoisthat.slice/whoisthat-split.slice\" meta mark set 1'") {
-		t.Errorf("exclude script missing level 5 rule: %s", script)
+	// Exclude-mode upload is counted and the conntrack entry is tagged so the
+	// reply direction can be counted in the input hook.
+	// comment must be the last expression in an nft rule: anything after it
+	// is a syntax error. Pin the ordering with the full tail.
+	if !strings.Contains(script, "ct mark set ct mark or 0x4 meta mark set 1 counter comment \"wt-bypass-up\"") {
+		t.Errorf("exclude script missing bypass-up accounting (comment must be last): %s", script)
+	}
+	if !strings.Contains(script, "chain inet whoisthat_split input") ||
+		!strings.Contains(script, "counter comment \"wt-bypass-down\"") {
+		t.Errorf("exclude script missing bypass-down accounting: %s", script)
 	}
 	if !strings.Contains(script, "nft 'add rule inet whoisthat_split postrouting meta mark 1 oifname != \"whoisthattun\" oifname != \"lo\" masquerade'") {
 		t.Errorf("exclude script missing masquerade rule: %s", script)
@@ -122,6 +131,11 @@ func TestSplitIncludeModeInstallsTunTable(t *testing.T) {
 	}
 	if !strings.Contains(script, "nft 'add rule inet whoisthat_split postrouting meta mark 2 oifname \"whoisthattun\" masquerade'") {
 		t.Errorf("include script missing include masquerade rule: %s", script)
+	}
+	// Include-mode apps go through Xray: counting them as bypass would double
+	// count traffic already present in the StatsService counters.
+	if strings.Contains(script, "wt-bypass-") {
+		t.Errorf("include script must not install bypass counters: %s", script)
 	}
 	if !strings.Contains(script, "ip rule add fwmark 2 table 200") {
 		t.Error("include script must route mark 2 via table 200")
