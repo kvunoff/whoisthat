@@ -67,7 +67,7 @@ whoisthat/
 │       ├── theme.rs    ← Curated color palettes (4 themes: Graphite Dark, Graphite Light, Tokyo Night, Dracula)
 │       ├── settings.rs ← Settings screen
 │       ├── routing/    ← Routing tab, presets catalog, rule form & popup rendering
-│       ├── traffic.rs  ← Real-time traffic monitoring tab (Braille charts + live transfer stats)
+│       ├── traffic.rs  ← Time-based traffic history rendered from core snapshots (Braille charts)
 │       ├── logs.rs     ← Log viewer (live tail + auto-scroll + level filter)
 │       └── uri.rs      ← URI detail parser (VLESS/VMess/Trojan/SS/SOCKS/Hysteria2)
 ├── core/               ← WhoisThat Core (Go VPN engine)
@@ -83,6 +83,7 @@ whoisthat/
 │           ├── xraymgr/     ← Pinned Xray-core runtime manager (v26.10.31 download & checksum verification)
 │           ├── logger/      ← Level-filtered log wrapper (rotation configured in main.go)
 │           ├── TCPServer/   ← IPC server + dispatcher (server, framing, auth, command dispatch)
+│           ├── traffic/     ← Traffic meter, Xray StatsService source, bypass counter aggregation
 │           ├── AppConfig/   ← Core configuration, defaults, HWID gen (config, storage, platform, apply)
 │           ├── PortPool/    ← Dynamic port allocator for test/profile instances
 │           ├── crypto/      ← AES-256-GCM encrypt/decrypt for DB files

@@ -42,8 +42,14 @@ below are the stable contract for widgets and scripts.
 | `profile_id`, `profile_name` | int, string | Omitted when no profile is active |
 | `protocol` | string | Omitted when unknown |
 | `xray_version` | string | Omitted when unknown |
-| `rx_speed_bytes`, `tx_speed_bytes` | int | Raw bytes per second |
+| `rx_speed_bytes`, `tx_speed_bytes` | int | Raw bytes per second, never negative |
 | `rx_speed_human`, `tx_speed_human` | string | Preformatted rates |
+
+The speeds are the sum of the proxy, direct and bypass rates from the core's
+traffic snapshot. The core computes them over the real elapsed interval and
+clamps them to zero, so a restarted counter or a missed frame cannot produce a
+negative value. A one-shot `status --json` reads the snapshot embedded in
+`application-state`; `--watch` updates it from each `traffic-sample` frame.
 
 The object is not shaped for Waybar/Polybar directly: those expect `text`,
 `alt`, `tooltip` and `class`. Use a wrapper, as shown in

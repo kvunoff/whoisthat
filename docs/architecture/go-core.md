@@ -84,6 +84,24 @@ connection changes so two clients cannot race the Xray/TUN transition.
   groups on their provider or manual schedule with backoff. Background refreshes
   do not run latency tests or reload a live DNS/routing/TUN session.
 
+## Traffic accounting
+
+`lib/traffic` owns one sampler per connection generation. `injectStatsConfig`
+enables Xray's inbound/outbound counters and exposes `StatsService` on a
+loopback port; `XraySource` reads all per-outbound counters over one reused gRPC
+connection and classifies them by the protocol of the outbound in the config
+actually handed to Xray (`freedom` is direct, `dns`/`blackhole`/`api` are
+excluded). `tunmode.BypassCounters()` reads the byte counters of the firewall
+rules that mark split-`exclude` and conntrack-bypass traffic; `CompositeSource`
+merges the two.
+
+`Meter` keeps monotone session totals, computes rates over the real elapsed
+interval, resyncs on a counter rollback and emits a `traffic-sample` frame on
+every tick, including idle and degraded ticks. A separate atomic snapshot backs
+`ProxyManager.GetTraffic()`, so `application-state` can serve a cold-start
+read without consuming a broadcast. The wire schema is owned by
+[IPC & Wire Protocol](/reference/protocol).
+
 ## Warnings, errors, and logs
 
 Commands report recoverable failures with `cmd.warn(key, message)`, which emits
@@ -120,6 +138,7 @@ it if the intent is still enabled).
 | Command handlers | `core/core/commands/` |
 | Database | `core/core/db/` |
 | Proxy, routing, tester | `core/core/lib/proxy/mainproxy/` |
+| Traffic accounting | `core/core/lib/traffic/`, `core/core/lib/proxy/tun/counters.go` |
 | TUN and kernel networking | `core/core/lib/proxy/tun/` |
 | Xray runtime | `core/core/lib/xraymgr/` |
 | Port leasing | `core/core/lib/PortPool/` |
