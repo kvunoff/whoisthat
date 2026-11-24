@@ -7,7 +7,7 @@ use crate::logfile::ClearAction;
 use crate::logger::FileLogger;
 use crate::text_edit::edit_text_field;
 use crate::ui::App;
-use crate::ui::app::{ActiveTab, Focus, Popup};
+use crate::ui::app::{ActiveTab, AntiDpiField, Focus, Popup};
 use crate::ui::logs::LogSource;
 
 use super::editors;
@@ -222,6 +222,51 @@ pub(crate) async fn handle_popup_input(
             _ => {
                 edit_text_field(&mut input, &mut cursor, key);
                 app.popup = Some(Popup::EditTunName { input, cursor });
+            }
+        },
+        Some(Popup::EditAntiDpi {
+            mut draft,
+            field,
+            mut input,
+            mut cursor,
+        }) => match key.code {
+            KeyCode::Esc => {
+                app.popup = None;
+                app.focus = Focus::LeftPanel;
+            }
+            KeyCode::Enter => {
+                let value = input.trim().to_string();
+                match field {
+                    AntiDpiField::FragmentLength => draft.fragment.length = value,
+                    AntiDpiField::FragmentInterval => draft.fragment.interval = value,
+                    AntiDpiField::NoisePacket => draft.noise.packet = value,
+                    AntiDpiField::NoiseDelay => draft.noise.delay = value,
+                }
+                if let Err(e) = crate::antidpi::validate(&draft) {
+                    app.msg(format!("Error: {e}"));
+                    app.popup = Some(Popup::EditAntiDpi {
+                        draft,
+                        field,
+                        input,
+                        cursor,
+                    });
+                    app.focus = Focus::Popup;
+                } else {
+                    if let Err(e) = client.set_anti_dpi(&draft).await {
+                        app.msg(format!("Error: {e}"));
+                    }
+                    app.popup = None;
+                    app.focus = Focus::LeftPanel;
+                }
+            }
+            _ => {
+                edit_text_field(&mut input, &mut cursor, key);
+                app.popup = Some(Popup::EditAntiDpi {
+                    draft,
+                    field,
+                    input,
+                    cursor,
+                });
             }
         },
         Some(Popup::EditProfileName {

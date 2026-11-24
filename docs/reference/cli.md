@@ -250,6 +250,14 @@ Core-authoritative keys:
 | `test.samples` | `1..10` | core |
 | `test.endpoint` | http(s) URL | core |
 | `test.auto-on-subscribe` | `true`/`false` | core |
+| `anti-dpi.fragment.enabled` | `true`/`false` | core |
+| `anti-dpi.fragment.packets` | `tlshello` or any `N-M` | core |
+| `anti-dpi.fragment.length` | `N-M` (`1..65535`) | core |
+| `anti-dpi.fragment.interval` | `N-M` (`0..60000` ms) | core |
+| `anti-dpi.noise.enabled` | `true`/`false` | core |
+| `anti-dpi.noise.type` | `rand`/`str`/`base64`/`hex` | core |
+| `anti-dpi.noise.packet` | `N-M` for `rand`, payload otherwise | core |
+| `anti-dpi.noise.delay` | `N-M` (`0..60000` ms) | core |
 
 Local keys (`config.toml`):
 
@@ -267,11 +275,16 @@ Local keys (`config.toml`):
 | `core.use-tcp` | `true`/`false` |
 | `core.socket` | socket path (empty = default) |
 
-`settings set` validates every pair before touching the daemon. Core settings are applied first;
+`settings set` validates the syntax of every pair before touching the daemon. Core settings are applied first;
 local `config.toml` is written last from a fresh read, so a running TUI is not clobbered.
+Values that depend on the current core state, such as `anti-dpi.noise.packet` (which depends on
+`anti-dpi.noise.type`), are checked again after attach; when both are set in one command, `type`
+is applied before `packet`.
 
 When the daemon is offline, `settings list` still prints local keys and marks core keys as
-`unknown`; `settings get <core-key>` exits with code `3`.
+`unknown`; `settings get <core-key>` exits with code `3`. If the running core predates anti-DPI,
+the eight `anti-dpi.*` keys report `unsupported` and `settings set` exits with an explicit error
+instead of waiting for a reply.
 
 ---
 

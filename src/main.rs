@@ -1,3 +1,4 @@
+mod antidpi;
 mod autostart;
 mod cli;
 mod config;

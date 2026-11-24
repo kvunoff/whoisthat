@@ -8,4 +8,4 @@ mod types;
 
 pub use helpers::{centered_rect_fixed, format_bytes, format_relative, responsive_rect};
 pub use state::App;
-pub use types::{ActiveTab, Focus, ItemMoveAction, Popup, TreeNode};
+pub use types::{ActiveTab, AntiDpiField, Focus, ItemMoveAction, Popup, TreeNode};

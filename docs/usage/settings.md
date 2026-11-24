@@ -60,6 +60,31 @@ kill-switch.
 
 ---
 
+## Anti-DPI
+
+The **Anti-DPI** section adds global Xray fragmentation and UDP noise. It is off
+by default and takes effect on the next connect; an active connection keeps its
+current masks. Provider masks in a JSON subscription or an `fm` query parameter
+always win, and global masks only fill a direction the provider left empty.
+
+| Setting | Values | Notes |
+| :--- | :--- | :--- |
+| **Fragment: enabled** | `on` / `off` | Adds a TCP `fragment` mask. |
+| **Fragment: packets** | `tlshello`, `1-1`, `1-2`, `1-3`, or any `N-M` | The TUI cycles four presets; the CLI and `config.json` accept any valid range. |
+| **Fragment: length** | `N-M` | Split-size range; the editor shows the allowed bounds. |
+| **Fragment: interval** | `N-M` | Delay in milliseconds; stored as Xray's `delay`. |
+| **Noise: enabled** | `on` / `off` | Adds a UDP `noise` mask. |
+| **Noise: type** | `rand`, `str`, `base64`, `hex` | `rand` uses `packet` as a length range; the other types use it as a literal payload. Changing the type resets `packet` to that type's example. |
+| **Noise: packet** | `N-M` for `rand`, payload otherwise | Payload size is capped; invalid values are rejected by the core. |
+| **Noise: delay** | `N-M` | Delay in milliseconds. |
+
+If the running core predates global anti-DPI, the rows show
+`unsupported (core)` and cannot be edited. Restart the new core to enable them.
+Defaults, ranges, and limits are owned by
+[Configuration Files Reference](/reference/configuration).
+
+---
+
 ## Modifying Values in the TUI
 
 * **Navigation**: Press <kbd>j</kbd> / <kbd>k</kbd> (or <kbd>↓</kbd> / <kbd>↑</kbd>) to move between settings.
