@@ -1,3 +1,5 @@
+use crate::core_client::protocol::AntiDPIConfig;
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ActiveTab {
     Profiles,
@@ -54,6 +56,12 @@ pub enum Popup {
         input: String,
         cursor: usize,
     },
+    EditAntiDpi {
+        draft: AntiDPIConfig,
+        field: AntiDpiField,
+        input: String,
+        cursor: usize,
+    },
     EditProfileName {
         input: String,
         cursor: usize,
@@ -75,6 +83,14 @@ pub enum Popup {
         db: bool,
         day: String,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AntiDpiField {
+    FragmentLength,
+    FragmentInterval,
+    NoisePacket,
+    NoiseDelay,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

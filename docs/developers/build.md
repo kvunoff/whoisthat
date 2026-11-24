@@ -57,6 +57,7 @@ make lint         # fmt, clippy, go vet, gofmt, swallowed-error, version and doc
 make lint-shell   # shellcheck over every tracked shell script
 make integration  # privileged netns suite
 make test-e2e     # real core in a temp XDG sandbox, read back through the CLI
+make test-xray    # finalmask combinations against the pinned Xray binary
 make test-ppa     # build a PPA source package and inspect the .deb contents
 make coverage     # Rust lcov + Go coverprofile with the same line floors as CI
 make docs         # VitePress build

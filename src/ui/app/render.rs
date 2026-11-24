@@ -241,6 +241,7 @@ impl App {
                     split_tunnel: &self.split_tunnel,
                     hwid: self.hwid_info.as_ref(),
                     check_updates: self.check_updates,
+                    anti_dpi: self.anti_dpi.as_ref(),
                 };
                 render_settings(f, area, &values, &mut self.settings_state, focused);
             }

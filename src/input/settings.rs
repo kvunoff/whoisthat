@@ -1,17 +1,28 @@
 use tokio::sync::mpsc;
 
+use crate::antidpi::{default_packet_for_type, next_noise_type, next_packets};
 use crate::autostart::{self, Backend};
 use crate::config;
 use crate::core_client::CoreClient;
-use crate::core_client::protocol::SetHwidData;
+use crate::core_client::protocol::{AntiDPIConfig, SetHwidData};
 use crate::core_events::refresh_public_ip;
 use crate::event_loop::AppEvent;
 use crate::keymap::AppAction;
 use crate::logger::{FileLogger, configure_logger};
 use crate::testing::persist_and_sync_test_config;
 use crate::ui::App;
-use crate::ui::app::{Focus, Popup};
+use crate::ui::app::{AntiDpiField, Focus, Popup};
 use crate::ui::settings::next_split_tunnel_mode;
+
+async fn send_anti_dpi(app: &mut App, client: &CoreClient, cfg: AntiDPIConfig) {
+    if let Err(e) = client.set_anti_dpi(&cfg).await {
+        app.msg(format!("Error: {e}"));
+    }
+}
+
+fn anti_dpi_unsupported(app: &mut App) {
+    app.msg("Running core does not support anti-DPI; restart it with the new binary");
+}
 
 /// Persist `cfg` and tell the user when it could not be written.
 fn save(app: &mut App, cfg: &config::AppConfig) -> bool {
@@ -299,6 +310,96 @@ pub(super) async fn handle(
                         } else {
                             "Update check disabled"
                         });
+                    }
+                }
+                21 => {
+                    if let Some(mut next) = app.anti_dpi.clone() {
+                        next.fragment.enabled = !next.fragment.enabled;
+                        send_anti_dpi(app, client, next).await;
+                    } else {
+                        anti_dpi_unsupported(app);
+                    }
+                }
+                22 => {
+                    if let Some(mut next) = app.anti_dpi.clone() {
+                        next.fragment.packets = next_packets(&next.fragment.packets).to_string();
+                        send_anti_dpi(app, client, next).await;
+                    } else {
+                        anti_dpi_unsupported(app);
+                    }
+                }
+                23 => {
+                    if let Some(draft) = app.anti_dpi.clone() {
+                        let input = draft.fragment.length.clone();
+                        app.popup = Some(Popup::EditAntiDpi {
+                            draft,
+                            field: AntiDpiField::FragmentLength,
+                            input: input.clone(),
+                            cursor: input.chars().count(),
+                        });
+                        app.focus = Focus::Popup;
+                    } else {
+                        anti_dpi_unsupported(app);
+                    }
+                }
+                24 => {
+                    if let Some(draft) = app.anti_dpi.clone() {
+                        let input = draft.fragment.interval.clone();
+                        app.popup = Some(Popup::EditAntiDpi {
+                            draft,
+                            field: AntiDpiField::FragmentInterval,
+                            input: input.clone(),
+                            cursor: input.chars().count(),
+                        });
+                        app.focus = Focus::Popup;
+                    } else {
+                        anti_dpi_unsupported(app);
+                    }
+                }
+                25 => {
+                    if let Some(mut next) = app.anti_dpi.clone() {
+                        next.noise.enabled = !next.noise.enabled;
+                        send_anti_dpi(app, client, next).await;
+                    } else {
+                        anti_dpi_unsupported(app);
+                    }
+                }
+                26 => {
+                    if let Some(mut next) = app.anti_dpi.clone() {
+                        let noise_type = next_noise_type(&next.noise.noise_type).to_string();
+                        next.noise.packet = default_packet_for_type(&noise_type).to_string();
+                        next.noise.noise_type = noise_type;
+                        send_anti_dpi(app, client, next).await;
+                    } else {
+                        anti_dpi_unsupported(app);
+                    }
+                }
+                27 => {
+                    if let Some(draft) = app.anti_dpi.clone() {
+                        let input = draft.noise.packet.clone();
+                        app.popup = Some(Popup::EditAntiDpi {
+                            draft,
+                            field: AntiDpiField::NoisePacket,
+                            input: input.clone(),
+                            cursor: input.chars().count(),
+                        });
+                        app.focus = Focus::Popup;
+                    } else {
+                        anti_dpi_unsupported(app);
+                    }
+                }
+                28 => {
+                    if let Some(draft) = app.anti_dpi.clone() {
+                        let input = draft.noise.delay.clone();
+                        app.popup = Some(Popup::EditAntiDpi {
+                            draft,
+                            field: AntiDpiField::NoiseDelay,
+                            input: input.clone(),
+                            cursor: input.chars().count(),
+                        });
+                        app.focus = Focus::Popup;
+                    } else {
+                        anti_dpi_unsupported(app);
                     }
                 }
                 _ => {}

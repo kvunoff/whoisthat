@@ -23,6 +23,14 @@ const CORE_KEYS: &[&str] = &[
     "test.samples",
     "test.endpoint",
     "test.auto-on-subscribe",
+    "anti-dpi.fragment.enabled",
+    "anti-dpi.fragment.packets",
+    "anti-dpi.fragment.length",
+    "anti-dpi.fragment.interval",
+    "anti-dpi.noise.enabled",
+    "anti-dpi.noise.type",
+    "anti-dpi.noise.packet",
+    "anti-dpi.noise.delay",
 ];
 
 /// Reported by the core but not settable (the daemon owns the kernel state).
@@ -195,9 +203,17 @@ async fn set_values(g: &GlobalArgs, assignments: &[String], force: bool) -> Resu
     }
 
     let out = Out::new(g);
-    let core_jobs: Vec<&(String, String)> = parsed.iter().filter(|(k, _)| is_core_key(k)).collect();
+    let mut core_jobs: Vec<&(String, String)> =
+        parsed.iter().filter(|(k, _)| is_core_key(k)).collect();
     let local_jobs: Vec<&(String, String)> =
         parsed.iter().filter(|(k, _)| !is_core_key(k)).collect();
+    // noise.packet depends on the current noise.type; apply type first if both
+    // are given in one command. Other settings keep their input order.
+    core_jobs.sort_by_key(|(key, _)| match key.as_str() {
+        "anti-dpi.noise.type" => 0,
+        "anti-dpi.noise.packet" => 2,
+        _ => 1,
+    });
 
     if !core_jobs.is_empty() {
         let mut session = Session::open_or_spawn(g).await?;
@@ -454,6 +470,44 @@ async fn apply_core(
             session.cfg = cfg;
             out.line(format!("{key}={value}"));
         }
+        key if key.starts_with("anti-dpi.") => {
+            let state = session.state().await?;
+            let Some(mut cfg) = state.anti_dpi.clone() else {
+                return Err(CliError::Core(
+                    "running core does not support anti-DPI; restart it with the new binary".into(),
+                ));
+            };
+            match key {
+                "anti-dpi.fragment.enabled" => cfg.fragment.enabled = parse_bool(value)?,
+                "anti-dpi.fragment.packets" => cfg.fragment.packets = value.to_string(),
+                "anti-dpi.fragment.length" => cfg.fragment.length = value.to_string(),
+                "anti-dpi.fragment.interval" => cfg.fragment.interval = value.to_string(),
+                "anti-dpi.noise.enabled" => cfg.noise.enabled = parse_bool(value)?,
+                "anti-dpi.noise.type" => {
+                    cfg.noise.noise_type = value.to_string();
+                    cfg.noise.packet = crate::antidpi::default_packet_for_type(value).to_string();
+                }
+                "anti-dpi.noise.packet" => {
+                    crate::antidpi::validate_field_against_config(key, value, &cfg)
+                        .map_err(CliError::Usage)?;
+                    cfg.noise.packet = value.to_string();
+                }
+                "anti-dpi.noise.delay" => cfg.noise.delay = value.to_string(),
+                _ => unreachable!(),
+            }
+            crate::antidpi::validate(&cfg).map_err(CliError::Usage)?;
+            let _: AntiDPIUpdated = session
+                .request(
+                    "set-anti-dpi",
+                    &SetAntiDPIData { config: cfg },
+                    Reply::Id {
+                        expect: &["anti-dpi-updated"],
+                        fatal_warns: &["set-anti-dpi-failed"],
+                    },
+                )
+                .await?;
+            out.line(format!("{key}={value}"));
+        }
         _ => return Err(CliError::Usage(format!("unknown core setting '{key}'"))),
     }
     Ok(())
@@ -508,7 +562,9 @@ fn validate(key: &str, value: &str) -> Result<(), CliError> {
         | "show-ip"
         | "log-enabled"
         | "check-updates"
-        | "core.use-tcp" => {
+        | "core.use-tcp"
+        | "anti-dpi.fragment.enabled"
+        | "anti-dpi.noise.enabled" => {
             parse_bool(value)?;
         }
         "split-tunnel" => {
@@ -571,6 +627,9 @@ fn validate(key: &str, value: &str) -> Result<(), CliError> {
         }
         "core.port" => validate_int(value, 1, 65535, key)?,
         "autoconnect-profile" | "user-agent" | "core.host" | "core.socket" | "terminal" => {}
+        key if key.starts_with("anti-dpi.") => {
+            crate::antidpi::validate_field_syntax(key, value).map_err(CliError::Usage)?;
+        }
         _ => return Err(CliError::Usage(format!("unknown setting '{key}'"))),
     }
     Ok(())
@@ -629,6 +688,8 @@ fn is_bool_key(key: &str) -> bool {
             | "log-enabled"
             | "check-updates"
             | "core.use-tcp"
+            | "anti-dpi.fragment.enabled"
+            | "anti-dpi.noise.enabled"
     )
 }
 
@@ -678,6 +739,46 @@ fn core_value(state: &ApplicationState, cfg: &config::AppConfig, key: &str) -> O
         "test.samples" => json!(state.test_config.samples_per_test),
         "test.endpoint" => json!(state.test_config.test_endpoint),
         "test.auto-on-subscribe" => json!(state.test_config.auto_test_on_subscribe),
+        "anti-dpi.fragment.enabled" => state
+            .anti_dpi
+            .as_ref()
+            .map(|a| json!(a.fragment.enabled))
+            .unwrap_or_else(|| json!("unsupported")),
+        "anti-dpi.fragment.packets" => state
+            .anti_dpi
+            .as_ref()
+            .map(|a| json!(a.fragment.packets))
+            .unwrap_or_else(|| json!("unsupported")),
+        "anti-dpi.fragment.length" => state
+            .anti_dpi
+            .as_ref()
+            .map(|a| json!(a.fragment.length))
+            .unwrap_or_else(|| json!("unsupported")),
+        "anti-dpi.fragment.interval" => state
+            .anti_dpi
+            .as_ref()
+            .map(|a| json!(a.fragment.interval))
+            .unwrap_or_else(|| json!("unsupported")),
+        "anti-dpi.noise.enabled" => state
+            .anti_dpi
+            .as_ref()
+            .map(|a| json!(a.noise.enabled))
+            .unwrap_or_else(|| json!("unsupported")),
+        "anti-dpi.noise.type" => state
+            .anti_dpi
+            .as_ref()
+            .map(|a| json!(a.noise.noise_type))
+            .unwrap_or_else(|| json!("unsupported")),
+        "anti-dpi.noise.packet" => state
+            .anti_dpi
+            .as_ref()
+            .map(|a| json!(a.noise.packet))
+            .unwrap_or_else(|| json!("unsupported")),
+        "anti-dpi.noise.delay" => state
+            .anti_dpi
+            .as_ref()
+            .map(|a| json!(a.noise.delay))
+            .unwrap_or_else(|| json!("unsupported")),
         _ => {
             let _ = (cfg, ac_enabled, ac_mode);
             return None;
@@ -759,5 +860,21 @@ mod tests {
         assert!(canonical_key("kill-switch").is_ok());
         assert!(canonical_key("killswitch").is_ok());
         assert!(canonical_key("kills witch").is_err());
+    }
+
+    #[test]
+    fn validates_anti_dpi_keys() {
+        assert!(validate("anti-dpi.fragment.packets", "1-5").is_ok());
+        assert!(validate("anti-dpi.fragment.packets", "0-1").is_err());
+        assert!(validate("anti-dpi.fragment.length", "100-200").is_ok());
+        assert!(validate("anti-dpi.fragment.length", "200-100").is_err());
+        assert!(validate("anti-dpi.fragment.interval", "10-20").is_ok());
+        assert!(validate("anti-dpi.noise.type", "hex").is_ok());
+        assert!(validate("anti-dpi.noise.type", "bogus").is_err());
+        // The encoding check needs the current type and happens after attach.
+        assert!(validate("anti-dpi.noise.packet", "d2hvaXN0aGF0").is_ok());
+        assert!(validate("anti-dpi.noise.delay", "10-16").is_ok());
+        assert!(is_bool_key("anti-dpi.fragment.enabled"));
+        assert!(is_bool_key("anti-dpi.noise.enabled"));
     }
 }

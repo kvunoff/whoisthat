@@ -45,6 +45,7 @@ WhoisThat runs a local SOCKS5/HTTP proxy or a system-wide TUN interface from a t
 - **Rootless TUN.** File capabilities gated by a root-owned per-uid allowlist; no setuid binary.
 - **Split tunneling.** Route selected applications inside or outside the tunnel with cgroup v2, using systemd slices or the per-user runner.
 - **Xray protocols.** VLESS (Reality, Vision, xHTTP, gRPC, WebSocket), VMess, Trojan, Shadowsocks 2022, SOCKS5 and Hysteria2.
+- **Anti-DPI.** Editable TLS-hello fragmentation and UDP noise on top of Xray `finalmask`, with provider mask passthrough.
 - **Subscriptions and routing.** Happ routing profiles, JSON subscriptions, provider auto-update and a single first-match routing engine.
 - **DNS and leak protection.** DNS hijack, FakeDNS, an independent kill-switch and IPv6 leak prevention.
 - **Encrypted state.** Profiles, subscriptions and custom rules are stored locally with AES-256-GCM.

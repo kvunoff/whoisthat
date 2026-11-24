@@ -6,7 +6,7 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, List, ListItem, ListState, Paragraph},
 };
 
-use crate::core_client::protocol::HwidData;
+use crate::core_client::protocol::{AntiDPIConfig, HwidData};
 
 use super::theme::*;
 
@@ -120,6 +120,39 @@ pub fn settings_layout() -> Vec<SettingsRow> {
             label: "Check for updates",
             kind: SettingsKind::Toggle,
         },
+        SettingsRow::Header("Anti-DPI"),
+        SettingsRow::Item {
+            label: "Fragment: enabled",
+            kind: SettingsKind::Toggle,
+        },
+        SettingsRow::Item {
+            label: "Fragment: packets",
+            kind: SettingsKind::Cycle,
+        },
+        SettingsRow::Item {
+            label: "Fragment: length",
+            kind: SettingsKind::Editable,
+        },
+        SettingsRow::Item {
+            label: "Fragment: interval",
+            kind: SettingsKind::Editable,
+        },
+        SettingsRow::Item {
+            label: "Noise: enabled",
+            kind: SettingsKind::Toggle,
+        },
+        SettingsRow::Item {
+            label: "Noise: type",
+            kind: SettingsKind::Cycle,
+        },
+        SettingsRow::Item {
+            label: "Noise: packet",
+            kind: SettingsKind::Editable,
+        },
+        SettingsRow::Item {
+            label: "Noise: delay",
+            kind: SettingsKind::Editable,
+        },
     ]
 }
 
@@ -170,6 +203,7 @@ pub struct SettingsValues<'a> {
     pub split_tunnel: &'a str,
     pub hwid: Option<&'a HwidData>,
     pub check_updates: bool,
+    pub anti_dpi: Option<&'a AntiDPIConfig>,
 }
 
 #[derive(Debug, Clone)]
@@ -248,7 +282,7 @@ pub fn render_settings(
     let hwid_val = values.hwid.map(|h| h.hwid.as_str()).unwrap_or("");
     let hwid_ua = values.hwid.map(|h| h.user_agent.as_str()).unwrap_or("");
 
-    let item_values: [String; 21] = [
+    let item_values: [String; 29] = [
         if values.autoconnect {
             "● on".into()
         } else {
@@ -308,6 +342,50 @@ pub fn render_settings(
         } else {
             "○ off".into()
         },
+        values
+            .anti_dpi
+            .map(|a| {
+                if a.fragment.enabled {
+                    "● on".to_string()
+                } else {
+                    "○ off".to_string()
+                }
+            })
+            .unwrap_or_else(|| "unsupported (core)".into()),
+        values
+            .anti_dpi
+            .map(|a| a.fragment.packets.clone())
+            .unwrap_or_else(|| "unsupported (core)".into()),
+        values
+            .anti_dpi
+            .map(|a| a.fragment.length.clone())
+            .unwrap_or_else(|| "unsupported (core)".into()),
+        values
+            .anti_dpi
+            .map(|a| a.fragment.interval.clone())
+            .unwrap_or_else(|| "unsupported (core)".into()),
+        values
+            .anti_dpi
+            .map(|a| {
+                if a.noise.enabled {
+                    "● on".to_string()
+                } else {
+                    "○ off".to_string()
+                }
+            })
+            .unwrap_or_else(|| "unsupported (core)".into()),
+        values
+            .anti_dpi
+            .map(|a| a.noise.noise_type.clone())
+            .unwrap_or_else(|| "unsupported (core)".into()),
+        values
+            .anti_dpi
+            .map(|a| a.noise.packet.clone())
+            .unwrap_or_else(|| "unsupported (core)".into()),
+        values
+            .anti_dpi
+            .map(|a| a.noise.delay.clone())
+            .unwrap_or_else(|| "unsupported (core)".into()),
     ];
 
     let layout = settings_layout();
@@ -408,7 +486,7 @@ mod tests {
 
     #[test]
     fn test_settings_layout_item_count() {
-        assert_eq!(item_count(), 21);
+        assert_eq!(item_count(), 29);
     }
 
     #[test]
@@ -429,7 +507,33 @@ mod tests {
                 "Network",
                 "Diagnostics",
                 "Hardware",
-                "Updates"
+                "Updates",
+                "Anti-DPI"
+            ]
+        );
+    }
+
+    #[test]
+    fn test_settings_layout_anti_dpi_rows_stay_last() {
+        let layout = settings_layout();
+        let labels: Vec<&str> = layout
+            .iter()
+            .filter_map(|r| match r {
+                SettingsRow::Item { label, .. } => Some(*label),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            &labels[21..],
+            &[
+                "Fragment: enabled",
+                "Fragment: packets",
+                "Fragment: length",
+                "Fragment: interval",
+                "Noise: enabled",
+                "Noise: type",
+                "Noise: packet",
+                "Noise: delay",
             ]
         );
     }
