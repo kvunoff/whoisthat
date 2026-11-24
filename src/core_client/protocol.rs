@@ -217,6 +217,10 @@ pub struct ApplicationState {
     /// Daemon-authoritative latency-test settings.
     #[serde(rename = "test_config", default)]
     pub test_config: TestConfig,
+    /// Global anti-DPI settings. `None` means the running core is older and
+    /// does not support `set-anti-dpi`; do not substitute defaults.
+    #[serde(rename = "anti_dpi", default, skip_serializing_if = "Option::is_none")]
+    pub anti_dpi: Option<AntiDPIConfig>,
     /// How config.json was read; drives the one-click settings restore.
     #[serde(rename = "config_status", default)]
     pub config_status: ConfigStatus,
@@ -385,6 +389,39 @@ pub struct SetTestConfigData {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TestConfigUpdated {
     pub config: TestConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AntiDPIFragment {
+    pub enabled: bool,
+    pub packets: String,
+    pub length: String,
+    pub interval: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AntiDPINoise {
+    pub enabled: bool,
+    #[serde(rename = "type")]
+    pub noise_type: String,
+    pub packet: String,
+    pub delay: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct AntiDPIConfig {
+    pub fragment: AntiDPIFragment,
+    pub noise: AntiDPINoise,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SetAntiDPIData {
+    pub config: AntiDPIConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AntiDPIUpdated {
+    pub config: AntiDPIConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -819,6 +856,8 @@ mod tests {
         assert_ipc_roundtrip::<ConnectData>(&fixtures, "connect_request");
         assert_ipc_roundtrip::<UpdateGroupData>(&fixtures, "update_group_request");
         assert_ipc_roundtrip::<SetTestConfigData>(&fixtures, "set_test_config_request");
+        assert_ipc_roundtrip::<SetAntiDPIData>(&fixtures, "set_anti_dpi_request");
+        assert_ipc_roundtrip::<AntiDPIUpdated>(&fixtures, "anti_dpi_updated");
         assert_ipc_roundtrip::<SetAutoconnectData>(&fixtures, "set_autoconnect_request");
         assert_ipc_roundtrip::<TestConfigUpdated>(&fixtures, "test_config_updated");
         assert_ipc_roundtrip::<TrafficSample>(&fixtures, "traffic_sample");

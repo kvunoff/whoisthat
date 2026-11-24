@@ -74,6 +74,7 @@ impl App {
         if !state.test_config.test_endpoint.is_empty() {
             self.test_config = state.test_config;
         }
+        self.anti_dpi = state.anti_dpi;
         self.clamp_cursor();
     }
 

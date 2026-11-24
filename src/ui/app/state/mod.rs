@@ -81,6 +81,8 @@ pub struct App {
 
     pub test_progress: Option<TestProgress>,
     pub test_config: TestConfig,
+    /// `None` means the running core is older and does not support anti-DPI.
+    pub anti_dpi: Option<AntiDPIConfig>,
 
     pub collapsed_groups: HashSet<i32>,
     pub last_area: Rect,
@@ -154,6 +156,7 @@ impl App {
             search_mode: false,
             test_progress: None,
             test_config,
+            anti_dpi: None,
             collapsed_groups: HashSet::new(),
             last_area: Rect::default(),
             layout: crate::ui::layout::LayoutGeometry::default(),

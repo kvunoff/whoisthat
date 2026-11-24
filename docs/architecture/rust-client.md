@@ -54,10 +54,11 @@ out of `application-state`.
 `src/core_events.rs::handle_core_event` maps each `CoreEvent` into the UI:
 
 - `ApplicationState` applies groups, profiles, connection, TUN, routing,
-  `config_status`/`db_status`, and the core's authoritative `tun_name` /
-  `test_config`;
+  `config_status`/`db_status`, `anti_dpi`, and the core's authoritative
+  `tun_name` / `test_config`;
 - `StatusChanged`, `TunStatusChanged`, `TrafficStats`, `ProfileUpdated` update
   live state;
+- `AntiDPIUpdated` applies the sanitized global fragment/noise settings;
 - `Warning` and `Error` become notices;
 - `SubscriptionUpdated` replaces a group and its profiles.
 

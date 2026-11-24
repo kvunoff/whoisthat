@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 	"whoisthat-core/db"
+	appconfig "whoisthat-core/lib/AppConfig"
 	"whoisthat-core/lib/proxy/mainproxy"
 	"whoisthat-core/structs"
 )
@@ -570,5 +571,66 @@ func TestSubscriptionJSONURLPreservesQuery(t *testing.T) {
 	}
 	if _, ok := subscriptionJSONURL("https://example.com/sub/token/json"); ok {
 		t.Fatal("already-JSON URL must not be probed again")
+	}
+}
+
+func TestSetAntiDPI(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("XDG_DATA_HOME", dir)
+	appconfig.LoadConfig()
+
+	cmd, _, msgChan := newTestCmd(t)
+	cfg := structs.AntiDPIConfig{
+		Fragment: structs.AntiDPIFragment{
+			Enabled:  true,
+			Packets:  "1-2",
+			Length:   "100-200",
+			Interval: "10-20",
+		},
+		Noise: structs.AntiDPINoise{
+			Enabled: true,
+			Type:    "hex",
+			Packet:  "00ff",
+			Delay:   "10-16",
+		},
+	}
+	cmd.SetAntiDPI(structs.SetAntiDPIData{Config: cfg})
+	raw := waitForMessage(t, msgChan, "anti-dpi-updated", 2*time.Second)
+	var updated struct {
+		Data structs.AntiDPIUpdated `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &updated); err != nil {
+		t.Fatalf("unmarshal anti-dpi-updated: %v", err)
+	}
+	if !updated.Data.Config.Fragment.Enabled || updated.Data.Config.Fragment.Packets != "1-2" {
+		t.Errorf("fragment not applied: %+v", updated.Data.Config.Fragment)
+	}
+	if updated.Data.Config.Noise.Type != "hex" || updated.Data.Config.Noise.Packet != "00ff" {
+		t.Errorf("noise not applied: %+v", updated.Data.Config.Noise)
+	}
+}
+
+func TestSetAntiDPIRejectsInvalid(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("XDG_DATA_HOME", dir)
+	appconfig.LoadConfig()
+
+	cmd, _, msgChan := newTestCmd(t)
+	cfg := structs.AntiDPIConfig{
+		Fragment: structs.AntiDPIFragment{Packets: "0-1", Length: "100-200", Interval: "10-20"},
+		Noise:    structs.AntiDPINoise{Type: "rand", Packet: "50-100", Delay: "10-16"},
+	}
+	cmd.SetAntiDPI(structs.SetAntiDPIData{Config: cfg})
+	raw := waitForMessage(t, msgChan, "warn", 2*time.Second)
+	var warning struct {
+		Data structs.Warning `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &warning); err != nil {
+		t.Fatalf("unmarshal warning: %v", err)
+	}
+	if warning.Data.Key != "set-anti-dpi-failed" {
+		t.Errorf("warning key = %q, want set-anti-dpi-failed", warning.Data.Key)
 	}
 }
