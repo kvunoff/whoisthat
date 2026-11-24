@@ -2,37 +2,48 @@ package appconfig
 
 import (
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"whoisthat-core/lib/logger"
 	"whoisthat-core/lib/version"
+	"whoisthat-core/structs"
 	"whoisthat-core/utils"
 )
 
 var tunNameRe = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_-]{0,14}$`)
 
+const (
+	maxInt32           = 1<<31 - 1
+	maxFragmentLength  = 65535
+	maxAntiDPIDelayMs  = 60000
+	maxNoisePacketSize = 4096
+)
+
 type AppConfig struct {
-	SocksPort            int        `json:"socks-port"`
-	HttpPort             int        `json:"http-port"`
-	CoreTCPPort          int        `json:"core-tcp-port"`
-	TestPortRange        PortRange  `json:"test-port-range"`
-	DnsServers           []string   `json:"dns-servers"`
-	TunName              string     `json:"tun-name"`
-	HwidEnabled          bool       `json:"hwid-enabled"`
-	Hwid                 string     `json:"hwid"`
-	UserAgent            string     `json:"user-agent"`
-	KillSwitchEnabled    bool       `json:"kill-switch-enabled"`
-	AutoconnectEnabled   bool       `json:"autoconnect-enabled"`
-	AutoconnectGroupId   int        `json:"autoconnect-group-id"`
-	AutoconnectProfileId int        `json:"autoconnect-profile-id"`
-	AutoconnectMode      string     `json:"autoconnect-mode"`
-	TestConfig           TestConfig `json:"test-config"`
+	SocksPort            int                   `json:"socks-port"`
+	HttpPort             int                   `json:"http-port"`
+	CoreTCPPort          int                   `json:"core-tcp-port"`
+	TestPortRange        PortRange             `json:"test-port-range"`
+	DnsServers           []string              `json:"dns-servers"`
+	TunName              string                `json:"tun-name"`
+	HwidEnabled          bool                  `json:"hwid-enabled"`
+	Hwid                 string                `json:"hwid"`
+	UserAgent            string                `json:"user-agent"`
+	KillSwitchEnabled    bool                  `json:"kill-switch-enabled"`
+	AutoconnectEnabled   bool                  `json:"autoconnect-enabled"`
+	AutoconnectGroupId   int                   `json:"autoconnect-group-id"`
+	AutoconnectProfileId int                   `json:"autoconnect-profile-id"`
+	AutoconnectMode      string                `json:"autoconnect-mode"`
+	TestConfig           TestConfig            `json:"test-config"`
+	AntiDPI              structs.AntiDPIConfig `json:"anti-dpi"`
 	// IPCSocketPath is the Unix domain socket the core listens on. Empty means
 	// "derive the default from XDG_RUNTIME_DIR at runtime" (see SocketPath()).
 	IPCSocketPath string `json:"ipc-socket-path,omitempty"`
@@ -87,6 +98,35 @@ func defaultConfig() AppConfig {
 			TestEndpoint:   "https://cp.cloudflare.com/generate_204",
 			AutoTestOnSub:  true,
 		},
+		AntiDPI: defaultAntiDPIConfig(),
+	}
+}
+
+func defaultAntiDPIConfig() structs.AntiDPIConfig {
+	return structs.AntiDPIConfig{
+		Fragment: structs.AntiDPIFragment{
+			Packets:  "tlshello",
+			Length:   "100-200",
+			Interval: "10-20",
+		},
+		Noise: structs.AntiDPINoise{
+			Type:   "rand",
+			Packet: "50-100",
+			Delay:  "10-16",
+		},
+	}
+}
+
+func defaultNoisePacket(noiseType string) string {
+	switch noiseType {
+	case "str":
+		return "whoisthat"
+	case "base64":
+		return "d2hvaXN0aGF0"
+	case "hex":
+		return "77686f697374686174"
+	default:
+		return "50-100"
 	}
 }
 
@@ -114,6 +154,156 @@ func sanitizeTestConfig(cfg TestConfig) TestConfig {
 		cfg.TestEndpoint = application_configuration.TestConfig.TestEndpoint
 	}
 	return cfg
+}
+
+func SetAntiDPI(cfg structs.AntiDPIConfig) error {
+	cfg = normalizeAntiDPI(cfg)
+	if err := ValidateAntiDPI(cfg); err != nil {
+		return err
+	}
+	application_configuration.AntiDPI = cfg
+	SaveConfig()
+	return nil
+}
+
+func normalizeAntiDPI(cfg structs.AntiDPIConfig) structs.AntiDPIConfig {
+	cfg.Fragment.Packets = strings.TrimSpace(cfg.Fragment.Packets)
+	cfg.Fragment.Length = strings.TrimSpace(cfg.Fragment.Length)
+	cfg.Fragment.Interval = strings.TrimSpace(cfg.Fragment.Interval)
+	cfg.Noise.Type = strings.TrimSpace(cfg.Noise.Type)
+	cfg.Noise.Packet = strings.TrimSpace(cfg.Noise.Packet)
+	cfg.Noise.Delay = strings.TrimSpace(cfg.Noise.Delay)
+	return cfg
+}
+
+// ValidateAntiDPI rejects values Xray cannot build or would turn into an
+// unbounded allocation/sleep. The upper bounds are deliberately tighter than
+// Xray's int32 parser for noise length and delays.
+func ValidateAntiDPI(cfg structs.AntiDPIConfig) error {
+	if !validPackets(cfg.Fragment.Packets) {
+		return fmt.Errorf("anti-dpi.fragment.packets must be tlshello or N-M (N >= 1)")
+	}
+	if !validRange(cfg.Fragment.Length, 1, maxFragmentLength) {
+		return fmt.Errorf("anti-dpi.fragment.length must be N-M with 1 <= N <= M <= %d", maxFragmentLength)
+	}
+	if !validRange(cfg.Fragment.Interval, 0, maxAntiDPIDelayMs) {
+		return fmt.Errorf("anti-dpi.fragment.interval must be N-M with 0 <= N <= M <= %d", maxAntiDPIDelayMs)
+	}
+	switch cfg.Noise.Type {
+	case "rand", "str", "base64", "hex":
+	default:
+		return fmt.Errorf("anti-dpi.noise.type must be rand, str, base64, or hex")
+	}
+	if cfg.Noise.Type == "rand" {
+		if !validRange(cfg.Noise.Packet, 1, maxNoisePacketSize) {
+			return fmt.Errorf("anti-dpi.noise.packet must be N-M with 1 <= N <= M <= %d for rand", maxNoisePacketSize)
+		}
+	} else if !validNoisePayload(cfg.Noise.Type, cfg.Noise.Packet) {
+		return fmt.Errorf("anti-dpi.noise.packet must be a valid non-empty %s payload (max %d bytes)", cfg.Noise.Type, maxNoisePacketSize)
+	}
+	if !validRange(cfg.Noise.Delay, 0, maxAntiDPIDelayMs) {
+		return fmt.Errorf("anti-dpi.noise.delay must be N-M with 0 <= N <= M <= %d", maxAntiDPIDelayMs)
+	}
+	return nil
+}
+
+func sanitizeAntiDPI(cfg structs.AntiDPIConfig) structs.AntiDPIConfig {
+	def := defaultAntiDPIConfig()
+	cfg = normalizeAntiDPI(cfg)
+
+	if cfg.Fragment.Packets == "" {
+		cfg.Fragment.Packets = def.Fragment.Packets
+	} else if !validPackets(cfg.Fragment.Packets) {
+		logger.Warnf("config: invalid anti-dpi.fragment.packets %q, using default", cfg.Fragment.Packets)
+		cfg.Fragment.Packets = def.Fragment.Packets
+	}
+	if cfg.Fragment.Length == "" {
+		cfg.Fragment.Length = def.Fragment.Length
+	} else if !validRange(cfg.Fragment.Length, 1, maxFragmentLength) {
+		logger.Warnf("config: invalid anti-dpi.fragment.length %q, using default", cfg.Fragment.Length)
+		cfg.Fragment.Length = def.Fragment.Length
+	}
+	if cfg.Fragment.Interval == "" {
+		cfg.Fragment.Interval = def.Fragment.Interval
+	} else if !validRange(cfg.Fragment.Interval, 0, maxAntiDPIDelayMs) {
+		logger.Warnf("config: invalid anti-dpi.fragment.interval %q, using default", cfg.Fragment.Interval)
+		cfg.Fragment.Interval = def.Fragment.Interval
+	}
+
+	switch cfg.Noise.Type {
+	case "":
+		cfg.Noise.Type = def.Noise.Type
+	case "rand", "str", "base64", "hex":
+	default:
+		logger.Warnf("config: invalid anti-dpi.noise.type %q, using default", cfg.Noise.Type)
+		cfg.Noise.Type = def.Noise.Type
+	}
+	if cfg.Noise.Packet == "" {
+		cfg.Noise.Packet = defaultNoisePacket(cfg.Noise.Type)
+	} else if cfg.Noise.Type == "rand" && !validRange(cfg.Noise.Packet, 1, maxNoisePacketSize) {
+		logger.Warnf("config: invalid anti-dpi.noise.packet %q, using default", cfg.Noise.Packet)
+		cfg.Noise.Packet = defaultNoisePacket(cfg.Noise.Type)
+	} else if cfg.Noise.Type != "rand" && !validNoisePayload(cfg.Noise.Type, cfg.Noise.Packet) {
+		logger.Warnf("config: invalid anti-dpi.noise.packet for type %q, using default", cfg.Noise.Type)
+		cfg.Noise.Packet = defaultNoisePacket(cfg.Noise.Type)
+	}
+	if cfg.Noise.Delay == "" {
+		cfg.Noise.Delay = def.Noise.Delay
+	} else if !validRange(cfg.Noise.Delay, 0, maxAntiDPIDelayMs) {
+		logger.Warnf("config: invalid anti-dpi.noise.delay %q, using default", cfg.Noise.Delay)
+		cfg.Noise.Delay = def.Noise.Delay
+	}
+	return cfg
+}
+
+func validPackets(value string) bool {
+	if value == "tlshello" {
+		return true
+	}
+	_, _, ok := parseRange(value, 1, maxInt32)
+	return ok
+}
+
+func validRange(value string, min, max int64) bool {
+	_, _, ok := parseRange(value, min, max)
+	return ok
+}
+
+func parseRange(value string, min, max int64) (int64, int64, bool) {
+	parts := strings.Split(value, "-")
+	if len(parts) != 2 {
+		return 0, 0, false
+	}
+	from, err := strconv.ParseInt(strings.TrimSpace(parts[0]), 10, 64)
+	if err != nil {
+		return 0, 0, false
+	}
+	to, err := strconv.ParseInt(strings.TrimSpace(parts[1]), 10, 64)
+	if err != nil {
+		return 0, 0, false
+	}
+	if from < min || to > max || from > to {
+		return 0, 0, false
+	}
+	return from, to, true
+}
+
+func validNoisePayload(noiseType, payload string) bool {
+	if payload == "" || len(payload) > maxNoisePacketSize {
+		return false
+	}
+	switch noiseType {
+	case "str":
+		return true
+	case "base64":
+		decoded, err := base64.StdEncoding.DecodeString(payload)
+		return err == nil && len(decoded) > 0 && len(decoded) <= maxNoisePacketSize
+	case "hex":
+		decoded, err := hex.DecodeString(payload)
+		return err == nil && len(decoded) > 0 && len(decoded) <= maxNoisePacketSize
+	default:
+		return false
+	}
 }
 
 func GetConfig() AppConfig {

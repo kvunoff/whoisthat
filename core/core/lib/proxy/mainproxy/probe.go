@@ -169,6 +169,7 @@ func (p *ProxyManager) testViaXray(profile structs.Profile, method string, sampl
 			SocksPort:    port,
 			HttpPort:     -1,
 			DNSServers:   appconfig.GetConfig().DnsServers,
+			AntiDPI:      appconfig.GetConfig().AntiDPI,
 			GlobalGeoExt: geo.EnsureGlobalCopies(geoDir),
 		})
 		if prepErr != nil {

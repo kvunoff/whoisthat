@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"testing"
 	"whoisthat-core/lib/version"
+	"whoisthat-core/structs"
 )
 
 func TestDefaultConfigPorts(t *testing.T) {
@@ -290,5 +291,157 @@ func TestSocketPathHonorsOverride(t *testing.T) {
 func TestTCPDisabledByDefault(t *testing.T) {
 	if defaultConfig().TCPEnabled {
 		t.Error("TCPEnabled should default to false (UDS is the secure default)")
+	}
+}
+
+func TestDefaultConfigAntiDPI(t *testing.T) {
+	got := defaultConfig().AntiDPI
+	if got.Fragment.Enabled || got.Noise.Enabled {
+		t.Error("anti-DPI must default to off")
+	}
+	if got.Fragment.Packets != "tlshello" || got.Fragment.Length != "100-200" || got.Fragment.Interval != "10-20" {
+		t.Errorf("unexpected fragment defaults: %+v", got.Fragment)
+	}
+	if got.Noise.Type != "rand" || got.Noise.Packet != "50-100" || got.Noise.Delay != "10-16" {
+		t.Errorf("unexpected noise defaults: %+v", got.Noise)
+	}
+}
+
+func TestValidateAntiDPI(t *testing.T) {
+	valid := func() structs.AntiDPIConfig {
+		cfg := defaultAntiDPIConfig()
+		cfg.Fragment.Enabled = true
+		cfg.Noise.Enabled = true
+		return cfg
+	}
+	if err := ValidateAntiDPI(valid()); err != nil {
+		t.Fatalf("defaults must validate: %v", err)
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(*structs.AntiDPIConfig)
+	}{
+		{"empty packets", func(c *structs.AntiDPIConfig) { c.Fragment.Packets = "" }},
+		{"zero packets", func(c *structs.AntiDPIConfig) { c.Fragment.Packets = "0-1" }},
+		{"reversed packets", func(c *structs.AntiDPIConfig) { c.Fragment.Packets = "3-1" }},
+		{"packets overflow", func(c *structs.AntiDPIConfig) { c.Fragment.Packets = "1-2147483648" }},
+		{"zero length", func(c *structs.AntiDPIConfig) { c.Fragment.Length = "0-100" }},
+		{"length overflow", func(c *structs.AntiDPIConfig) { c.Fragment.Length = "1-65536" }},
+		{"negative interval", func(c *structs.AntiDPIConfig) { c.Fragment.Interval = "-1-5" }},
+		{"interval sleep", func(c *structs.AntiDPIConfig) { c.Fragment.Interval = "0-60001" }},
+		{"bad noise type", func(c *structs.AntiDPIConfig) { c.Noise.Type = "bogus" }},
+		{"zero rand", func(c *structs.AntiDPIConfig) { c.Noise.Packet = "0-10" }},
+		{"rand oom", func(c *structs.AntiDPIConfig) { c.Noise.Packet = "1-4097" }},
+		{"bad hex", func(c *structs.AntiDPIConfig) { c.Noise.Type = "hex"; c.Noise.Packet = "zz" }},
+		{"bad base64", func(c *structs.AntiDPIConfig) { c.Noise.Type = "base64"; c.Noise.Packet = "???" }},
+		{"empty str", func(c *structs.AntiDPIConfig) { c.Noise.Type = "str"; c.Noise.Packet = "" }},
+		{"delay sleep", func(c *structs.AntiDPIConfig) { c.Noise.Delay = "0-60001" }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := valid()
+			tt.mutate(&cfg)
+			if err := ValidateAntiDPI(cfg); err == nil {
+				t.Errorf("expected validation error for %+v", cfg)
+			}
+		})
+	}
+
+	for _, packets := range []string{"tlshello", "1-1", "1-3", "5-5"} {
+		cfg := valid()
+		cfg.Fragment.Packets = packets
+		if err := ValidateAntiDPI(cfg); err != nil {
+			t.Errorf("packets %q must validate: %v", packets, err)
+		}
+	}
+	for _, noiseType := range []string{"str", "base64", "hex"} {
+		cfg := valid()
+		cfg.Noise.Type = noiseType
+		cfg.Noise.Packet = defaultNoisePacket(noiseType)
+		if err := ValidateAntiDPI(cfg); err != nil {
+			t.Errorf("noise type %q must validate: %v", noiseType, err)
+		}
+	}
+}
+
+func TestSanitizeAntiDPIFallsBackPerField(t *testing.T) {
+	cfg := sanitizeAntiDPI(structs.AntiDPIConfig{
+		Fragment: structs.AntiDPIFragment{
+			Enabled:  true,
+			Packets:  "0-1",
+			Length:   "100-200",
+			Interval: "999999",
+		},
+		Noise: structs.AntiDPINoise{
+			Enabled: true,
+			Type:    "hex",
+			Packet:  "50-100",
+			Delay:   "10-16",
+		},
+	})
+	if cfg.Fragment.Packets != "tlshello" {
+		t.Errorf("packets fallback = %q", cfg.Fragment.Packets)
+	}
+	if cfg.Fragment.Length != "100-200" {
+		t.Errorf("valid length must be kept, got %q", cfg.Fragment.Length)
+	}
+	if cfg.Fragment.Interval != "10-20" {
+		t.Errorf("interval fallback = %q", cfg.Fragment.Interval)
+	}
+	if cfg.Noise.Packet != "77686f697374686174" {
+		t.Errorf("hex packet fallback = %q", cfg.Noise.Packet)
+	}
+	if !cfg.Fragment.Enabled || !cfg.Noise.Enabled {
+		t.Error("enabled flags must be preserved")
+	}
+}
+
+func TestSetAntiDPIPersists(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("XDG_DATA_HOME", filepath.Join(dir, "data"))
+
+	old := application_configuration
+	t.Cleanup(func() { application_configuration = old })
+	LoadConfig()
+
+	cfg := defaultAntiDPIConfig()
+	cfg.Fragment.Enabled = true
+	cfg.Noise.Enabled = true
+	cfg.Noise.Type = "hex"
+	cfg.Noise.Packet = "00ff"
+	if err := SetAntiDPI(cfg); err != nil {
+		t.Fatalf("SetAntiDPI: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dir, "whoisthat", "config.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saved AppConfig
+	if err := json.Unmarshal(data, &saved); err != nil {
+		t.Fatal(err)
+	}
+	if !saved.AntiDPI.Fragment.Enabled || !saved.AntiDPI.Noise.Enabled {
+		t.Errorf("enabled flags were not persisted: %+v", saved.AntiDPI)
+	}
+	if saved.AntiDPI.Noise.Packet != "00ff" {
+		t.Errorf("noise packet was not persisted: %+v", saved.AntiDPI.Noise)
+	}
+}
+
+func TestParseConfigAntiDPIDefaultsAndInvalidBlock(t *testing.T) {
+	cfg, status := parseConfig([]byte(`{"hwid-enabled":false}`))
+	if status.State != "ok" {
+		t.Fatalf("unexpected status: %+v", status)
+	}
+	if cfg.AntiDPI.Fragment.Packets != "tlshello" || cfg.AntiDPI.Noise.Type != "rand" {
+		t.Errorf("missing anti-dpi block must use defaults: %+v", cfg.AntiDPI)
+	}
+
+	cfg, _ = parseConfig([]byte(`{"anti-dpi":"not-an-object"}`))
+	if cfg.AntiDPI.Fragment.Packets != "tlshello" || cfg.AntiDPI.Noise.Type != "rand" {
+		t.Errorf("invalid anti-dpi block must use defaults: %+v", cfg.AntiDPI)
 	}
 }

@@ -36,6 +36,8 @@ func applyField(cfg *AppConfig, key string, raw json.RawMessage) error {
 		return json.Unmarshal(raw, &cfg.AutoconnectMode)
 	case "test-config":
 		return json.Unmarshal(raw, &cfg.TestConfig)
+	case "anti-dpi":
+		return json.Unmarshal(raw, &cfg.AntiDPI)
 	case "ipc-socket-path":
 		return json.Unmarshal(raw, &cfg.IPCSocketPath)
 	case "tcp-enabled":

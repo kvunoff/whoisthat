@@ -146,6 +146,20 @@ Auto-generated and synchronized by the Go core daemon:
     "test-endpoint": "https://cp.cloudflare.com/generate_204",
     "auto-test-on-subscribe": true
   },
+  "anti-dpi": {
+    "fragment": {
+      "enabled": false,
+      "packets": "tlshello",
+      "length": "100-200",
+      "interval": "10-20"
+    },
+    "noise": {
+      "enabled": false,
+      "type": "rand",
+      "packet": "50-100",
+      "delay": "10-16"
+    }
+  },
   "tcp-enabled": false
 }
 ```
@@ -160,6 +174,16 @@ Auto-generated and synchronized by the Go core daemon:
   * When the active Happ profile supplies DNS, its `RemoteDNS*` / `DomesticDNS*` servers take precedence; `dns-servers` are only used as a fallback. Happ DNS uses the reserved sink addresses `198.18.0.53` / `fd00::53` rather than the configured resolvers.
 * **`test-port-range`**: Ephemeral port boundary leased dynamically for concurrent latency test instances.
 * **`split-tunnel.mode`**: Can be `"off"`, `"exclude"`, or `"include"`.
+* **`anti-dpi`**: Global fragment/noise masks, applied to proxy outbounds on the
+  next connect. `fragment.packets` is `tlshello` or any `N-M` range with
+  `1 <= N <= M <= 2147483647`; the TUI only cycles four presets, but arbitrary
+  ranges are a supported feature. `fragment.length` is `1..65535`,
+  `fragment.interval` and `noise.delay` are `0..60000` ms. `noise.type` is
+  `rand`, `str`, `base64`, or `hex`; for `rand`, `noise.packet` is a length range
+  `1..4096`, otherwise it is a literal payload of at most 4096 bytes. Provider
+  masks in `fm` or JSON subscriptions take precedence, and a direction is only
+  filled when it is empty. Invalid values loaded from disk are replaced
+  per-field with the defaults; an invalid block type resets the whole block.
 
 ### Setting keys via CLI
 
@@ -175,6 +199,7 @@ IPC; local keys are written to `config.toml`.
 | `tun-name` | core (`config.json`) | applies on the next reconnect |
 | `hwid-enabled`, `user-agent` | core (`config.json`) | subscription headers |
 | `test.concurrency`, `test.timeout`, `test.samples`, `test.endpoint`, `test.auto-on-subscribe` | core (`config.json` → `test-config`) | sanitized by the daemon; the CLI re-reads state afterwards |
+| `anti-dpi.fragment.enabled`, `anti-dpi.fragment.packets`, `anti-dpi.fragment.length`, `anti-dpi.fragment.interval`, `anti-dpi.noise.enabled`, `anti-dpi.noise.type`, `anti-dpi.noise.packet`, `anti-dpi.noise.delay` | core (`config.json` → `anti-dpi`) | applies on the next connect; `noise.packet` depends on `noise.type`; sanitized by the daemon |
 | `theme`, `show-ip`, `log-enabled`, `log-level`, `terminal`, `test-method` | TUI (`config.toml`) | |
 | `core.host`, `core.port`, `core.use-tcp`, `core.socket` | TUI (`config.toml`) | affects the next CLI/TUI connection |
 

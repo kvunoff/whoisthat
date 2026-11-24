@@ -87,6 +87,41 @@ needed.
 hysteria2://password@server:443?sni=example.com&obfs=salamander&obfs-password=...&mport=20000-40000#Name
 ```
 
+## Anti-DPI: fragmentation and noise
+
+Xray's `streamSettings.finalmask` can split the first TLS packets or inject
+random UDP noise to make a proxy connection less fingerprintable.
+
+- **URI profiles** accept the provider's `fm` query parameter (except
+  `vmess://`, whose payload is base64 JSON). It is passed through as
+  `finalmask.tcp`, `finalmask.udp` and `finalmask.quicParams`; unknown masks are
+  preserved and rejected by Xray at preflight rather than silently dropped.
+- **JSON subscriptions** already carry the provider's `finalmask` verbatim.
+- **Global settings** in Settings → Anti-DPI add one fragment mask and one noise
+  mask to every proxy outbound that does not already have a mask for that
+  direction. Provider masks always win; service outbounds (`freedom`, `dns`,
+  `blackhole`, `loopback`) are never touched.
+
+| Setting | Finalmask field |
+| :--- | :--- |
+| `fragment.packets`, `length`, `interval` | `tcp[].settings.packets`, `length`, `delay` |
+| `noise.type`, `packet`, `delay` (type `rand`) | `udp[].settings.noise[].rand`, `delay` |
+| `noise.type`, `packet`, `delay` (type `str`/`base64`/`hex`) | `udp[].settings.noise[].type`, `packet`, `delay` |
+
+Fragment is effective on TCP transports (`tcp`, `ws`, `grpc`, `httpupgrade`,
+`xhttp`); noise is effective on UDP/QUIC transports (`hysteria`, `kcp`, `udp`,
+h3). Xray builds and validates every mask regardless of transport, so an invalid
+mask fails the whole config.
+
+The TUI offers four common `packets` presets (`tlshello`, `1-1`, `1-2`, `1-3`),
+but the core accepts **any valid `N-M` range**. This is intentional: providers
+and scenarios use different packet windows, and the value is syntax-checked, not
+restricted to the presets. `interval` is the UI name for Xray's `delay`.
+
+Global changes apply on the next connect. Defaults, ranges, and limits are owned
+by [Configuration Files Reference](/reference/configuration); the screen itself
+is described in [Settings Reference](/usage/settings).
+
 ## Not supported
 
 WireGuard and OpenVPN are not proxy protocols in this engine and are not

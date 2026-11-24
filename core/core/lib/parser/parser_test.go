@@ -3,6 +3,7 @@ package parser
 import (
 	"encoding/base64"
 	"encoding/json"
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -360,7 +361,7 @@ func TestHysteria2(t *testing.T) {
 	if fm == nil {
 		t.Fatalf("expected finalmask, got nil")
 	}
-	if fm.QuicParams == nil || fm.QuicParams.BrutalUp == nil || *fm.QuicParams.BrutalUp != "100mbps" {
+	if fm.QuicParams == nil || fm.QuicParams["brutalUp"] != "100mbps" {
 		t.Errorf("expected brutalUp 100mbps, got %v", fm.QuicParams)
 	}
 	if len(fm.UDP) != 2 {
@@ -375,6 +376,104 @@ func TestHysteria2(t *testing.T) {
 	yamlStr := string(yamlBytes)
 	if !strings.Contains(yamlStr, "server: example.com:443") || !strings.Contains(yamlStr, "auth: mypassword") {
 		t.Errorf("unexpected yaml content:\n%s", yamlStr)
+	}
+}
+
+func fmQuery(raw string) string {
+	return url.QueryEscape(raw)
+}
+
+func TestFinalmaskFromURI(t *testing.T) {
+	raw := `{"tcp":[{"type":"fragment","settings":{"packets":"tlshello","length":"100-200","delay":"10-20"}}],"udp":[{"type":"noise","settings":{"noise":[{"rand":"50-100","delay":"10-16"}]}},{"type":"bogus"}]}`
+
+	for name, fm := range map[string]string{
+		"direct":  raw,
+		"wrapped": `{"finalmask":` + raw + `}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			uri := "vless://uuid@example.com:443?type=tcp&security=tls&fm=" + fmQuery(fm)
+			outbound, _, err := createOutboundObject(uri)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			got := outbound.StreamSettings.Finalmask
+			if got == nil {
+				t.Fatal("expected finalmask, got nil")
+			}
+			if len(got.TCP) != 1 || len(got.UDP) != 2 {
+				t.Fatalf("unexpected masks: tcp=%d udp=%d", len(got.TCP), len(got.UDP))
+			}
+			if got.TCP[0].(map[string]any)["type"] != "fragment" {
+				t.Errorf("unexpected tcp mask: %v", got.TCP[0])
+			}
+			if got.UDP[1].(map[string]any)["type"] != "bogus" {
+				t.Errorf("unknown mask was not preserved: %v", got.UDP[1])
+			}
+		})
+	}
+
+	if fm := finalmaskFromURI("vmess://uuid@example.com:443?fm=" + fmQuery(raw)); fm != nil {
+		t.Errorf("vmess must not parse fm, got %+v", fm)
+	}
+	if fm := finalmaskFromURI("vless://uuid@example.com:443?fm=%7Bbroken"); fm != nil {
+		t.Errorf("invalid fm must be ignored, got %+v", fm)
+	}
+}
+
+func TestHysteria2FinalmaskMerge(t *testing.T) {
+	raw := `{"tcp":[{"type":"fragment","settings":{"packets":"1-2","length":"100-200","delay":"10-20"}}],"udp":[{"type":"noise","settings":{"noise":[{"rand":"50-100","delay":"10-16"}]}}],"quicParams":{"congestion":"bbr","brutalUp":"999mbps"}}`
+	uri := "hysteria2://mypassword@example.com:443?up=100mbps&down=200mbps&ports=20000-30000&obfs=salamander&obfs-password=secret&fm=" + fmQuery(raw)
+	outbound, _, err := createOutboundObject(uri)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	fm := outbound.StreamSettings.Finalmask
+	if fm == nil {
+		t.Fatal("expected finalmask, got nil")
+	}
+	if len(fm.TCP) != 1 {
+		t.Errorf("expected tcp fragment from fm, got %v", fm.TCP)
+	}
+	if fm.QuicParams["brutalUp"] != "100mbps" {
+		t.Errorf("URI up must win: %v", fm.QuicParams)
+	}
+	if fm.QuicParams["congestion"] != "bbr" {
+		t.Errorf("other fm quicParams must be preserved: %v", fm.QuicParams)
+	}
+	if len(fm.UDP) != 3 {
+		t.Fatalf("expected noise + udphop + salamander, got %d: %v", len(fm.UDP), fm.UDP)
+	}
+	if !hasMaskType(fm.UDP, "noise") || !hasMaskType(fm.UDP, "udphop") || !hasMaskType(fm.UDP, "salamander") {
+		t.Errorf("missing merged udp mask: %v", fm.UDP)
+	}
+}
+
+func TestHysteria2FinalmaskTCPOnly(t *testing.T) {
+	raw := `{"tcp":[{"type":"fragment","settings":{"packets":"tlshello","length":"100-200","delay":"10-20"}}]}`
+	uri := "hysteria2://mypassword@example.com:443?fm=" + fmQuery(raw)
+	outbound, _, err := createOutboundObject(uri)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	fm := outbound.StreamSettings.Finalmask
+	if fm == nil || len(fm.TCP) != 1 || len(fm.UDP) != 0 {
+		t.Fatalf("expected tcp-only finalmask, got %+v", fm)
+	}
+}
+
+func TestHysteria2ObfsDeduplicatesMask(t *testing.T) {
+	raw := `{"udp":[{"type":"salamander","settings":{"password":"from-fm"}}]}`
+	uri := "hysteria2://mypassword@example.com:443?obfs=salamander&obfs-password=secret&fm=" + fmQuery(raw)
+	outbound, _, err := createOutboundObject(uri)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	fm := outbound.StreamSettings.Finalmask
+	if fm == nil {
+		t.Fatal("expected finalmask, got nil")
+	}
+	if len(fm.UDP) != 1 {
+		t.Errorf("expected one salamander item, got %v", fm.UDP)
 	}
 }
 

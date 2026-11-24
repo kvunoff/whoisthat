@@ -275,17 +275,24 @@ func createOutboundObject(uri string) (Outbound, RawData, error) {
 			UDPIdleTimeout: &timeout,
 		}
 
-		var quicParams *QuicParamsSettings
-		if rd.Up != nil || rd.Down != nil {
-			quicParams = &QuicParamsSettings{
-				BrutalUp:   rd.Up,
-				BrutalDown: rd.Down,
-			}
+		fm := finalmaskFromURI(uri)
+		if fm == nil {
+			fm = &FinalmaskSettings{}
 		}
 
-		var udpItems []any
-		if rd.Ports != nil {
-			udpItems = append(udpItems, map[string]any{
+		qp := make(map[string]any, len(fm.QuicParams)+2)
+		for k, v := range fm.QuicParams {
+			qp[k] = v
+		}
+		if rd.Up != nil {
+			qp["brutalUp"] = *rd.Up
+		}
+		if rd.Down != nil {
+			qp["brutalDown"] = *rd.Down
+		}
+
+		if rd.Ports != nil && !hasMaskType(fm.UDP, "udphop") {
+			fm.UDP = append(fm.UDP, map[string]any{
 				"type": "udphop",
 				"settings": map[string]any{
 					"mode":        "intervalLocal,intervalRemote",
@@ -295,48 +302,29 @@ func createOutboundObject(uri string) (Outbound, RawData, error) {
 			})
 		}
 
-		if rd.FM != nil {
-			var val map[string]any
-			if err := json.Unmarshal([]byte(*rd.FM), &val); err == nil {
-				target := val
-				if fmObj, ok := val["finalmask"].(map[string]any); ok {
-					target = fmObj
-				}
-				if qpVal, ok := target["quicParams"].(map[string]any); ok && quicParams == nil {
-					var bUp, bDown *string
-					if u, ok := qpVal["brutalUp"].(string); ok {
-						bUp = &u
-					}
-					if d, ok := qpVal["brutalDown"].(string); ok {
-						bDown = &d
-					}
-					if bUp != nil || bDown != nil {
-						quicParams = &QuicParamsSettings{BrutalUp: bUp, BrutalDown: bDown}
-					}
-				}
-				if arr, ok := target["udp"].([]any); ok {
-					udpItems = append(udpItems, arr...)
-				}
-			}
-		} else if rd.ObfsPassword != nil {
+		if rd.ObfsPassword != nil {
 			obfsType := "salamander"
 			if rd.Obfs != nil && *rd.Obfs != "" {
 				obfsType = *rd.Obfs
 			}
-			udpItems = append(udpItems, map[string]any{
-				"type": obfsType,
-				"settings": map[string]any{
-					"password": *rd.ObfsPassword,
-				},
-			})
-		}
-
-		if quicParams != nil || len(udpItems) > 0 {
-			streamSettings.Finalmask = &FinalmaskSettings{
-				QuicParams: quicParams,
-				UDP:        udpItems,
+			if !hasMaskType(fm.UDP, obfsType) {
+				fm.UDP = append(fm.UDP, map[string]any{
+					"type": obfsType,
+					"settings": map[string]any{
+						"password": *rd.ObfsPassword,
+					},
+				})
 			}
 		}
+
+		if len(qp) > 0 {
+			fm.QuicParams = qp
+		}
+		if len(fm.TCP) > 0 || len(fm.UDP) > 0 || len(fm.QuicParams) > 0 {
+			streamSettings.Finalmask = fm
+		}
+	} else if fm := finalmaskFromURI(uri); fm != nil {
+		streamSettings.Finalmask = fm
 	}
 
 	outbound := Outbound{
@@ -347,4 +335,57 @@ func createOutboundObject(uri string) (Outbound, RawData, error) {
 	}
 
 	return outbound, rd, nil
+}
+
+// finalmaskFromURI extracts the provider's finalmask JSON from the fm query
+// parameter. URI profiles with an invalid or empty fm are left without masks;
+// xray run -test still validates whatever is passed through. vmess:// carries
+// its payload as base64 JSON, so it has no query string to inspect.
+func finalmaskFromURI(uri string) *FinalmaskSettings {
+	if strings.HasPrefix(uri, "vmess://") {
+		return nil
+	}
+	rest, _, _ := splitOnce(uri, "#")
+	_, rawQuery, ok := splitOnce(rest, "?")
+	if !ok {
+		return nil
+	}
+	raw := getQueryParam(parseQuery(rawQuery), "fm")
+	if raw == nil {
+		return nil
+	}
+
+	var val map[string]any
+	if err := json.Unmarshal([]byte(URLDecode(*raw)), &val); err != nil {
+		return nil
+	}
+	if inner, ok := val["finalmask"].(map[string]any); ok {
+		val = inner
+	}
+
+	fm := &FinalmaskSettings{}
+	if tcp, ok := val["tcp"].([]any); ok {
+		fm.TCP = tcp
+	}
+	if udp, ok := val["udp"].([]any); ok {
+		fm.UDP = udp
+	}
+	if qp, ok := val["quicParams"].(map[string]any); ok {
+		fm.QuicParams = qp
+	}
+	if len(fm.TCP) == 0 && len(fm.UDP) == 0 && len(fm.QuicParams) == 0 {
+		return nil
+	}
+	return fm
+}
+
+func hasMaskType(items []any, typ string) bool {
+	for _, item := range items {
+		if m, ok := item.(map[string]any); ok {
+			if t, _ := m["type"].(string); t == typ {
+				return true
+			}
+		}
+	}
+	return false
 }

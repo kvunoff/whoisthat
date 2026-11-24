@@ -57,6 +57,7 @@ func buildPreflightConfig(
 			BootstrapHosts:     selection.BootstrapHosts,
 			UserRules:          selection.Config.Rules,
 			UserDomainStrategy: selection.Config.DomainStrategy,
+			AntiDPI:            appconfig.GetConfig().AntiDPI,
 			GlobalGeoExt:       geo.EnsureGlobalCopies(selection.GeoDir),
 		})
 		if prepErr != nil {

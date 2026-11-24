@@ -21,6 +21,7 @@ type Options struct {
 	BootstrapHosts     map[string][]string
 	UserRules          []structs.RoutingRule
 	UserDomainStrategy string
+	AntiDPI            structs.AntiDPIConfig
 	// GlobalGeoExt is set when the runtime asset directory also contains
 	// geoip-global.dat/geosite-global.dat next to the provider's own geo files.
 	// Manual rules with global geo codes are then compiled against those copies.
@@ -65,6 +66,8 @@ func Prepare(raw json.RawMessage, opts Options) (Prepared, error) {
 
 	routing := asMap(config["routing"])
 	config["routing"] = mergeRouting(routing, outbounds, proxyTags, opts)
+
+	applyAntiDPIToConfig(config, opts.AntiDPI)
 
 	result, err := json.Marshal(config)
 	if err != nil {
