@@ -40,6 +40,7 @@ func (p *ProxyManager) prepareManagedConfig(
 		BootstrapHosts:     bootstrap,
 		UserRules:          manual.Rules,
 		UserDomainStrategy: manual.DomainStrategy,
+		AntiDPI:            appconfig.GetConfig().AntiDPI,
 		GlobalGeoExt:       geo.EnsureGlobalCopies(geoDir),
 	})
 	if err != nil {

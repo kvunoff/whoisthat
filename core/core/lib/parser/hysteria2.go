@@ -132,7 +132,6 @@ func parseHysteria2(uri string) (RawData, HysteriaOutboundSettings, error) {
 		Up:            urlDecodePtr(getQueryParam(query, "up")),
 		Down:          urlDecodePtr(getQueryParam(query, "down")),
 		Ports:         urlDecodePtr(getQueryParam(query, "ports", "mport")),
-		FM:            decodedFM,
 	}
 
 	outboundSettings := HysteriaOutboundSettings{

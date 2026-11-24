@@ -218,16 +218,11 @@ type HysteriaSettings struct {
 	UDPIdleTimeout *uint32 `json:"udpIdleTimeout,omitempty"`
 }
 
-// QuicParamsSettings holds brutal bandwidth parameters.
-type QuicParamsSettings struct {
-	BrutalUp   *string `json:"brutalUp,omitempty"`
-	BrutalDown *string `json:"brutalDown,omitempty"`
-}
-
 // FinalmaskSettings holds obfuscation and port-hopping settings.
 type FinalmaskSettings struct {
-	QuicParams *QuicParamsSettings `json:"quicParams,omitempty"`
-	UDP        []any               `json:"udp,omitempty"`
+	TCP        []any          `json:"tcp,omitempty"`
+	UDP        []any          `json:"udp,omitempty"`
+	QuicParams map[string]any `json:"quicParams,omitempty"`
 }
 
 // StreamSettings describes transport, security, and protocol parameters.
@@ -283,7 +278,6 @@ type RawData struct {
 	Up            *string
 	Down          *string
 	Ports         *string
-	FM            *string
 }
 
 // ProfileMetadata represents extracted profile metadata.

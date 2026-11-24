@@ -74,7 +74,9 @@ connection changes so two clients cannot race the Xray/TUN transition.
 - `db` owns the encrypted files, group/profile/routing persistence, snapshots
   and the degraded read-only state.
 - `ProxyManager` resolves routing, builds Xray JSON in memory, preflights it,
-  starts/stops Xray and publishes stats.
+  starts/stops Xray and publishes stats. Global anti-DPI settings are compiled
+  into `streamSettings.finalmask` for URI and managed JSON profiles; provider
+  masks win and only missing directions are filled.
 - `TunModeManager` owns TUN, policy routing, split cgroups, DNS hijack,
   kill-switch and orphan reconciliation.
 - `xraymgr` pins the Xray version, downloads and verifies it, and can adopt an

@@ -120,6 +120,7 @@ func LoadConfig() {
 	config.TunName = sanitizeTunName(config.TunName)
 	config.AutoconnectMode = sanitizeAutoconnectMode(config.AutoconnectMode)
 	config.TestConfig = sanitizeTestConfig(config.TestConfig)
+	config.AntiDPI = sanitizeAntiDPI(config.AntiDPI)
 	var migratedUserAgent bool
 	config.UserAgent, migratedUserAgent = migrateUserAgent(config.UserAgent)
 	// include-mode split tunnel only routes the marked apps through the VPN;
