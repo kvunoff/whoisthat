@@ -37,7 +37,11 @@ Use these terms consistently in the TUI, CLI, code, and documentation.
 | **doctor** | The `whoisthat doctor` system and runtime diagnostics suite. |
 | **deep link** | A `wit://` URL that imports a profile or subscription. |
 | **IPC** | The length-prefixed JSON protocol between the client and the core. |
-| **protocol version** | The IPC compatibility number (`5` in the current release). |
+| **protocol version** | The IPC compatibility number reported by `whoisthat core status`. |
+| **anti-DPI** | Xray transport behavior that fragments TCP packets or injects UDP noise. |
+| **finalmask** | The Xray `streamSettings` block that carries `tcp` and `udp` masks. One word. |
+| **fragment** | A `finalmask.tcp` mask that splits the first transport packets. |
+| **noise** | A `finalmask.udp` mask that injects random or literal payloads. |
 | **Xray-core** | The pinned proxy runtime managed by the core. |
 | **status JSON** | The stable `whoisthat status --json` and NDJSON contract. |
 | **warning key** | A machine-readable `warn` reason such as `connect-failed`. |
@@ -52,6 +56,8 @@ Use these terms consistently in the TUI, CLI, code, and documentation.
 - "split tunneling", not "split tunnelling".
 - "kill-switch", not "kill switch" or "killswitch".
 - "FakeDNS", not "fake DNS" or "fake-ip" in prose.
+- "anti-DPI", not "anti DPI"; "finalmask" is one word.
+- "fragment" and "noise" are lowercase when they name the mask types.
 - "core" for the daemon; "client" for the Rust process.
 - "TUN mode" and "proxy mode" in titles; lowercase in running text.
 
