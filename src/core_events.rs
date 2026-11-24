@@ -361,6 +361,10 @@ pub(crate) async fn handle_core_event(
         CoreEvent::TestConfigUpdated(c) => {
             app.test_config = c;
         }
+        CoreEvent::AntiDPIUpdated(c) => {
+            app.anti_dpi = Some(c);
+            app.msg("Anti-DPI updated (applies on next connect)");
+        }
         CoreEvent::XrayProgress(p) => {
             let ver = if p.version.is_empty() {
                 "core"

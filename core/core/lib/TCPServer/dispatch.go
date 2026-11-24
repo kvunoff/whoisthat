@@ -134,6 +134,14 @@ func (s *Server) dispatch(handler cmd.Cmd, raw_tcp_message structs.TCPMessage) b
 		}
 		handler.SetTestConfig(data, s.proxy_manager)
 
+	case "set-anti-dpi":
+		var data structs.SetAntiDPIData
+		if err := json.Unmarshal(raw_tcp_message.Data, &data); err != nil {
+			logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
+			return false
+		}
+		handler.SetAntiDPI(data)
+
 	case "get-application-state":
 		var data structs.GetApplicationStateData
 		if err := json.Unmarshal(raw_tcp_message.Data, &data); err != nil {

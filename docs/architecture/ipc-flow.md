@@ -26,9 +26,9 @@ The 64 MiB cap is enforced on both sides. The pre-auth TCP `hello` is capped at
 before the token check. UDS is the default (`0600`,
 `$XDG_RUNTIME_DIR/whoisthat/core.sock` or the runtime-dir fallback). The TCP
 listener is loopback-only and requires a `hello` with the token from
-`ipc.token` plus protocol version 5. A failed handshake is closed without
-processing commands. The client refuses a non-loopback host (and a
-`localhost` that resolves outside loopback) before reading or sending the
+`ipc.token` plus the protocol version in `protocol.txt`. A failed handshake is
+closed without processing commands. The client refuses a non-loopback host (and
+a `localhost` that resolves outside loopback) before reading or sending the
 token.
 
 ## Attach sequence

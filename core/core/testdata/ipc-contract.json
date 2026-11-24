@@ -1,4 +1,20 @@
 {
+  "anti_dpi_updated": {
+    "config": {
+      "fragment": {
+        "enabled": true,
+        "packets": "tlshello",
+        "length": "100-200",
+        "interval": "10-20"
+      },
+      "noise": {
+        "enabled": true,
+        "type": "rand",
+        "packet": "50-100",
+        "delay": "10-16"
+      }
+    }
+  },
   "application_state": {
     "groups": [
       {
@@ -116,6 +132,20 @@
       "test_endpoint": "https://cp.cloudflare.com/generate_204",
       "auto_test_on_subscribe": true
     },
+    "anti_dpi": {
+      "fragment": {
+        "enabled": true,
+        "packets": "tlshello",
+        "length": "100-200",
+        "interval": "10-20"
+      },
+      "noise": {
+        "enabled": true,
+        "type": "rand",
+        "packet": "50-100",
+        "delay": "10-16"
+      }
+    },
     "config_status": {
       "state": "ok",
       "error": "none"
@@ -224,6 +254,22 @@
         "hosts": {
           "vpn.example.test": "203.0.113.7"
         }
+      }
+    }
+  },
+  "set_anti_dpi_request": {
+    "config": {
+      "fragment": {
+        "enabled": true,
+        "packets": "tlshello",
+        "length": "100-200",
+        "interval": "10-20"
+      },
+      "noise": {
+        "enabled": true,
+        "type": "rand",
+        "packet": "50-100",
+        "delay": "10-16"
       }
     }
   },

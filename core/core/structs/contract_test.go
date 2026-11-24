@@ -195,9 +195,13 @@ func ipcContractFixtures() map[string]any {
 		ProtocolVersion: 5,
 		TunName:         "whoisthattun",
 		TestConfig:      testConfig,
-		ConfigStatus:    ConfigStatus{State: "ok", Error: "none"},
-		DBStatus:        DBStatus{State: "ok", Error: "none", SnapshotAt: "20261102"},
-		Traffic:         trafficSample,
+		AntiDPI: AntiDPIConfig{
+			Fragment: AntiDPIFragment{Enabled: true, Packets: "tlshello", Length: "100-200", Interval: "10-20"},
+			Noise:    AntiDPINoise{Enabled: true, Type: "rand", Packet: "50-100", Delay: "10-16"},
+		},
+		ConfigStatus: ConfigStatus{State: "ok", Error: "none"},
+		DBStatus:     DBStatus{State: "ok", Error: "none", SnapshotAt: "20261102"},
+		Traffic:      trafficSample,
 	}
 	routingConfig := RoutingConfig{
 		DomainStrategy: "IPIfNonMatch",
@@ -232,6 +236,8 @@ func ipcContractFixtures() map[string]any {
 		"connect_request":         ConnectData{Profile: ProfileID{Id: 7, GroupId: 3}},
 		"update_group_request":    UpdateGroupData{Id: 3, Name: "Premium", SubscriptionUrl: "https://provider.test/sub/token", AutoUpdate: ipcContractPtr(true), UpdateInterval: ipcContractPtr(int64(21600))},
 		"set_test_config_request": SetTestConfigData{Config: testConfig},
+		"set_anti_dpi_request":    SetAntiDPIData{Config: applicationState.AntiDPI},
+		"anti_dpi_updated":        AntiDPIUpdated{Config: applicationState.AntiDPI},
 		"set_autoconnect_request": SetAutoconnectData{Enabled: true, GroupId: 3, ProfileId: 7, Mode: "tun"},
 		"test_config_updated":     TestConfigUpdated{Config: testConfig},
 		"traffic_sample":          trafficSample,

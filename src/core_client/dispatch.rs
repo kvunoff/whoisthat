@@ -50,6 +50,7 @@ pub enum CoreEvent {
     AutoconnectUpdated(AutoconnectInfo),
     TestProgress(TestProgress),
     TestConfigUpdated(TestConfig),
+    AntiDPIUpdated(AntiDPIConfig),
     XrayProgress(XrayProgressNotification),
     ProfilesReordered {
         group_id: i32,
@@ -304,6 +305,11 @@ pub(crate) fn dispatch(msg: TcpMessage) -> CoreEvent {
         "test-config-updated" => {
             try_dispatch!(msg, "test-config-updated", TestConfigUpdated, |d| {
                 CoreEvent::TestConfigUpdated(d.config)
+            })
+        }
+        "anti-dpi-updated" => {
+            try_dispatch!(msg, "anti-dpi-updated", AntiDPIUpdated, |d| {
+                CoreEvent::AntiDPIUpdated(d.config)
             })
         }
         "xray-progress" => {
@@ -746,25 +752,33 @@ mod tests {
     }
 
     #[test]
-    fn test_dispatch_test_config_updated() {
+    fn test_dispatch_anti_dpi_updated() {
         let event = dispatch(make_msg(
-            "test-config-updated",
+            "anti-dpi-updated",
             json!({
                 "config": {
-                    "concurrency": 16,
-                    "timeout_seconds": 5,
-                    "samples_per_test": 3,
-                    "test_endpoint": "https://example.com/204",
-                    "auto_test_on_subscribe": true
+                    "fragment": {
+                        "enabled": true,
+                        "packets": "tlshello",
+                        "length": "100-200",
+                        "interval": "10-20"
+                    },
+                    "noise": {
+                        "enabled": true,
+                        "type": "hex",
+                        "packet": "00ff",
+                        "delay": "10-16"
+                    }
                 }
             }),
         ));
-        if let CoreEvent::TestConfigUpdated(c) = event {
-            assert_eq!(c.concurrency, 16);
-            assert_eq!(c.samples_per_test, 3);
-            assert!(c.auto_test_on_subscribe);
+        if let CoreEvent::AntiDPIUpdated(c) = event {
+            assert!(c.fragment.enabled);
+            assert_eq!(c.fragment.packets, "tlshello");
+            assert_eq!(c.noise.noise_type, "hex");
+            assert_eq!(c.noise.packet, "00ff");
         } else {
-            panic!("expected TestConfigUpdated");
+            panic!("expected AntiDPIUpdated");
         }
     }
 

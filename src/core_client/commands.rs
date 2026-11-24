@@ -180,6 +180,19 @@ impl CoreClient {
             .await
     }
 
+    pub async fn set_anti_dpi(&self, config: &AntiDPIConfig) -> std::io::Result<()> {
+        self.writer
+            .lock()
+            .await
+            .send(
+                "set-anti-dpi",
+                &SetAntiDPIData {
+                    config: config.clone(),
+                },
+            )
+            .await
+    }
+
     pub async fn enable_tun(&self) -> std::io::Result<()> {
         self.writer
             .lock()
