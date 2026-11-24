@@ -93,6 +93,15 @@ It refuses to run as root.
 
 ---
 
+### Finalmask validation
+
+`make test-xray` runs every fragment/noise combination through the pinned Xray
+binary with `xray run -test`. It skips when no Xray binary is available; set
+`WHOISTHAT_XRAY_BIN` to force one. Run it before a release that changes the
+anti-DPI mapping.
+
+---
+
 ## CI
 
 Every pull request runs the workflows in `.github/workflows/`. The jobs are
