@@ -93,6 +93,7 @@ remove copies elsewhere.
 | Doctor categories and JSON report | `reference/doctor.md` |
 | Keybindings and mouse actions | `usage/navigation.md` |
 | Settings screen behavior | `usage/settings.md` |
+| Anti-DPI `fm` and finalmask behavior | `networking/protocols.md` |
 | Log format, rotation, and log-file paths | `usage/logs.md` |
 | Capabilities, authorize-core, ambient capabilities | `networking/tun-mode.md` |
 | Upgrade, downgrade, uninstall, backup, restore, repair | `guide/maintenance.md` |
@@ -350,6 +351,7 @@ Keep a living table of areas, canonical pages, and owners in this guide:
 | split tunnel | `usage/split-tunnel.md`, `architecture/networking.md` | networking |
 | routing | `usage/routing.md`, `networking/routing-rules.md`, `reference/routing-precedence.md`, `architecture/routing-engine.md` | routing |
 | CLI and config | `reference/cli.md`, `reference/configuration.md` | core |
+| anti-DPI | `networking/protocols.md`, `usage/settings.md`, `reference/configuration.md` | core |
 | traffic accounting | `usage/traffic.md`, `reference/protocol.md`, `architecture/go-core.md` | core |
 
 Update the table in the same change that adds, removes, or moves a page. When
