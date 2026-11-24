@@ -2,7 +2,7 @@ SHELL := /bin/bash
 BINDIR ?= /usr/bin
 FUZZTIME ?= 30s
 
-.PHONY: all build core rust test test-go test-race test-rust test-scripts test-e2e test-fuzz test-ppa lint lint-shell version-check docs-check fmt integration docs install clean coverage package-aur package-aur-bin package-ppa
+.PHONY: all build core rust test test-go test-race test-rust test-scripts test-e2e test-xray test-fuzz test-ppa lint lint-shell version-check docs-check fmt integration docs install clean coverage package-aur package-aur-bin package-ppa
 
 all: build
 
@@ -39,6 +39,15 @@ package-%:
 # Needs both binaries built (`make core` and `cargo build`).
 test-e2e:
 	./scripts/ipc-e2e.test.sh
+
+# Validate finalmask fragment/noise combinations with the pinned Xray binary.
+# Skips when no binary is installed; set WHOISTHAT_XRAY_BIN to force one.
+test-xray:
+	@cd core/core && \
+	XRAY_BIN="$${WHOISTHAT_XRAY_BIN:-}"; \
+	if [ -z "$$XRAY_BIN" ]; then XRAY_BIN="$$(ls -d "$$HOME"/.local/share/whoisthat/runtimes/xray/v*/xray 2>/dev/null | sort -V | tail -1)"; fi; \
+	if [ -z "$$XRAY_BIN" ]; then XRAY_BIN="$$(command -v xray || true)"; fi; \
+	WHOISTHAT_XRAY_BIN="$$XRAY_BIN" go test ./lib/xrayjson -run TestFinalmaskConfigsWithXray -count=1 -v
 
 # Coverage report with the same line floors as CI.
 # Requires: rustup component add llvm-tools-preview && cargo install cargo-llvm-cov

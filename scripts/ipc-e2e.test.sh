@@ -103,6 +103,33 @@ while [ "$SECONDS" -lt "$deadline" ]; do
       exit 1
     fi
 
+    # --- anti-DPI settings ------------------------------------------------
+    "$TUI_BIN" settings set \
+      anti-dpi.fragment.enabled=true \
+      anti-dpi.fragment.packets=1-2 \
+      anti-dpi.noise.type=hex \
+      anti-dpi.noise.packet=00ff \
+      --socket "$SOCKET" >/dev/null
+    packets=$("$TUI_BIN" settings get anti-dpi.fragment.packets --socket "$SOCKET" --json)
+    case "$packets" in
+      *'"value":"1-2"'*) ;;
+      *) echo "ipc-e2e: anti-dpi.fragment.packets not applied: $packets" >&2; exit 1 ;;
+    esac
+    noise_type=$("$TUI_BIN" settings get anti-dpi.noise.type --socket "$SOCKET" --json)
+    case "$noise_type" in
+      *'"value":"hex"'*) ;;
+      *) echo "ipc-e2e: anti-dpi.noise.type not applied: $noise_type" >&2; exit 1 ;;
+    esac
+    noise_packet=$("$TUI_BIN" settings get anti-dpi.noise.packet --socket "$SOCKET" --json)
+    case "$noise_packet" in
+      *'"value":"00ff"'*) ;;
+      *) echo "ipc-e2e: anti-dpi.noise.packet not applied: $noise_packet" >&2; exit 1 ;;
+    esac
+    grep -q '"anti-dpi"' "$XDG_CONFIG_HOME/whoisthat/config.json" ||
+      { echo "ipc-e2e: anti-dpi missing from config.json" >&2; exit 1; }
+    grep -q '"packets": "1-2"' "$XDG_CONFIG_HOME/whoisthat/config.json" ||
+      { echo "ipc-e2e: anti-dpi fragment not persisted" >&2; exit 1; }
+
     if command -v python3 >/dev/null 2>&1; then
       python3 - "$SOCKET" <<'PY' || exit 1
 import json, socket, struct, sys, time
