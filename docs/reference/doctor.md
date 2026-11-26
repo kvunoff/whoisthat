@@ -110,8 +110,8 @@ When running `whoisthat doctor --json`:
 
 ```json
 {
-  "version": "0.19.5",
-  "core_version": "0.5.8",
+  "version": "0.19.6",
+  "core_version": "0.5.9",
   "core_protocol_version": 6,
   "categories": [
     {
@@ -120,7 +120,7 @@ When running `whoisthat doctor --json`:
         {
           "name": "whoisthat",
           "status": "pass",
-          "message": "/usr/bin/whoisthat (v0.19.5)"
+          "message": "/usr/bin/whoisthat (v0.19.6)"
         },
         {
           "name": "whoisthat-core",

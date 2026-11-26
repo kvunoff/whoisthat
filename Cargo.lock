@@ -2598,7 +2598,7 @@ dependencies = [
 
 [[package]]
 name = "whoisthat"
-version = "0.19.5"
+version = "0.19.6"
 dependencies = [
  "arboard",
  "base64 0.23.1",
