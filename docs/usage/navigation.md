@@ -87,6 +87,25 @@ Tab Switcher. For the full CLI surface see the [CLI Reference](/reference/cli).
 
 ---
 
+## Settings Tab Shortcuts (Tab 5)
+
+| Key | Context | Action |
+| :---: | :--- | :--- |
+| <kbd>j</kbd> / <kbd>k</kbd>, <kbd>↓</kbd> / <kbd>↑</kbd> | Tree / settings | Move the cursor in the focused panel |
+| <kbd>Tab</kbd> / <kbd>BackTab</kbd> | Settings | Switch focus between the section tree and the settings panel |
+| <kbd>Enter</kbd> / <kbd>Space</kbd> | Section | Expand or collapse the section |
+| <kbd>Enter</kbd> / <kbd>Space</kbd> | Group | Open the group's settings in the right panel |
+| <kbd>Enter</kbd> / <kbd>Space</kbd> | Setting | Toggle, cycle, open the text editor, or run the action |
+| <kbd>h</kbd> / <kbd>l</kbd>, <kbd>←</kbd> / <kbd>→</kbd> | Tree | Collapse / expand the highlighted section |
+| <kbd>h</kbd> / <kbd>l</kbd>, <kbd>←</kbd> / <kbd>→</kbd> | Theme row | Cycle the palette backward / forward with live preview |
+| <kbd>/</kbd> | Settings | Search all settings by name, section, or group; <kbd>Enter</kbd> jumps to the match, <kbd>Esc</kbd> clears |
+| <kbd>Esc</kbd> | Settings | Return focus to the tree, or clear the search |
+
+On terminals narrower than 60 columns the tree is hidden and the settings are
+shown as one list; <kbd>Tab</kbd> does nothing there.
+
+---
+
 ## Tab Switching Shortcuts
 
 | Shortcut | Destination Tab | Key Highlights |
@@ -96,7 +115,7 @@ Tab Switcher. For the full CLI surface see the [CLI Reference](/reference/cli).
 | <kbd>2</kbd> | **Routing** | Rule editor, presets catalog, Happ profiles modal |
 | <kbd>3</kbd> | **Traffic** | Real-time Braille bandwidth monitor (RX green, TX red) |
 | <kbd>4</kbd> | **Logs** | Live core/TUI log tail (<kbd>s</kbd> switches source) with level filter (<kbd>f</kbd>), search (<kbd>/</kbd>) and clear (<kbd>c</kbd>) |
-| <kbd>5</kbd> | **Settings** | Configuration editor for themes, autostart, TUN name, kill-switch, split tunnel, logging, latency tests, HWID and User-Agent |
+| <kbd>5</kbd> | **Settings** | Tree of sections on the left, settings on the right, global <kbd>/</kbd> search |
 
 ---
 

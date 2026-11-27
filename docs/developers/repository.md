@@ -56,6 +56,8 @@ whoisthat/
 │   ├── launcher.rs     ← `whoisthat run` — systemd-run or whoisthat-runner, foreground/background
 │   ├── terminal.rs     ← Re-exec the TUI in a terminal when launched without a tty
 │   ├── config.rs       ← Config loader (~/.config/whoisthat/config.toml)
+│   ├── settings/       ← Shared settings registry (metadata for the TUI and CLI)
+│   │   └── registry.rs ← SettingsId, sections, groups, kinds, sources, CLI keys
 │   ├── core_client/    ← IPC client for the Go core (Unix domain socket / TCP)
 │   │   ├── protocol.rs ← All serde types mirroring Go structs
 │   │   ├── connection.rs ← UDS/TCP transport + 4-byte length framing

@@ -36,6 +36,12 @@ autostart backends. On systems without systemd use the `init` service or a
 desktop entry. The legacy `whoisthat systemd …` command still forces this
 backend.
 
+**Autostart** in Settings → Startup & updates → Service starts `off`. The row
+cycles through the backends detected on the host and then back to `off`:
+`systemd` (user unit with lingering), `init` (per-user marker for the init
+service), and `desktop` (`~/.config/autostart/whoisthat-core.desktop`). A host
+with no detected backend shows `unavailable`.
+
 ### Unit file
 
 When you toggle **Autostart** in Settings (or run

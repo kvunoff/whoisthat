@@ -1,13 +1,18 @@
 ---
 title: "Settings Reference"
-description: "Every row in the WhoisThat Settings screen, with defaults and CLI equivalents."
+description: "How the Settings screen is organized, and how to find and change a setting."
 audience: "user"
 type: "reference"
 ---
 
 # Settings Reference
 
-The Settings tab (<kbd>5</kbd> or cycle with <kbd>[</kbd> / <kbd>]</kbd>) provides an interactive control panel for configuring all runtime behaviors of WhoisThat.
+The Settings tab (<kbd>5</kbd> or <kbd>[</kbd> / <kbd>]</kbd>) shows a tree of
+sections on the left and the settings of the selected group on the right. Press
+<kbd>/</kbd> to search every setting by name, section, or group; <kbd>Enter</kbd>
+jumps to the match. On narrow terminals the two panels collapse into one list
+with section headers. Keybindings and mouse actions are owned by
+[Navigation & Keybindings](/usage/navigation).
 
 The same values are available from the terminal:
 
@@ -15,126 +20,74 @@ The same values are available from the terminal:
 whoisthat settings list
 whoisthat settings set split-tunnel=exclude kill-switch=true
 whoisthat settings set theme=tokyo-night log-level=debug
-whoisthat settings set terminal=alacritty     # app-menu launcher only
 ```
 
-`terminal` controls which emulator the desktop launcher opens; it is not exposed
-in the interactive Settings tab (set it from the CLI or `config.toml`).
+Defaults, allowed values, ranges and config keys are owned by
+[Configuration Files Reference](/reference/configuration); CLI keys are owned by
+the [CLI Reference](/reference/cli).
 
 ---
 
-## Interactive Settings Table
+## Sections and groups
 
-| Setting | Allowed Values | Default | Description |
-| :--- | :--- | :--- | :--- |
-| **Theme** | 4 palettes | `graphite-dark` | Visual color palette with live preview (Graphite Dark, Graphite Light, Tokyo Night, Dracula). |
-| **Show IP** | `on` / `off` | `on` | Display public IPv4/IPv6 in the top status bar; refreshed on startup and whenever the connection state changes. |
-| **Autoconnect** | `on` / `off` | `off` | Automatically connect to the last used profile when the core daemon initializes. |
-| **Autoconnect Mode** | `proxy` / `tun` | `proxy` | Connection mode applied when autoconnect triggers (`proxy` = local SOCKS5/HTTP, `tun` = full system VPN). |
-| **Autostart** | `off`, `systemd`, `init`, `desktop` (available backends are cycled) | `off` | Enables the selected autostart backend. `systemd` uses a user unit plus lingering; `init` writes the per-user marker for the init service; `desktop` creates `~/.config/autostart/whoisthat-core.desktop`. |
-| **Verbose TUI log** | `on` / `off` | `off` | `off` caps the TUI at `warn`: errors are always written, warnings unless Log Level is `error`; `on` writes the configured level (including `info`/`debug`). |
-| **Log Level** | `error`, `warn`, `info`, `debug`, `trace` | `warn` | Threshold for both components. Applied to the TUI immediately and to the running core over IPC (`set-log-level`); `trace` is treated as `debug` by the core. When **Verbose TUI log** is off, the TUI caps this at `warn`. |
-| **Test Method** | `tcp`, `http-get`, `http-head` | `http-get` | Latency testing strategy. `http-get` routes via SOCKS5 proxy to measure real round-trip times. |
-| **Test Samples** | `1`, `3`, `5`, `10` | `3` | Number of sequential requests per test; the median round-trip time is recorded. |
-| **Test Concurrency**| `4`, `8`, `16`, `32`, `64` | `16` | Maximum simultaneous test subprocesses executed in parallel. |
-| **Test Timeout** | `3s`, `5s`, `10s`, `15s` | `5s` | Maximum duration before an individual test sample is marked as failed. |
-| **Test Endpoint** | `cloudflare`, `gstatic`, `bing` | `cloudflare` | Target URL used for SOCKS5 HTTP latency tests. |
-| **Auto-test on refresh** | `on` / `off` | `on` | Automatically triggers batch latency tests after a subscription refresh (<kbd>u</kbd> or <kbd>r</kbd>). Groups larger than 50 profiles are skipped to avoid a test storm. |
-| **TUN Name** | Editable text | `whoisthattun` | Interface name for the virtual adapter: must start with a letter and contain only letters, digits, `_` or `-` (max 15 characters). |
-| **Kill Switch** | `on` / `off` | `off` | Installs an independent firewall block to halt non-VPN traffic if the connection drops. |
-| **Split Tunnel** | `off`, `exclude`, `include` | `off` | cgroup v2 application isolation mode. `exclude` = target apps bypass VPN; `include` = only target apps use VPN. |
-| **HWID Enabled** | `on` / `off` | `on` | Send HWID headers (`x-hwid`, `x-device-os`, `x-ver-os`, `x-device-model`) during subscription fetches. |
-| **HWID** | Read-only hex | Auto | 16-character hexadecimal device fingerprint. |
-| **Reset HWID** | Action button | — | Generates a new random hardware identifier. |
-| **User-Agent** | Editable text | `whoisthat/v0.5.9` | Custom HTTP User-Agent header sent with subscription requests. |
-| **Check for updates** | `on` / `off` | `on` | Checks GitHub for a newer stable release at startup (at most once every 4 hours) and shows a popup with a copyable update command. |
+| Section | Group | Settings |
+| :--- | :--- | :--- |
+| Connection | Autoconnect | Autoconnect, Autoconnect mode |
+| Appearance | Display | Theme, Show IP |
+| Logging | Levels | Verbose TUI log, Log level |
+| Profile tests | Engine | Test method, Test samples, Test concurrency, Test timeout, Test endpoint |
+| Profile tests | Automation | Auto-test on refresh |
+| Subscription & HWID | HWID | HWID enabled, HWID (read-only), Reset HWID (action) |
+| Subscription & HWID | Headers | User-Agent |
+| Startup & updates | Service | Autostart |
+| Startup & updates | Updates | Check for updates |
+| Network | Interface | TUN name |
+| Network | Leak protection | Kill Switch, Split tunnel |
+| Network | Anti-DPI masks | Fragment and Noise rows |
 
-`RUST_LOG` or `WHOISTHAT_LOG_LEVEL` (for example `WHOISTHAT_LOG_LEVEL=debug whoisthat`) overrides **Verbose TUI log** and **Log Level** for that session and is never written to `config.toml`; `RUST_LOG` wins when both are set.
+Autostart cycles through the backends detected on the host; the available
+backends and their behavior are described in
+[Platforms & Service Management](/guide/platforms).
+
+Several rows cycle through fixed TUI presets: **Test samples** (`1`, `3`, `5`,
+`10`), **Test concurrency** (`4`, `8`, `16`, `32`, `64`), **Test timeout**
+(`3`, `5`, `10`, `15` seconds), **Test endpoint** (`cloudflare`, `gstatic`,
+`bing`), and **Fragment: packets** (`tlshello`, `1-1`, `1-2`, `1-3`). The CLI
+and `config.json` accept other valid values, including any valid `N-M` range.
+
+The **Anti-DPI masks** group adds global Xray fragmentation and UDP noise. It
+takes effect on the next connect; an active connection keeps its current masks.
+Provider masks always win. The mask fields and their precedence are owned by
+[Supported Protocols & Transports](/networking/protocols).
+
+`RUST_LOG` or `WHOISTHAT_LOG_LEVEL` overrides the TUI logging rows for one
+session without writing to `config.toml`.
 
 ::: warning Kill Switch and Split Tunnel include
-`Kill Switch: on` and `Split Tunnel: include` cannot be active together. The
-core rejects enabling either while the other is set and normalizes a hand-edited
-configuration to `kill-switch: false`. Use `exclude` or `off` with the
-kill-switch.
+`Kill Switch: on` and `Split Tunnel: include` cannot be active together. Use
+`exclude` or `off` with the kill-switch.
 :::
 
 ---
 
-## Anti-DPI
+## Changing values
 
-The **Anti-DPI** section adds global Xray fragmentation and UDP noise. It is off
-by default and takes effect on the next connect; an active connection keeps its
-current masks. Provider masks in a JSON subscription or an `fm` query parameter
-always win, and global masks only fill a direction the provider left empty.
+<kbd>Enter</kbd> or <kbd>Space</kbd> activates a row: it toggles a boolean,
+cycles a choice, opens the text editor, or runs the **Reset HWID** action.
+Editable rows are marked with `✎`. Changes are saved immediately to
+`~/.config/whoisthat/config.toml` (TUI options) and synchronized over IPC to
+`~/.config/whoisthat/config.json` (core options). The daemon is authoritative
+for core values: the screen follows its replies rather than applying changes
+optimistically.
 
-| Setting | Values | Notes |
-| :--- | :--- | :--- |
-| **Fragment: enabled** | `on` / `off` | Adds a TCP `fragment` mask. |
-| **Fragment: packets** | `tlshello`, `1-1`, `1-2`, `1-3`, or any `N-M` | The TUI cycles four presets; the CLI and `config.json` accept any valid range. |
-| **Fragment: length** | `N-M` | Split-size range; the editor shows the allowed bounds. |
-| **Fragment: interval** | `N-M` | Delay in milliseconds; stored as Xray's `delay`. |
-| **Noise: enabled** | `on` / `off` | Adds a UDP `noise` mask. |
-| **Noise: type** | `rand`, `str`, `base64`, `hex` | `rand` uses `packet` as a length range; the other types use it as a literal payload. Changing the type resets `packet` to that type's example. |
-| **Noise: packet** | `N-M` for `rand`, payload otherwise | Payload size is capped; invalid values are rejected by the core. |
-| **Noise: delay** | `N-M` | Delay in milliseconds. |
-
-If the running core predates global anti-DPI, the rows show
-`unsupported (core)` and cannot be edited. Restart the new core to enable them.
-Defaults, ranges, and limits are owned by
-[Configuration Files Reference](/reference/configuration).
-
----
-
-## Modifying Values in the TUI
-
-* **Navigation**: Press <kbd>j</kbd> / <kbd>k</kbd> (or <kbd>↓</kbd> / <kbd>↑</kbd>) to move between settings.
-* **Toggle / Cycle**: Press <kbd>Enter</kbd> or <kbd>Space</kbd> to activate the highlighted row (toggle a boolean, cycle a choice, open a text editor, or run the **Reset HWID** action). On the **Theme** row, <kbd>h</kbd> / <kbd>l</kbd> (and <kbd>←</kbd> / <kbd>→</kbd>) cycle the palette directly; other rows ignore <kbd>h</kbd> / <kbd>l</kbd>.
-* **Text Editing**: Press <kbd>Enter</kbd> on editable fields (e.g. **TUN Name**, **User-Agent**) to summon an in-place text editor modal.
-* **Instant Persistence**: Any modification made in the Settings tab is saved immediately to `~/.config/whoisthat/config.toml` (TUI options) and synchronized over IPC to `~/.config/whoisthat/config.json` (Core options).
-
----
-
-## Themes and responsive layout
-
-WhoisThat includes four curated palettes designed for readability and contrast:
-
-| Theme | Style | Accents |
-| :--- | :--- | :--- |
-| **Graphite Dark** *(default)* | Monochrome graphite with obsidian depth | Platinum silver, crisp white, emerald |
-| **Graphite Light** | Minimalist paper and chalk | Ink black, charcoal, deep forest green |
-| **Tokyo Night** | Deep midnight blue inspired by Tokyo at dusk | Neon cyan, soft sky blue, coral red |
-| **Dracula** | Gothic contrast with deep purple tones | Neon pink, electric purple, spring green |
-
-To switch themes: open Settings (<kbd>5</kbd>), highlight **Theme**, and press
-<kbd>Enter</kbd>, <kbd>Space</kbd>, or <kbd>l</kbd>/<kbd>→</kbd> to cycle
-forward; <kbd>h</kbd>/<kbd>←</kbd> cycles backward with live preview. The choice
-is saved to `~/.config/whoisthat/config.toml`.
-
-The layout engine adapts to the terminal size:
-
-- **Compact (< 80 columns)**: stacked 60/40 tree/details when the content area is
-  at least 18 rows; below that only the tree is shown. <kbd>Tab</kbd> switches
-  focus.
-- **Medium (80–125 columns)**: side-by-side 55/45 tree/details. <kbd>Tab</kbd>
-  toggles focus.
-- **Wide (126–160 columns)**: 45/55 split with full server parameters, TLS
-  properties, and statistics.
-- **UltraWide (> 160 columns)**: same 45/55 split with the widest panes.
-
-Height tiers:
-
-- **Tiny (< 16 rows)**: compressed header, auxiliary cards hidden.
-- **Short (16–24 rows)**: standard layout with a compact footer.
-- **Normal (25–42 rows)**: full layout with latency metrics, quota bars, and
-  interface cards.
-- **Tall (> 42 rows)**: expanded logs pane and 60-second full-height traffic
-  charts.
-
-Below **45 columns × 8 rows**, rendering is suspended and a minimum-size warning
-is shown to prevent buffer overflow and visual artifacts.
+If the running core predates a group of settings, its rows show
+`unsupported (core)` and cannot be edited. Restart the core with the newer
+binary to enable them.
 
 ## See also
 
 - [Navigation & Keybindings](/usage/navigation)
 - [Configuration Files Reference](/reference/configuration)
-- [Log Viewer & Diagnostics](/usage/logs)
+- [CLI Reference](/reference/cli)
+- [Supported Protocols & Transports](/networking/protocols)
+- [Platforms & Service Management](/guide/platforms)

@@ -13,7 +13,7 @@ Split Tunneling allows you to route specific applications differently from the r
 
 ## Operating Modes
 
-Configure the mode in the TUI (**Settings → Network → Split tunnel**) or via the CLI:
+Configure the mode in the TUI (**Settings → Network → Leak protection → Split tunnel**) or via the CLI:
 
 ### `exclude` Mode *(Recommended)*
 * **Entire Operating System**: Protected and routed through the VPN tunnel.

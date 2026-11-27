@@ -97,10 +97,11 @@ random UDP noise to make a proxy connection less fingerprintable.
   `finalmask.tcp`, `finalmask.udp` and `finalmask.quicParams`; unknown masks are
   preserved and rejected by Xray at preflight rather than silently dropped.
 - **JSON subscriptions** already carry the provider's `finalmask` verbatim.
-- **Global settings** in Settings → Anti-DPI add one fragment mask and one noise
-  mask to every proxy outbound that does not already have a mask for that
-  direction. Provider masks always win; service outbounds (`freedom`, `dns`,
-  `blackhole`, `loopback`) are never touched.
+- **Global settings** in Settings → Network → Anti-DPI masks add one fragment
+  mask and one noise mask to every proxy outbound that does not already have a
+  mask for that direction. Provider masks always win; service outbounds
+  (`freedom`, `dns`, `blackhole`, `loopback`) are never touched. These masks
+  apply to proxy outbounds in both proxy and TUN mode.
 
 | Setting | Finalmask field |
 | :--- | :--- |

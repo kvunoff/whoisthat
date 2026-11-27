@@ -67,6 +67,16 @@ The state machine lives in `src/ui/app/state/`; rendering is split into
 `src/input/` and is resolved through `src/keymap/` (`KeyContext`,
 `resolve_action`), so the help tables and the actual bindings share one source.
 
+`src/settings/registry.rs` is the single source of truth for settings metadata:
+each row declares its `SettingsId`, section, group, label, kind, source and CLI
+key. The TUI and CLI both read the registry; values and writes stay in their own
+layers, so the registry never depends on `ui::App`. The Go core knows nothing
+about sections or ordering: another client can group the same settings
+differently. `src/ui/settings.rs` owns the tree, the shared panel geometry,
+search results and rendered values; `src/input/settings.rs` dispatches changes
+by `SettingsId` without a catch-all branch, so adding a row cannot silently
+lose its handler.
+
 ## Core client
 
 `src/core_client/` owns the transport:
