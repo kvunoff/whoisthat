@@ -17,8 +17,8 @@ func ParseUri(uri string, socksport int, httpport int) ([]byte, error) {
 }
 
 // ParseUriWithTun parses a proxy URI and optionally includes a native TUN inbound.
-func ParseUriWithTun(uri string, socksport int, httpport int, tunName string) ([]byte, error) {
-	cfg, err := parser.ParseUriWithTun(uri, socksport, httpport, tunName)
+func ParseUriWithTun(uri string, socksport int, httpport int, tunName string, tunMTU int) ([]byte, error) {
+	cfg, err := parser.ParseUriWithTun(uri, socksport, httpport, tunName, tunMTU)
 	if err != nil {
 		return nil, err
 	}

@@ -221,6 +221,14 @@ pub struct ApplicationState {
     /// does not support `set-anti-dpi`; do not substitute defaults.
     #[serde(rename = "anti_dpi", default, skip_serializing_if = "Option::is_none")]
     pub anti_dpi: Option<AntiDPIConfig>,
+    /// TUN MTU and DNS servers. `None` means the running core is older and
+    /// does not support `set-network-settings`; do not substitute defaults.
+    #[serde(
+        rename = "network_settings",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub network_settings: Option<NetworkSettings>,
     /// How config.json was read; drives the one-click settings restore.
     #[serde(rename = "config_status", default)]
     pub config_status: ConfigStatus,
@@ -422,6 +430,25 @@ pub struct SetAntiDPIData {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AntiDPIUpdated {
     pub config: AntiDPIConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct NetworkSettings {
+    pub tun_mtu: i32,
+    #[serde(default)]
+    pub dns_servers: Vec<String>,
+}
+
+// shortcut: wired to the CLI in the next commit, when the registry gains the rows.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SetNetworkSettingsData {
+    pub config: NetworkSettings,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NetworkSettingsUpdated {
+    pub config: NetworkSettings,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -858,6 +885,8 @@ mod tests {
         assert_ipc_roundtrip::<SetTestConfigData>(&fixtures, "set_test_config_request");
         assert_ipc_roundtrip::<SetAntiDPIData>(&fixtures, "set_anti_dpi_request");
         assert_ipc_roundtrip::<AntiDPIUpdated>(&fixtures, "anti_dpi_updated");
+        assert_ipc_roundtrip::<SetNetworkSettingsData>(&fixtures, "set_network_settings_request");
+        assert_ipc_roundtrip::<NetworkSettingsUpdated>(&fixtures, "network_settings_updated");
         assert_ipc_roundtrip::<SetAutoconnectData>(&fixtures, "set_autoconnect_request");
         assert_ipc_roundtrip::<TestConfigUpdated>(&fixtures, "test_config_updated");
         assert_ipc_roundtrip::<TrafficSample>(&fixtures, "traffic_sample");

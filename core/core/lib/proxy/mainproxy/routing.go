@@ -323,7 +323,7 @@ func (p *ProxyManager) reloadCoreLocked(tunName string) error {
 			countOutbounds(xray_config), len(manual.Rules))
 	} else {
 		var err error
-		xray_config, err = lib.ParseUriWithTun(profile.Uri, app_config.SocksPort, app_config.HttpPort, tunArg)
+		xray_config, err = lib.ParseUriWithTun(profile.Uri, app_config.SocksPort, app_config.HttpPort, tunArg, app_config.TunMTU)
 		if err != nil {
 			return fmt.Errorf("failed to parse profile uri: %w", err)
 		}

@@ -171,6 +171,10 @@ func ipcContractFixtures() map[string]any {
 		BypassRateUp:   40,
 		BypassRateDown: 125,
 	}
+	networkSettings := NetworkSettings{
+		TunMTU:     1400,
+		DnsServers: []string{"9.9.9.9", "2620:fe::fe"},
+	}
 	applicationState := ApplicationState{
 		Groups: []GroupWithProfiles{{
 			Group:           group,
@@ -199,9 +203,10 @@ func ipcContractFixtures() map[string]any {
 			Fragment: AntiDPIFragment{Enabled: true, Packets: "tlshello", Length: "100-200", Interval: "10-20"},
 			Noise:    AntiDPINoise{Enabled: true, Type: "rand", Packet: "50-100", Delay: "10-16"},
 		},
-		ConfigStatus: ConfigStatus{State: "ok", Error: "none"},
-		DBStatus:     DBStatus{State: "ok", Error: "none", SnapshotAt: "20261102"},
-		Traffic:      trafficSample,
+		NetworkSettings: networkSettings,
+		ConfigStatus:    ConfigStatus{State: "ok", Error: "none"},
+		DBStatus:        DBStatus{State: "ok", Error: "none", SnapshotAt: "20261102"},
+		Traffic:         trafficSample,
 	}
 	routingConfig := RoutingConfig{
 		DomainStrategy: "IPIfNonMatch",
@@ -228,18 +233,20 @@ func ipcContractFixtures() map[string]any {
 	}
 
 	return map[string]any{
-		"application_state":       applicationState,
-		"profile_updated":         ProfileUpdated{Profile: profile},
-		"subscription_updated":    SubscriptionUpdated{GroupId: 3, Group: group, Profiles: []Profile{profile}, RoutingProfiles: []RoutingProfileInfo{routingProfile}, Auto: true},
-		"routing_updated":         RoutingUpdated{GroupId: 3, Config: routingConfig, Source: "happ", Custom: &routingConfig},
-		"status_changed":          proxyStatus,
-		"connect_request":         ConnectData{Profile: ProfileID{Id: 7, GroupId: 3}},
-		"update_group_request":    UpdateGroupData{Id: 3, Name: "Premium", SubscriptionUrl: "https://provider.test/sub/token", AutoUpdate: ipcContractPtr(true), UpdateInterval: ipcContractPtr(int64(21600))},
-		"set_test_config_request": SetTestConfigData{Config: testConfig},
-		"set_anti_dpi_request":    SetAntiDPIData{Config: applicationState.AntiDPI},
-		"anti_dpi_updated":        AntiDPIUpdated{Config: applicationState.AntiDPI},
-		"set_autoconnect_request": SetAutoconnectData{Enabled: true, GroupId: 3, ProfileId: 7, Mode: "tun"},
-		"test_config_updated":     TestConfigUpdated{Config: testConfig},
-		"traffic_sample":          trafficSample,
+		"application_state":            applicationState,
+		"profile_updated":              ProfileUpdated{Profile: profile},
+		"subscription_updated":         SubscriptionUpdated{GroupId: 3, Group: group, Profiles: []Profile{profile}, RoutingProfiles: []RoutingProfileInfo{routingProfile}, Auto: true},
+		"routing_updated":              RoutingUpdated{GroupId: 3, Config: routingConfig, Source: "happ", Custom: &routingConfig},
+		"status_changed":               proxyStatus,
+		"connect_request":              ConnectData{Profile: ProfileID{Id: 7, GroupId: 3}},
+		"update_group_request":         UpdateGroupData{Id: 3, Name: "Premium", SubscriptionUrl: "https://provider.test/sub/token", AutoUpdate: ipcContractPtr(true), UpdateInterval: ipcContractPtr(int64(21600))},
+		"set_test_config_request":      SetTestConfigData{Config: testConfig},
+		"set_anti_dpi_request":         SetAntiDPIData{Config: applicationState.AntiDPI},
+		"anti_dpi_updated":             AntiDPIUpdated{Config: applicationState.AntiDPI},
+		"set_network_settings_request": SetNetworkSettingsData{Config: networkSettings},
+		"network_settings_updated":     NetworkSettingsUpdated{Config: networkSettings},
+		"set_autoconnect_request":      SetAutoconnectData{Enabled: true, GroupId: 3, ProfileId: 7, Mode: "tun"},
+		"test_config_updated":          TestConfigUpdated{Config: testConfig},
+		"traffic_sample":               trafficSample,
 	}
 }

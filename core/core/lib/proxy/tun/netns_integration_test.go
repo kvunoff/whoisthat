@@ -49,7 +49,7 @@ func TestNetnsTunLifecycleAndReconcile(t *testing.T) {
 	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
 
 	const tun = "wittest0"
-	if err := createTun(tun, "198.18.0.1", "fd00::1"); err != nil {
+	if err := createTun(tun, "198.18.0.1", "fd00::1", DefaultTunMTU); err != nil {
 		t.Skipf("cannot create TUN device in test namespace: %v", err)
 	}
 	if _, err := runScriptWithSh("ip link show " + tun); err != nil {
@@ -111,7 +111,7 @@ func TestNetnsRpFilterRestored(t *testing.T) {
 	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
 
 	const tun = "wittest0"
-	if err := createTun(tun, "198.18.0.1", ""); err != nil {
+	if err := createTun(tun, "198.18.0.1", "", DefaultTunMTU); err != nil {
 		t.Skipf("cannot create TUN device: %v", err)
 	}
 	defer func() { _, _ = runScriptWithSh("ip link del dev " + tun + " 2>/dev/null || true") }()

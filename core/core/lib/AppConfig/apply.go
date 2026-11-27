@@ -18,6 +18,8 @@ func applyField(cfg *AppConfig, key string, raw json.RawMessage) error {
 		return json.Unmarshal(raw, &cfg.DnsServers)
 	case "tun-name":
 		return json.Unmarshal(raw, &cfg.TunName)
+	case "tun-mtu":
+		return json.Unmarshal(raw, &cfg.TunMTU)
 	case "hwid-enabled":
 		return json.Unmarshal(raw, &cfg.HwidEnabled)
 	case "hwid":

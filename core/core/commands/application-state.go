@@ -40,9 +40,13 @@ func (cmd *Cmd) GetApplicationState(data structs.GetApplicationStateData, proxy_
 		TunName:         appconfig.GetConfig().TunName,
 		TestConfig:      proxy_manager.GetTestConfig(),
 		AntiDPI:         appconfig.GetConfig().AntiDPI,
-		ConfigStatus:    structs.ConfigStatus{State: appconfig.Status().State, Error: appconfig.Status().Error},
-		DBStatus:        structs.DBStatus(cmd.DB.Status()),
-		Traffic:         proxy_manager.GetTraffic(),
+		NetworkSettings: structs.NetworkSettings{
+			TunMTU:     appconfig.GetConfig().TunMTU,
+			DnsServers: appconfig.GetConfig().DnsServers,
+		},
+		ConfigStatus: structs.ConfigStatus{State: appconfig.Status().State, Error: appconfig.Status().Error},
+		DBStatus:     structs.DBStatus(cmd.DB.Status()),
+		Traffic:      proxy_manager.GetTraffic(),
 	}
 
 	cmd.send("application-state", application_state)

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -34,6 +35,7 @@ type AppConfig struct {
 	TestPortRange        PortRange             `json:"test-port-range"`
 	DnsServers           []string              `json:"dns-servers"`
 	TunName              string                `json:"tun-name"`
+	TunMTU               int                   `json:"tun-mtu"`
 	HwidEnabled          bool                  `json:"hwid-enabled"`
 	Hwid                 string                `json:"hwid"`
 	UserAgent            string                `json:"user-agent"`
@@ -88,6 +90,7 @@ func defaultConfig() AppConfig {
 		},
 		DnsServers:      []string{"1.1.1.1", "8.8.8.8", "2606:4700:4700::1111", "2001:4860:4860::8888"},
 		TunName:         "whoisthattun",
+		TunMTU:          1400,
 		HwidEnabled:     true,
 		UserAgent:       "whoisthat/v" + version.CoreVersion,
 		AutoconnectMode: "proxy",
@@ -427,4 +430,57 @@ func SetTunName(name string) error {
 	application_configuration.TunName = name
 	SaveConfig()
 	return nil
+}
+
+const (
+	// 1280 is the minimum IPv6 link MTU (RFC 8200); 1500 is Ethernet. Larger
+	// values need a jumbo-capable underlay and are not supported here.
+	minTunMTU = 1280
+	maxTunMTU = 1500
+)
+
+// SetNetworkSettings persists the whole TUN/DNS block atomically. Clients read
+// the current application-state and only change the field they edit.
+func SetNetworkSettings(cfg structs.NetworkSettings) error {
+	norm, err := validateNetworkSettings(cfg)
+	if err != nil {
+		return err
+	}
+	application_configuration.TunMTU = norm.TunMTU
+	application_configuration.DnsServers = norm.DnsServers
+	SaveConfig()
+	return nil
+}
+
+func validateNetworkSettings(cfg structs.NetworkSettings) (structs.NetworkSettings, error) {
+	if cfg.TunMTU < minTunMTU || cfg.TunMTU > maxTunMTU {
+		return cfg, fmt.Errorf("tun-mtu must be in %d..%d", minTunMTU, maxTunMTU)
+	}
+	seen := make(map[string]bool)
+	servers := make([]string, 0, len(cfg.DnsServers))
+	for _, raw := range cfg.DnsServers {
+		s := strings.TrimSpace(raw)
+		if s == "" || net.ParseIP(s) == nil {
+			return cfg, fmt.Errorf("dns-servers contains an invalid IP address %q", raw)
+		}
+		if !seen[s] {
+			seen[s] = true
+			servers = append(servers, s)
+		}
+	}
+	if len(servers) == 0 {
+		return cfg, errors.New("dns-servers must not be empty")
+	}
+	cfg.DnsServers = servers
+	return cfg, nil
+}
+
+func sanitizeTunMTU(mtu int) int {
+	if mtu < minTunMTU || mtu > maxTunMTU {
+		if mtu != 0 {
+			logger.Warnf("config: invalid tun-mtu %d, using default", mtu)
+		}
+		return defaultConfig().TunMTU
+	}
+	return mtu
 }

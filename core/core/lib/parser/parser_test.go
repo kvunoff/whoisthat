@@ -497,7 +497,7 @@ func TestURLDecode(t *testing.T) {
 
 func TestParseUriWithTun(t *testing.T) {
 	uri := "vless://uuid@example.com:443?type=tcp&security=tls#TestTun"
-	configBytes, err := ParseUriWithTun(uri, 3090, 3091, "whoisthattun")
+	configBytes, err := ParseUriWithTun(uri, 3090, 3091, "whoisthattun", 1280)
 	if err != nil {
 		t.Fatalf("ParseUriWithTun failed: %v", err)
 	}
@@ -534,6 +534,9 @@ func TestParseUriWithTun(t *testing.T) {
 	}
 	if !strings.Contains(jsonStr, `"name":"whoisthattun"`) {
 		t.Errorf("json does not contain tun name: %s", jsonStr)
+	}
+	if !strings.Contains(jsonStr, `"MTU":1280`) {
+		t.Errorf("json does not contain the configured tun MTU: %s", jsonStr)
 	}
 }
 

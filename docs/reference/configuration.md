@@ -128,6 +128,7 @@ Auto-generated and synchronized by the Go core daemon:
     "2001:4860:4860::8888"
   ],
   "tun-name": "whoisthattun",
+  "tun-mtu": 1400,
   "hwid-enabled": true,
   "hwid": "1fb1e0141ab3e35a",
   "user-agent": "whoisthat/v0.5.9",
@@ -172,6 +173,8 @@ Auto-generated and synchronized by the Go core daemon:
   * Injected into Xray's `freedom` (direct) outbound domain resolver when a Happ profile does not provide its own DNS section.
   * In TUN mode without Happ DNS (manual routing or profiles without DNS fields), the **first IPv4/IPv6** entries are targeted by the legacy kernel-level DNS hijack.
   * When the active Happ profile supplies DNS, its `RemoteDNS*` / `DomesticDNS*` servers take precedence; `dns-servers` are only used as a fallback. Happ DNS uses the reserved sink addresses `198.18.0.53` / `fd00::53` rather than the configured resolvers.
+  * Changing `dns-servers` through `set-network-settings` takes effect on the next connect. Live reconciliation applies only to a Happ profile change or a split-tunnel mode change, not to this setting.
+* **`tun-mtu`**: MTU of the Xray native TUN inbound and the kernel `whoisthattun` interface. Default `1400`, allowed range `1280..1500` (1280 is the minimum IPv6 link MTU per RFC 8200; 1500 is Ethernet). Applies on the next connect; an active connection keeps its current MTU.
 * **`test-port-range`**: Ephemeral port boundary leased dynamically for concurrent latency test instances.
 * **`split-tunnel.mode`**: Can be `"off"`, `"exclude"`, or `"include"`.
 * **`anti-dpi`**: Global fragment/noise masks. `fragment.packets` is

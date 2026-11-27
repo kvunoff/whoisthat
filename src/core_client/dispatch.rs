@@ -51,6 +51,7 @@ pub enum CoreEvent {
     TestProgress(TestProgress),
     TestConfigUpdated(TestConfig),
     AntiDPIUpdated(AntiDPIConfig),
+    NetworkSettingsUpdated(NetworkSettings),
     XrayProgress(XrayProgressNotification),
     ProfilesReordered {
         group_id: i32,
@@ -311,6 +312,14 @@ pub(crate) fn dispatch(msg: TcpMessage) -> CoreEvent {
             try_dispatch!(msg, "anti-dpi-updated", AntiDPIUpdated, |d| {
                 CoreEvent::AntiDPIUpdated(d.config)
             })
+        }
+        "network-settings-updated" => {
+            try_dispatch!(
+                msg,
+                "network-settings-updated",
+                NetworkSettingsUpdated,
+                |d| { CoreEvent::NetworkSettingsUpdated(d.config) }
+            )
         }
         "xray-progress" => {
             try_dispatch!(msg, "xray-progress", XrayProgressNotification, |d| {
