@@ -37,6 +37,8 @@ pub enum SettingsId {
     NoiseType,
     NoisePacket,
     NoiseDelay,
+    TunMtu,
+    DnsServers,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -463,6 +465,28 @@ pub static REGISTRY: &[SettingDef] = &[
         options: &[],
         hook: Hook::None,
     },
+    SettingDef {
+        id: SettingsId::TunMtu,
+        section: SectionId::Network,
+        group: GroupId::Interface,
+        label: "TUN MTU",
+        kind: Kind::Editable,
+        source: Source::CoreOptional,
+        cli_key: "tun-mtu",
+        options: &[],
+        hook: Hook::None,
+    },
+    SettingDef {
+        id: SettingsId::DnsServers,
+        section: SectionId::Network,
+        group: GroupId::Dns,
+        label: "DNS servers",
+        kind: Kind::Editable,
+        source: Source::CoreOptional,
+        cli_key: "dns-servers",
+        options: &[],
+        hook: Hook::None,
+    },
 ];
 
 pub static SECTIONS: &[SectionDef] = &[
@@ -584,6 +608,7 @@ pub fn groups(section: SectionId) -> Vec<&'static GroupDef> {
         SectionId::Network => &[
             GroupId::Interface,
             GroupId::LeakProtection,
+            GroupId::Dns,
             GroupId::AntiDpiMasks,
         ],
     };
@@ -670,9 +695,9 @@ mod tests {
     }
 
     #[test]
-    fn registry_has_all_29_rows() {
-        assert_eq!(REGISTRY.len(), 29);
-        assert_eq!(ids().len(), 29);
+    fn registry_has_all_rows() {
+        assert_eq!(REGISTRY.len(), 31);
+        assert_eq!(ids().len(), 31);
     }
 
     fn ids() -> Vec<SettingsId> {

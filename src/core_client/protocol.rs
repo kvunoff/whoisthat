@@ -439,8 +439,6 @@ pub struct NetworkSettings {
     pub dns_servers: Vec<String>,
 }
 
-// shortcut: wired to the CLI in the next commit, when the registry gains the rows.
-#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SetNetworkSettingsData {
     pub config: NetworkSettings,

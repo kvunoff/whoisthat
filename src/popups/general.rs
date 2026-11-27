@@ -200,6 +200,53 @@ pub(crate) async fn handle_popup_input(
                         }
                         false
                     }
+                    SettingsId::TunMtu | SettingsId::DnsServers => {
+                        match app.network_settings.clone() {
+                            Some(mut draft) => {
+                                let mut error: Option<String> = None;
+                                if id == SettingsId::TunMtu {
+                                    match value.parse::<i32>() {
+                                        Ok(mtu) if (1280..=1500).contains(&mtu) => {
+                                            draft.tun_mtu = mtu
+                                        }
+                                        _ => error = Some("tun-mtu must be in 1280..1500".into()),
+                                    }
+                                } else {
+                                    let servers: Vec<String> = value
+                                        .split(',')
+                                        .map(str::trim)
+                                        .filter(|s| !s.is_empty())
+                                        .map(String::from)
+                                        .collect();
+                                    if servers.is_empty()
+                                        || servers
+                                            .iter()
+                                            .any(|s| s.parse::<std::net::IpAddr>().is_err())
+                                    {
+                                        error = Some(
+                                            "dns-servers must be a comma-separated list of IP addresses"
+                                                .into(),
+                                        );
+                                    } else {
+                                        draft.dns_servers = servers;
+                                    }
+                                }
+                                if let Some(e) = error {
+                                    app.msg(format!("Error: {e}"));
+                                    true
+                                } else {
+                                    if let Err(e) = client.set_network_settings(&draft).await {
+                                        app.msg(format!("Error: {e}"));
+                                    }
+                                    false
+                                }
+                            }
+                            None => {
+                                app.msg("Running core does not support network settings");
+                                false
+                            }
+                        }
+                    }
                     SettingsId::FragmentLength
                     | SettingsId::FragmentInterval
                     | SettingsId::NoisePacket

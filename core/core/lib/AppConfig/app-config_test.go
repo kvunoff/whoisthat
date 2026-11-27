@@ -445,3 +445,73 @@ func TestParseConfigAntiDPIDefaultsAndInvalidBlock(t *testing.T) {
 		t.Errorf("invalid anti-dpi block must use defaults: %+v", cfg.AntiDPI)
 	}
 }
+
+func TestDefaultNetworkSettings(t *testing.T) {
+	cfg := defaultConfig()
+	if cfg.TunMTU != 1400 {
+		t.Errorf("TunMTU = %d, want 1400", cfg.TunMTU)
+	}
+	if len(cfg.DnsServers) == 0 {
+		t.Fatal("DnsServers must not be empty")
+	}
+}
+
+func TestValidateNetworkSettings(t *testing.T) {
+	base := structs.NetworkSettings{
+		TunMTU:     1280,
+		DnsServers: []string{"9.9.9.9", "2620:fe::fe"},
+	}
+	for name, mutate := range map[string]func(*structs.NetworkSettings){
+		"mtu too small": func(c *structs.NetworkSettings) { c.TunMTU = 1279 },
+		"mtu too large": func(c *structs.NetworkSettings) { c.TunMTU = 1501 },
+		"empty dns":     func(c *structs.NetworkSettings) { c.DnsServers = nil },
+		"invalid dns": func(c *structs.NetworkSettings) {
+			c.DnsServers = []string{"not-an-ip"}
+		},
+	} {
+		cfg := base
+		mutate(&cfg)
+		if _, err := validateNetworkSettings(cfg); err == nil {
+			t.Errorf("%s: expected an error", name)
+		}
+	}
+
+	got, err := validateNetworkSettings(structs.NetworkSettings{
+		TunMTU:     1500,
+		DnsServers: []string{" 9.9.9.9 ", "9.9.9.9", " 2620:fe::fe "},
+	})
+	if err != nil {
+		t.Fatalf("valid settings rejected: %v", err)
+	}
+	if got.TunMTU != 1500 || len(got.DnsServers) != 2 {
+		t.Fatalf("unexpected normalized settings: %+v", got)
+	}
+	if got.DnsServers[0] != "9.9.9.9" || got.DnsServers[1] != "2620:fe::fe" {
+		t.Errorf("trim/dedup failed: %+v", got.DnsServers)
+	}
+}
+
+func TestSetNetworkSettingsKeepsBothFields(t *testing.T) {
+	original := application_configuration
+	wasLoaded := loaded
+	defer func() {
+		application_configuration = original
+		loaded = wasLoaded
+	}()
+	loaded = false
+
+	first := structs.NetworkSettings{TunMTU: 1280, DnsServers: []string{"9.9.9.9"}}
+	if err := SetNetworkSettings(first); err != nil {
+		t.Fatalf("first set: %v", err)
+	}
+	second := structs.NetworkSettings{TunMTU: 1500, DnsServers: []string{"9.9.9.9"}}
+	if err := SetNetworkSettings(second); err != nil {
+		t.Fatalf("second set: %v", err)
+	}
+	if application_configuration.TunMTU != 1500 {
+		t.Errorf("TunMTU = %d, want 1500", application_configuration.TunMTU)
+	}
+	if len(application_configuration.DnsServers) != 1 || application_configuration.DnsServers[0] != "9.9.9.9" {
+		t.Errorf("DnsServers changed unexpectedly: %+v", application_configuration.DnsServers)
+	}
+}

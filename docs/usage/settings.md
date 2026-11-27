@@ -41,8 +41,9 @@ the [CLI Reference](/reference/cli).
 | Subscription & HWID | Headers | User-Agent |
 | Startup & updates | Service | Autostart |
 | Startup & updates | Updates | Check for updates |
-| Network | Interface | TUN name |
+| Network | Interface | TUN name, TUN MTU |
 | Network | Leak protection | Kill Switch, Split tunnel |
+| Network | DNS | DNS servers |
 | Network | Anti-DPI masks | Fragment and Noise rows |
 
 Autostart cycles through the backends detected on the host; the available
