@@ -79,8 +79,9 @@ while the other is active and normalizes a hand-edited config to
 ## Toggle in the TUI
 
 1. Open Settings (<kbd>5</kbd>).
-2. Navigate to **Kill Switch** and press <kbd>Enter</kbd> or <kbd>Space</kbd> to
-   toggle `on` / `off`.
+2. Open **Network → Leak protection → Kill Switch** and press <kbd>Enter</kbd> or
+   <kbd>Space</kbd> to toggle `on` / `off`. You can also find it with
+   <kbd>/</kbd>.
 
 Enabling the Kill-Switch while connected arms the firewall immediately; there is
 no need to reconnect.
