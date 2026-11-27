@@ -26,9 +26,8 @@ pub(crate) async fn handle_mouse_input(
                 if mouse.row >= inner_y && mouse.row < inner_y + 5 {
                     let clicked_tab_idx = (mouse.row - inner_y) as usize;
                     let target = App::tab_from_index(clicked_tab_idx);
-                    app.tab = target;
+                    app.switch_tab(target);
                     app.popup = None;
-                    app.focus = Focus::LeftPanel;
                     if target == ActiveTab::Routing {
                         app.routing_popup = None;
                         let gid = app.routing_page_group_id();
@@ -121,7 +120,12 @@ pub(crate) async fn handle_mouse_input(
                     app.logs_state.scroll_down();
                 }
                 ActiveTab::Settings => {
-                    app.settings_state.cursor_down();
+                    let compact = app.last_area.width < 60;
+                    if compact || app.focus == Focus::RightPanel {
+                        app.settings_state.item_down(compact);
+                    } else {
+                        app.settings_state.tree_down();
+                    }
                 }
                 ActiveTab::Routing => {
                     let max = app.active_routing_config().rules.len().saturating_sub(1);
@@ -142,7 +146,12 @@ pub(crate) async fn handle_mouse_input(
                     app.logs_state.scroll_up();
                 }
                 ActiveTab::Settings => {
-                    app.settings_state.cursor_up();
+                    let compact = app.last_area.width < 60;
+                    if compact || app.focus == Focus::RightPanel {
+                        app.settings_state.item_up(compact);
+                    } else {
+                        app.settings_state.tree_up();
+                    }
                 }
                 ActiveTab::Routing => {
                     if app.routing_cursor > 0 {
@@ -259,22 +268,49 @@ async fn handle_mouse_left_click(
                 }
             }
             ActiveTab::Settings => {
-                app.focus = Focus::LeftPanel;
+                use crate::ui::settings::{
+                    CompactRow, ItemRow, SettingsTreeRow, compact_rows, item_rows, settings_layout,
+                    value_index,
+                };
+                let layout = settings_layout(main_area, app.layout.width_tier);
                 let inner_y = main_area.y + 1;
                 let inner_h = main_area.height.saturating_sub(2);
-                if row >= inner_y && row < inner_y + inner_h {
-                    let row_offset = (row - inner_y) as usize;
-                    let target_flat = app.settings_state.scroll + row_offset;
-                    let layout = crate::ui::settings::settings_layout();
-                    if let Some(crate::ui::settings::SettingsRow::Item { .. }) =
-                        layout.get(target_flat)
-                    {
-                        let item_idx = layout[..=target_flat]
+                if row < inner_y || row >= inner_y + inner_h {
+                    return false;
+                }
+                let row_offset = (row - inner_y) as usize;
+                if layout.compact {
+                    let rows = compact_rows();
+                    let idx = app.settings_state.item_scroll + row_offset;
+                    if let Some(CompactRow::Item(id)) = rows.get(idx) {
+                        app.settings_state.compact_cursor = value_index(*id);
+                    }
+                    app.focus = Focus::RightPanel;
+                } else if col < layout.tree.right() {
+                    let rows = app.settings_state.tree_rows();
+                    let idx = app.settings_state.tree_scroll + row_offset;
+                    if let Some(r) = rows.get(idx) {
+                        app.settings_state.tree_cursor = idx;
+                        if let SettingsTreeRow::Group(section, group) = r {
+                            app.settings_state.section = *section;
+                            app.settings_state.group = *group;
+                            app.settings_state.item_cursor = 0;
+                            app.focus = Focus::RightPanel;
+                        } else {
+                            app.focus = Focus::LeftPanel;
+                            app.settings_state.activate_tree();
+                        }
+                    }
+                } else {
+                    let rows = item_rows(app.settings_state.section, app.settings_state.group);
+                    let idx = app.settings_state.item_scroll + row_offset;
+                    if let Some(ItemRow::Item(_)) = rows.get(idx) {
+                        app.settings_state.item_cursor = rows[..=idx]
                             .iter()
-                            .filter(|r| matches!(r, crate::ui::settings::SettingsRow::Item { .. }))
+                            .filter(|r| matches!(r, ItemRow::Item(_)))
                             .count()
                             .saturating_sub(1);
-                        app.settings_state.item_cursor = item_idx;
+                        app.focus = Focus::RightPanel;
                     }
                 }
             }

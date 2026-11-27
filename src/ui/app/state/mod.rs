@@ -304,32 +304,66 @@ impl App {
         }
     }
 
-    pub fn next_tab(&mut self) -> ActiveTab {
-        let next_idx = (self.tab_index() + 1) % 5;
-        self.tab = Self::tab_from_index(next_idx);
-        self.tab
+    pub fn next_tab(&self) -> ActiveTab {
+        Self::tab_from_index((self.tab_index() + 1) % 5)
     }
 
-    pub fn prev_tab(&mut self) -> ActiveTab {
+    pub fn prev_tab(&self) -> ActiveTab {
         let cur = self.tab_index();
-        let prev_idx = if cur == 0 { 4 } else { cur - 1 };
-        self.tab = Self::tab_from_index(prev_idx);
-        self.tab
+        Self::tab_from_index(if cur == 0 { 4 } else { cur - 1 })
+    }
+
+    /// Only place that changes the active tab: it clears search state so a
+    /// Settings query never leaks into Profiles, and normalises the focus.
+    pub fn switch_tab(&mut self, target: ActiveTab) {
+        self.tab = target;
+        self.cancel_search();
+        self.normalize_settings_focus();
+    }
+
+    pub fn cancel_search(&mut self) {
+        self.search_mode = false;
+        self.search_query = None;
+        self.search_input.clear();
+    }
+
+    pub fn normalize_settings_focus(&mut self) {
+        if self.tab != ActiveTab::Settings {
+            self.focus = Focus::LeftPanel;
+        } else if self.last_area.width < 60 {
+            // Compact renders a single list: the tree panel does not exist.
+            self.focus = Focus::RightPanel;
+        } else if !matches!(self.focus, Focus::LeftPanel | Focus::RightPanel) {
+            self.focus = Focus::LeftPanel;
+        }
     }
 
     pub fn toggle_focus(&mut self) {
-        if self.tab == ActiveTab::Profiles {
-            self.focus = match self.focus {
-                Focus::LeftPanel => {
-                    if self.tree_node_at(self.cursor).is_some() {
-                        Focus::RightPanel
-                    } else {
-                        Focus::LeftPanel
+        match self.tab {
+            ActiveTab::Profiles => {
+                self.focus = match self.focus {
+                    Focus::LeftPanel => {
+                        if self.tree_node_at(self.cursor).is_some() {
+                            Focus::RightPanel
+                        } else {
+                            Focus::LeftPanel
+                        }
                     }
+                    Focus::RightPanel => Focus::LeftPanel,
+                    Focus::Popup => Focus::Popup,
+                };
+            }
+            ActiveTab::Settings => {
+                if self.last_area.width < 60 {
+                    return;
                 }
-                Focus::RightPanel => Focus::LeftPanel,
-                Focus::Popup => Focus::Popup,
-            };
+                self.focus = match self.focus {
+                    Focus::LeftPanel => Focus::RightPanel,
+                    Focus::RightPanel => Focus::LeftPanel,
+                    Focus::Popup => Focus::Popup,
+                };
+            }
+            _ => {}
         }
     }
 

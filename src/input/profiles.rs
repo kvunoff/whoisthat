@@ -212,6 +212,9 @@ pub(super) async fn handle(action: AppAction, app: &mut App, client: &CoreClient
             false
         }
         AppAction::StartSearch => {
+            if app.tab != ActiveTab::Profiles {
+                return None;
+            }
             app.search_mode = true;
             app.search_input.clear();
             app.search_query = Some(String::new());

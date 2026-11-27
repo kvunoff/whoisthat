@@ -91,6 +91,40 @@ async fn handle_normal_input(
         return false;
     }
 
+    if app.search_mode && app.tab == ActiveTab::Settings {
+        match key.code {
+            KeyCode::Esc => app.cancel_search(),
+            KeyCode::Enter => {
+                let matches = app.settings_state.search_matches(&app.search_input);
+                if let Some(id) = matches.get(app.settings_state.search_cursor).copied() {
+                    app.settings_state.apply_search_result(id);
+                    app.focus = Focus::RightPanel;
+                }
+                app.cancel_search();
+                app.settings_state.search_cursor = 0;
+            }
+            KeyCode::Down => {
+                let len = app.settings_state.search_matches(&app.search_input).len();
+                if len > 0 {
+                    app.settings_state.search_cursor =
+                        (app.settings_state.search_cursor + 1).min(len - 1);
+                }
+            }
+            KeyCode::Up => {
+                app.settings_state.search_cursor =
+                    app.settings_state.search_cursor.saturating_sub(1);
+            }
+            KeyCode::Char(_) | KeyCode::Backspace => {
+                let mut cur = app.search_input.chars().count();
+                edit_text_field(&mut app.search_input, &mut cur, key);
+                app.search_query = Some(app.search_input.clone());
+                app.settings_state.search_cursor = 0;
+            }
+            _ => {}
+        }
+        return false;
+    }
+
     if app.search_mode && app.focus == Focus::LeftPanel && app.tab == ActiveTab::Profiles {
         match key.code {
             KeyCode::Esc => {

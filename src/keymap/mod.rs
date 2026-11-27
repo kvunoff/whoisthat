@@ -162,6 +162,8 @@ fn resolve_settings(key: &KeyEvent) -> AppAction {
         KeyCode::Char('h') | KeyCode::Left => AppAction::SettingsPrev,
         KeyCode::Char('l') | KeyCode::Right => AppAction::SettingsNext,
         KeyCode::Enter | KeyCode::Char(' ') => AppAction::SettingsActivate,
+        KeyCode::Tab | KeyCode::BackTab => AppAction::ToggleFocus,
+        KeyCode::Char('/') => AppAction::StartSearch,
         KeyCode::Esc => AppAction::Dismiss,
         _ => AppAction::None,
     }
@@ -511,6 +513,22 @@ mod tests {
         assert_eq!(
             resolve_action(KeyContext::Settings, &key(KeyCode::Char('l'))),
             AppAction::SettingsNext
+        );
+    }
+
+    #[test]
+    fn test_settings_search_and_focus_actions() {
+        assert_eq!(
+            resolve_action(KeyContext::Settings, &key(KeyCode::Char('/'))),
+            AppAction::StartSearch
+        );
+        assert_eq!(
+            resolve_action(KeyContext::Settings, &key(KeyCode::Tab)),
+            AppAction::ToggleFocus
+        );
+        assert_eq!(
+            resolve_action(KeyContext::Settings, &key(KeyCode::BackTab)),
+            AppAction::ToggleFocus
         );
     }
 
