@@ -421,6 +421,16 @@ pub fn value_for(id: SettingsId, app: &App) -> String {
             .as_ref()
             .map(|a| a.noise.delay.clone())
             .unwrap_or_else(unsupported),
+        SettingsId::TunMtu => app
+            .network_settings
+            .as_ref()
+            .map(|n| n.tun_mtu.to_string())
+            .unwrap_or_else(unsupported),
+        SettingsId::DnsServers => app
+            .network_settings
+            .as_ref()
+            .map(|n| n.dns_servers.join(", "))
+            .unwrap_or_else(unsupported),
     }
 }
 

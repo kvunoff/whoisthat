@@ -130,6 +130,31 @@ while [ "$SECONDS" -lt "$deadline" ]; do
     grep -q '"packets": "1-2"' "$XDG_CONFIG_HOME/whoisthat/config.json" ||
       { echo "ipc-e2e: anti-dpi fragment not persisted" >&2; exit 1; }
 
+    # --- network settings -------------------------------------------------
+    "$TUI_BIN" settings set tun-mtu=1280 dns-servers=9.9.9.9,2620:fe::fe \
+      --socket "$SOCKET" >/dev/null
+    mtu=$("$TUI_BIN" settings get tun-mtu --socket "$SOCKET" --json)
+    case "$mtu" in
+      *'"value":1280'*) ;;
+      *) echo "ipc-e2e: tun-mtu not applied: $mtu" >&2; exit 1 ;;
+    esac
+    dns=$("$TUI_BIN" settings get dns-servers --socket "$SOCKET" --json)
+    case "$dns" in
+      *'"value":"9.9.9.9,2620:fe::fe"'*) ;;
+      *) echo "ipc-e2e: dns-servers not applied: $dns" >&2; exit 1 ;;
+    esac
+    grep -q '"tun-mtu": 1280' "$XDG_CONFIG_HOME/whoisthat/config.json" ||
+      { echo "ipc-e2e: tun-mtu missing from config.json" >&2; exit 1; }
+    if "$TUI_BIN" settings set dns-servers=not-an-ip --socket "$SOCKET" >/dev/null 2>&1; then
+      echo "ipc-e2e: invalid dns-servers was accepted" >&2
+      exit 1
+    fi
+    dns_after=$("$TUI_BIN" settings get dns-servers --socket "$SOCKET" --json)
+    case "$dns_after" in
+      *'"value":"9.9.9.9,2620:fe::fe"'*) ;;
+      *) echo "ipc-e2e: invalid dns-servers changed the stored value: $dns_after" >&2; exit 1 ;;
+    esac
+
     if command -v python3 >/dev/null 2>&1; then
       python3 - "$SOCKET" <<'PY' || exit 1
 import json, socket, struct, sys, time

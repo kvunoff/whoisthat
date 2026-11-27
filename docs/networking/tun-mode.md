@@ -17,7 +17,7 @@ changed_in: "0.19.3"
 When you enable TUN mode (by pressing <kbd>v</kbd>, running `whoisthat mode tun`, or the legacy
 `whoisthat -mt`):
 
-1. **Virtual Network Interface**: The core daemon creates a TUN network device named `whoisthattun` (configurable in Settings).
+1. **Virtual Network Interface**: The core daemon creates a TUN network device named `whoisthattun` (configurable in Settings). Its MTU comes from `tun-mtu` in Settings → Network → Interface and is applied to both the kernel interface and the Xray TUN inbound. The change takes effect on the next connect. Defaults, allowed range and config keys are owned by [Configuration Files Reference](/reference/configuration).
 2. **Native Inbound**: Xray-core opens the TUN interface using its native high-performance TUN inbound driver.
 3. **Default Route Redirection**: The kernel installs a high-priority default route redirecting all IP packets into `whoisthattun`.
 4. **DNS Hijacking**: An `iptables` or `nftables` DNAT rule intercepts all outbound UDP/TCP queries destined for port 53. In Happ DNS mode they go to the sink and Xray's resolver; in legacy mode they are redirected to the configured `dns-servers` through the physical gateway.

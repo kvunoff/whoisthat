@@ -30,8 +30,10 @@ kernel-level DNS interception; applications must use the SOCKS5/HTTP inbound.
 - With a Happ profile, use the provider's `RemoteDNS`/`DomesticDNS` values. Do
   not override them unless you know which queries should go direct and which
   should go through the proxy.
-- After changing DNS while TUN is active, the core reconciles the hijack, the
-  cgroup rules and `resolvectl` without reconnecting.
+- Changing `dns-servers` through `whoisthat settings` takes effect on the next
+  connect; an active connection keeps its current resolvers. Live reconciliation
+  of the hijack, cgroup rules and `resolvectl` applies only to a Happ profile
+  change or a split-tunnel mode change.
 
 ## Limits
 

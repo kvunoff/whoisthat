@@ -9,7 +9,7 @@ use crate::core_events::refresh_public_ip;
 use crate::event_loop::AppEvent;
 use crate::keymap::AppAction;
 use crate::logger::{FileLogger, configure_logger};
-use crate::settings::registry::{self, Kind, SettingDef, SettingsId, Source};
+use crate::settings::registry::{self, GroupId, Kind, SettingDef, SettingsId, Source};
 use crate::testing::persist_and_sync_test_config;
 use crate::ui::App;
 use crate::ui::app::{ActiveTab, Focus, Popup};
@@ -42,11 +42,22 @@ fn current(app: &App) -> &'static SettingDef {
 }
 
 fn unsupported_optional(app: &mut App, def: &SettingDef) -> bool {
-    if def.source == Source::CoreOptional && app.anti_dpi.is_none() {
-        anti_dpi_unsupported(app);
-        return true;
+    if def.source != Source::CoreOptional {
+        return false;
     }
-    false
+    let missing = match def.group {
+        GroupId::AntiDpiMasks => app.anti_dpi.is_none(),
+        _ => app.network_settings.is_none(),
+    };
+    if !missing {
+        return false;
+    }
+    if def.group == GroupId::AntiDpiMasks {
+        anti_dpi_unsupported(app);
+    } else {
+        app.msg("Running core does not support network settings; restart it with the new binary");
+    }
+    true
 }
 
 pub(super) async fn handle(
@@ -380,6 +391,16 @@ fn apply_editable(app: &mut App, def: &SettingDef) {
             .anti_dpi
             .as_ref()
             .map(|a| a.noise.delay.clone())
+            .unwrap_or_default(),
+        SettingsId::TunMtu => app
+            .network_settings
+            .as_ref()
+            .map(|n| n.tun_mtu.to_string())
+            .unwrap_or_default(),
+        SettingsId::DnsServers => app
+            .network_settings
+            .as_ref()
+            .map(|n| n.dns_servers.join(", "))
             .unwrap_or_default(),
         _ => unreachable!("non-editable id in apply_editable"),
     };

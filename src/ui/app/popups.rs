@@ -43,6 +43,13 @@ impl App {
                         " Edit Noise Delay ",
                         "Enter delay N-M in ms (0-60000), e.g. 10-16:",
                     ),
+                    SettingsId::TunMtu => {
+                        (" Edit TUN MTU ", "Enter MTU in 1280..1500 (default 1400):")
+                    }
+                    SettingsId::DnsServers => (
+                        " Edit DNS Servers ",
+                        "Enter comma-separated IP addresses, e.g. 9.9.9.9,2620:fe::fe:",
+                    ),
                     _ => (" Edit Setting ", "Enter value:"),
                 };
                 self.render_text_popup(f, title, hint, input, area)

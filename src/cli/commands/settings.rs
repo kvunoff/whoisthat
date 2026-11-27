@@ -461,6 +461,38 @@ async fn apply_core(
             session.cfg = cfg;
             out.line(format!("{key}={value}"));
         }
+        "tun-mtu" | "dns-servers" => {
+            let state = session.state().await?;
+            let Some(mut cfg) = state.network_settings.clone() else {
+                return Err(CliError::Core(
+                    "running core does not support network settings; restart it with the new binary"
+                        .into(),
+                ));
+            };
+            if key == "tun-mtu" {
+                cfg.tun_mtu = value
+                    .parse()
+                    .map_err(|_| CliError::Usage("tun-mtu must be an integer".into()))?;
+            } else {
+                cfg.dns_servers = value
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(String::from)
+                    .collect();
+            }
+            let _: NetworkSettingsUpdated = session
+                .request(
+                    "set-network-settings",
+                    &SetNetworkSettingsData { config: cfg },
+                    Reply::Id {
+                        expect: &["network-settings-updated"],
+                        fatal_warns: &["set-network-settings-failed"],
+                    },
+                )
+                .await?;
+            out.line(format!("{key}={value}"));
+        }
         key if key.starts_with("anti-dpi.") => {
             let state = session.state().await?;
             let Some(mut cfg) = state.anti_dpi.clone() else {
@@ -617,6 +649,23 @@ fn validate(key: &str, value: &str) -> Result<(), CliError> {
             }
         }
         "core.port" => validate_int(value, 1, 65535, key)?,
+        "tun-mtu" => validate_int(value, 1280, 1500, key)?,
+        "dns-servers" => {
+            let servers: Vec<&str> = value
+                .split(',')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .collect();
+            if servers.is_empty()
+                || servers
+                    .iter()
+                    .any(|s| s.parse::<std::net::IpAddr>().is_err())
+            {
+                return Err(CliError::Usage(
+                    "dns-servers must be a comma-separated list of IP addresses".into(),
+                ));
+            }
+        }
         "autoconnect-profile" | "user-agent" | "core.host" | "core.socket" | "terminal" => {}
         key if key.starts_with("anti-dpi.") => {
             crate::antidpi::validate_field_syntax(key, value).map_err(CliError::Usage)?;
@@ -774,6 +823,16 @@ fn core_value(state: &ApplicationState, cfg: &config::AppConfig, key: &str) -> O
             .as_ref()
             .map(|a| json!(a.noise.delay))
             .unwrap_or_else(|| json!("unsupported")),
+        "tun-mtu" => state
+            .network_settings
+            .as_ref()
+            .map(|n| json!(n.tun_mtu))
+            .unwrap_or_else(|| json!("unsupported")),
+        "dns-servers" => state
+            .network_settings
+            .as_ref()
+            .map(|n| json!(n.dns_servers.join(",")))
+            .unwrap_or_else(|| json!("unsupported")),
         _ => {
             let _ = (cfg, ac_enabled, ac_mode);
             return None;
@@ -887,6 +946,8 @@ mod tests {
             "anti-dpi.noise.type",
             "anti-dpi.noise.packet",
             "anti-dpi.noise.delay",
+            "tun-mtu",
+            "dns-servers",
             "theme",
             "show-ip",
             "log-enabled",

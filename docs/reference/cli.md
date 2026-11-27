@@ -258,6 +258,8 @@ Core-authoritative keys:
 | `anti-dpi.noise.type` | `rand`/`str`/`base64`/`hex` | core |
 | `anti-dpi.noise.packet` | `N-M` for `rand`, payload otherwise | core |
 | `anti-dpi.noise.delay` | `N-M` (`0..60000` ms) | core |
+| `tun-mtu` | `1280..1500` | core; applies on the next connect |
+| `dns-servers` | comma-separated IP addresses | core; applies on the next connect |
 
 Local keys (`config.toml`):
 
@@ -284,7 +286,9 @@ is applied before `packet`.
 When the daemon is offline, `settings list` still prints local keys and marks core keys as
 `unknown`; `settings get <core-key>` exits with code `3`. If the running core predates anti-DPI,
 the eight `anti-dpi.*` keys report `unsupported` and `settings set` exits with an explicit error
-instead of waiting for a reply.
+instead of waiting for a reply. The same applies to `tun-mtu` and `dns-servers` when the core
+predates the TUN/DNS settings block: both belong to one `set-network-settings` request, and
+changing one preserves the other.
 
 ---
 
