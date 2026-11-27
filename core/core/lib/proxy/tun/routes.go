@@ -12,7 +12,10 @@ import (
 
 const DefaultTunMTU = 1400
 
-func createTun(name string, ip string, ipv6 string) error {
+func createTun(name string, ip string, ipv6 string, mtu int) error {
+	if mtu < 1280 || mtu > 1500 {
+		mtu = DefaultTunMTU
+	}
 	var lastErr error
 	for attempt := 0; attempt < 5; attempt++ {
 		if attempt > 0 {
@@ -39,7 +42,7 @@ if [ -n "$TUN_IP6" ]; then
     ip addr add "$TUN_IP6" dev "$TUN_NAME"
 fi
 ip link set dev "$TUN_NAME" up
-		`, name, ip, ipv6, DefaultTunMTU)
+		`, name, ip, ipv6, mtu)
 		_, err := runScriptWithSh(script)
 		if err == nil {
 			return nil

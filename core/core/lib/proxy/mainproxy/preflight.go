@@ -52,6 +52,7 @@ func buildPreflightConfig(
 		prepared, prepErr := xrayjson.Prepare(rawConfig, xrayjson.Options{
 			SocksPort:          socksPort,
 			HttpPort:           httpPort,
+			TunMTU:             appconfig.GetConfig().TunMTU,
 			APIPort:            apiPort,
 			DNSServers:         appconfig.GetConfig().DnsServers,
 			BootstrapHosts:     selection.BootstrapHosts,
@@ -70,7 +71,8 @@ func buildPreflightConfig(
 		return cfg, nil
 	}
 
-	cfg, err = lib.ParseUriWithTun(profile.Uri, socksPort, httpPort, "")
+	// Preflight deliberately omits the TUN inbound, so no MTU is needed here.
+	cfg, err = lib.ParseUriWithTun(profile.Uri, socksPort, httpPort, "", 0)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse profile uri: %w", err)
 	}

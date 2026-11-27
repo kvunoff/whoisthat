@@ -10,18 +10,18 @@ import (
 
 // ParseUri parses a proxy URI and generates full Xray configuration JSON bytes.
 func ParseUri(uri string, socksPort, httpPort int) ([]byte, error) {
-	return ParseUriWithTun(uri, socksPort, httpPort, "")
+	return ParseUriWithTun(uri, socksPort, httpPort, "", 0)
 }
 
 // ParseUriWithTun parses a proxy URI and generates full Xray configuration JSON bytes,
 // optionally appending a native TUN inbound if tunName is non-empty.
-func ParseUriWithTun(uri string, socksPort, httpPort int, tunName string) ([]byte, error) {
+func ParseUriWithTun(uri string, socksPort, httpPort int, tunName string, tunMTU int) ([]byte, error) {
 	outbound, _, err := createOutboundObject(uri)
 	if err != nil {
 		return nil, err
 	}
 
-	inbounds := GenerateInboundConfigWithTun(socksPort, httpPort, tunName)
+	inbounds := GenerateInboundConfigWithTun(socksPort, httpPort, tunName, tunMTU)
 	cfg := Config{
 		Outbounds: []Outbound{outbound},
 		Inbounds:  inbounds,

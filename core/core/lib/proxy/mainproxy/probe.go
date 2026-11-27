@@ -165,6 +165,7 @@ func (p *ProxyManager) testViaXray(profile structs.Profile, method string, sampl
 			return pingResult{latencyMs: -1, sampleCount: samples, lossPct: 100, failReason: fmt.Sprintf("load provider config: %v", loadErr)}
 		}
 		geoDir, _ = p.DB.ResolveGroupGeoDir(profile.GroupId)
+		// Probe creates no TUN inbound, so TunName/TunMTU stay unset.
 		prepared, prepErr := xrayjson.Prepare(raw, xrayjson.Options{
 			SocksPort:    port,
 			HttpPort:     -1,

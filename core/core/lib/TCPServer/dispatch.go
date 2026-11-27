@@ -142,6 +142,14 @@ func (s *Server) dispatch(handler cmd.Cmd, raw_tcp_message structs.TCPMessage) b
 		}
 		handler.SetAntiDPI(data)
 
+	case "set-network-settings":
+		var data structs.SetNetworkSettingsData
+		if err := json.Unmarshal(raw_tcp_message.Data, &data); err != nil {
+			logger.Warnf("Invalid body for %s: %v", raw_tcp_message.Msg, err)
+			return false
+		}
+		handler.SetNetworkSettings(data)
+
 	case "get-application-state":
 		var data structs.GetApplicationStateData
 		if err := json.Unmarshal(raw_tcp_message.Data, &data); err != nil {

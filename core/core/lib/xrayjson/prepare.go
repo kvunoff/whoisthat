@@ -15,6 +15,7 @@ type Options struct {
 	SocksPort int
 	HttpPort  int
 	TunName   string
+	TunMTU    int
 	APIPort   int
 
 	DNSServers         []string
@@ -128,10 +129,14 @@ func rewriteInbounds(value interface{}, opts Options) []interface{} {
 		})
 	}
 	if opts.TunName != "" {
+		mtu := opts.TunMTU
+		if mtu <= 0 {
+			mtu = 1400
+		}
 		out = append(out, map[string]interface{}{
 			"tag":      "tun-in",
 			"protocol": "tun",
-			"settings": map[string]interface{}{"name": opts.TunName, "MTU": 1400},
+			"settings": map[string]interface{}{"name": opts.TunName, "MTU": mtu},
 			"sniffing": map[string]interface{}{
 				"enabled":      true,
 				"routeOnly":    false,

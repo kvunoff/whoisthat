@@ -47,7 +47,7 @@ test-xray:
 	XRAY_BIN="$${WHOISTHAT_XRAY_BIN:-}"; \
 	if [ -z "$$XRAY_BIN" ]; then XRAY_BIN="$$(ls -d "$$HOME"/.local/share/whoisthat/runtimes/xray/v*/xray 2>/dev/null | sort -V | tail -1)"; fi; \
 	if [ -z "$$XRAY_BIN" ]; then XRAY_BIN="$$(command -v xray || true)"; fi; \
-	WHOISTHAT_XRAY_BIN="$$XRAY_BIN" go test ./lib/xrayjson -run TestFinalmaskConfigsWithXray -count=1 -v
+	WHOISTHAT_XRAY_BIN="$$XRAY_BIN" go test ./lib/xrayjson -run 'TestFinalmaskConfigsWithXray|TestTunInboundMTUWithXray' -count=1 -v
 
 # Coverage report with the same line floors as CI.
 # Requires: rustup component add llvm-tools-preview && cargo install cargo-llvm-cov

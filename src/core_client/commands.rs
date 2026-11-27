@@ -193,6 +193,21 @@ impl CoreClient {
             .await
     }
 
+    // shortcut: wired to the settings screen in the next commit.
+    #[allow(dead_code)]
+    pub async fn set_network_settings(&self, config: &NetworkSettings) -> std::io::Result<()> {
+        self.writer
+            .lock()
+            .await
+            .send(
+                "set-network-settings",
+                &SetNetworkSettingsData {
+                    config: config.clone(),
+                },
+            )
+            .await
+    }
+
     pub async fn enable_tun(&self) -> std::io::Result<()> {
         self.writer
             .lock()

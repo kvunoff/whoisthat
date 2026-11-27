@@ -140,9 +140,10 @@ type ApplicationState struct {
 	// TUNName and TestConfig are the daemon's authoritative values. The TUI
 	// keeps the same fields in config.toml for offline startup, but overwrites
 	// them from every application-state so the two cannot drift.
-	TunName    string        `json:"tun_name,omitzero"`
-	TestConfig TestConfig    `json:"test_config,omitzero"`
-	AntiDPI    AntiDPIConfig `json:"anti_dpi"`
+	TunName         string          `json:"tun_name,omitzero"`
+	TestConfig      TestConfig      `json:"test_config,omitzero"`
+	AntiDPI         AntiDPIConfig   `json:"anti_dpi"`
+	NetworkSettings NetworkSettings `json:"network_settings,omitzero"`
 	// ConfigStatus and DBStatus drive the "restore settings" button: a corrupt
 	// config or an unreadable database is reported here instead of failing
 	// silently.

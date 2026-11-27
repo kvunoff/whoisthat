@@ -35,6 +35,7 @@ func (p *ProxyManager) prepareManagedConfig(
 		SocksPort:          socksPort,
 		HttpPort:           httpPort,
 		TunName:            tunName,
+		TunMTU:             appconfig.GetConfig().TunMTU,
 		APIPort:            apiPort,
 		DNSServers:         appconfig.GetConfig().DnsServers,
 		BootstrapHosts:     bootstrap,

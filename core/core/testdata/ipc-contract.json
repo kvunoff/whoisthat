@@ -146,6 +146,13 @@
         "delay": "10-16"
       }
     },
+    "network_settings": {
+      "tun_mtu": 1400,
+      "dns_servers": [
+        "9.9.9.9",
+        "2620:fe::fe"
+      ]
+    },
     "config_status": {
       "state": "ok",
       "error": "none"
@@ -179,6 +186,15 @@
     "profile": {
       "id": 7,
       "group_id": 3
+    }
+  },
+  "network_settings_updated": {
+    "config": {
+      "tun_mtu": 1400,
+      "dns_servers": [
+        "9.9.9.9",
+        "2620:fe::fe"
+      ]
     }
   },
   "profile_updated": {
@@ -278,6 +294,15 @@
     "group_id": 3,
     "profile_id": 7,
     "mode": "tun"
+  },
+  "set_network_settings_request": {
+    "config": {
+      "tun_mtu": 1400,
+      "dns_servers": [
+        "9.9.9.9",
+        "2620:fe::fe"
+      ]
+    }
   },
   "set_test_config_request": {
     "config": {

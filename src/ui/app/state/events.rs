@@ -75,6 +75,7 @@ impl App {
             self.test_config = state.test_config;
         }
         self.anti_dpi = state.anti_dpi;
+        self.network_settings = state.network_settings;
         self.clamp_cursor();
     }
 

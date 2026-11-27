@@ -118,6 +118,7 @@ func LoadConfig() {
 	}
 	config.DnsServers = sanitizeDnsServers(config.DnsServers)
 	config.TunName = sanitizeTunName(config.TunName)
+	config.TunMTU = sanitizeTunMTU(config.TunMTU)
 	config.AutoconnectMode = sanitizeAutoconnectMode(config.AutoconnectMode)
 	config.TestConfig = sanitizeTestConfig(config.TestConfig)
 	config.AntiDPI = sanitizeAntiDPI(config.AntiDPI)

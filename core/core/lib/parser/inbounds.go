@@ -13,10 +13,10 @@ func GenerateInboundConfig(socksPort, httpPort int) []Inbound {
 }
 
 // GenerateInboundConfigWithTun generates inbounds with an optional native TUN inbound.
-func GenerateInboundConfigWithTun(socksPort, httpPort int, tunName string) []Inbound {
+func GenerateInboundConfigWithTun(socksPort, httpPort int, tunName string, tunMTU int) []Inbound {
 	inbounds := GenerateInboundConfig(socksPort, httpPort)
 	if tunName != "" {
-		inbounds = append(inbounds, GenerateTunInbound(tunName, 1400))
+		inbounds = append(inbounds, GenerateTunInbound(tunName, tunMTU))
 	}
 	return inbounds
 }

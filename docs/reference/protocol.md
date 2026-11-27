@@ -36,8 +36,8 @@ without an id.
 
 | Kind | Examples | Has `id` |
 | :--- | :--- | :---: |
-| Direct command replies | `application-state`, `profile-details`, `group-added`, `group-updated`, `profiles-added`, `subscription-updated`, `routing-updated`, `kill-switch-updated`, `split-tunnel-updated`, `tun-name-updated`, `hwid-updated`, `test-config-updated`, `anti-dpi-updated`, `is-root-answer` | yes |
-| Request-scoped warnings | `warn` with keys such as `connect-failed`, `update-subscription-failed`, `test-group-failed`, `set-anti-dpi-failed` | yes |
+| Direct command replies | `application-state`, `profile-details`, `group-added`, `group-updated`, `profiles-added`, `subscription-updated`, `routing-updated`, `kill-switch-updated`, `split-tunnel-updated`, `tun-name-updated`, `hwid-updated`, `test-config-updated`, `anti-dpi-updated`, `network-settings-updated`, `is-root-answer` | yes |
+| Request-scoped warnings | `warn` with keys such as `connect-failed`, `update-subscription-failed`, `test-group-failed`, `set-anti-dpi-failed`, `set-network-settings-failed` | yes |
 | Background/broadcast events | `status-changed`, `tun-status-changed`, `traffic-sample`, `test-progress` (after the first frame), `profile-updated` (test results), `xray-progress`, `warn died` | no |
 | Commands without a reply | `die`, `cancel-tests`, `set-log-level` | — |
 
@@ -105,6 +105,7 @@ The core replies with `{"msg":"hello-ok","data":{"protocol_version":6}}` or `{"m
 | `cancel-tests` | `{}` | Cancels all active and pending latency tests. |
 | `set-test-config` | `{"config": {"concurrency": int, "timeout_seconds": int, "samples_per_test": int, "test_endpoint": "str", "auto_test_on_subscribe": bool}}` | `test-config-updated` |
 | `set-anti-dpi` | `{"config": {"fragment": {"enabled": bool, "packets": "str", "length": "str", "interval": "str"}, "noise": {"enabled": bool, "type": "str", "packet": "str", "delay": "str"}}}` | `anti-dpi-updated` (sanitized config); invalid values emit `warn` with key `set-anti-dpi-failed` |
+| `set-network-settings` | `{"config": {"tun_mtu": int, "dns_servers": ["str"]}}` | `network-settings-updated` (persisted block); invalid values emit `warn` with key `set-network-settings-failed`. Both fields are written atomically, so clients read the current `application-state` and change only the field they edit. |
 | `import-happ-routing` | `{"group_id": int, "link": "string"}` | `subscription-updated` or `warn` |
 | `set-group-routing-mode` | `{"group_id": int, "mode": "auto" \| "manual" \| "subscription"}` | `group-updated` |
 | `set-active-routing-profile` | `{"group_id": int, "profile_id": "string"}` (`"off"` deactivates) | `group-updated`, then `subscription-updated` after any geo refresh |
@@ -118,7 +119,7 @@ The core replies with `{"msg":"hello-ok","data":{"protocol_version":6}}` or `{"m
 
 | Notification (`msg`) | `data` Object Payload | Description |
 | :--- | :--- | :--- |
-| `application-state` | Complete system state | Response to `get-application-state` (the TUI requests it on connect). Includes groups, profiles, active connection, TUN status, `tun_name`, `test_config`, `anti_dpi`, and configurations. `tun_name`/`test_config` are authoritative: the TUI mirrors them into `config.toml` instead of the other way around. `anti_dpi` is absent only when the running core predates global anti-DPI. `config_status` (`ok`/`missing`/`corrupt`/`repaired`) and `db_status` (`ok`/`read-only` plus `snapshot_at`) report unreadable files so the TUI can offer a one-click restore. |
+| `application-state` | Complete system state | Response to `get-application-state` (the TUI requests it on connect). Includes groups, profiles, active connection, TUN status, `tun_name`, `test_config`, `anti_dpi`, and configurations. `tun_name`/`test_config` are authoritative: the TUI mirrors them into `config.toml` instead of the other way around. `anti_dpi` is absent only when the running core predates global anti-DPI. `network_settings` carries `tun_mtu` and `dns_servers`; it is absent only when the running core predates the TUN/DNS settings block, and clients must then show `unsupported (core)` instead of substituting defaults. `config_status` (`ok`/`missing`/`corrupt`/`repaired`) and `db_status` (`ok`/`read-only` plus `snapshot_at`) report unreadable files so the TUI can offer a one-click restore. |
 | `profile-details` | `{"group_id": int, "id": int, "transport": "str"?, "security": "str"?, "sni": "str"?, "flow": "str"?, "alpn": "str"?, "path": "str"?, "host": "str"?, "service_name": "str"?, "mode": "str"?, "fingerprint": "str"?, "public_key": "str"?, "short_id": "str"?, "spider_x": "str"?, "obfs": "str"?, "cipher": "str"?, "allow_insecure": bool?}` | Response to `get-profile-details` for a managed JSON profile. Contains display-only stream metadata extracted from the provider config; credentials are never included. Empty fields mean the provider config does not specify them. |
 | `status-changed` | `{"connection": "connected" \| "disconnected", "profile": { ... }, "connected_at": int, "reason": "string"?}` | Fired when VPN connects or disconnects. `reason` is present when the connection dropped unexpectedly. |
 | `profiles-added` | `{"profiles": [ ... ]}` | Fired when new server profiles are imported. |
@@ -145,6 +146,7 @@ The core replies with `{"msg":"hello-ok","data":{"protocol_version":6}}` or `{"m
 | `test-progress` | `{"group_id": int, "tested": int, "total": int}` | Broadcast during batch latency scans. |
 | `test-config-updated` | `{"config": { ...TestConfig }}` | Fired when test timeout, samples, concurrency, endpoint or auto-test flag change. |
 | `anti-dpi-updated` | `{"config": { ...AntiDPIConfig }}` | Fired after `set-anti-dpi`; carries the sanitized global fragment/noise settings. |
+| `network-settings-updated` | `{"config": {"tun_mtu": int, "dns_servers": ["str"]}}` | Fired after `set-network-settings`; carries the persisted TUN MTU and DNS servers. |
 | `xray-progress` | `{"status": "downloading" \| ..., "version": "str", "progress": int, "bytes_downloaded": int?, "total_bytes": int?, "error": "str"?}` | Streamed while the pinned Xray runtime is downloading or failing. |
 
 ::: warning Removed in protocol 6
@@ -231,7 +233,7 @@ Subscription metadata (`sub_*`) is automatically populated from the standard `su
 
 Group naming: `add-group` with an empty `name` uses the subscription group's name, taken from the `profile-title` HTTP response header (base64-prefixed values are decoded) or, when absent, the subscription URL host. Both are stored in `sub_name`. `name` follows `sub_name` while the two are equal, so a manual rename survives later subscription refreshes. `update-group` with an empty `name` resets the group to `sub_name`.
 
-`update-group` accepts two optional fields. Omitting `auto_update` leaves the current setting; `false` disables background refreshes. Omitting `update_interval` leaves the manual override unchanged; `0` clears it, and a positive value sets it in seconds (validated as 1–8760 hours). Older daemons ignore these fields; the current client requires protocol 5 and does not attach to a mismatched core.
+`update-group` accepts two optional fields. Omitting `auto_update` leaves the current setting; `false` disables background refreshes. Omitting `update_interval` leaves the manual override unchanged; `0` clears it, and a positive value sets it in seconds (validated as 1–8760 hours). Older daemons ignore these fields; the current client requires protocol 6 and does not attach to a mismatched core.
 
 
 ### Routing Profile Info Structure

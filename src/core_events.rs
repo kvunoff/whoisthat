@@ -365,6 +365,10 @@ pub(crate) async fn handle_core_event(
             app.anti_dpi = Some(c);
             app.msg("Anti-DPI updated (applies on next connect)");
         }
+        CoreEvent::NetworkSettingsUpdated(c) => {
+            app.network_settings = Some(c);
+            app.msg("Network settings updated (applies on next connect)");
+        }
         CoreEvent::XrayProgress(p) => {
             let ver = if p.version.is_empty() {
                 "core"

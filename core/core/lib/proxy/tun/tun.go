@@ -70,7 +70,7 @@ func (t *TunModeManager) Start(proxy_ipv4s []string, proxy_ipv6s []string, dns D
 	t.dnsHijack = sanitizeDnsHijack(dns)
 	t.sudoUid = utils.DedicatedUid()
 
-	err = createTun(t.tun_name, t.tun_ip, t.tun_ipv6)
+	err = createTun(t.tun_name, t.tun_ip, t.tun_ipv6, appconfig.GetConfig().TunMTU)
 	if err != nil {
 		t.clearNetworkRules()
 		return fmt.Errorf("there was an error creating tun interface %w", err)
