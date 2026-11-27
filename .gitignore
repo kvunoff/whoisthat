@@ -1,15 +1,18 @@
-target/
-lcov.info
-cover.out
-.claude/
-.vscode/
-.opencode/
-opencode.json
-*.log
+# Build and packaging artifacts
+/target/
 /core/core/whoisthat-core
 /whoisthat-core
-.local/
-.ignore
-node_modules/
-docs/.vitepress/dist/
-docs/.vitepress/cache/
+/dist/
+
+# Test coverage and logs
+/lcov.info
+/core/core/cover.out
+*.log
+
+# Documentation dependencies and build output
+/node_modules/
+/docs/.vitepress/dist/
+/docs/.vitepress/cache/
+
+# Local workspace files (plans, release drafts, secrets)
+/.local/
