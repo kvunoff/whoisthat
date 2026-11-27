@@ -291,8 +291,8 @@ pub async fn run(g: &GlobalArgs, short: bool, watch: bool) -> Result<(), CliErro
                 }
             }
             "tun-status-changed" => {
-                if let Ok(enabled) = serde_json::from_value::<bool>(msg.data) {
-                    current.update_tun_status(enabled);
+                if let Ok(status) = serde_json::from_value::<TunStatus>(msg.data) {
+                    current.update_tun_status(status.is_enabled);
                     print_status(&current, short, g.json)?;
                 }
             }
