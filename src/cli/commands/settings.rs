@@ -2,6 +2,7 @@ use serde_json::{Value, json};
 
 use crate::config;
 use crate::core_client::protocol::*;
+use crate::settings::registry::{self, Source};
 
 use super::super::args::{GlobalArgs, SettingsArgs, SettingsCmd};
 use super::super::client::{Reply, Session};
@@ -9,46 +10,36 @@ use super::super::error::CliError;
 use super::super::output::Out;
 use super::super::resolve;
 
-const CORE_KEYS: &[&str] = &[
-    "kill-switch",
-    "split-tunnel",
-    "autoconnect",
-    "autoconnect-profile",
-    "autoconnect-mode",
-    "tun-name",
-    "hwid-enabled",
-    "user-agent",
-    "test.concurrency",
-    "test.timeout",
-    "test.samples",
-    "test.endpoint",
-    "test.auto-on-subscribe",
-    "anti-dpi.fragment.enabled",
-    "anti-dpi.fragment.packets",
-    "anti-dpi.fragment.length",
-    "anti-dpi.fragment.interval",
-    "anti-dpi.noise.enabled",
-    "anti-dpi.noise.type",
-    "anti-dpi.noise.packet",
-    "anti-dpi.noise.delay",
-];
-
-/// Reported by the core but not settable (the daemon owns the kernel state).
-const READONLY_KEYS: &[&str] = &["kill-switch-armed"];
-
-const LOCAL_KEYS: &[&str] = &[
-    "theme",
-    "show-ip",
-    "log-enabled",
-    "log-level",
+/// Keys with no row in the settings registry (CLI-only or read-only).
+const EXTRA_CORE_KEYS: &[&str] = &["autoconnect-profile"];
+const EXTRA_LOCAL_KEYS: &[&str] = &[
     "terminal",
-    "test-method",
-    "check-updates",
     "core.host",
     "core.port",
     "core.use-tcp",
     "core.socket",
 ];
+
+/// Reported by the core but not settable (the daemon owns the kernel state).
+const READONLY_KEYS: &[&str] = &["kill-switch-armed"];
+
+fn core_keys() -> Vec<&'static str> {
+    registry::all()
+        .filter(|d| {
+            !d.cli_key.is_empty() && matches!(d.source, Source::Core | Source::CoreOptional)
+        })
+        .map(|d| d.cli_key)
+        .chain(EXTRA_CORE_KEYS.iter().copied())
+        .collect()
+}
+
+fn local_keys() -> Vec<&'static str> {
+    registry::all()
+        .filter(|d| !d.cli_key.is_empty() && d.source == Source::Local)
+        .map(|d| d.cli_key)
+        .chain(EXTRA_LOCAL_KEYS.iter().copied())
+        .collect()
+}
 
 pub async fn dispatch(g: &GlobalArgs, args: SettingsArgs) -> Result<(), CliError> {
     let SettingsArgs { cmd, set, force } = args;
@@ -67,23 +58,23 @@ async fn list(g: &GlobalArgs) -> Result<(), CliError> {
     let cfg = config::load_config();
     let mut entries: Vec<(String, Value, &'static str)> = Vec::new();
 
-    for key in LOCAL_KEYS {
+    for key in local_keys() {
         if let Some(v) = local_value(&cfg, key) {
-            entries.push(((*key).to_string(), v, "local"));
+            entries.push((key.to_string(), v, "local"));
         }
     }
 
     match Session::open(g).await {
         Ok(mut session) => {
             let state = session.state().await?;
-            for key in CORE_KEYS {
+            for key in core_keys() {
                 if let Some(v) = core_value(&state, &cfg, key) {
-                    let source = if *key == "autoconnect-profile" {
+                    let source = if key == "autoconnect-profile" {
                         "core-config"
                     } else {
                         "core"
                     };
-                    entries.push(((*key).to_string(), v, source));
+                    entries.push((key.to_string(), v, source));
                 }
             }
             for key in READONLY_KEYS {
@@ -93,8 +84,8 @@ async fn list(g: &GlobalArgs) -> Result<(), CliError> {
             }
         }
         Err(_) => {
-            for key in CORE_KEYS {
-                entries.push(((*key).to_string(), Value::String("unknown".into()), "core"));
+            for key in core_keys() {
+                entries.push((key.to_string(), Value::String("unknown".into()), "core"));
             }
             for key in READONLY_KEYS {
                 entries.push(((*key).to_string(), Value::String("unknown".into()), "core"));
@@ -122,7 +113,7 @@ async fn get(g: &GlobalArgs, key: &str) -> Result<(), CliError> {
     let key = canonical_key(key)?;
     let cfg = config::load_config();
 
-    if LOCAL_KEYS.contains(&key.as_str()) {
+    if local_keys().contains(&key.as_str()) {
         let value = local_value(&cfg, &key)
             .ok_or_else(|| CliError::Usage(format!("no value for '{key}'")))?;
         if g.json {
@@ -155,7 +146,7 @@ async fn toggle(g: &GlobalArgs, key: &str) -> Result<(), CliError> {
     if !is_bool_key(&key) {
         return Err(CliError::Usage(format!("'{key}' is not a boolean setting")));
     }
-    let current = if LOCAL_KEYS.contains(&key.as_str()) {
+    let current = if local_keys().contains(&key.as_str()) {
         let cfg = config::load_config();
         local_value(&cfg, &key)
             .and_then(|v| v.as_bool())
@@ -661,20 +652,24 @@ fn canonical_key(key: &str) -> Result<String, CliError> {
         "killswitch" | "kill_switch" => "kill-switch",
         other => other,
     };
-    if is_core_key(key) || READONLY_KEYS.contains(&key) || LOCAL_KEYS.contains(&key) {
+    let core = core_keys();
+    let local = local_keys();
+    if core.contains(&key) || READONLY_KEYS.contains(&key) || local.contains(&key) {
         return Ok(key.to_string());
     }
-    let hint = CORE_KEYS
+    let hint = core
         .iter()
-        .chain(LOCAL_KEYS.iter())
-        .find(|k| k.contains(key) || key.contains(*k))
+        .chain(local.iter())
+        .find(|k| k.contains(key) || key.contains(**k))
         .map(|k| format!("; did you mean '{k}'?"))
         .unwrap_or_default();
     Err(CliError::Usage(format!("unknown setting '{key}'{hint}")))
 }
 
 fn is_core_key(key: &str) -> bool {
-    CORE_KEYS.contains(&key)
+    EXTRA_CORE_KEYS.contains(&key)
+        || registry::by_cli_key(key)
+            .is_some_and(|d| matches!(d.source, Source::Core | Source::CoreOptional))
 }
 
 fn is_bool_key(key: &str) -> bool {
@@ -860,6 +855,53 @@ mod tests {
         assert!(canonical_key("kill-switch").is_ok());
         assert!(canonical_key("killswitch").is_ok());
         assert!(canonical_key("kills witch").is_err());
+    }
+
+    #[test]
+    fn registry_keys_cover_the_full_cli_surface() {
+        let mut actual: Vec<&str> = core_keys()
+            .into_iter()
+            .chain(local_keys())
+            .chain(READONLY_KEYS.iter().copied())
+            .collect();
+        actual.sort_unstable();
+        let mut expected: Vec<&str> = vec![
+            "kill-switch",
+            "split-tunnel",
+            "autoconnect",
+            "autoconnect-profile",
+            "autoconnect-mode",
+            "tun-name",
+            "hwid-enabled",
+            "user-agent",
+            "test.concurrency",
+            "test.timeout",
+            "test.samples",
+            "test.endpoint",
+            "test.auto-on-subscribe",
+            "anti-dpi.fragment.enabled",
+            "anti-dpi.fragment.packets",
+            "anti-dpi.fragment.length",
+            "anti-dpi.fragment.interval",
+            "anti-dpi.noise.enabled",
+            "anti-dpi.noise.type",
+            "anti-dpi.noise.packet",
+            "anti-dpi.noise.delay",
+            "theme",
+            "show-ip",
+            "log-enabled",
+            "log-level",
+            "terminal",
+            "test-method",
+            "check-updates",
+            "core.host",
+            "core.port",
+            "core.use-tcp",
+            "core.socket",
+            "kill-switch-armed",
+        ];
+        expected.sort_unstable();
+        assert_eq!(actual, expected);
     }
 
     #[test]

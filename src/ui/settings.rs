@@ -7,153 +7,37 @@ use ratatui::{
 };
 
 use crate::core_client::protocol::{AntiDPIConfig, HwidData};
+use crate::settings::registry::{self, Kind, SettingsId};
 
 use super::theme::*;
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum SettingsKind {
-    Toggle,
-    Cycle,
-    Editable,
-    Action,
-    Display,
-}
 
 #[derive(Debug, Clone)]
 pub enum SettingsRow {
     Header(&'static str),
-    Item {
-        label: &'static str,
-        kind: SettingsKind,
-    },
+    Item { id: SettingsId },
 }
 
+/// Flat layout used until the settings tree lands. Headers keep their old
+/// positions so commit 1 does not change the screen.
+const LEGACY_HEADERS: &[(usize, &str)] = &[
+    (0, "Startup"),
+    (3, "Display"),
+    (7, "Network"),
+    (10, "Diagnostics"),
+    (16, "Hardware"),
+    (20, "Updates"),
+    (21, "Anti-DPI"),
+];
+
 pub fn settings_layout() -> Vec<SettingsRow> {
-    vec![
-        SettingsRow::Header("Startup"),
-        SettingsRow::Item {
-            label: "Autoconnect",
-            kind: SettingsKind::Toggle,
-        },
-        SettingsRow::Item {
-            label: "Autoconnect mode",
-            kind: SettingsKind::Cycle,
-        },
-        SettingsRow::Item {
-            label: "Autostart",
-            kind: SettingsKind::Toggle,
-        },
-        SettingsRow::Header("Display"),
-        SettingsRow::Item {
-            label: "Theme",
-            kind: SettingsKind::Cycle,
-        },
-        SettingsRow::Item {
-            label: "Show IP",
-            kind: SettingsKind::Toggle,
-        },
-        SettingsRow::Item {
-            label: "Verbose TUI log",
-            kind: SettingsKind::Toggle,
-        },
-        SettingsRow::Item {
-            label: "Log level",
-            kind: SettingsKind::Cycle,
-        },
-        SettingsRow::Header("Network"),
-        SettingsRow::Item {
-            label: "TUN name",
-            kind: SettingsKind::Editable,
-        },
-        SettingsRow::Item {
-            label: "Kill Switch",
-            kind: SettingsKind::Toggle,
-        },
-        SettingsRow::Item {
-            label: "Split tunnel",
-            kind: SettingsKind::Cycle,
-        },
-        SettingsRow::Header("Diagnostics"),
-        SettingsRow::Item {
-            label: "Test method",
-            kind: SettingsKind::Cycle,
-        },
-        SettingsRow::Item {
-            label: "Test samples",
-            kind: SettingsKind::Cycle,
-        },
-        SettingsRow::Item {
-            label: "Test concurrency",
-            kind: SettingsKind::Cycle,
-        },
-        SettingsRow::Item {
-            label: "Test timeout",
-            kind: SettingsKind::Cycle,
-        },
-        SettingsRow::Item {
-            label: "Test endpoint",
-            kind: SettingsKind::Cycle,
-        },
-        SettingsRow::Item {
-            label: "Auto-test on refresh",
-            kind: SettingsKind::Toggle,
-        },
-        SettingsRow::Header("Hardware"),
-        SettingsRow::Item {
-            label: "HWID: Enabled",
-            kind: SettingsKind::Toggle,
-        },
-        SettingsRow::Item {
-            label: "HWID",
-            kind: SettingsKind::Display,
-        },
-        SettingsRow::Item {
-            label: "Reset HWID",
-            kind: SettingsKind::Action,
-        },
-        SettingsRow::Item {
-            label: "User-Agent",
-            kind: SettingsKind::Editable,
-        },
-        SettingsRow::Header("Updates"),
-        SettingsRow::Item {
-            label: "Check for updates",
-            kind: SettingsKind::Toggle,
-        },
-        SettingsRow::Header("Anti-DPI"),
-        SettingsRow::Item {
-            label: "Fragment: enabled",
-            kind: SettingsKind::Toggle,
-        },
-        SettingsRow::Item {
-            label: "Fragment: packets",
-            kind: SettingsKind::Cycle,
-        },
-        SettingsRow::Item {
-            label: "Fragment: length",
-            kind: SettingsKind::Editable,
-        },
-        SettingsRow::Item {
-            label: "Fragment: interval",
-            kind: SettingsKind::Editable,
-        },
-        SettingsRow::Item {
-            label: "Noise: enabled",
-            kind: SettingsKind::Toggle,
-        },
-        SettingsRow::Item {
-            label: "Noise: type",
-            kind: SettingsKind::Cycle,
-        },
-        SettingsRow::Item {
-            label: "Noise: packet",
-            kind: SettingsKind::Editable,
-        },
-        SettingsRow::Item {
-            label: "Noise: delay",
-            kind: SettingsKind::Editable,
-        },
-    ]
+    let mut rows = Vec::with_capacity(registry::all().count() + LEGACY_HEADERS.len());
+    for (i, def) in registry::all().enumerate() {
+        if let Some((_, title)) = LEGACY_HEADERS.iter().find(|(pos, _)| *pos == i) {
+            rows.push(SettingsRow::Header(title));
+        }
+        rows.push(SettingsRow::Item { id: def.id });
+    }
+    rows
 }
 
 /// Human-readable label for a split-tunnel mode value.
@@ -175,10 +59,7 @@ pub fn next_split_tunnel_mode(mode: &str) -> &'static str {
 }
 
 pub fn item_count() -> usize {
-    settings_layout()
-        .iter()
-        .filter(|r| matches!(r, SettingsRow::Item { .. }))
-        .count()
+    registry::all().count()
 }
 
 pub struct SettingsValues<'a> {
@@ -400,24 +281,27 @@ pub fn render_settings(
                 format!(" {} ", title),
                 s_accent(),
             )])),
-            SettingsRow::Item { label, kind } => {
+            SettingsRow::Item { id } => {
+                let def = registry::by_id(*id);
+                let label = def.label;
+                let kind = def.kind;
                 let val = &item_values[value_idx];
                 let is_selected = flat_i == selected_flat && focused;
                 let val_style = match kind {
-                    SettingsKind::Toggle => {
+                    Kind::Toggle => {
                         if val.starts_with("●") {
                             s_success()
                         } else {
                             s_disconnected()
                         }
                     }
-                    SettingsKind::Cycle => s_accent(),
-                    SettingsKind::Editable => s_text(),
-                    SettingsKind::Action => s_accent(),
-                    SettingsKind::Display => s_dim(),
+                    Kind::Cycle => s_accent(),
+                    Kind::Editable => s_text(),
+                    Kind::Action => s_accent(),
+                    Kind::Display => s_dim(),
                 };
                 let extra = match kind {
-                    SettingsKind::Editable => "  ✎",
+                    Kind::Editable => "  ✎",
                     _ => "",
                 };
                 let prefix = if is_selected { "> " } else { "  " };
@@ -433,7 +317,7 @@ pub fn render_settings(
                         },
                     ),
                     Span::styled(
-                        format!("{:<width$}", *label, width = label_w),
+                        format!("{:<width$}", label, width = label_w),
                         if is_selected { s_text() } else { s_dim() },
                     ),
                     Span::styled(val.clone(), val_style),
@@ -519,7 +403,7 @@ mod tests {
         let labels: Vec<&str> = layout
             .iter()
             .filter_map(|r| match r {
-                SettingsRow::Item { label, .. } => Some(*label),
+                SettingsRow::Item { id } => Some(registry::by_id(*id).label),
                 _ => None,
             })
             .collect();

@@ -104,6 +104,10 @@ impl App {
         kill_switch_enabled: bool,
         test_config: TestConfig,
     ) -> Self {
+        debug_assert!(
+            crate::settings::registry::validate_registry().is_ok(),
+            "settings registry is inconsistent"
+        );
         Self {
             groups: Vec::new(),
             connection_status: ProxyStatus {

@@ -21,6 +21,7 @@ mod popups;
 #[allow(dead_code)]
 #[path = "runner/proto.rs"]
 mod proto;
+mod settings;
 mod shell_integration;
 mod systemd;
 mod terminal;
