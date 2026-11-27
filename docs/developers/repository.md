@@ -76,8 +76,8 @@ whoisthat/
 │   └── core/
 │       ├── main.go     ← Daemon entry point; RaiseAmbientCaps() before everything
 │       ├── go.mod
-│       ├── commands/   ← IPC command handlers (connect, test, groups, subscription, split, ...)
-│       ├── structs/    ← Shared data types (mirror of src/core_client/protocol.rs)
+│       ├── commands/   ← IPC command handlers (connect, test, groups, subscription, split, network-settings, ...)
+│       ├── structs/    ← Shared data types (mirror of src/core_client/protocol.rs); network.go = optional TUN/DNS block
 │       ├── db/         ← Encrypted JSON profile DB (AES-256-GCM) + auto-migration
 │       ├── utils/      ← caps.go (RaiseAmbientCaps, CanTun), user.go (UIDs), resolve.go
 │       └── lib/        ← Core libraries

@@ -59,6 +59,8 @@ out of `application-state`.
 - `StatusChanged`, `TunStatusChanged`, `TrafficStats`, `ProfileUpdated` update
   live state;
 - `AntiDPIUpdated` applies the sanitized global fragment/noise settings;
+- `NetworkSettingsUpdated` applies the persisted TUN MTU and DNS servers, or is
+  absent when the running core predates the optional `network_settings` block;
 - `Warning` and `Error` become notices;
 - `SubscriptionUpdated` replaces a group and its profiles.
 
