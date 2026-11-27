@@ -9,7 +9,7 @@ use super::state::App;
 use super::types::*;
 use crate::ui::logs::render_logs;
 use crate::ui::routing::{render_routing_popup, render_routing_tab};
-use crate::ui::settings::{SettingsValues, render_settings};
+use crate::ui::settings::{render_settings, value_for};
 use crate::ui::theme::*;
 use crate::ui::traffic::render_traffic_tab;
 
@@ -208,41 +208,10 @@ impl App {
                 render_logs(f, area, &mut self.logs_state, focused);
             }
             ActiveTab::Settings => {
-                let focused = self.focus == Focus::LeftPanel;
-                let test_samples = format!("{}", self.test_config.samples_per_test);
-                let test_conc = format!("{}", self.test_config.concurrency);
-                let test_timeout = format!("{}s", self.test_config.timeout_seconds);
-                let endpoint_short = match self.test_config.test_endpoint.as_str() {
-                    "https://cp.cloudflare.com/generate_204" => "cloudflare",
-                    "https://www.gstatic.com/generate_204" => "gstatic",
-                    "https://www.bing.com/" => "bing",
-                    other => other,
-                }
-                .to_string();
-                let values = SettingsValues {
-                    autoconnect: self.autoconnect_enabled,
-                    autoconnect_mode: &self.autoconnect_mode,
-                    autostart_backend: self.autostart_backend.as_deref().unwrap_or("off"),
-                    autostart_enabled: self.autostart_enabled,
-                    autostart_available: self.autostart_available,
-                    theme: crate::ui::theme::current_theme().name,
-                    show_ip: self.show_ip,
-                    log_enabled: self.log_enabled,
-                    log_level: &self.log_level,
-                    test_method: &self.test_method,
-                    test_samples: &test_samples,
-                    test_concurrency: &test_conc,
-                    test_timeout: &test_timeout,
-                    test_endpoint: &endpoint_short,
-                    auto_test_on_subscribe: self.test_config.auto_test_on_subscribe,
-                    tun_name: &self.tun_name,
-                    kill_switch_enabled: self.kill_switch_enabled,
-                    kill_switch_armed: self.kill_switch_armed,
-                    split_tunnel: &self.split_tunnel,
-                    hwid: self.hwid_info.as_ref(),
-                    check_updates: self.check_updates,
-                    anti_dpi: self.anti_dpi.as_ref(),
-                };
+                let focused = self.focus != Focus::Popup;
+                let values: Vec<String> = crate::settings::registry::all()
+                    .map(|d| value_for(d.id, self))
+                    .collect();
                 render_settings(f, area, &values, &mut self.settings_state, focused);
             }
             ActiveTab::Routing => {

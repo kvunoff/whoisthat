@@ -7,6 +7,7 @@ use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph, Wrap};
 use super::helpers::*;
 use super::state::App;
 use super::types::*;
+use crate::settings::registry::SettingsId;
 use crate::ui::theme::*;
 
 impl App {
@@ -19,38 +20,30 @@ impl App {
                 input,
                 area,
             ),
-            Popup::EditUserAgent { input, .. } => self.render_text_popup(
-                f,
-                " Edit User-Agent ",
-                "Enter custom User-Agent:",
-                input,
-                area,
-            ),
-            Popup::EditTunName { input, .. } => self.render_text_popup(
-                f,
-                " Edit TUN Name ",
-                "Enter TUN interface name (1-15 chars, letters/digits/underscore/dash):",
-                input,
-                area,
-            ),
-            Popup::EditAntiDpi { input, field, .. } => {
-                let (title, hint) = match field {
-                    AntiDpiField::FragmentLength => (
+            Popup::EditSetting { id, input, .. } => {
+                let (title, hint) = match id {
+                    SettingsId::TunName => (
+                        " Edit TUN Name ",
+                        "Enter TUN interface name (1-15 chars, letters/digits/underscore/dash):",
+                    ),
+                    SettingsId::UserAgent => (" Edit User-Agent ", "Enter custom User-Agent:"),
+                    SettingsId::FragmentLength => (
                         " Edit Fragment Length ",
                         "Enter N-M (1-65535), e.g. 100-200:",
                     ),
-                    AntiDpiField::FragmentInterval => (
+                    SettingsId::FragmentInterval => (
                         " Edit Fragment Interval ",
                         "Enter delay N-M in ms (0-60000), e.g. 10-20:",
                     ),
-                    AntiDpiField::NoisePacket => (
+                    SettingsId::NoisePacket => (
                         " Edit Noise Packet ",
                         "Enter N-M for rand, or a str/base64/hex payload:",
                     ),
-                    AntiDpiField::NoiseDelay => (
+                    SettingsId::NoiseDelay => (
                         " Edit Noise Delay ",
                         "Enter delay N-M in ms (0-60000), e.g. 10-16:",
                     ),
+                    _ => (" Edit Setting ", "Enter value:"),
                 };
                 self.render_text_popup(f, title, hint, input, area)
             }

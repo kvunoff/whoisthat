@@ -6,8 +6,8 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, List, ListItem, ListState, Paragraph},
 };
 
-use crate::core_client::protocol::{AntiDPIConfig, HwidData};
 use crate::settings::registry::{self, Kind, SettingsId};
+use crate::ui::App;
 
 use super::theme::*;
 
@@ -62,29 +62,112 @@ pub fn item_count() -> usize {
     registry::all().count()
 }
 
-pub struct SettingsValues<'a> {
-    pub autoconnect: bool,
-    pub autoconnect_mode: &'a str,
-    pub autostart_backend: &'a str,
-    pub autostart_enabled: bool,
-    pub autostart_available: bool,
-    pub theme: &'a str,
-    pub show_ip: bool,
-    pub log_enabled: bool,
-    pub log_level: &'a str,
-    pub test_method: &'a str,
-    pub test_samples: &'a str,
-    pub test_concurrency: &'a str,
-    pub test_timeout: &'a str,
-    pub test_endpoint: &'a str,
-    pub auto_test_on_subscribe: bool,
-    pub tun_name: &'a str,
-    pub kill_switch_enabled: bool,
-    pub kill_switch_armed: bool,
-    pub split_tunnel: &'a str,
-    pub hwid: Option<&'a HwidData>,
-    pub check_updates: bool,
-    pub anti_dpi: Option<&'a AntiDPIConfig>,
+pub fn id_at(cursor: usize) -> SettingsId {
+    registry::all()
+        .nth(cursor)
+        .map(|d| d.id)
+        .unwrap_or(SettingsId::Autoconnect)
+}
+
+/// Rendered value for one row. Values live here, not in the registry: the
+/// registry must not depend on `ui::App`.
+pub fn value_for(id: SettingsId, app: &App) -> String {
+    let on_off = |on: bool| if on { "● on" } else { "○ off" }.to_string();
+    let unsupported = || "unsupported (core)".to_string();
+    match id {
+        SettingsId::Autoconnect => on_off(app.autoconnect_enabled),
+        SettingsId::AutoconnectMode => app.autoconnect_mode.clone(),
+        SettingsId::Autostart => {
+            if !app.autostart_available {
+                "unavailable".into()
+            } else if app.autostart_enabled {
+                format!("● {}", app.autostart_backend.as_deref().unwrap_or("off"))
+            } else {
+                "○ off".into()
+            }
+        }
+        SettingsId::Theme => crate::ui::theme::current_theme().name.to_string(),
+        SettingsId::ShowIp => on_off(app.show_ip),
+        SettingsId::VerboseTuiLog => on_off(app.log_enabled),
+        SettingsId::LogLevel => app.log_level.clone(),
+        SettingsId::TunName => app.tun_name.clone(),
+        SettingsId::KillSwitch => {
+            if app.kill_switch_enabled {
+                if app.kill_switch_armed {
+                    "● on".into()
+                } else {
+                    "▲ on (not armed)".into()
+                }
+            } else {
+                "○ off".into()
+            }
+        }
+        SettingsId::SplitTunnel => split_tunnel_label(&app.split_tunnel).to_string(),
+        SettingsId::TestMethod => app.test_method.clone(),
+        SettingsId::TestSamples => app.test_config.samples_per_test.to_string(),
+        SettingsId::TestConcurrency => app.test_config.concurrency.to_string(),
+        SettingsId::TestTimeout => format!("{}s", app.test_config.timeout_seconds),
+        SettingsId::TestEndpoint => match app.test_config.test_endpoint.as_str() {
+            "https://cp.cloudflare.com/generate_204" => "cloudflare".into(),
+            "https://www.gstatic.com/generate_204" => "gstatic".into(),
+            "https://www.bing.com/" => "bing".into(),
+            other => other.to_string(),
+        },
+        SettingsId::AutoTestOnRefresh => on_off(app.test_config.auto_test_on_subscribe),
+        SettingsId::HwidEnabled => on_off(app.hwid_info.as_ref().is_some_and(|h| h.enabled)),
+        SettingsId::Hwid => app
+            .hwid_info
+            .as_ref()
+            .map(|h| h.hwid.clone())
+            .unwrap_or_default(),
+        SettingsId::ResetHwid => "⏎".into(),
+        SettingsId::UserAgent => app
+            .hwid_info
+            .as_ref()
+            .map(|h| h.user_agent.clone())
+            .unwrap_or_default(),
+        SettingsId::CheckUpdates => on_off(app.check_updates),
+        SettingsId::FragmentEnabled => app
+            .anti_dpi
+            .as_ref()
+            .map(|a| on_off(a.fragment.enabled))
+            .unwrap_or_else(unsupported),
+        SettingsId::FragmentPackets => app
+            .anti_dpi
+            .as_ref()
+            .map(|a| a.fragment.packets.clone())
+            .unwrap_or_else(unsupported),
+        SettingsId::FragmentLength => app
+            .anti_dpi
+            .as_ref()
+            .map(|a| a.fragment.length.clone())
+            .unwrap_or_else(unsupported),
+        SettingsId::FragmentInterval => app
+            .anti_dpi
+            .as_ref()
+            .map(|a| a.fragment.interval.clone())
+            .unwrap_or_else(unsupported),
+        SettingsId::NoiseEnabled => app
+            .anti_dpi
+            .as_ref()
+            .map(|a| on_off(a.noise.enabled))
+            .unwrap_or_else(unsupported),
+        SettingsId::NoiseType => app
+            .anti_dpi
+            .as_ref()
+            .map(|a| a.noise.noise_type.clone())
+            .unwrap_or_else(unsupported),
+        SettingsId::NoisePacket => app
+            .anti_dpi
+            .as_ref()
+            .map(|a| a.noise.packet.clone())
+            .unwrap_or_else(unsupported),
+        SettingsId::NoiseDelay => app
+            .anti_dpi
+            .as_ref()
+            .map(|a| a.noise.delay.clone())
+            .unwrap_or_else(unsupported),
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -140,7 +223,7 @@ impl SettingsState {
 pub fn render_settings(
     f: &mut Frame,
     area: Rect,
-    values: &SettingsValues,
+    values: &[String],
     state: &mut SettingsState,
     focused: bool,
 ) {
@@ -159,116 +242,6 @@ pub fn render_settings(
     let rows = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).split(inner);
     let content_area = rows[0];
 
-    let hwid_enabled = values.hwid.map(|h| h.enabled).unwrap_or(false);
-    let hwid_val = values.hwid.map(|h| h.hwid.as_str()).unwrap_or("");
-    let hwid_ua = values.hwid.map(|h| h.user_agent.as_str()).unwrap_or("");
-
-    let item_values: [String; 29] = [
-        if values.autoconnect {
-            "● on".into()
-        } else {
-            "○ off".into()
-        },
-        values.autoconnect_mode.to_string(),
-        if !values.autostart_available {
-            "unavailable".into()
-        } else if values.autostart_enabled {
-            format!("● {}", values.autostart_backend)
-        } else {
-            "○ off".into()
-        },
-        values.theme.to_string(),
-        if values.show_ip {
-            "● on".into()
-        } else {
-            "○ off".into()
-        },
-        if values.log_enabled {
-            "● on".into()
-        } else {
-            "○ off".into()
-        },
-        values.log_level.to_string(),
-        values.tun_name.to_string(),
-        if values.kill_switch_enabled {
-            if values.kill_switch_armed {
-                "● on".into()
-            } else {
-                "▲ on (not armed)".into()
-            }
-        } else {
-            "○ off".into()
-        },
-        split_tunnel_label(values.split_tunnel).into(),
-        values.test_method.to_string(),
-        values.test_samples.to_string(),
-        values.test_concurrency.to_string(),
-        values.test_timeout.to_string(),
-        values.test_endpoint.to_string(),
-        if values.auto_test_on_subscribe {
-            "● on".into()
-        } else {
-            "○ off".into()
-        },
-        if hwid_enabled {
-            "● on".into()
-        } else {
-            "○ off".into()
-        },
-        hwid_val.to_string(),
-        "⏎".into(),
-        hwid_ua.to_string(),
-        if values.check_updates {
-            "● on".into()
-        } else {
-            "○ off".into()
-        },
-        values
-            .anti_dpi
-            .map(|a| {
-                if a.fragment.enabled {
-                    "● on".to_string()
-                } else {
-                    "○ off".to_string()
-                }
-            })
-            .unwrap_or_else(|| "unsupported (core)".into()),
-        values
-            .anti_dpi
-            .map(|a| a.fragment.packets.clone())
-            .unwrap_or_else(|| "unsupported (core)".into()),
-        values
-            .anti_dpi
-            .map(|a| a.fragment.length.clone())
-            .unwrap_or_else(|| "unsupported (core)".into()),
-        values
-            .anti_dpi
-            .map(|a| a.fragment.interval.clone())
-            .unwrap_or_else(|| "unsupported (core)".into()),
-        values
-            .anti_dpi
-            .map(|a| {
-                if a.noise.enabled {
-                    "● on".to_string()
-                } else {
-                    "○ off".to_string()
-                }
-            })
-            .unwrap_or_else(|| "unsupported (core)".into()),
-        values
-            .anti_dpi
-            .map(|a| a.noise.noise_type.clone())
-            .unwrap_or_else(|| "unsupported (core)".into()),
-        values
-            .anti_dpi
-            .map(|a| a.noise.packet.clone())
-            .unwrap_or_else(|| "unsupported (core)".into()),
-        values
-            .anti_dpi
-            .map(|a| a.noise.delay.clone())
-            .unwrap_or_else(|| "unsupported (core)".into()),
-    ];
-
     let layout = settings_layout();
     let selected_flat = state.flat_index();
 
@@ -285,7 +258,7 @@ pub fn render_settings(
                 let def = registry::by_id(*id);
                 let label = def.label;
                 let kind = def.kind;
-                let val = &item_values[value_idx];
+                let val = &values[value_idx];
                 let is_selected = flat_i == selected_flat && focused;
                 let val_style = match kind {
                     Kind::Toggle => {
@@ -367,6 +340,25 @@ pub fn render_settings(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_value_for_covers_every_row() {
+        use crate::core_client::protocol::TestConfig;
+        let app = App::new(
+            true,
+            false,
+            "warn".into(),
+            "http-get".into(),
+            "whoisthattun".into(),
+            false,
+            TestConfig::default(),
+        );
+        for (i, def) in registry::all().enumerate() {
+            assert_eq!(id_at(i), def.id);
+            let _ = value_for(def.id, &app);
+        }
+        assert_eq!(id_at(usize::MAX), SettingsId::Autoconnect);
+    }
 
     #[test]
     fn test_settings_layout_item_count() {
