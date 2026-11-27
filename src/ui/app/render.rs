@@ -9,7 +9,7 @@ use super::state::App;
 use super::types::*;
 use crate::ui::logs::render_logs;
 use crate::ui::routing::{render_routing_popup, render_routing_tab};
-use crate::ui::settings::{render_settings, value_for};
+use crate::ui::settings::{SettingsView, render_settings, value_for};
 use crate::ui::theme::*;
 use crate::ui::traffic::render_traffic_tab;
 
@@ -208,11 +208,29 @@ impl App {
                 render_logs(f, area, &mut self.logs_state, focused);
             }
             ActiveTab::Settings => {
-                let focused = self.focus != Focus::Popup;
+                let compact = area.width < 60
+                    || self.layout.width_tier == crate::ui::layout::WidthTier::Compact;
+                if compact {
+                    self.normalize_settings_focus();
+                }
+                let focused_tree = !compact && self.focus == Focus::LeftPanel && !self.search_mode;
+                let focused_items = compact || self.focus != Focus::LeftPanel || self.search_mode;
                 let values: Vec<String> = crate::settings::registry::all()
                     .map(|d| value_for(d.id, self))
                     .collect();
-                render_settings(f, area, &values, &mut self.settings_state, focused);
+                let query = if self.search_mode {
+                    self.search_query.as_deref()
+                } else {
+                    None
+                };
+                let view = SettingsView {
+                    values: &values,
+                    focused_tree,
+                    focused_items,
+                    search_query: query,
+                    width_tier: self.layout.width_tier,
+                };
+                render_settings(f, area, &mut self.settings_state, &view);
             }
             ActiveTab::Routing => {
                 let focused = self.focus == Focus::LeftPanel;

@@ -255,6 +255,33 @@ fn test_tab_index_conversions() {
 }
 
 #[test]
+fn switch_tab_clears_search_and_normalizes_focus() {
+    let mut app = make_app_with_profile();
+    app.switch_tab(ActiveTab::Settings);
+    app.search_mode = true;
+    app.search_input = "kill".into();
+    app.search_query = Some("kill".into());
+    app.switch_tab(ActiveTab::Profiles);
+    assert!(!app.search_mode);
+    assert!(app.search_query.is_none());
+    assert!(app.search_input.is_empty());
+    assert_eq!(app.focus, Focus::LeftPanel);
+}
+
+#[test]
+fn compact_settings_keeps_focus_on_the_items_panel() {
+    let mut app = make_app_with_profile();
+    app.last_area = Rect::new(0, 0, 55, 20);
+    app.switch_tab(ActiveTab::Settings);
+    assert_eq!(app.focus, Focus::RightPanel);
+    app.toggle_focus();
+    assert_eq!(app.focus, Focus::RightPanel);
+    app.last_area = Rect::new(0, 0, 100, 30);
+    app.toggle_focus();
+    assert_eq!(app.focus, Focus::LeftPanel);
+}
+
+#[test]
 fn test_move_profile_up_and_down() {
     let mut app = make_app_with_profile();
     app.groups[0].profiles[0].name = "P1".into();

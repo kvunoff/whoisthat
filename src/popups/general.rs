@@ -36,9 +36,8 @@ pub(crate) async fn handle_popup_input(
             }
             KeyCode::Enter => {
                 let target = App::tab_from_index(cursor);
-                app.tab = target;
+                app.switch_tab(target);
                 app.popup = None;
-                app.focus = Focus::LeftPanel;
                 if target == ActiveTab::Routing {
                     app.routing_popup = None;
                     app.sync_routing_group_to_connected();
@@ -47,33 +46,28 @@ pub(crate) async fn handle_popup_input(
                 }
             }
             KeyCode::Char('1') => {
-                app.tab = ActiveTab::Profiles;
+                app.switch_tab(ActiveTab::Profiles);
                 app.popup = None;
-                app.focus = Focus::LeftPanel;
             }
             KeyCode::Char('2') | KeyCode::Char('r') => {
-                app.tab = ActiveTab::Routing;
+                app.switch_tab(ActiveTab::Routing);
                 app.popup = None;
-                app.focus = Focus::LeftPanel;
                 app.routing_popup = None;
                 app.sync_routing_group_to_connected();
                 let gid = app.routing_page_group_id();
                 let _ = client.get_routing(gid).await;
             }
             KeyCode::Char('3') | KeyCode::Char('m') => {
-                app.tab = ActiveTab::Traffic;
+                app.switch_tab(ActiveTab::Traffic);
                 app.popup = None;
-                app.focus = Focus::LeftPanel;
             }
             KeyCode::Char('4') | KeyCode::Char('l') => {
-                app.tab = ActiveTab::Logs;
+                app.switch_tab(ActiveTab::Logs);
                 app.popup = None;
-                app.focus = Focus::LeftPanel;
             }
             KeyCode::Char('5') | KeyCode::Char('s') => {
-                app.tab = ActiveTab::Settings;
+                app.switch_tab(ActiveTab::Settings);
                 app.popup = None;
-                app.focus = Focus::LeftPanel;
             }
             _ => {
                 app.popup = Some(Popup::TabSwitcher { cursor });

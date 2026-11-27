@@ -12,8 +12,8 @@ use crate::logger::{FileLogger, configure_logger};
 use crate::settings::registry::{self, Kind, SettingDef, SettingsId, Source};
 use crate::testing::persist_and_sync_test_config;
 use crate::ui::App;
-use crate::ui::app::{Focus, Popup};
-use crate::ui::settings::{id_at, next_split_tunnel_mode};
+use crate::ui::app::{ActiveTab, Focus, Popup};
+use crate::ui::settings::{SettingsTreeRow, next_split_tunnel_mode};
 
 async fn send_anti_dpi(app: &mut App, client: &CoreClient, cfg: AntiDPIConfig) {
     if let Err(e) = client.set_anti_dpi(&cfg).await {
@@ -37,7 +37,8 @@ fn save(app: &mut App, cfg: &config::AppConfig) -> bool {
 }
 
 fn current(app: &App) -> &'static SettingDef {
-    registry::by_id(id_at(app.settings_state.cursor()))
+    let compact = app.last_area.width < 60;
+    registry::by_id(app.settings_state.current_id(compact))
 }
 
 fn unsupported_optional(app: &mut App, def: &SettingDef) -> bool {
@@ -57,8 +58,21 @@ pub(super) async fn handle(
     ip_tx: &mpsc::UnboundedSender<AppEvent>,
 ) -> Option<bool> {
     Some(match action {
+        AppAction::StartSearch => {
+            if app.tab != ActiveTab::Settings {
+                return None;
+            }
+            app.cancel_search();
+            app.search_mode = true;
+            app.search_query = Some(String::new());
+            app.settings_state.search_cursor = 0;
+            false
+        }
         AppAction::SettingsPrev => {
-            if current(app).id == SettingsId::Theme {
+            let compact = app.last_area.width < 60;
+            if !compact && app.focus == Focus::LeftPanel {
+                app.settings_state.collapse_or_expand(false);
+            } else if current(app).id == SettingsId::Theme {
                 let prev_theme = crate::ui::theme::cycle_theme_prev();
                 cfg.theme = prev_theme.to_string();
                 if save(app, cfg) {
@@ -68,7 +82,10 @@ pub(super) async fn handle(
             false
         }
         AppAction::SettingsNext => {
-            if current(app).id == SettingsId::Theme {
+            let compact = app.last_area.width < 60;
+            if !compact && app.focus == Focus::LeftPanel {
+                app.settings_state.collapse_or_expand(true);
+            } else if current(app).id == SettingsId::Theme {
                 let next_theme = crate::ui::theme::cycle_theme();
                 cfg.theme = next_theme.to_string();
                 if save(app, cfg) {
@@ -78,6 +95,19 @@ pub(super) async fn handle(
             false
         }
         AppAction::SettingsActivate => {
+            let compact = app.last_area.width < 60;
+            if !compact && app.focus == Focus::LeftPanel {
+                let row = app
+                    .settings_state
+                    .tree_rows()
+                    .get(app.settings_state.tree_cursor)
+                    .copied();
+                app.settings_state.activate_tree();
+                if matches!(row, Some(SettingsTreeRow::Group(..))) {
+                    app.focus = Focus::RightPanel;
+                }
+                return Some(false);
+            }
             let def = current(app);
             match def.kind {
                 Kind::Toggle => apply_toggle(app, cfg, def, client, logger, ip_tx).await,

@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Layout, Rect},
@@ -6,38 +8,301 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, List, ListItem, ListState, Paragraph},
 };
 
-use crate::settings::registry::{self, Kind, SettingsId};
+use crate::settings::registry::{self, GroupId, Kind, SectionId, SettingsId};
 use crate::ui::App;
+use crate::ui::layout::WidthTier;
 
 use super::theme::*;
 
-#[derive(Debug, Clone)]
-pub enum SettingsRow {
-    Header(&'static str),
-    Item { id: SettingsId },
+/// Geometry shared by the renderer and the mouse handler. A local calculation
+/// in either place would make clicks land on the wrong row.
+#[derive(Debug, Clone, Copy)]
+pub struct SettingsLayout {
+    pub tree: Rect,
+    pub items: Rect,
+    pub compact: bool,
 }
 
-/// Flat layout used until the settings tree lands. Headers keep their old
-/// positions so commit 1 does not change the screen.
-const LEGACY_HEADERS: &[(usize, &str)] = &[
-    (0, "Startup"),
-    (3, "Display"),
-    (7, "Network"),
-    (10, "Diagnostics"),
-    (16, "Hardware"),
-    (20, "Updates"),
-    (21, "Anti-DPI"),
-];
+pub struct SettingsView<'a> {
+    pub values: &'a [String],
+    pub focused_tree: bool,
+    pub focused_items: bool,
+    pub search_query: Option<&'a str>,
+    pub width_tier: WidthTier,
+}
 
-pub fn settings_layout() -> Vec<SettingsRow> {
-    let mut rows = Vec::with_capacity(registry::all().count() + LEGACY_HEADERS.len());
-    for (i, def) in registry::all().enumerate() {
-        if let Some((_, title)) = LEGACY_HEADERS.iter().find(|(pos, _)| *pos == i) {
-            rows.push(SettingsRow::Header(title));
+pub fn settings_layout(area: Rect, width_tier: WidthTier) -> SettingsLayout {
+    if area.width < 60 || width_tier == WidthTier::Compact {
+        return SettingsLayout {
+            tree: Rect::default(),
+            items: area,
+            compact: true,
+        };
+    }
+    let parts = Layout::horizontal([Constraint::Length(24), Constraint::Min(0)]).split(area);
+    SettingsLayout {
+        tree: parts[0],
+        items: parts[1],
+        compact: false,
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettingsTreeRow {
+    Section(SectionId),
+    Group(SectionId, GroupId),
+}
+
+pub fn visible_rows(expanded: &HashSet<SectionId>) -> Vec<SettingsTreeRow> {
+    let mut rows = Vec::new();
+    for section in registry::sections() {
+        rows.push(SettingsTreeRow::Section(section.id));
+        if expanded.contains(&section.id) {
+            for group in registry::groups(section.id) {
+                rows.push(SettingsTreeRow::Group(section.id, group.id));
+            }
         }
-        rows.push(SettingsRow::Item { id: def.id });
     }
     rows
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ItemRow {
+    SubHeader(&'static str),
+    Item(SettingsId),
+}
+
+/// Rows of the right panel. Shared with the mouse handler so clicks and the
+/// renderer never disagree about subheader positions.
+pub fn item_rows(section: SectionId, group: GroupId) -> Vec<ItemRow> {
+    let mut rows = Vec::new();
+    for (i, def) in registry::items(section, group).enumerate() {
+        if group == GroupId::AntiDpiMasks && (i == 0 || i == 4) {
+            rows.push(ItemRow::SubHeader(if i == 0 {
+                "Fragment"
+            } else {
+                "Noise"
+            }));
+        }
+        rows.push(ItemRow::Item(def.id));
+    }
+    rows
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompactRow {
+    Section(&'static str),
+    Group(&'static str),
+    Item(SettingsId),
+}
+
+/// Rows of the single-list Compact layout. Also shared with the mouse handler.
+pub fn compact_rows() -> Vec<CompactRow> {
+    let mut rows = Vec::new();
+    let mut last_section: Option<SectionId> = None;
+    let mut last_group: Option<GroupId> = None;
+    for def in registry::all() {
+        if last_section != Some(def.section) {
+            let title = registry::sections()
+                .iter()
+                .find(|s| s.id == def.section)
+                .map(|s| s.title)
+                .unwrap_or("");
+            rows.push(CompactRow::Section(title));
+            last_section = Some(def.section);
+            last_group = None;
+        }
+        if last_group != Some(def.group) {
+            let title = registry::groups(def.section)
+                .iter()
+                .find(|g| g.id == def.group)
+                .map(|g| g.title)
+                .unwrap_or("");
+            rows.push(CompactRow::Group(title));
+            last_group = Some(def.group);
+        }
+        rows.push(CompactRow::Item(def.id));
+    }
+    rows
+}
+
+#[derive(Debug, Clone)]
+pub struct SettingsState {
+    pub tree_cursor: usize,
+    pub tree_scroll: usize,
+    pub expanded: HashSet<SectionId>,
+    pub section: SectionId,
+    pub group: GroupId,
+    pub item_cursor: usize,
+    pub item_scroll: usize,
+    pub compact_cursor: usize,
+    pub search_cursor: usize,
+}
+
+impl SettingsState {
+    pub fn new() -> Self {
+        let first = registry::sections().first().copied().expect("sections");
+        let group = registry::groups(first.id)
+            .first()
+            .copied()
+            .expect("first group")
+            .id;
+        let mut expanded = HashSet::new();
+        expanded.insert(first.id);
+        Self {
+            tree_cursor: 1,
+            tree_scroll: 0,
+            expanded,
+            section: first.id,
+            group,
+            item_cursor: 0,
+            item_scroll: 0,
+            compact_cursor: 0,
+            search_cursor: 0,
+        }
+    }
+
+    pub fn tree_rows(&self) -> Vec<SettingsTreeRow> {
+        visible_rows(&self.expanded)
+    }
+
+    pub fn tree_down(&mut self) {
+        let max = self.tree_rows().len().saturating_sub(1);
+        if self.tree_cursor < max {
+            self.tree_cursor += 1;
+        }
+    }
+
+    pub fn tree_up(&mut self) {
+        self.tree_cursor = self.tree_cursor.saturating_sub(1);
+    }
+
+    /// `Enter` on a section toggles it; `Enter` on a group selects it.
+    pub fn activate_tree(&mut self) {
+        let Some(row) = self.tree_rows().get(self.tree_cursor).copied() else {
+            return;
+        };
+        match row {
+            SettingsTreeRow::Section(id) => {
+                if !self.expanded.remove(&id) {
+                    self.expanded.insert(id);
+                }
+            }
+            SettingsTreeRow::Group(section, group) => {
+                self.section = section;
+                self.group = group;
+                self.item_cursor = 0;
+                self.item_scroll = 0;
+                self.sync_tree_cursor_to_selection();
+            }
+        }
+    }
+
+    pub fn collapse_or_expand(&mut self, expand: bool) {
+        let Some(row) = self.tree_rows().get(self.tree_cursor).copied() else {
+            return;
+        };
+        if let SettingsTreeRow::Section(id) = row {
+            if expand {
+                self.expanded.insert(id);
+            } else {
+                self.expanded.remove(&id);
+            }
+        }
+    }
+
+    fn sync_tree_cursor_to_selection(&mut self) {
+        let rows = self.tree_rows();
+        if let Some(i) = rows
+            .iter()
+            .position(|r| *r == SettingsTreeRow::Group(self.section, self.group))
+        {
+            self.tree_cursor = i;
+        }
+    }
+
+    pub fn item_down(&mut self, compact: bool) {
+        if compact {
+            self.compact_cursor = (self.compact_cursor + 1).min(registry::all().count() - 1);
+            return;
+        }
+        let max = registry::items(self.section, self.group)
+            .count()
+            .saturating_sub(1);
+        if self.item_cursor < max {
+            self.item_cursor += 1;
+        }
+    }
+
+    pub fn item_up(&mut self, compact: bool) {
+        if compact {
+            self.compact_cursor = self.compact_cursor.saturating_sub(1);
+            return;
+        }
+        self.item_cursor = self.item_cursor.saturating_sub(1);
+    }
+
+    pub fn current_id(&self, compact: bool) -> SettingsId {
+        if compact {
+            return id_at(self.compact_cursor);
+        }
+        registry::items(self.section, self.group)
+            .nth(self.item_cursor)
+            .map(|d| d.id)
+            .unwrap_or(SettingsId::Autoconnect)
+    }
+
+    pub fn search_matches(&self, query: &str) -> Vec<SettingsId> {
+        let needle = query.to_lowercase();
+        registry::all()
+            .filter(|d| {
+                let section = registry::sections()
+                    .iter()
+                    .find(|s| s.id == d.section)
+                    .map(|s| s.title)
+                    .unwrap_or("");
+                let group = registry::groups(d.section)
+                    .iter()
+                    .find(|g| g.id == d.group)
+                    .map(|g| g.title)
+                    .unwrap_or("");
+                format!("{} {} {}", d.label, section, group)
+                    .to_lowercase()
+                    .contains(&needle)
+            })
+            .map(|d| d.id)
+            .collect()
+    }
+
+    pub fn clamp_search_cursor(&mut self, len: usize) {
+        self.search_cursor = self.search_cursor.min(len.saturating_sub(1));
+    }
+
+    pub fn apply_search_result(&mut self, id: SettingsId) {
+        let def = registry::by_id(id);
+        self.expanded.insert(def.section);
+        self.section = def.section;
+        self.group = def.group;
+        self.item_cursor = registry::items(def.section, def.group)
+            .position(|d| d.id == id)
+            .unwrap_or(0);
+        self.compact_cursor = registry::all().position(|d| d.id == id).unwrap_or(0);
+        self.item_scroll = 0;
+        self.sync_tree_cursor_to_selection();
+    }
+}
+
+pub fn id_at(cursor: usize) -> SettingsId {
+    registry::all()
+        .nth(cursor)
+        .map(|d| d.id)
+        .unwrap_or(SettingsId::Autoconnect)
+}
+
+pub fn value_index(id: SettingsId) -> usize {
+    registry::all()
+        .position(|d| d.id == id)
+        .expect("every id is in the registry")
 }
 
 /// Human-readable label for a split-tunnel mode value.
@@ -56,17 +321,6 @@ pub fn next_split_tunnel_mode(mode: &str) -> &'static str {
         "exclude" => "include",
         _ => "off",
     }
-}
-
-pub fn item_count() -> usize {
-    registry::all().count()
-}
-
-pub fn id_at(cursor: usize) -> SettingsId {
-    registry::all()
-        .nth(cursor)
-        .map(|d| d.id)
-        .unwrap_or(SettingsId::Autoconnect)
 }
 
 /// Rendered value for one row. Values live here, not in the registry: the
@@ -170,150 +424,70 @@ pub fn value_for(id: SettingsId, app: &App) -> String {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct SettingsState {
-    pub list_state: ListState,
-    pub item_cursor: usize,
-    pub scroll: usize,
-}
-
-impl SettingsState {
-    pub fn new() -> Self {
-        let mut s = Self {
-            list_state: ListState::default(),
-            item_cursor: 0,
-            scroll: 0,
-        };
-        s.list_state.select(Some(1));
-        s
-    }
-
-    pub fn cursor_up(&mut self) {
-        if self.item_cursor > 0 {
-            self.item_cursor -= 1;
-        }
-    }
-
-    pub fn cursor_down(&mut self) {
-        let max = item_count().saturating_sub(1);
-        if self.item_cursor < max {
-            self.item_cursor += 1;
-        }
-    }
-
-    pub fn cursor(&self) -> usize {
-        self.item_cursor
-    }
-
-    pub fn flat_index(&self) -> usize {
-        let layout = settings_layout();
-        let mut item_idx = 0;
-        for (i, row) in layout.iter().enumerate() {
-            if matches!(row, SettingsRow::Item { .. }) {
-                if item_idx == self.item_cursor {
-                    return i;
-                }
-                item_idx += 1;
+fn row_line(
+    prefix: &str,
+    label: &str,
+    value: &str,
+    kind: Kind,
+    selected: bool,
+    width: usize,
+) -> ListItem<'static> {
+    let val_style = match kind {
+        Kind::Toggle => {
+            if value.starts_with('●') {
+                s_success()
+            } else {
+                s_disconnected()
             }
         }
-        0
-    }
+        Kind::Cycle => s_accent(),
+        Kind::Editable => s_text(),
+        Kind::Action => s_accent(),
+        Kind::Display => s_dim(),
+    };
+    let extra = if kind == Kind::Editable { "  ✎" } else { "" };
+    ListItem::new(Line::from(vec![
+        Span::styled(
+            prefix.to_string(),
+            if selected { s_accent_bold() } else { s_faint() },
+        ),
+        Span::styled(
+            format!("{:<width$}", label, width = width),
+            if selected { s_text() } else { s_dim() },
+        ),
+        Span::styled(value.to_string(), val_style),
+        Span::styled(extra, s_faint()),
+    ]))
 }
 
-pub fn render_settings(
-    f: &mut Frame,
-    area: Rect,
-    values: &[String],
-    state: &mut SettingsState,
-    focused: bool,
-) {
-    let border_color = if focused { border_active() } else { border() };
-
-    let block = Block::default()
-        .title(" Settings ")
+fn panel_block(title: String, focused: bool) -> Block<'static> {
+    Block::default()
+        .title(format!(" {title} "))
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(border_color))
-        .style(s_bg());
+        .border_style(Style::default().fg(if focused { border_active() } else { border() }))
+        .style(s_bg())
+}
 
-    let inner = block.inner(area);
-    f.render_widget(block, area);
-
-    let rows = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).split(inner);
-    let content_area = rows[0];
-
-    let layout = settings_layout();
-    let selected_flat = state.flat_index();
-
-    let mut value_idx = 0usize;
-    let items: Vec<ListItem> = layout
-        .iter()
-        .enumerate()
-        .map(|(flat_i, row)| match row {
-            SettingsRow::Header(title) => ListItem::new(Line::from(vec![Span::styled(
-                format!(" {} ", title),
-                s_accent(),
-            )])),
-            SettingsRow::Item { id } => {
-                let def = registry::by_id(*id);
-                let label = def.label;
-                let kind = def.kind;
-                let val = &values[value_idx];
-                let is_selected = flat_i == selected_flat && focused;
-                let val_style = match kind {
-                    Kind::Toggle => {
-                        if val.starts_with("●") {
-                            s_success()
-                        } else {
-                            s_disconnected()
-                        }
-                    }
-                    Kind::Cycle => s_accent(),
-                    Kind::Editable => s_text(),
-                    Kind::Action => s_accent(),
-                    Kind::Display => s_dim(),
-                };
-                let extra = match kind {
-                    Kind::Editable => "  ✎",
-                    _ => "",
-                };
-                let prefix = if is_selected { "> " } else { "  " };
-                value_idx += 1;
-                let label_w = if content_area.width < 50 { 16 } else { 22 };
-                ListItem::new(Line::from(vec![
-                    Span::styled(
-                        prefix,
-                        if is_selected {
-                            s_accent_bold()
-                        } else {
-                            s_faint()
-                        },
-                    ),
-                    Span::styled(
-                        format!("{:<width$}", label, width = label_w),
-                        if is_selected { s_text() } else { s_dim() },
-                    ),
-                    Span::styled(val.clone(), val_style),
-                    Span::styled(extra, s_faint()),
-                ]))
-            }
-        })
-        .collect();
-
-    // Keep cursor visible by adjusting scroll (mirrors tree.rs)
-    let visible = content_area.height.saturating_sub(1) as usize;
-    if state.item_cursor == 0 {
-        state.scroll = 0;
-    } else if selected_flat < state.scroll {
-        state.scroll = selected_flat;
-    } else if visible > 0 && selected_flat >= state.scroll + visible {
-        state.scroll = selected_flat.saturating_sub(visible).saturating_add(1);
+fn render_list(
+    f: &mut Frame,
+    area: Rect,
+    items: Vec<ListItem<'static>>,
+    selected: Option<usize>,
+    scroll: &mut usize,
+    focused: bool,
+) {
+    let visible = area.height.saturating_sub(1) as usize;
+    if let Some(sel) = selected {
+        if sel < *scroll {
+            *scroll = sel;
+        } else if visible > 0 && sel >= *scroll + visible {
+            *scroll = sel.saturating_sub(visible).saturating_add(1);
+        }
     }
-
     let mut list_state = ListState::default()
-        .with_selected(Some(selected_flat))
-        .with_offset(state.scroll);
-
+        .with_selected(selected)
+        .with_offset(*scroll);
     let list = List::new(items)
         .highlight_style(if focused {
             Style::default().bg(surface())
@@ -321,30 +495,263 @@ pub fn render_settings(
             Style::default()
         })
         .scroll_padding(3);
+    f.render_stateful_widget(list, area, &mut list_state);
+    *scroll = list_state.offset();
+}
 
-    f.render_stateful_widget(list, content_area, &mut list_state);
-    state.scroll = list_state.offset();
-    state.list_state = list_state;
+pub fn render_settings(
+    f: &mut Frame,
+    area: Rect,
+    state: &mut SettingsState,
+    view: &SettingsView<'_>,
+) {
+    let layout = settings_layout(area, view.width_tier);
+    let value = |id: SettingsId| view.values[value_index(id)].clone();
+
+    if let Some(query) = view.search_query {
+        render_search(f, layout.items, state, query, view.focused_items, &value);
+        return;
+    }
+
+    if layout.compact {
+        render_compact(f, layout.items, state, view.focused_items, &value);
+        return;
+    }
+
+    let tree_block = panel_block("Sections".into(), view.focused_tree);
+    let tree_inner = tree_block.inner(layout.tree);
+    f.render_widget(tree_block, layout.tree);
+    let tree_rows = state.tree_rows();
+    let tree_items: Vec<ListItem<'static>> = tree_rows
+        .iter()
+        .enumerate()
+        .map(|(i, row)| {
+            let (label, style) = match row {
+                SettingsTreeRow::Section(id) => {
+                    let title = registry::sections()
+                        .iter()
+                        .find(|s| s.id == *id)
+                        .map(|s| s.title)
+                        .unwrap_or("");
+                    let mark = if state.expanded.contains(id) {
+                        "▾ "
+                    } else {
+                        "▸ "
+                    };
+                    (format!("{mark}{title}"), s_accent())
+                }
+                SettingsTreeRow::Group(section, id) => {
+                    let title = registry::groups(*section)
+                        .iter()
+                        .find(|g| g.id == *id)
+                        .map(|g| g.title)
+                        .unwrap_or("");
+                    (format!("   {title}"), s_dim())
+                }
+            };
+            let style = if i == state.tree_cursor {
+                s_accent_bold()
+            } else {
+                style
+            };
+            ListItem::new(Line::from(Span::styled(label, style)))
+        })
+        .collect();
+    let tree_split = Layout::vertical([Constraint::Min(0)]).split(tree_inner);
+    render_list(
+        f,
+        tree_split[0],
+        tree_items,
+        Some(state.tree_cursor),
+        &mut state.tree_scroll,
+        view.focused_tree,
+    );
+
+    let section_title = registry::sections()
+        .iter()
+        .find(|s| s.id == state.section)
+        .map(|s| s.title)
+        .unwrap_or("");
+    let group_title = registry::groups(state.section)
+        .iter()
+        .find(|g| g.id == state.group)
+        .map(|g| g.title)
+        .unwrap_or("");
+    let item_block = panel_block(
+        format!("{section_title} / {group_title}"),
+        view.focused_items,
+    );
+    let item_inner = item_block.inner(layout.items);
+    f.render_widget(item_block, layout.items);
+    let item_split =
+        Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).split(item_inner);
+    let content_area = item_split[0];
+
+    let rows = item_rows(state.section, state.group);
+    let current = state.current_id(false);
+    let label_w = if content_area.width < 50 { 16 } else { 22 };
+    let items: Vec<ListItem<'static>> = rows
+        .iter()
+        .map(|row| match row {
+            ItemRow::SubHeader(title) => {
+                ListItem::new(Line::from(Span::styled(format!(" {title} "), s_accent())))
+            }
+            ItemRow::Item(id) => {
+                let def = registry::by_id(*id);
+                row_line(
+                    if *id == current { "> " } else { "  " },
+                    def.label,
+                    &value(*id),
+                    def.kind,
+                    *id == current,
+                    label_w,
+                )
+            }
+        })
+        .collect();
+    let selected = rows
+        .iter()
+        .position(|r| *r == ItemRow::Item(current))
+        .unwrap_or(0);
+    render_list(
+        f,
+        content_area,
+        items,
+        Some(selected),
+        &mut state.item_scroll,
+        view.focused_items,
+    );
 
     let help_text = if area.width < 60 {
-        " j/k:nav │ Enter/h/l:change"
+        " j/k:nav │ Tab:sections │ /:search"
     } else {
-        " j/k navigate  │  Enter/Space/h/l toggle / cycle / edit"
+        " j/k navigate  │  Tab panels  │  Enter change  │  / search"
     };
-    let help = Paragraph::new(help_text)
-        .style(s_faint())
-        .alignment(Alignment::Center);
-    f.render_widget(help, rows[1]);
+    f.render_widget(
+        Paragraph::new(help_text)
+            .style(s_faint())
+            .alignment(Alignment::Center),
+        item_split[1],
+    );
+}
+
+fn render_compact(
+    f: &mut Frame,
+    area: Rect,
+    state: &mut SettingsState,
+    focused: bool,
+    value: &impl Fn(SettingsId) -> String,
+) {
+    let block = panel_block("Settings".into(), focused);
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    let split = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).split(inner);
+    let content_area = split[0];
+    let label_w = if content_area.width < 50 { 16 } else { 22 };
+
+    let rows = compact_rows();
+    let current = state.current_id(true);
+    let items: Vec<ListItem<'static>> = rows
+        .iter()
+        .map(|row| match row {
+            CompactRow::Section(title) => ListItem::new(Line::from(Span::styled(
+                format!(" ── {title} ── "),
+                s_accent(),
+            ))),
+            CompactRow::Group(title) => {
+                ListItem::new(Line::from(Span::styled(format!("   {title}"), s_dim())))
+            }
+            CompactRow::Item(id) => {
+                let def = registry::by_id(*id);
+                row_line(
+                    if *id == current { "> " } else { "  " },
+                    def.label,
+                    &value(*id),
+                    def.kind,
+                    *id == current,
+                    label_w,
+                )
+            }
+        })
+        .collect();
+    let selected = rows
+        .iter()
+        .position(|r| *r == CompactRow::Item(current))
+        .unwrap_or(0);
+    render_list(
+        f,
+        content_area,
+        items,
+        Some(selected),
+        &mut state.item_scroll,
+        focused,
+    );
+    f.render_widget(
+        Paragraph::new(" j/k navigate  │  Enter change  │  / search")
+            .style(s_faint())
+            .alignment(Alignment::Center),
+        split[1],
+    );
+}
+
+fn render_search(
+    f: &mut Frame,
+    area: Rect,
+    state: &mut SettingsState,
+    query: &str,
+    focused: bool,
+    value: &impl Fn(SettingsId) -> String,
+) {
+    let matches = state.search_matches(query);
+    state.clamp_search_cursor(matches.len());
+    let block = panel_block(format!("Search: /{query}"), focused);
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    let split = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).split(inner);
+    let label_w = if split[0].width < 50 { 16 } else { 22 };
+    let items: Vec<ListItem<'static>> = matches
+        .iter()
+        .enumerate()
+        .map(|(i, id)| {
+            let def = registry::by_id(*id);
+            row_line(
+                if i == state.search_cursor { "> " } else { "  " },
+                def.label,
+                &value(*id),
+                def.kind,
+                i == state.search_cursor,
+                label_w,
+            )
+        })
+        .collect();
+    let selected = if matches.is_empty() {
+        None
+    } else {
+        Some(state.search_cursor)
+    };
+    render_list(
+        f,
+        split[0],
+        items,
+        selected,
+        &mut state.item_scroll,
+        focused,
+    );
+    f.render_widget(
+        Paragraph::new(" Enter: jump  │  Esc: clear")
+            .style(s_faint())
+            .alignment(Alignment::Center),
+        split[1],
+    );
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core_client::protocol::TestConfig;
 
-    #[test]
-    fn test_value_for_covers_every_row() {
-        use crate::core_client::protocol::TestConfig;
-        let app = App::new(
+    fn app() -> App {
+        App::new(
             true,
             false,
             "warn".into(),
@@ -352,129 +759,109 @@ mod tests {
             "whoisthattun".into(),
             false,
             TestConfig::default(),
-        );
+        )
+    }
+
+    #[test]
+    fn value_for_covers_every_row() {
+        let app = app();
         for (i, def) in registry::all().enumerate() {
             assert_eq!(id_at(i), def.id);
+            assert_eq!(value_index(def.id), i);
             let _ = value_for(def.id, &app);
         }
         assert_eq!(id_at(usize::MAX), SettingsId::Autoconnect);
     }
 
     #[test]
-    fn test_settings_layout_item_count() {
-        assert_eq!(item_count(), 29);
-    }
-
-    #[test]
-    fn test_settings_layout_has_headers() {
-        let layout = settings_layout();
-        let headers: Vec<&str> = layout
-            .iter()
-            .filter_map(|r| match r {
-                SettingsRow::Header(t) => Some(*t),
-                _ => None,
-            })
-            .collect();
+    fn tree_starts_on_the_first_group() {
+        let s = SettingsState::new();
+        assert_eq!(s.section, SectionId::Connection);
+        assert_eq!(s.group, GroupId::Autoconnect);
         assert_eq!(
-            headers,
-            vec![
-                "Startup",
-                "Display",
-                "Network",
-                "Diagnostics",
-                "Hardware",
-                "Updates",
-                "Anti-DPI"
-            ]
+            s.tree_rows()[s.tree_cursor],
+            SettingsTreeRow::Group(SectionId::Connection, GroupId::Autoconnect)
+        );
+        assert!(
+            !registry::items(s.section, s.group)
+                .collect::<Vec<_>>()
+                .is_empty()
         );
     }
 
     #[test]
-    fn test_settings_layout_anti_dpi_rows_stay_last() {
-        let layout = settings_layout();
-        let labels: Vec<&str> = layout
-            .iter()
-            .filter_map(|r| match r {
-                SettingsRow::Item { id } => Some(registry::by_id(*id).label),
-                _ => None,
-            })
-            .collect();
-        assert_eq!(
-            &labels[21..],
-            &[
-                "Fragment: enabled",
-                "Fragment: packets",
-                "Fragment: length",
-                "Fragment: interval",
-                "Noise: enabled",
-                "Noise: type",
-                "Noise: packet",
-                "Noise: delay",
-            ]
-        );
+    fn expanding_sections_changes_visible_rows() {
+        let mut s = SettingsState::new();
+        let initial = s.tree_rows().len();
+        s.expanded.insert(SectionId::Network);
+        assert!(s.tree_rows().len() > initial);
+        assert!(s.tree_rows().contains(&SettingsTreeRow::Group(
+            SectionId::Network,
+            GroupId::Interface
+        )));
     }
 
     #[test]
-    fn test_settings_cursor_flat_index_skips_headers() {
+    fn item_cursor_stays_inside_the_group() {
         let mut s = SettingsState::new();
-        assert_eq!(s.flat_index(), 1);
-
-        s.cursor_down();
-        assert_eq!(s.item_cursor, 1);
-        assert_eq!(s.flat_index(), 2);
-
-        s.cursor_down();
-        assert_eq!(s.item_cursor, 2);
-        assert_eq!(s.flat_index(), 3);
-
-        s.cursor_down();
-        assert_eq!(s.item_cursor, 3);
-        assert_eq!(s.flat_index(), 5);
-
-        s.cursor_down();
-        assert_eq!(s.item_cursor, 4);
-        assert_eq!(s.flat_index(), 6);
-    }
-
-    #[test]
-    fn test_settings_cursor_clamps_at_bottom() {
-        let max = item_count().saturating_sub(1);
-        let mut s = SettingsState::new();
-        for _ in 0..max + 5 {
-            s.cursor_down();
+        for _ in 0..20 {
+            s.item_down(false);
         }
-        assert_eq!(s.item_cursor, max);
-    }
-
-    #[test]
-    fn test_settings_cursor_clamps_at_top() {
-        let mut s = SettingsState::new();
-        s.cursor_down();
-        s.cursor_down();
-        s.cursor_up();
-        s.cursor_up();
-        s.cursor_up();
+        assert_eq!(
+            s.item_cursor,
+            registry::items(s.section, s.group).count() - 1
+        );
+        for _ in 0..20 {
+            s.item_up(false);
+        }
         assert_eq!(s.item_cursor, 0);
     }
 
     #[test]
-    fn test_settings_scroll_keeps_cursor_visible() {
+    fn compact_cursor_walks_the_whole_registry() {
         let mut s = SettingsState::new();
-        let visible_height = 10usize;
-        let visible = visible_height.saturating_sub(1);
-
-        for _ in 0..item_count() {
-            let flat = s.flat_index();
-            if s.item_cursor == 0 {
-                s.scroll = 0;
-            } else if flat < s.scroll {
-                s.scroll = flat;
-            } else if visible > 0 && flat >= s.scroll + visible {
-                s.scroll = flat.saturating_sub(visible).saturating_add(1);
-            }
-            assert!(flat >= s.scroll);
-            assert!(flat <= s.scroll + visible);
-            s.cursor_down();
+        for _ in 0..100 {
+            s.item_down(true);
         }
+        assert_eq!(s.current_id(true), registry::all().last().unwrap().id);
+        for _ in 0..100 {
+            s.item_up(true);
+        }
+        assert_eq!(s.current_id(true), SettingsId::Autoconnect);
+    }
+
+    #[test]
+    fn search_matches_labels_sections_and_groups() {
+        let s = SettingsState::new();
+        assert!(s.search_matches("KILL").contains(&SettingsId::KillSwitch));
+        assert!(s.search_matches("network").contains(&SettingsId::TunName));
+        assert!(
+            s.search_matches("engine")
+                .contains(&SettingsId::TestSamples)
+        );
+        assert!(s.search_matches("zzzz").is_empty());
+    }
+
+    #[test]
+    fn applying_a_search_result_reveals_its_path() {
+        let mut s = SettingsState::new();
+        s.apply_search_result(SettingsId::NoiseDelay);
+        assert!(s.expanded.contains(&SectionId::Network));
+        assert_eq!(s.group, GroupId::AntiDpiMasks);
+        assert_eq!(s.current_id(false), SettingsId::NoiseDelay);
+        assert_eq!(
+            s.tree_rows()[s.tree_cursor],
+            SettingsTreeRow::Group(SectionId::Network, GroupId::AntiDpiMasks)
+        );
+    }
+
+    #[test]
+    fn settings_layout_shared_geometry() {
+        let wide = settings_layout(Rect::new(0, 0, 100, 30), WidthTier::Medium);
+        assert!(!wide.compact);
+        assert!(wide.tree.width > 0 && wide.items.width > 0);
+        let narrow = settings_layout(Rect::new(0, 0, 79, 30), WidthTier::Compact);
+        assert!(narrow.compact);
+        assert_eq!(narrow.items, Rect::new(0, 0, 79, 30));
     }
 }

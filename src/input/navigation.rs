@@ -24,8 +24,7 @@ pub(super) async fn handle(action: AppAction, app: &mut App, client: &CoreClient
         }
         AppAction::SwitchTab(idx) => {
             let target = App::tab_from_index(idx);
-            app.tab = target;
-            app.focus = Focus::LeftPanel;
+            app.switch_tab(target);
             if target == ActiveTab::Routing {
                 app.routing_popup = None;
                 app.sync_routing_group_to_connected();
@@ -36,7 +35,7 @@ pub(super) async fn handle(action: AppAction, app: &mut App, client: &CoreClient
         }
         AppAction::NextTab => {
             let target = app.next_tab();
-            app.focus = Focus::LeftPanel;
+            app.switch_tab(target);
             if target == ActiveTab::Routing {
                 app.routing_popup = None;
                 app.sync_routing_group_to_connected();
@@ -47,7 +46,7 @@ pub(super) async fn handle(action: AppAction, app: &mut App, client: &CoreClient
         }
         AppAction::PrevTab => {
             let target = app.prev_tab();
-            app.focus = Focus::LeftPanel;
+            app.switch_tab(target);
             if target == ActiveTab::Routing {
                 app.routing_popup = None;
                 app.sync_routing_group_to_connected();
@@ -71,11 +70,17 @@ pub(super) async fn handle(action: AppAction, app: &mut App, client: &CoreClient
             false
         }
         AppAction::Dismiss => {
-            if app.focus == Focus::RightPanel {
+            if app.tab == ActiveTab::Settings {
+                if app.search_mode || app.search_query.is_some() {
+                    app.cancel_search();
+                    app.settings_state.search_cursor = 0;
+                } else if app.focus == Focus::RightPanel && app.last_area.width >= 60 {
+                    app.focus = Focus::LeftPanel;
+                }
+            } else if app.focus == Focus::RightPanel {
                 app.focus = Focus::LeftPanel;
             } else if app.search_query.is_some() {
-                app.search_query = None;
-                app.search_input.clear();
+                app.cancel_search();
                 app.cursor = 0;
                 app.clamp_cursor();
             }
@@ -100,7 +105,14 @@ pub(super) async fn handle(action: AppAction, app: &mut App, client: &CoreClient
                         app.routing_cursor += 1;
                     }
                 }
-                ActiveTab::Settings => app.settings_state.cursor_down(),
+                ActiveTab::Settings => {
+                    let compact = app.last_area.width < 60;
+                    if compact || app.focus == Focus::RightPanel {
+                        app.settings_state.item_down(compact);
+                    } else {
+                        app.settings_state.tree_down();
+                    }
+                }
                 ActiveTab::Logs => app.logs_state.scroll_down(),
                 ActiveTab::Traffic => {}
             }
@@ -116,7 +128,14 @@ pub(super) async fn handle(action: AppAction, app: &mut App, client: &CoreClient
                 ActiveTab::Routing => {
                     app.routing_cursor = app.routing_cursor.saturating_sub(1);
                 }
-                ActiveTab::Settings => app.settings_state.cursor_up(),
+                ActiveTab::Settings => {
+                    let compact = app.last_area.width < 60;
+                    if compact || app.focus == Focus::RightPanel {
+                        app.settings_state.item_up(compact);
+                    } else {
+                        app.settings_state.tree_up();
+                    }
+                }
                 ActiveTab::Logs => app.logs_state.scroll_up(),
                 ActiveTab::Traffic => {}
             }
