@@ -78,7 +78,12 @@ connection changes so two clients cannot race the Xray/TUN transition.
   into `streamSettings.finalmask` for URI and managed JSON profiles; provider
   masks win and only missing directions are filled.
 - `TunModeManager` owns TUN, policy routing, split cgroups, DNS hijack,
-  kill-switch and orphan reconciliation.
+  kill-switch and orphan reconciliation. The `network_settings` block (`tun_mtu`
+  and `dns_servers`) is stored in `AppConfig` and applied on the next connect:
+  the MTU reaches the Xray native TUN inbound through `parser.ParseUriWithTun`
+  and `xrayjson.Options`, and the kernel `whoisthattun` interface through
+  `tunmode.createTun`. `commands/network-settings.go` writes both fields
+  atomically; an older core simply never sends the optional block.
 - `xraymgr` pins the Xray version, downloads and verifies it, and can adopt an
   exact system binary.
 - `PortPool` leases ephemeral ports to temporary test Xray instances.
@@ -145,6 +150,7 @@ it if the intent is still enabled).
 | Xray runtime | `core/core/lib/xraymgr/` |
 | Port leasing | `core/core/lib/PortPool/` |
 | Config and storage | `core/core/lib/AppConfig/` |
+| Network settings contract | `core/core/structs/network.go`, `core/core/commands/network-settings.go` |
 
 ## See also
 
