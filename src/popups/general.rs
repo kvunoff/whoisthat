@@ -5,9 +5,10 @@ use crate::core_client::CoreClient;
 use crate::core_client::protocol::{ProfileID, SetHwidData};
 use crate::logfile::ClearAction;
 use crate::logger::FileLogger;
+use crate::settings::registry::SettingsId;
 use crate::text_edit::edit_text_field;
 use crate::ui::App;
-use crate::ui::app::{ActiveTab, AntiDpiField, Focus, Popup};
+use crate::ui::app::{ActiveTab, Focus, Popup};
 use crate::ui::logs::LogSource;
 
 use super::editors;
@@ -172,101 +173,81 @@ pub(crate) async fn handle_popup_input(
                 app.popup = Some(Popup::Import { input, cursor });
             }
         },
-        Some(Popup::EditUserAgent {
+        Some(Popup::EditSetting {
+            id,
             mut input,
             mut cursor,
         }) => match key.code {
             KeyCode::Esc => {
                 app.popup = None;
-                app.focus = Focus::LeftPanel;
-            }
-            KeyCode::Enter => {
-                let ua = input.trim().to_string();
-                if !ua.is_empty() {
-                    let _ = client
-                        .set_hwid(&SetHwidData {
-                            user_agent: Some(ua),
-                            ..Default::default()
-                        })
-                        .await;
-                }
-                app.popup = None;
-                app.focus = Focus::LeftPanel;
-            }
-            _ => {
-                edit_text_field(&mut input, &mut cursor, key);
-                app.popup = Some(Popup::EditUserAgent { input, cursor });
-            }
-        },
-        Some(Popup::EditTunName {
-            mut input,
-            mut cursor,
-        }) => match key.code {
-            KeyCode::Esc => {
-                app.popup = None;
-                app.focus = Focus::LeftPanel;
-            }
-            KeyCode::Enter => {
-                let name = input.trim().to_string();
-                if !name.is_empty() {
-                    // Do not apply optimistically: the daemon is the source of
-                    // truth and may reject the name. The UI follows the
-                    // `tun-name-updated` broadcast instead.
-                    if let Err(e) = client.set_tun_name(&name).await {
-                        app.msg(format!("Error: {e}"));
-                    }
-                }
-                app.popup = None;
-                app.focus = Focus::LeftPanel;
-            }
-            _ => {
-                edit_text_field(&mut input, &mut cursor, key);
-                app.popup = Some(Popup::EditTunName { input, cursor });
-            }
-        },
-        Some(Popup::EditAntiDpi {
-            mut draft,
-            field,
-            mut input,
-            mut cursor,
-        }) => match key.code {
-            KeyCode::Esc => {
-                app.popup = None;
-                app.focus = Focus::LeftPanel;
+                app.focus = Focus::RightPanel;
             }
             KeyCode::Enter => {
                 let value = input.trim().to_string();
-                match field {
-                    AntiDpiField::FragmentLength => draft.fragment.length = value,
-                    AntiDpiField::FragmentInterval => draft.fragment.interval = value,
-                    AntiDpiField::NoisePacket => draft.noise.packet = value,
-                    AntiDpiField::NoiseDelay => draft.noise.delay = value,
-                }
-                if let Err(e) = crate::antidpi::validate(&draft) {
-                    app.msg(format!("Error: {e}"));
-                    app.popup = Some(Popup::EditAntiDpi {
-                        draft,
-                        field,
-                        input,
-                        cursor,
-                    });
+                let keep_popup = match id {
+                    SettingsId::TunName => {
+                        if !value.is_empty() {
+                            // The daemon owns the value: the UI follows
+                            // `tun-name-updated` instead of an optimistic edit.
+                            if let Err(e) = client.set_tun_name(&value).await {
+                                app.msg(format!("Error: {e}"));
+                            }
+                        }
+                        false
+                    }
+                    SettingsId::UserAgent => {
+                        if !value.is_empty() {
+                            let _ = client
+                                .set_hwid(&SetHwidData {
+                                    user_agent: Some(value),
+                                    ..Default::default()
+                                })
+                                .await;
+                        }
+                        false
+                    }
+                    SettingsId::FragmentLength
+                    | SettingsId::FragmentInterval
+                    | SettingsId::NoisePacket
+                    | SettingsId::NoiseDelay => match app.anti_dpi.clone() {
+                        Some(mut draft) => {
+                            match id {
+                                SettingsId::FragmentLength => draft.fragment.length = value.clone(),
+                                SettingsId::FragmentInterval => {
+                                    draft.fragment.interval = value.clone()
+                                }
+                                SettingsId::NoisePacket => draft.noise.packet = value.clone(),
+                                SettingsId::NoiseDelay => draft.noise.delay = value.clone(),
+                                _ => unreachable!(),
+                            }
+                            if let Err(e) = crate::antidpi::validate(&draft) {
+                                app.msg(format!("Error: {e}"));
+                                true
+                            } else {
+                                if let Err(e) = client.set_anti_dpi(&draft).await {
+                                    app.msg(format!("Error: {e}"));
+                                }
+                                false
+                            }
+                        }
+                        None => {
+                            app.msg("Running core does not support anti-DPI");
+                            false
+                        }
+                    },
+                    _ => false,
+                };
+                if keep_popup {
+                    app.popup = Some(Popup::EditSetting { id, input, cursor });
                     app.focus = Focus::Popup;
                 } else {
-                    if let Err(e) = client.set_anti_dpi(&draft).await {
-                        app.msg(format!("Error: {e}"));
-                    }
                     app.popup = None;
-                    app.focus = Focus::LeftPanel;
+                    app.focus = Focus::RightPanel;
                 }
             }
             _ => {
                 edit_text_field(&mut input, &mut cursor, key);
-                app.popup = Some(Popup::EditAntiDpi {
-                    draft,
-                    field,
-                    input,
-                    cursor,
-                });
+                app.popup = Some(Popup::EditSetting { id, input, cursor });
             }
         },
         Some(Popup::EditProfileName {

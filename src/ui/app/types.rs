@@ -1,4 +1,4 @@
-use crate::core_client::protocol::AntiDPIConfig;
+use crate::settings::registry::SettingsId;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ActiveTab {
@@ -48,17 +48,8 @@ pub enum Popup {
         interval_hours: String,
         provider_interval_secs: i64,
     },
-    EditUserAgent {
-        input: String,
-        cursor: usize,
-    },
-    EditTunName {
-        input: String,
-        cursor: usize,
-    },
-    EditAntiDpi {
-        draft: AntiDPIConfig,
-        field: AntiDpiField,
+    EditSetting {
+        id: SettingsId,
         input: String,
         cursor: usize,
     },
@@ -83,14 +74,6 @@ pub enum Popup {
         db: bool,
         day: String,
     },
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AntiDpiField {
-    FragmentLength,
-    FragmentInterval,
-    NoisePacket,
-    NoiseDelay,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
