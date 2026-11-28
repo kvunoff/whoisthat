@@ -128,6 +128,8 @@ jobs:
           cargo build --release --locked --target "$TARGET"
           cp "target/$TARGET/release/whoisthat" dist/whoisthat
           cp "target/$TARGET/release/whoisthat-runner" dist/whoisthat-runner
+          cp "target/$TARGET/release/whoisthat-run" dist/whoisthat-run
+          cp scripts/install-core dist/install-core
           cp pkg/whoisthat.desktop dist/
           cp pkg/whoisthat-url.desktop dist/
           cp docs/public/logo.svg dist/whoisthat.svg
@@ -138,7 +140,7 @@ jobs:
             scripts/install-init scripts/init-hook scripts/authorize-core dist/lib/whoisthat/
           cp -R pkg/init dist/lib/whoisthat/init
 
-          ./scripts/check-static.sh dist/whoisthat dist/whoisthat-runner dist/whoisthat-core
+          ./scripts/check-static.sh dist/whoisthat dist/whoisthat-runner dist/whoisthat-run dist/whoisthat-core
 
           # Generated from the native-arch binary, before packaging.
           ./dist/whoisthat completions bash > dist/whoisthat.bash
@@ -157,12 +159,35 @@ jobs:
             dist/whoisthat.bash dist/_whoisthat dist/whoisthat.fish dist/whoisthat.1 stage/bundle/
           mkdir -p stage/bundle/lib
           cp -R dist/lib/whoisthat stage/bundle/lib/
-          cp dist/whoisthat-core dist/LICENSE stage/core/
+          cp dist/whoisthat-core dist/whoisthat-run dist/whoisthat-runner dist/install-core dist/LICENSE stage/core/
+          cp core/core/README.md stage/core/README.md
+          cp -R dist/lib stage/core/
           tar -czf "dist/whoisthat-linux-${ARCH}.tar.gz" -C stage/bundle \
             whoisthat whoisthat-core whoisthat-runner lib whoisthat.desktop whoisthat-url.desktop whoisthat.svg LICENSE \
             whoisthat.bash _whoisthat whoisthat.fish whoisthat.1
           tar -czf "dist/whoisthat-core-linux-${ARCH}.tar.gz" -C stage/core \
-            whoisthat-core LICENSE
+            whoisthat-core whoisthat-run whoisthat-runner install-core LICENSE README.md lib
+
+      - name: Smoke test core-only archive
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          docker run --rm -v "$PWD/dist:/dist:ro" debian:12 sh -ec '
+            apt-get update -qq
+            apt-get install -y -qq procps
+            useradd -m -u 1000 integrator
+            mkdir /core
+            tar -xzf "/dist/whoisthat-core-linux-$1.tar.gz" -C /core
+            cd /core
+            ./install-core --user integrator
+            ./install-core --user integrator
+            test -x /usr/bin/whoisthat-core
+            test -x /usr/bin/whoisthat-runner
+            test -x /usr/lib/whoisthat/authorize-core
+            test -f /usr/lib/whoisthat/init/systemd/whoisthat-core.service
+            test ! -e /usr/bin/whoisthat
+            runuser -u integrator -- whoisthat-run --help
+          ' sh "$ARCH"
 
       - name: Build deb and rpm
         env:
@@ -191,10 +216,10 @@ jobs:
           # File capabilities on whoisthat-core need these in the bounding set.
           docker run --rm --cap-add=NET_ADMIN --cap-add=NET_RAW --cap-add=SETPCAP \
             -v "$PWD/dist:/dist:ro" debian:12 sh -c \
-            "export DEBIAN_FRONTEND=noninteractive; apt-get update -qq && apt-get install -y -qq /dist/whoisthat_*_${DEB_ARCH}.deb && whoisthat --version && whoisthat-core --version"
+            "export DEBIAN_FRONTEND=noninteractive; apt-get update -qq && apt-get install -y -qq /dist/whoisthat_*_${DEB_ARCH}.deb && whoisthat --version"
           docker run --rm --cap-add=NET_ADMIN --cap-add=NET_RAW --cap-add=SETPCAP \
             -v "$PWD/dist:/dist:ro" fedora:44 sh -c \
-            "dnf install -y -q /dist/whoisthat-*.${RPM_ARCH}.rpm && whoisthat --version && whoisthat-core --version"
+            "dnf install -y -q /dist/whoisthat-*.${RPM_ARCH}.rpm && whoisthat --version"
 
       - name: Attest build provenance
         uses: actions/attest-build-provenance@v4.2.2

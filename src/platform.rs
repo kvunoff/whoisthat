@@ -206,11 +206,22 @@ fn process_uid(pid: u32) -> Option<u32> {
         .and_then(|uid| uid.parse().ok())
 }
 
+pub(crate) fn login_uid() -> u32 {
+    for key in ["SUDO_UID", "PKEXEC_UID"] {
+        if let Ok(value) = std::env::var(key)
+            && let Ok(uid) = value.trim().parse::<u32>()
+        {
+            return uid;
+        }
+    }
+    unsafe { libc::getuid() }
+}
+
 /// True when the process was started through sudo/pkexec. Such a process must
 /// not write user-owned state (config, lifecycle markers): they would end up
 /// root-owned and unreadable by the core, and the cgroup uid would be wrong.
 pub(crate) fn started_via_privilege_wrapper() -> bool {
-    crate::config::uid() != crate::config::effective_uid()
+    login_uid() != unsafe { libc::getuid() }
 }
 
 #[cfg(test)]

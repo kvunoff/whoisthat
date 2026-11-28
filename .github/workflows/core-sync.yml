@@ -69,7 +69,6 @@ jobs:
           rsync -a --delete \
             --exclude .git \
             --exclude .github \
-            --exclude README.md \
             --exclude .gitignore \
             "$STAGE"/ ./
 

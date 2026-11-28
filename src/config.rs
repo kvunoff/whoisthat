@@ -244,14 +244,7 @@ pub fn ipc_token_path() -> String {
 /// process was started through sudo/pkexec, the log file belongs to the real
 /// user, not root.
 pub(crate) fn uid() -> u32 {
-    for key in ["SUDO_UID", "PKEXEC_UID"] {
-        if let Ok(value) = std::env::var(key)
-            && let Ok(uid) = value.trim().parse::<u32>()
-        {
-            return uid;
-        }
-    }
-    unsafe { libc_getuid() }
+    crate::platform::login_uid()
 }
 
 /// Effective uid of this process. `uid()` above is the *real* user, so the two

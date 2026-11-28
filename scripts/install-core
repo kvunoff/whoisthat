@@ -1,0 +1,138 @@
+#!/bin/sh
+set -eu
+umask 022
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+usage() {
+    echo "Usage: install-core --user USER [--tun] [--service] [--split]"
+}
+die() { echo "install-core: $*" >&2; exit 1; }
+
+user=
+tun=0
+service=0
+split=0
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --user) [ "$#" -ge 2 ] || die "--user requires a value"; user=$2; shift ;;
+        --tun) tun=1 ;;
+        --service) service=1 ;;
+        --split) split=1 ;;
+        -h|--help) usage; exit 0 ;;
+        *) die "unknown option: $1" ;;
+    esac
+    shift
+done
+[ -n "$user" ] || die "--user is required"
+[ "$split" = 0 ] || [ "$tun" = 1 ] || die "--split requires --tun"
+[ "$(id -u)" = 0 ] || die "run as root"
+entry=$(getent passwd -- "$user") || die "unknown user: $user"
+user=$(printf '%s\n' "$entry" | cut -d: -f1)
+uid=$(printf '%s\n' "$entry" | cut -d: -f3)
+user_home=$(printf '%s\n' "$entry" | cut -d: -f6)
+[ "$uid" -ge 1000 ] || die "target UID must be at least 1000"
+
+src=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+bin=/usr/bin
+lib=/usr/lib/whoisthat
+receipt=$lib/.core-install
+unit=/etc/systemd/user/whoisthat-core.service
+systemd=0
+[ ! -d /run/systemd/system ] || systemd=1
+
+run_helper() {
+    helper=$1
+    shift
+    env -i PATH="$PATH" "$lib/$helper" "$@"
+}
+
+for executable in whoisthat-core whoisthat-run whoisthat-runner; do
+    [ -f "$src/$executable" ] || die "missing archive file: $executable"
+done
+for helper in authorize-core cgroup-setup install-init init-hook run-core run-runner; do
+    [ -f "$src/lib/whoisthat/$helper" ] || die "missing archive helper: $helper"
+done
+[ -d "$src/lib/whoisthat/init" ] || die "missing service templates"
+[ ! -L "$lib" ] && [ ! -L "$receipt" ] || die "unsafe installation path"
+[ ! -e "$bin/whoisthat" ] || die "the full WhoisThat distribution is installed"
+for path in "$bin/whoisthat-core" "$bin/whoisthat-run" "$bin/whoisthat-runner" "$unit" "$lib"; do
+    [ ! -L "$path" ] || die "refusing symlink: $path"
+    if [ -e "$path" ]; then
+        if { command -v dpkg-query >/dev/null && dpkg-query -S "$path" >/dev/null 2>&1; } ||
+           { command -v rpm >/dev/null && rpm -qf "$path" >/dev/null 2>&1; } ||
+           { command -v pacman >/dev/null && pacman -Qo "$path" >/dev/null 2>&1; }; then
+            die "package manager owns $path"
+        fi
+        [ -f "$receipt" ] || die "existing installation at $path"
+    fi
+done
+if [ -f "$receipt" ]; then
+    read -r installed_user installed_tun installed_service installed_split < "$receipt"
+    [ "$installed_user" = "$uid" ] || die "the existing installation belongs to another user"
+    [ "$tun" -ge "$installed_tun" ] && [ "$service" -ge "$installed_service" ] &&
+        [ "$split" -ge "$installed_split" ] || die "rerun upgrades with the original options; extra options may be added"
+fi
+command -v pgrep >/dev/null || die "installation requires pgrep (procps)"
+if pgrep -x whoisthat-core >/dev/null; then
+    die "stop the running whoisthat-core before installation"
+fi
+if [ "$tun" = 1 ]; then
+    for tool in setcap getcap ip; do
+        command -v "$tool" >/dev/null || die "TUN requires $tool"
+    done
+fi
+if [ "$split" = 1 ]; then
+    [ -f /sys/fs/cgroup/cgroup.controllers ] || die "split tunneling requires cgroup v2"
+    command -v nft >/dev/null || die "split tunneling requires nft"
+fi
+
+install -d -m755 "$lib"
+for executable in whoisthat-core whoisthat-run whoisthat-runner; do
+    install -m755 "$src/$executable" "$bin/.$executable.new"
+    mv -f "$bin/.$executable.new" "$bin/$executable"
+done
+for helper in authorize-core cgroup-setup install-init init-hook run-core run-runner; do
+    install -m755 "$src/lib/whoisthat/$helper" "$lib/$helper"
+done
+cp -R "$src/lib/whoisthat/init" "$lib/"
+printf '%s %s %s %s\n' "$uid" "$tun" "$service" "$split" > "$receipt"
+
+if [ "$tun" = 1 ]; then
+    run_helper authorize-core --add "$user"
+    capabilities=$(getcap "$bin/whoisthat-core")
+    for capability in cap_net_admin cap_net_raw cap_setpcap; do
+        printf "%s\n" "$capabilities" | grep -q "$capability" || die "failed to enable $capability"
+    done
+fi
+if [ "$systemd" = 1 ]; then
+    if [ "$service" = 1 ]; then
+        install -Dm644 "$lib/init/systemd/whoisthat-core.service" "$unit"
+        echo "As $user, run: systemctl --user daemon-reload && systemctl --user enable --now whoisthat-core.service"
+    fi
+else
+    if [ "$service" = 1 ] || [ "$split" = 1 ]; then
+        run_helper cgroup-setup --runtime-only "$user"
+        run_helper install-init cgroup enable
+    fi
+    if [ "$split" = 1 ]; then
+        run_helper cgroup-setup "$user"
+        run_helper install-init runner enable "$user" "$user_home"
+    fi
+    if [ "$service" = 1 ]; then
+        # The target user shell expands its positional argument.
+        # shellcheck disable=SC2016
+        runuser -u "$user" -- sh -eu -c '
+            umask 077
+            conf=$1/.config/whoisthat
+            mkdir -p "$conf"
+            printf "init\n" > "$conf/autostart-backend"
+            touch "$conf/autostart" "$conf/core-start"
+            rm -f "$conf/core-stop"
+        ' sh "$user_home"
+        run_helper install-init core enable "$user" "$user_home" --no-authorize
+    fi
+fi
+if [ "$service" = 0 ]; then
+    echo "As $user, run: whoisthat-core"
+fi

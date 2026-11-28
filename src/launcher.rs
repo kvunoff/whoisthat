@@ -38,7 +38,11 @@ extern "C" fn on_signal(signal: libc::c_int) {
 
 /// Handle the `run` subcommand. `args` are everything after `run` (flags, the target
 /// program and its arguments). Returns the process exit code to propagate.
-pub fn run_in_split_slice(args: &[String]) -> i32 {
+pub fn run_in_split_slice(args: &[String], runtime_dir: PathBuf, command: &str) -> i32 {
+    if matches!(args.first().map(String::as_str), Some("-h" | "--help")) {
+        println!("Usage: {command} [-d|--detach|-b|--background] [--] <application> [args...]");
+        return 0;
+    }
     let mut detach = false;
     let mut target_args = args;
 
@@ -47,13 +51,13 @@ pub fn run_in_split_slice(args: &[String]) -> i32 {
     {
         detach = true;
         target_args = &target_args[1..];
-        if target_args.first().map(String::as_str) == Some("--") {
-            target_args = &target_args[1..];
-        }
     }
 
+    if target_args.first().map(String::as_str) == Some("--") {
+        target_args = &target_args[1..];
+    }
     if target_args.is_empty() {
-        eprintln!("usage: whoisthat run [-d|--detach|-b|--background] <application> [args...]");
+        eprintln!("usage: {command} [-d|--detach|-b|--background] <application> [args...]");
         eprintln!();
         eprintln!("Launches <application> inside the split-tunnel cgroup:");
         eprintln!("  systemd hosts: whoisthat_split.slice (via systemd-run)");
@@ -71,20 +75,20 @@ pub fn run_in_split_slice(args: &[String]) -> i32 {
 
     if crate::platform::started_via_privilege_wrapper() {
         eprintln!(
-            "whoisthat run: must be started as the target user, not via sudo/pkexec (the cgroup uid would be wrong)"
+            "{command}: must be started as the target user, not via sudo/pkexec (the cgroup uid would be wrong)"
         );
         return 1;
     }
 
     if crate::platform::has_systemd() {
-        return run_via_systemd(target_args, detach);
+        return run_via_systemd(target_args, detach, command);
     }
-    run_via_runner(target_args, detach)
+    run_via_runner(target_args, detach, runtime_dir, command)
 }
 
-fn run_via_systemd(target_args: &[String], detach: bool) -> i32 {
+fn run_via_systemd(target_args: &[String], detach: bool, command: &str) -> i32 {
     if which("systemd-run").is_none() {
-        eprintln!("whoisthat run: systemd-run not found; split-tunnel launching on systemd");
+        eprintln!("{command}: systemd-run not found; split-tunnel launching on systemd");
         eprintln!("needs systemd-tools (the native cgroup path is only used without systemd).");
         return 127;
     }
@@ -110,19 +114,19 @@ fn run_via_systemd(target_args: &[String], detach: bool) -> i32 {
     match cmd.status() {
         Ok(status) => status.code().unwrap_or(1),
         Err(e) => {
-            eprintln!("whoisthat run: failed to launch via systemd-run: {e}");
+            eprintln!("{command}: failed to launch via systemd-run: {e}");
             1
         }
     }
 }
 
-fn runner_socket() -> PathBuf {
+fn runner_socket(runtime_dir: PathBuf) -> PathBuf {
     if std::env::var("WHOISTHAT_TEST_MODE").as_deref() == Ok("1")
         && let Ok(path) = std::env::var("WHOISTHAT_RUNNER_SOCKET")
     {
         return PathBuf::from(path);
     }
-    crate::config::runtime_dir().join(RUNNER_SOCKET)
+    runtime_dir.join(RUNNER_SOCKET)
 }
 
 fn runner_start_hint() -> &'static str {
@@ -134,13 +138,18 @@ fn runner_start_hint() -> &'static str {
     }
 }
 
-fn run_via_runner(target_args: &[String], detach: bool) -> i32 {
-    let socket = runner_socket();
+fn run_via_runner(
+    target_args: &[String],
+    detach: bool,
+    runtime_dir: PathBuf,
+    command: &str,
+) -> i32 {
+    let socket = runner_socket(runtime_dir);
     let mut stream = match UnixStream::connect(&socket) {
         Ok(stream) => stream,
         Err(e) => {
             eprintln!(
-                "whoisthat run: split-tunnel runner is not running ({}: {e}); {}",
+                "{command}: split-tunnel runner is not running ({}: {e}); {}",
                 socket.display(),
                 runner_start_hint()
             );
@@ -174,7 +183,7 @@ fn run_via_runner(target_args: &[String], detach: bool) -> i32 {
     let mut writer_stream = match stream.try_clone() {
         Ok(stream) => stream,
         Err(e) => {
-            eprintln!("whoisthat run: cannot clone runner connection: {e}");
+            eprintln!("{command}: cannot clone runner connection: {e}");
             return 1;
         }
     };
@@ -188,12 +197,12 @@ fn run_via_runner(target_args: &[String], detach: bool) -> i32 {
     let payload = match serde_json::to_vec(&request) {
         Ok(payload) => payload,
         Err(e) => {
-            eprintln!("whoisthat run: cannot encode request: {e}");
+            eprintln!("{command}: cannot encode request: {e}");
             return 1;
         }
     };
     if let Err(e) = proto::write_frame(&mut writer_stream, proto::kind::CONTROL, &payload) {
-        eprintln!("whoisthat run: cannot send request to runner: {e}");
+        eprintln!("{command}: cannot send request to runner: {e}");
         return 1;
     }
 
@@ -212,7 +221,7 @@ fn run_via_runner(target_args: &[String], detach: bool) -> i32 {
     let pid = match started {
         Ok(pid) => pid,
         Err(message) => {
-            eprintln!("whoisthat run: {message}");
+            eprintln!("{command}: {message}");
             return 1;
         }
     };
@@ -225,7 +234,7 @@ fn run_via_runner(target_args: &[String], detach: bool) -> i32 {
         match enable_raw_mode() {
             Ok(()) => Some(RawModeGuard),
             Err(e) => {
-                eprintln!("whoisthat run: cannot enter raw terminal mode: {e}");
+                eprintln!("{command}: cannot enter raw terminal mode: {e}");
                 return 1;
             }
         }
@@ -404,16 +413,31 @@ mod tests {
 
     #[test]
     fn empty_args_returns_usage_code() {
-        assert_eq!(run_in_split_slice(&[]), 2);
+        assert_eq!(run_in_split_slice(&[], PathBuf::new(), "whoisthat-run"), 2);
     }
 
     #[test]
     fn detach_flags_without_target_returns_usage_code() {
-        assert_eq!(run_in_split_slice(&["-d".into()]), 2);
-        assert_eq!(run_in_split_slice(&["--detach".into()]), 2);
-        assert_eq!(run_in_split_slice(&["-b".into()]), 2);
-        assert_eq!(run_in_split_slice(&["--background".into()]), 2);
-        assert_eq!(run_in_split_slice(&["-d".into(), "--".into()]), 2);
+        assert_eq!(
+            run_in_split_slice(&["-d".into()], PathBuf::new(), "whoisthat-run"),
+            2
+        );
+        assert_eq!(
+            run_in_split_slice(&["--detach".into()], PathBuf::new(), "whoisthat-run"),
+            2
+        );
+        assert_eq!(
+            run_in_split_slice(&["-b".into()], PathBuf::new(), "whoisthat-run"),
+            2
+        );
+        assert_eq!(
+            run_in_split_slice(&["--background".into()], PathBuf::new(), "whoisthat-run"),
+            2
+        );
+        assert_eq!(
+            run_in_split_slice(&["-d".into(), "--".into()], PathBuf::new(), "whoisthat-run"),
+            2
+        );
     }
 
     #[test]
@@ -424,6 +448,6 @@ mod tests {
 
     #[test]
     fn socket_defaults_to_runtime_dir() {
-        assert!(runner_socket().ends_with(RUNNER_SOCKET));
+        assert!(runner_socket(PathBuf::new()).ends_with(RUNNER_SOCKET));
     }
 }
