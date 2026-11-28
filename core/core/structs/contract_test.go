@@ -176,6 +176,8 @@ func ipcContractFixtures() map[string]any {
 		DnsServers: []string{"9.9.9.9", "2620:fe::fe"},
 	}
 	applicationState := ApplicationState{
+		IPCFeatures: []string{"operation-result", "config-state"},
+		ProxyPorts:  &ProxyPorts{SocksPort: 3090, HttpPort: 0},
 		Groups: []GroupWithProfiles{{
 			Group:           group,
 			Profiles:        []Profile{profile},
@@ -193,7 +195,7 @@ func ipcContractFixtures() map[string]any {
 		},
 		KillSwitch:      true,
 		SplitTunnel:     "exclude",
-		Autoconnect:     AutoconnectInfo{Enabled: true, Mode: "tun"},
+		Autoconnect:     AutoconnectInfo{Enabled: true, Mode: "tun", Target: &ProfileID{Id: 7, GroupId: 3}},
 		XrayStatus:      xrayStatus,
 		CoreVersion:     "0.4.3",
 		ProtocolVersion: 5,
@@ -233,6 +235,7 @@ func ipcContractFixtures() map[string]any {
 	}
 
 	return map[string]any{
+		"operation_result":             OperationResult{Operation: "enable-tun", ConnectionStatus: proxyStatus, Error: &Warning{Key: "enable-tun-failed", Content: "test failure"}},
 		"application_state":            applicationState,
 		"profile_updated":              ProfileUpdated{Profile: profile},
 		"subscription_updated":         SubscriptionUpdated{GroupId: 3, Group: group, Profiles: []Profile{profile}, RoutingProfiles: []RoutingProfileInfo{routingProfile}, Auto: true},

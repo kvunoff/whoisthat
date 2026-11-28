@@ -22,6 +22,9 @@ func (cmd *Cmd) GetApplicationState(data structs.GetApplicationStateData, proxy_
 		groups = []structs.GroupWithProfiles{}
 	}
 
+	ConnectionMutex.Lock()
+	defer ConnectionMutex.Unlock()
+	cfg := appconfig.GetConfig()
 	application_state := structs.ApplicationState{
 		Groups:           groups,
 		ConnectionStatus: proxy_manager.GetStatus(),
@@ -30,16 +33,15 @@ func (cmd *Cmd) GetApplicationState(data structs.GetApplicationStateData, proxy_
 		KillSwitch:       proxy_manager.KillSwitchEnabled(),
 		KillSwitchArmed:  killSwitchArmed(proxy_manager),
 		SplitTunnel:      appconfig.GetConfig().SplitTunnel.Mode,
-		Autoconnect: structs.AutoconnectInfo{
-			Enabled: appconfig.GetConfig().AutoconnectEnabled,
-			Mode:    appconfig.GetConfig().AutoconnectMode,
-		},
-		XrayStatus:      xraymgr.GetManager().GetStatus(),
-		CoreVersion:     version.CoreVersion,
-		ProtocolVersion: version.ProtocolVersion,
-		TunName:         appconfig.GetConfig().TunName,
-		TestConfig:      proxy_manager.GetTestConfig(),
-		AntiDPI:         appconfig.GetConfig().AntiDPI,
+		IPCFeatures:      []string{"operation-result", "config-state"},
+		ProxyPorts:       &structs.ProxyPorts{SocksPort: max(cfg.SocksPort, 0), HttpPort: max(cfg.HttpPort, 0)},
+		Autoconnect:      autoconnectInfo(cfg),
+		XrayStatus:       xraymgr.GetManager().GetStatus(),
+		CoreVersion:      version.CoreVersion,
+		ProtocolVersion:  version.ProtocolVersion,
+		TunName:          appconfig.GetConfig().TunName,
+		TestConfig:       proxy_manager.GetTestConfig(),
+		AntiDPI:          appconfig.GetConfig().AntiDPI,
 		NetworkSettings: structs.NetworkSettings{
 			TunMTU:     appconfig.GetConfig().TunMTU,
 			DnsServers: appconfig.GetConfig().DnsServers,

@@ -134,9 +134,11 @@ func defaultNoisePacket(noiseType string) string {
 }
 
 func SetTestConfig(cfg TestConfig) {
+	configMu.Lock()
+	defer configMu.Unlock()
 	t := sanitizeTestConfig(cfg)
 	application_configuration.TestConfig = t
-	SaveConfig()
+	saveCurrentConfig()
 }
 
 func sanitizeTestConfig(cfg TestConfig) TestConfig {
@@ -160,12 +162,14 @@ func sanitizeTestConfig(cfg TestConfig) TestConfig {
 }
 
 func SetAntiDPI(cfg structs.AntiDPIConfig) error {
+	configMu.Lock()
+	defer configMu.Unlock()
 	cfg = normalizeAntiDPI(cfg)
 	if err := ValidateAntiDPI(cfg); err != nil {
 		return err
 	}
 	application_configuration.AntiDPI = cfg
-	SaveConfig()
+	saveCurrentConfig()
 	return nil
 }
 
@@ -310,6 +314,8 @@ func validNoisePayload(noiseType, payload string) bool {
 }
 
 func GetConfig() AppConfig {
+	configMu.RLock()
+	defer configMu.RUnlock()
 	return application_configuration
 }
 
@@ -352,7 +358,7 @@ func EnsureIPCToken() (string, error) {
 }
 
 func SocketPath() string {
-	if p := strings.TrimSpace(application_configuration.IPCSocketPath); p != "" {
+	if p := strings.TrimSpace(GetConfig().IPCSocketPath); p != "" {
 		return p
 	}
 	return DefaultSocketPath()
@@ -370,13 +376,17 @@ func DefaultSocketPath() string {
 // config.json.bak).
 
 func SetKillSwitch(enabled bool) {
+	configMu.Lock()
+	defer configMu.Unlock()
 	application_configuration.KillSwitchEnabled = enabled
-	SaveConfig()
+	saveCurrentConfig()
 }
 
 // SetSplitTunnelMode persists the split-tunnel mode. Invalid values are coerced
 // to "off" (with a warning) so a bad client value cannot install bogus routing.
 func SetSplitTunnelMode(mode string) string {
+	configMu.Lock()
+	defer configMu.Unlock()
 	switch mode {
 	case "off", "exclude", "include":
 	default:
@@ -386,7 +396,7 @@ func SetSplitTunnelMode(mode string) string {
 		mode = "off"
 	}
 	application_configuration.SplitTunnel.Mode = mode
-	SaveConfig()
+	saveCurrentConfig()
 	return mode
 }
 
@@ -400,13 +410,19 @@ func sanitizeAutoconnectMode(mode string) string {
 	return mode
 }
 
-func SetAutoconnect(enabled bool, groupId, profileId int, mode string) {
-	mode = sanitizeAutoconnectMode(mode)
-	application_configuration.AutoconnectEnabled = enabled
-	application_configuration.AutoconnectGroupId = groupId
-	application_configuration.AutoconnectProfileId = profileId
-	application_configuration.AutoconnectMode = mode
-	SaveConfig()
+func SetAutoconnect(enabled bool, groupId, profileId int, mode string) error {
+	configMu.Lock()
+	defer configMu.Unlock()
+	next := application_configuration
+	next.AutoconnectEnabled = enabled
+	next.AutoconnectGroupId = groupId
+	next.AutoconnectProfileId = profileId
+	next.AutoconnectMode = sanitizeAutoconnectMode(mode)
+	if err := saveConfig(next); err != nil {
+		return err
+	}
+	application_configuration = next
+	return nil
 }
 
 func sanitizeTunName(name string) string {
@@ -418,6 +434,8 @@ func sanitizeTunName(name string) string {
 }
 
 func SetTunName(name string) error {
+	configMu.Lock()
+	defer configMu.Unlock()
 	if name == "" {
 		return errors.New("tun name must not be empty")
 	}
@@ -428,7 +446,7 @@ func SetTunName(name string) error {
 		return errors.New("tun name must start with a letter and contain only [a-zA-Z0-9_-]")
 	}
 	application_configuration.TunName = name
-	SaveConfig()
+	saveCurrentConfig()
 	return nil
 }
 
@@ -442,13 +460,15 @@ const (
 // SetNetworkSettings persists the whole TUN/DNS block atomically. Clients read
 // the current application-state and only change the field they edit.
 func SetNetworkSettings(cfg structs.NetworkSettings) error {
+	configMu.Lock()
+	defer configMu.Unlock()
 	norm, err := validateNetworkSettings(cfg)
 	if err != nil {
 		return err
 	}
 	application_configuration.TunMTU = norm.TunMTU
 	application_configuration.DnsServers = norm.DnsServers
-	SaveConfig()
+	saveCurrentConfig()
 	return nil
 }
 

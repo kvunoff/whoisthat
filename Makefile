@@ -2,7 +2,7 @@ SHELL := /bin/bash
 BINDIR ?= /usr/bin
 FUZZTIME ?= 30s
 
-.PHONY: all build core rust test test-go test-race test-rust test-scripts test-e2e test-xray test-fuzz test-ppa lint lint-shell version-check docs-check fmt integration docs install clean coverage package-aur package-aur-bin package-ppa
+.PHONY: all build core rust test test-go test-race test-rust test-scripts test-e2e test-core-e2e test-xray test-fuzz test-ppa lint lint-shell version-check docs-check fmt integration docs install clean coverage package-aur package-aur-bin package-ppa
 
 all: build
 
@@ -39,6 +39,9 @@ package-%:
 # Needs both binaries built (`make core` and `cargo build`).
 test-e2e:
 	./scripts/ipc-e2e.test.sh
+
+test-core-e2e:
+	python3 scripts/standalone-core-e2e.py
 
 # Validate finalmask fragment/noise combinations with the pinned Xray binary.
 # Skips when no binary is installed; set WHOISTHAT_XRAY_BIN to force one.

@@ -16,6 +16,14 @@
     }
   },
   "application_state": {
+    "ipc_features": [
+      "operation-result",
+      "config-state"
+    ],
+    "proxy_ports": {
+      "socks_port": 3090,
+      "http_port": 0
+    },
     "groups": [
       {
         "group": {
@@ -110,6 +118,10 @@
     "kill_switch": true,
     "split_tunnel": "exclude",
     "autoconnect": {
+      "target": {
+        "id": 7,
+        "group_id": 3
+      },
       "enabled": true,
       "mode": "tun"
     },
@@ -195,6 +207,36 @@
         "9.9.9.9",
         "2620:fe::fe"
       ]
+    }
+  },
+  "operation_result": {
+    "operation": "enable-tun",
+    "ok": false,
+    "connection_status": {
+      "connection": "connected",
+      "profile": {
+        "id": 7,
+        "group_id": 3,
+        "name": "Frankfurt VLESS",
+        "protocol": "vless",
+        "uri": "vless://uuid@vpn.example.test:443?security=reality#Frankfurt",
+        "address": "198.51.100.7",
+        "host": "vpn.example.test",
+        "test-result": 42,
+        "tested_at": 1712345678,
+        "loss-pct": 1,
+        "jitter-ms": 3,
+        "port": 443,
+        "managed": true,
+        "provider_key": "provider-key-1"
+      },
+      "connected_at": 1712345678,
+      "reason": "none"
+    },
+    "tun_enabled": false,
+    "error": {
+      "key": "enable-tun-failed",
+      "content": "test failure"
     }
   },
   "profile_updated": {

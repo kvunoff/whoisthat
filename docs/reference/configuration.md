@@ -191,14 +191,14 @@ Auto-generated and synchronized by the Go core daemon:
 ### Setting keys via CLI
 
 `whoisthat settings` is the single entry point for both files. Core-authoritative keys are read from
-`application-state` (except `autoconnect-profile`, which lives in `config.json`) and written through
+`application-state` and written through
 IPC; local keys are written to `config.toml`.
 
 | CLI key | File / backend | Notes |
 | :--- | :--- | :--- |
 | `kill-switch`, `split-tunnel`, `autoconnect`, `autoconnect-mode` | core (`config.json`) | applied live; the daemon is authoritative |
 | `kill-switch-armed` | core (`application-state`) | read-only; actual kernel state (`kill-switch-enabled` is the intent) |
-| `autoconnect-profile` | core + `config.json` | target is stored as `autoconnect-group-id` / `autoconnect-profile-id` |
+| `autoconnect-profile` | core | explicit target, persisted as `autoconnect-group-id` / `autoconnect-profile-id` |
 | `tun-name` | core (`config.json`) | applies on the next reconnect |
 | `hwid-enabled`, `user-agent` | core (`config.json`) | subscription headers |
 | `test.concurrency`, `test.timeout`, `test.samples`, `test.endpoint`, `test.auto-on-subscribe` | core (`config.json` → `test-config`) | sanitized by the daemon; the CLI re-reads state afterwards |

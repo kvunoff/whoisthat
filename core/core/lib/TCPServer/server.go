@@ -2,12 +2,14 @@ package TCPServer
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io"
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"golang.org/x/sys/unix"
@@ -116,13 +118,16 @@ func (s *Server) Start() {
 	// half-configured. The kill-switch (when enabled) is already armed and is
 	// deliberately left in place: a crash is exactly when it must keep holding.
 	s.proxy_manager.SetUnexpectedExitHandler(func(reason string) {
-		if s.tun_manager.IsEnabledLocked() {
-			s.tun_manager.Stop()
+		cmd.ConnectionMutex.Lock()
+		defer cmd.ConnectionMutex.Unlock()
+		if s.proxy_manager.GetStatus().Reason != reason {
+			return
 		}
-		s.Broadcast(lib.CreateJsonNotification("warn", structs.Warning{
-			Key:     "proxy-exited",
-			Content: reason + "; TUN state cleared",
-		}))
+		if err := s.tun_manager.StopIfActive(); err != nil {
+			logger.Warn("proxy exit TUN cleanup:", err)
+			reason += "; TUN cleanup failed"
+		}
+		s.Broadcast(lib.CreateJsonNotification("warn", structs.Warning{Key: "proxy-exited", Content: reason}))
 	})
 
 	// clientID must be unique per connection. UDS peers all report the same
@@ -291,8 +296,45 @@ func (s *Server) handleConnection(cc *clientConn, clientID string, requireAuth b
 		handler.RequestID = raw_tcp_message.ID
 		// Name and id only: payloads may contain subscription URIs/tokens.
 		logger.Debugf("ipc: %s (id=%q) from %s", raw_tcp_message.Msg, raw_tcp_message.ID, conn.RemoteAddr())
-		if !s.dispatch(handler, raw_tcp_message) {
+		if raw_tcp_message.WantResult {
+			if strings.TrimSpace(raw_tcp_message.ID) == "" || !supportsOperationResult(raw_tcp_message.Msg) {
+				cc.enqueue(lib.CreateJsonNotificationWithID("warn", structs.Warning{
+					Key: "invalid-request", Content: "want_result requires an id and a connection operation",
+				}, raw_tcp_message.ID))
+				continue
+			}
+			handler.OperationReply = func(result structs.OperationResult) {
+				cc.enqueue(lib.CreateJsonNotificationWithID("operation-result", result, raw_tcp_message.ID))
+			}
+		}
+		object := handler.OperationReply == nil || bytes.HasPrefix(bytes.TrimSpace(raw_tcp_message.Data), []byte("{"))
+		if !object || !s.dispatch(handler, raw_tcp_message) {
+			if handler.OperationReply != nil {
+				handler.OperationReply(structs.OperationResult{
+					Operation:        raw_tcp_message.Msg,
+					ConnectionStatus: s.proxy_manager.GetStatus(), TunEnabled: s.tun_manager.IsEnabledLocked(),
+					Error: &structs.Warning{Key: "invalid-request", Content: "invalid operation payload"},
+				})
+				continue
+			}
 			return
 		}
+	}
+}
+
+func supportsOperationResult(operation string) bool {
+	switch operation {
+	case "connect", "disconnect", "enable-tun", "disable-tun":
+		return true
+	default:
+		return false
+	}
+}
+
+func (c *clientConn) enqueue(frame []byte) {
+	select {
+	case c.out <- frame:
+	default:
+		c.shutdown()
 	}
 }

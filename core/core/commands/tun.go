@@ -12,33 +12,37 @@ import (
 	"whoisthat-core/utils"
 )
 
-func (cmd *Cmd) DisableTun(data structs.DisableTunData, proxy_manager *proxy.ProxyManager, tun_manager *tunmode.TunModeManager) {
+func (cmd *Cmd) DisableTun(data structs.DisableTunData, proxy_manager *proxy.ProxyManager, tun_manager *tunmode.TunModeManager) (err error) {
 	ConnectionMutex.Lock()
 	defer ConnectionMutex.Unlock()
+	defer func() { cmd.finishOperation("disable-tun", err, proxy_manager, tun_manager) }()
 
-	if proxy_manager != nil {
+	if proxy_manager != nil && proxy_manager.TunEnabled() {
 		if err := proxy_manager.SetTunMode(appconfig.GetConfig().TunName, false); err != nil {
-			logger.Warn("tun: failed to remove tun inbound from proxy:", err)
+			cmd.warn("disable-tun-failed", err.Error())
+			if proxy_manager.GetStatus().Connection == "connected" {
+				return err
+			}
+			return errors.Join(err, tun_manager.Stop())
 		}
 	}
-	tun_manager.Stop()
+	return tun_manager.Stop()
 }
 
-func (cmd *Cmd) EnableTun(data structs.EnableTunData, proxy_manager *proxy.ProxyManager, tun_manager *tunmode.TunModeManager) {
+func (cmd *Cmd) EnableTun(data structs.EnableTunData, proxy_manager *proxy.ProxyManager, tun_manager *tunmode.TunModeManager) (err error) {
 	ConnectionMutex.Lock()
 	defer ConnectionMutex.Unlock()
+	defer func() { cmd.finishOperation("enable-tun", err, proxy_manager, tun_manager) }()
 
 	status := proxy_manager.GetStatus()
 	if status.Connection != "connected" {
-		cmd.warn("enable-tun-failed", "A profile must be connected for tun mode to operate")
-		return
+		return cmd.tunFailure(errors.New("a profile must be connected for TUN mode to operate"))
 	}
 	if tun_manager.IsEnabledLocked() {
-		cmd.warn("enable-tun-failed", "tun mode is already enabled")
-		return
+		return cmd.tunFailure(errors.New("TUN mode is already enabled"))
 	}
 
-	cmd.enableTun(status.Profile, proxy_manager, tun_manager)
+	return cmd.enableTun(status.Profile, proxy_manager, tun_manager)
 }
 
 func (cmd *Cmd) EnableTunForProfile(profile structs.Profile, proxy_manager *proxy.ProxyManager, tun_manager *tunmode.TunModeManager) {
@@ -136,7 +140,10 @@ func (cmd *Cmd) refreshDnsHijackFor(profile structs.Profile) {
 	}
 }
 
-func (cmd *Cmd) enableTun(profile structs.Profile, proxy_manager *proxy.ProxyManager, tun_manager *tunmode.TunModeManager) {
+func (cmd *Cmd) enableTun(profile structs.Profile, proxy_manager *proxy.ProxyManager, tun_manager *tunmode.TunModeManager) error {
+	if !utils.HasNetAdmin() {
+		return cmd.tunFailure(errors.New("TUN unavailable: check network capabilities and /dev/net/tun"))
+	}
 	var resolved *utils.ResolvedIPs
 	var err error
 	if proxy_manager != nil && len(proxy_manager.GetProxyIPs()) > 0 {
@@ -160,32 +167,27 @@ func (cmd *Cmd) enableTun(profile structs.Profile, proxy_manager *proxy.ProxyMan
 	}
 	if err != nil {
 		logger.Warn("tun: failed to resolve:", err)
-		cmd.warn("enable-tun-failed", fmt.Sprintf("failed to resolve profile host: %v", err))
-		return
+		return cmd.tunFailure(fmt.Errorf("failed to resolve profile host: %w", err))
 	}
 	if len(resolved.IPv4) == 0 && len(resolved.IPv6) == 0 {
 		logger.Warn("tun: failed to resolve: no proxy server IPs")
-		cmd.warn("enable-tun-failed", "failed to resolve proxy server IPs")
-		return
+		return cmd.tunFailure(errors.New("failed to resolve proxy server IPs"))
 	}
 
 	logger.Infof("tun: resolved %d IPv4, %d IPv6", len(resolved.IPv4), len(resolved.IPv6))
 
-	err = tun_manager.Start(resolved.IPv4, resolved.IPv6, cmd.dnsHijackFor(profile))
+	err = tun_manager.StartWith(resolved.IPv4, resolved.IPv6, cmd.dnsHijackFor(profile), func() error {
+		return proxy_manager.SetTunMode(appconfig.GetConfig().TunName, true)
+	})
 	if err != nil {
-		logger.Warn("tun: failed to start:", err)
-		cmd.warn("enable-tun-failed", err.Error())
-		return
+		return cmd.tunFailure(err)
 	}
+	return nil
+}
 
-	if proxy_manager != nil {
-		if err := proxy_manager.SetTunMode(appconfig.GetConfig().TunName, true); err != nil {
-			logger.Warn("tun: failed to enable tun inbound in proxy:", err)
-			tun_manager.Stop()
-			cmd.warn("enable-tun-failed", fmt.Sprintf("failed to reload proxy with tun: %v", err))
-			return
-		}
-	}
+func (cmd *Cmd) tunFailure(err error) error {
+	cmd.warn("enable-tun-failed", err.Error())
+	return err
 }
 
 func (cmd *Cmd) SetTunName(data structs.SetTunNameData) {

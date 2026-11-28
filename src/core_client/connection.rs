@@ -171,7 +171,7 @@ pub enum CoreWriteStream {
 
 impl CoreWriteHalf {
     pub async fn send(&mut self, msg: &str, data: &impl Serialize) -> std::io::Result<()> {
-        self.send_frame(msg, data, None).await
+        self.send_frame(msg, data, None, false).await
     }
 
     /// Send a request with an optional correlation id. The core echoes it on
@@ -183,7 +183,16 @@ impl CoreWriteHalf {
         msg: &str,
         data: &impl Serialize,
     ) -> std::io::Result<()> {
-        self.send_frame(msg, data, Some(id)).await
+        self.send_frame(msg, data, Some(id), false).await
+    }
+
+    pub(crate) async fn send_operation(
+        &mut self,
+        id: &str,
+        msg: &str,
+        data: &impl Serialize,
+    ) -> std::io::Result<()> {
+        self.send_frame(msg, data, Some(id), true).await
     }
 
     async fn send_frame(
@@ -191,6 +200,7 @@ impl CoreWriteHalf {
         msg: &str,
         data: &impl Serialize,
         id: Option<&str>,
+        want_result: bool,
     ) -> std::io::Result<()> {
         let mut payload = serde_json::json!({
             "msg": msg,
@@ -198,6 +208,9 @@ impl CoreWriteHalf {
         });
         if let Some(id) = id {
             payload["id"] = serde_json::Value::String(id.to_string());
+        }
+        if want_result {
+            payload["want_result"] = true.into();
         }
         let json = serde_json::to_vec(&payload)?;
         // Message name only: payloads may contain subscription URIs/tokens.

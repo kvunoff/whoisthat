@@ -107,6 +107,39 @@ impl Session {
         Ok(id)
     }
 
+    pub async fn operation(
+        &mut self,
+        msg: &str,
+        data: &impl Serialize,
+        legacy_reply: Reply<'_>,
+        correlated: bool,
+    ) -> Result<(), CliError> {
+        if !correlated {
+            let _: serde_json::Value = self.request(msg, data, legacy_reply).await?;
+            return Ok(());
+        }
+        let id = next_id();
+        self.write.send_operation(&id, msg, data).await?;
+        let result: OperationResult = self
+            .wait(
+                &id,
+                Reply::Id {
+                    expect: &["operation-result"],
+                    fatal_warns: &[],
+                },
+            )
+            .await?;
+        if !result.ok || result.operation != msg {
+            return Err(CliError::Core(
+                result
+                    .error
+                    .map(|error| error.content)
+                    .unwrap_or_else(|| format!("{msg} failed")),
+            ));
+        }
+        Ok(())
+    }
+
     pub async fn request<T: DeserializeOwned>(
         &mut self,
         msg: &str,
@@ -325,6 +358,61 @@ mod tests {
         let warnings = session.take_warnings();
         assert_eq!(warnings.len(), 1);
         assert_eq!(warnings[0].key, "set-kill-switch-failed");
+    }
+
+    #[tokio::test]
+    async fn operations_use_terminal_results_with_legacy_fallback() {
+        use tokio::io::AsyncReadExt;
+
+        for correlated in [false, true] {
+            let (client, mut server) = UnixStream::pair().unwrap();
+            let (read, write) = CoreConnection::from_unix(client).into_split();
+            let mut session = Session::from_connection(read, write);
+            let responder = async move {
+                let len = server.read_u32().await.unwrap();
+                let mut message = vec![0; len as usize];
+                server.read_exact(&mut message).await.unwrap();
+                let request: serde_json::Value = serde_json::from_slice(&message).unwrap();
+                assert_eq!(request["want_result"].as_bool(), correlated.then_some(true));
+                let (_, mut peer) = CoreConnection::from_unix(server).into_split();
+                peer.send("tun-status-changed", &json!({"is_enabled": true}))
+                    .await
+                    .unwrap();
+                if correlated {
+                    peer.send_with_id(
+                        request["id"].as_str().unwrap(),
+                        "operation-result",
+                        &json!({
+                            "operation": "enable-tun",
+                            "ok": false,
+                            "connection_status": {"connection": "connected"},
+                            "tun_enabled": false,
+                            "error": {"key": "enable-tun-failed", "content": "Xray reload failed"},
+                        }),
+                    )
+                    .await
+                    .unwrap();
+                }
+            };
+            let data = json!({});
+            let operation = session.operation(
+                "enable-tun",
+                &data,
+                Reply::Broadcast {
+                    pred: Box::new(|message| message.msg == "tun-status-changed"),
+                    fatal_warns: &["enable-tun-failed"],
+                },
+                correlated,
+            );
+            let (result, ()) = tokio::join!(operation, responder);
+            if correlated {
+                assert!(
+                    matches!(result, Err(CliError::Core(message)) if message == "Xray reload failed")
+                );
+            } else {
+                result.unwrap();
+            }
+        }
     }
 
     #[test]

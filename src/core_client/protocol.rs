@@ -184,7 +184,27 @@ pub struct ProxyStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProxyPorts {
+    pub socks_port: i32,
+    pub http_port: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OperationResult {
+    pub operation: String,
+    pub ok: bool,
+    pub connection_status: ProxyStatus,
+    pub tun_enabled: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<Warning>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApplicationState {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ipc_features: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proxy_ports: Option<ProxyPorts>,
     pub groups: Vec<GroupWithProfiles>,
     #[serde(rename = "connection-status")]
     pub connection_status: ProxyStatus,
@@ -748,6 +768,8 @@ pub struct SetAutoconnectData {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AutoconnectInfo {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<ProfileID>,
     #[serde(default)]
     pub enabled: bool,
     #[serde(default = "default_autoconnect_mode")]
@@ -874,6 +896,7 @@ mod tests {
                 .expect("parse testdata/ipc-contract.json");
 
         assert_ipc_roundtrip::<ApplicationState>(&fixtures, "application_state");
+        assert_ipc_roundtrip::<OperationResult>(&fixtures, "operation_result");
         assert_ipc_roundtrip::<ProfileUpdated>(&fixtures, "profile_updated");
         assert_ipc_roundtrip::<SubscriptionUpdated>(&fixtures, "subscription_updated");
         assert_ipc_roundtrip::<RoutingUpdated>(&fixtures, "routing_updated");

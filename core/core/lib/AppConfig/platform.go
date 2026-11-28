@@ -81,16 +81,22 @@ func DistroModel() string {
 }
 
 func EnableHwid(enable bool) {
+	configMu.Lock()
+	defer configMu.Unlock()
 	application_configuration.HwidEnabled = enable
-	SaveConfig()
+	saveCurrentConfig()
 }
 
 func ResetHwid() {
+	configMu.Lock()
+	defer configMu.Unlock()
 	application_configuration.Hwid = generateHwid()
-	SaveConfig()
+	saveCurrentConfig()
 }
 
 func SetUserAgent(ua string) {
+	configMu.Lock()
+	defer configMu.Unlock()
 	application_configuration.UserAgent = ua
-	SaveConfig()
+	saveCurrentConfig()
 }

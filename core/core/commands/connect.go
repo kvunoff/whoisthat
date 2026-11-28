@@ -10,26 +10,29 @@ import (
 	"whoisthat-core/structs"
 )
 
-func (cmd *Cmd) Disconnect(data structs.DisconnectData, proxy_manager *proxy.ProxyManager, tun_manager *tunmode.TunModeManager) {
+func (cmd *Cmd) Disconnect(data structs.DisconnectData, proxy_manager *proxy.ProxyManager, tun_manager *tunmode.TunModeManager) (err error) {
 	ConnectionMutex.Lock()
 	defer ConnectionMutex.Unlock()
+	defer func() { cmd.finishOperation("disconnect", err, proxy_manager, tun_manager) }()
 
 	proxy_manager.Stop()
-	tun_manager.Stop()
+	err = tun_manager.Stop()
 	// The kill-switch block (when enabled) is deliberately left in place: with
 	// no connection the machine must not leak, and removing the TUN device
 	// already disables its allowlist rule.
+	return err
 }
 
-func (cmd *Cmd) Connect(data structs.ConnectData, proxy_manager *proxy.ProxyManager, tun_manager *tunmode.TunModeManager) {
+func (cmd *Cmd) Connect(data structs.ConnectData, proxy_manager *proxy.ProxyManager, tun_manager *tunmode.TunModeManager) (err error) {
 	ConnectionMutex.Lock()
 	defer ConnectionMutex.Unlock()
+	defer func() { cmd.finishOperation("connect", err, proxy_manager, tun_manager) }()
 
 	profile, err := cmd.DB.GetProfile(data.Profile.GroupId, data.Profile.Id)
 	if err != nil {
 		logger.Warn("connect: failed to get profile:", err)
 		cmd.warn("connect-failed", fmt.Sprintf("profile lookup failed: %v", err))
-		return
+		return err
 	}
 	was_tun_enabled := tun_manager.IsEnabledLocked()
 
@@ -38,8 +41,9 @@ func (cmd *Cmd) Connect(data structs.ConnectData, proxy_manager *proxy.ProxyMana
 	if proxy_manager != nil {
 		proxy_manager.Stop()
 	}
-	if was_tun_enabled {
-		tun_manager.Stop()
+	if err := tun_manager.StopIfActive(); err != nil {
+		cmd.warn("connect-failed", err.Error())
+		return err
 	}
 
 	tunName := appconfig.GetConfig().TunName
@@ -58,10 +62,25 @@ func (cmd *Cmd) Connect(data structs.ConnectData, proxy_manager *proxy.ProxyMana
 		if errors.Is(err, proxy.ErrKillSwitchNotArmed) {
 			cmd.warn("set-kill-switch-failed", "kill-switch is enabled but could not be armed; connect aborted")
 		}
-		return
+		return err
 	}
 
 	if was_tun_enabled {
-		cmd.enableTun(profile, proxy_manager, tun_manager)
+		return cmd.enableTun(profile, proxy_manager, tun_manager)
 	}
+	return nil
+}
+
+func (cmd *Cmd) finishOperation(operation string, err error, proxyManager *proxy.ProxyManager, tunManager *tunmode.TunModeManager) {
+	if cmd.OperationReply == nil {
+		return
+	}
+	result := structs.OperationResult{
+		Operation: operation, OK: err == nil,
+		ConnectionStatus: proxyManager.GetStatus(), TunEnabled: tunManager.IsEnabledLocked(),
+	}
+	if err != nil {
+		result.Error = &structs.Warning{Key: operation + "-failed", Content: err.Error()}
+	}
+	cmd.OperationReply(result)
 }

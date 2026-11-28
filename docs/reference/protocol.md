@@ -56,6 +56,31 @@ persisted intent, `armed` is the actual kernel state.
   * **Unix Domain Socket (Default)**: mode `0600`, owned by the invoking user. Resolution order: `/run/whoisthat/<uid>/whoisthat/core.sock`, then `$XDG_RUNTIME_DIR/whoisthat/core.sock`, then `/tmp/whoisthat-<uid>/whoisthat/core.sock`. The init backend uses the canonical `/run/whoisthat/<uid>` path with no fallback.
   * **Loopback TCP (Opt-in)**: `127.0.0.1:4897` / `[::1]:4897` (when `tcp-enabled: true` in `config.json`).
 
+### Connection operation results
+
+When `application-state.ipc_features` contains `operation-result`, clients may
+send `"want_result": true` in the request envelope alongside a nonempty `id`.
+This is supported by `connect`, `disconnect`, `enable-tun` and `disable-tun`.
+The core sends one `operation-result` to the requesting connection, echoing its
+`id`. Its data contains `operation`, `ok`, `connection_status` (the same
+shape as `status-changed`), and `tun_enabled`. A failed operation includes
+`error` with `key` and `content`. The key is the command name with
+`-failed` appended, or `invalid-request` for a malformed request. A failure
+can leave the previous session running or leave the core disconnected. Use
+the returned status to tell which happened.
+
+Connection and TUN broadcasts still go to all clients. They can describe
+independent changes, including a subprocess exit after a successful operation.
+On older cores, use the legacy broadcasts and request-scoped warnings.
+
+When `ipc_features` contains `config-state`, `application-state.proxy_ports`
+reports the configured `socks_port` and `http_port` on loopback. Zero means
+the listener is disabled. The `autoconnect.target` field in `application-state`
+and the `target` in `autoconnect-updated` hold a profile reference
+`{"group_id": int, "id": int}` when configured. Connecting interactively
+leaves the saved target unchanged. `set-autoconnect-failed` reports a failed
+write, followed by the authoritative `autoconnect-updated` state.
+
 ### TCP authentication handshake
 
 UDS clients are authenticated by filesystem permissions. The opt-in TCP transport additionally requires a token that the core writes to `$XDG_RUNTIME_DIR/whoisthat/ipc.token` (`0600`). The first frame on a TCP connection must be:

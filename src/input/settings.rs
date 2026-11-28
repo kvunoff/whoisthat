@@ -133,6 +133,16 @@ pub(super) async fn handle(
     })
 }
 
+fn saved_autoconnect_target(app: &App, cfg: &config::AppConfig) -> (i32, i32) {
+    if let Some(target) = &app.autoconnect_target {
+        (target.group_id, target.id)
+    } else if app.autoconnect_target_supported {
+        (0, 0)
+    } else {
+        (cfg.last_group_id, cfg.last_profile_id)
+    }
+}
+
 async fn apply_toggle(
     app: &mut App,
     cfg: &mut config::AppConfig,
@@ -146,14 +156,18 @@ async fn apply_toggle(
     }
     match def.id {
         SettingsId::Autoconnect => {
-            let new_val = !app.autoconnect_enabled;
+            let enabled = !app.autoconnect_enabled;
+            let (mut group_id, mut id) = saved_autoconnect_target(app, cfg);
+            if enabled && id == 0 {
+                if let Some(profile) = &app.connection_status.profile {
+                    (group_id, id) = (profile.group_id, profile.id);
+                } else {
+                    app.msg("Connect a profile before enabling autoconnect.");
+                    return;
+                }
+            }
             let _ = client
-                .set_autoconnect(
-                    new_val,
-                    cfg.last_group_id,
-                    cfg.last_profile_id,
-                    &app.autoconnect_mode,
-                )
+                .set_autoconnect(enabled, group_id, id, &app.autoconnect_mode)
                 .await;
         }
         SettingsId::ShowIp => {
@@ -247,14 +261,10 @@ async fn apply_cycle(
                 .iter()
                 .position(|m| *m == app.autoconnect_mode.as_str())
                 .unwrap_or(0);
-            let new_mode = modes[(current + 1) % modes.len()].to_string();
+            let new_mode = modes[(current + 1) % modes.len()];
+            let (group_id, id) = saved_autoconnect_target(app, cfg);
             let _ = client
-                .set_autoconnect(
-                    app.autoconnect_enabled,
-                    cfg.last_group_id,
-                    cfg.last_profile_id,
-                    &new_mode,
-                )
+                .set_autoconnect(app.autoconnect_enabled, group_id, id, new_mode)
                 .await;
         }
         SettingsId::Theme => {

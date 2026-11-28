@@ -3,6 +3,7 @@
 package tunmode
 
 import (
+	"errors"
 	"net"
 	"os"
 	"os/exec"
@@ -13,6 +14,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	appconfig "whoisthat-core/lib/AppConfig"
 	"whoisthat-core/lib/netmark"
 )
 
@@ -361,5 +363,52 @@ func TestNetnsTunMTU(t *testing.T) {
 	}
 	if !strings.Contains(out, "mtu 1280") {
 		t.Fatalf("TUN interface MTU is not %d: %s", wantMTU, out)
+	}
+}
+
+func TestNetnsTunActivationFailureDoesNotPublishEnabled(t *testing.T) {
+	enterTestNetns(t)
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+	appconfig.LoadConfig()
+	const tunName = "witteststart"
+	if err := appconfig.SetTunName(tunName); err != nil {
+		t.Fatal(err)
+	}
+	if err := createTun("wittestprobe", "198.18.0.1", "", DefaultTunMTU); err != nil {
+		t.Skipf("cannot access /dev/net/tun: %v", err)
+	}
+	if err := deleteTun("wittestprobe"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runScriptWithSh(`
+set -e
+ip link add phys0 type dummy
+ip addr add 192.0.2.2/24 dev phys0
+ip link set phys0 up
+ip route add default via 192.0.2.1 dev phys0
+`); err != nil {
+		t.Fatal(err)
+	}
+
+	var manager TunModeManager
+	manager.Init()
+	startErr := errors.New("Xray startup failed")
+	err := manager.StartWith([]string{"192.0.2.3"}, nil, DnsHijack{}, func() error {
+		return startErr
+	})
+	if !errors.Is(err, startErr) {
+		t.Fatalf("expected Xray startup error, got %v", err)
+	}
+	if manager.IsEnabledLocked() {
+		t.Fatal("failed activation published enabled state")
+	}
+	select {
+	case enabled := <-manager.StatusChanged:
+		t.Fatalf("unexpected TUN event: %v", enabled)
+	default:
+	}
+	if _, err := runScriptWithSh("ip link show " + tunName); err == nil {
+		t.Fatal("TUN device remains after failed activation")
 	}
 }

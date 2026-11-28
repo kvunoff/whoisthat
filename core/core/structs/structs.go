@@ -126,6 +126,8 @@ type XrayProgressNotification struct {
 }
 
 type ApplicationState struct {
+	IPCFeatures      []string            `json:"ipc_features,omitempty"`
+	ProxyPorts       *ProxyPorts         `json:"proxy_ports,omitempty"`
 	Groups           []GroupWithProfiles `json:"groups"`
 	ConnectionStatus ProxyStatus         `json:"connection-status"`
 	TunStatus        bool                `json:"tun-status"`
@@ -245,9 +247,15 @@ type SetAutoconnectData struct {
 	Mode      string `json:"mode"`
 }
 
+type ProxyPorts struct {
+	SocksPort int `json:"socks_port"`
+	HttpPort  int `json:"http_port"`
+}
+
 type AutoconnectInfo struct {
-	Enabled bool   `json:"enabled"`
-	Mode    string `json:"mode"`
+	Target  *ProfileID `json:"target,omitempty"`
+	Enabled bool       `json:"enabled"`
+	Mode    string     `json:"mode"`
 }
 
 type ReorderProfilesData struct {
@@ -372,9 +380,18 @@ type ProfileDetails struct {
 	AllowInsecure bool   `json:"allow_insecure,omitzero"`
 }
 
+type OperationResult struct {
+	Operation        string      `json:"operation"`
+	OK               bool        `json:"ok"`
+	ConnectionStatus ProxyStatus `json:"connection_status"`
+	TunEnabled       bool        `json:"tun_enabled"`
+	Error            *Warning    `json:"error,omitempty"`
+}
+
 type TCPMessage struct {
-	Msg  string          `json:"msg"`
-	Data json.RawMessage `json:"data"`
+	WantResult bool            `json:"want_result,omitempty"`
+	Msg        string          `json:"msg"`
+	Data       json.RawMessage `json:"data"`
 	// ID is an optional request correlation id echoed by the server. It is
 	// currently additive and may be omitted by older clients.
 	ID string `json:"id,omitempty"`

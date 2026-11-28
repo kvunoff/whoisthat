@@ -45,7 +45,12 @@ pub(crate) async fn handle_core_event(
     match ev {
         CoreEvent::ApplicationState(s) => {
             let was_connected = s.connection_status.connection == "connected";
-            let already_migrated = app.autoconnect_enabled;
+            let already_migrated = s.autoconnect.enabled;
+            app.autoconnect_target_supported = s
+                .ipc_features
+                .iter()
+                .any(|feature| feature == "config-state");
+            app.autoconnect_target = s.autoconnect.target.clone();
             let config_state = s.config_status.state.clone();
             let db_state = s.db_status.state.clone();
             let db_day = s.db_status.snapshot_at.clone();
@@ -126,7 +131,7 @@ pub(crate) async fn handle_core_event(
                     cfg.autoconnect_migrated = true;
                     config::save_config(cfg);
                 }
-                if *do_autoconnect && !was_connected {
+                if *do_autoconnect && !already_migrated && !was_connected {
                     *do_autoconnect = false;
                     let gid = cfg.last_group_id;
                     let pid = cfg.last_profile_id;
@@ -176,11 +181,6 @@ pub(crate) async fn handle_core_event(
                 cfg.last_group_id = p.group_id;
                 cfg.last_profile_id = p.id;
                 config::save_config(cfg);
-                if app.autoconnect_enabled {
-                    let _ = client
-                        .set_autoconnect(true, p.group_id, p.id, &app.autoconnect_mode)
-                        .await;
-                }
             }
         }
 
@@ -347,6 +347,7 @@ pub(crate) async fn handle_core_event(
         CoreEvent::AutoconnectUpdated(info) => {
             app.autoconnect_enabled = info.enabled;
             app.autoconnect_mode = info.mode;
+            app.autoconnect_target = info.target;
         }
         CoreEvent::TestProgress(p) => {
             if p.total == 0 || p.tested >= p.total {

@@ -323,8 +323,8 @@ func (t *TunModeManager) reapplySplitLocked(mode string) error {
 
 // stopLocked is Stop() without taking t.mu (callers already hold it).
 func (t *TunModeManager) stopLocked() {
-	_ = t.clearNetworkRules()
-	t.dnsHijack = DnsHijack{}
-	t.IsEnabled = false
-	t.StatusChanged <- t.IsEnabled
+	if err := t.stopNetwork(); err != nil {
+		logger.Warn("split rollback TUN cleanup:", err)
+	}
+	t.StatusChanged <- false
 }

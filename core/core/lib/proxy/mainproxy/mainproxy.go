@@ -269,7 +269,7 @@ func (p *ProxyManager) startExitWatcher() chan struct{} {
 	p.watchGen++
 	gen := p.watchGen
 	p.watchMu.Unlock()
-	go p.watchExit(done, gen)
+	go p.watchExit(done, gen, p.core.ExitedCh())
 	return done
 }
 
@@ -287,29 +287,27 @@ func (p *ProxyManager) watcherIsStale(gen uint64) bool {
 // status to disconnected and emits a non-blocking StatusChanged update (the
 // channel is buffered at 8; if full we drop rather than deadlock the daemon).
 // It returns when done is closed (retire) or Exited is closed.
-func (p *ProxyManager) watchExit(done chan struct{}, gen uint64) {
+func (p *ProxyManager) watchExit(done chan struct{}, gen uint64, exited <-chan error) {
 	for {
 		select {
 		case <-done:
 			return
-		case _, ok := <-p.core.ExitedCh():
+		case _, ok := <-exited:
 			if !ok {
-				return
-			}
-			if p.watcherIsStale(gen) {
-				// Intentional Stop/Connect or a newer connect cycle: the caller
-				// handles cleanup.
 				return
 			}
 			reason := "proxy process exited unexpectedly"
 			p.mu.Lock()
+			if p.watcherIsStale(gen) {
+				p.mu.Unlock()
+				return
+			}
 			p.status = structs.ProxyStatus{
 				Connection: "disconnected",
 				Reason:     reason,
 			}
 			p.stopMeter()
 			status := p.status
-			p.mu.Unlock()
 			// Non-blocking send: StatusChanged is buffered (8) and the
 			// server's handleStatusChange drains it; if it's somehow
 			// full we'd rather drop than deadlock the daemon.
@@ -318,6 +316,7 @@ func (p *ProxyManager) watchExit(done chan struct{}, gen uint64) {
 			default:
 				logger.Warn("StatusChanged full; dropping disconnected event")
 			}
+			p.mu.Unlock()
 			logger.Warn("proxy: " + reason + "; tearing down TUN state")
 			p.notifyUnexpectedExit(reason)
 		}
@@ -490,6 +489,9 @@ func (p *ProxyManager) Connect(profile structs.Profile, tunName string, tunEnabl
 
 	p.core = newCore()
 	if err := p.core.Start(xray_config, selection.GeoDir); err != nil {
+		if apiPort != 0 && p.portPool != nil {
+			p.portPool.ReleasePort(apiPort)
+		}
 		return err
 	}
 
@@ -529,20 +531,31 @@ func (p *ProxyManager) SetTunMode(tunName string, enabled bool) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
+	previousEnabled, previousName, previousCore := p.tunEnabled, p.tunName, p.core
 	p.tunEnabled = enabled
-	p.tunActive.Store(enabled)
 	p.tunName = tunName
-
-	if p.status.Connection != "connected" || p.core == nil || !p.core.IsRunning() {
-		return nil
+	if p.status.Connection == "connected" && p.core != nil && p.core.IsRunning() {
+		if err := p.reloadCoreLocked(tunName); err != nil {
+			if p.core != previousCore && p.status.Connection == "connected" {
+				p.stopLocked()
+			}
+			p.tunEnabled = previousEnabled && p.status.Connection == "connected"
+			p.tunName = previousName
+			p.tunActive.Store(p.tunEnabled)
+			return err
+		}
 	}
-
-	return p.reloadCoreLocked(tunName)
+	p.tunActive.Store(enabled)
+	return nil
 }
 
 func (p *ProxyManager) Stop() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	p.stopLocked()
+}
+
+func (p *ProxyManager) stopLocked() {
 	logger.Info("disconnecting")
 	p.tunEnabled = false
 	p.tunActive.Store(false)
