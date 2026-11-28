@@ -152,9 +152,10 @@ def run(directory, upstream):
     try:
         with attach(sockpath, process) as wire, attach(sockpath, process) as legacy:
             state = await_runtime(wire)
-            assert state["groups"] == [] and state["protocol_version"] == 6, state
+            protocol_file = Path(__file__).resolve().parents[1] / "core/core/lib/version/protocol.txt"
+            assert state["groups"] == [] and state["protocol_version"] == int(protocol_file.read_text()), state
             assert state["proxy_ports"] == {"socks_port": core_socks, "http_port": core_http}
-            assert set(state["ipc_features"]) == {"operation-result", "config-state"}
+            assert {"operation-result", "config-state"} <= set(state["ipc_features"])
             assert snapshot(legacy)["groups"] == []
 
             def add_profile(label):

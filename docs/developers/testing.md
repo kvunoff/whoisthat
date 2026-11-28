@@ -93,6 +93,15 @@ It refuses to run as root.
 
 ---
 
+### Standalone core smoke test
+
+`make core test-core-e2e` runs the daemon in normal mode as an unprivileged
+user with a private XDG tree. A Python client covers opt-in and legacy IPC,
+real proxy traffic through Xray, and autoconnect after a restart. The core
+fetches the pinned Xray runtime and geo assets on first launch. To run
+offline, set `WHOISTHAT_E2E_XRAY_DIR` to a verified runtime directory and
+`WHOISTHAT_E2E_GEO_DIR` to a directory containing the geo files.
+
 ### Finalmask validation
 
 `make test-xray` runs every fragment/noise combination through the pinned Xray
