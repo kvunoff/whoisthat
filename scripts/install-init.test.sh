@@ -75,6 +75,14 @@ grep -q "rc-service whoisthat-core start" "$cmdlog" || fail "core not started"
 grep -q "authorize-core --add $user" "$cmdlog" || fail "core enable did not authorize the user"
 pass "openrc core service installed, enabled, started"
 
+mv "$cmdlog" "$root/authorized-commands.log"
+run core enable "$user" "$root/home" --no-authorize || fail "proxy service registration failed"
+grep -q "rc-service whoisthat-core start" "$cmdlog" || fail "proxy service not started"
+if grep -q "authorize-core" "$cmdlog"; then
+    fail "proxy service requested network capabilities"
+fi
+pass "proxy service registration skips authorization"
+
 export XDG_CONFIG_HOME="$root/xdg-config"
 run core enable "$user" "$root/home" || fail "XDG reinstall failed"
 grep -q "export XDG_CONFIG_HOME=\"$root/xdg-config\"" "$service" || fail "XDG_CONFIG_HOME not exported"

@@ -97,4 +97,10 @@ fi
 grep -q "cgroup v2 not mounted" "$root/v1.err" || fail "missing cgroup v1 warning"
 pass "cgroup v1 reported clearly"
 
+runtime_uid=$((uid + 1))
+"$setup" --runtime-only --uid "$runtime_uid" || fail "runtime-only setup failed without cgroup v2"
+[ -d "$WHOISTHAT_RUN_ROOT/$runtime_uid/whoisthat" ] || fail "runtime-only socket directory missing"
+[ ! -e "$WHOISTHAT_CGROUP_ROOT/whoisthat-$runtime_uid" ] || fail "runtime-only setup created a cgroup"
+pass "runtime-only setup works without cgroup v2"
+
 echo "cgroup-setup tests passed"
