@@ -1,0 +1,14 @@
+[Unit]
+Description=WhoisThat VPN Core
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/whoisthat-core
+Restart=on-failure
+RestartSec=5
+RestartPreventExitStatus=78
+
+[Install]
+WantedBy=default.target

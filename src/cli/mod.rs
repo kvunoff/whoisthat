@@ -68,7 +68,11 @@ pub async fn run(raw_args: &[String]) -> Outcome {
             argv.push("-d".to_string());
         }
         argv.extend(args.argv);
-        return Outcome::Exit(crate::launcher::run_in_split_slice(&argv));
+        return Outcome::Exit(crate::launcher::run_in_split_slice(
+            &argv,
+            crate::config::runtime_dir(),
+            "whoisthat run",
+        ));
     }
 
     finish(dispatch(cmd, &cli.global).await)

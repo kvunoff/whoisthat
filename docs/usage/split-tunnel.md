@@ -52,6 +52,9 @@ When the split mode changes while TUN is active, the hijack is reconciled togeth
 
 ## Launch backends
 
+The standalone core archive supplies `whoisthat-run`. It uses these same
+backends and takes the same arguments as `whoisthat run`.
+
 `whoisthat run` picks the backend automatically. There is no user-facing switch:
 the client checks for a live systemd (`/run/systemd/system`) and uses
 `systemd-run` when present; otherwise it talks to the per-user runner. In both

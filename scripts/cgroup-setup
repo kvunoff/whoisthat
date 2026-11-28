@@ -2,6 +2,7 @@
 # Root helper: create/remove the native split-tunnel cgroup and runtime dirs.
 #
 #   cgroup-setup [USER...]                 # default: the invoking user
+#   cgroup-setup --runtime-only USER     # prepare the socket directory only
 #   cgroup-setup --all-users               # every uid >= 1000
 #   cgroup-setup --uid N                   # explicit uid (tests/service)
 #   cgroup-setup --remove [USER...]
@@ -58,6 +59,7 @@ if [ "$TEST_MODE" != 1 ] && [ -d /run/systemd/system ]; then
     exit 0
 fi
 
+runtime_only=0
 remove=0
 all_users=0
 uid_arg=
@@ -65,6 +67,7 @@ users=
 
 while [ $# -gt 0 ]; do
     case "$1" in
+        --runtime-only) runtime_only=1 ;;
         --remove) remove=1 ;;
         --all-users) all_users=1 ;;
         --uid)
@@ -151,21 +154,6 @@ create_user() {
     gid=$(cgroup_gid "$uid")
     [ -n "$gid" ] || gid=0
 
-    if [ ! -f "$CGROUP_ROOT/cgroup.controllers" ]; then
-        warn "cgroup v2 not mounted at $CGROUP_ROOT; split tunnel is unavailable"
-        return 1
-    fi
-
-    cg="$CGROUP_ROOT/whoisthat-$uid"
-    mkdir -p "$cg" || { warn "cannot create $cg"; return 1; }
-    chown "$uid:$gid" "$cg"
-    chmod 0755 "$cg"
-    for f in cgroup.procs cgroup.threads; do
-        if [ -f "$cg/$f" ]; then
-            chown "$uid:$gid" "$cg/$f"
-        fi
-    done
-
     if [ -L "$RUN_ROOT" ]; then
         warn "refusing symlinked runtime root: $RUN_ROOT"
         return 1
@@ -192,6 +180,22 @@ create_user() {
     mkdir -p "$whoisthat_dir" || { warn "cannot create $whoisthat_dir"; return 1; }
     chown "$uid:$gid" "$whoisthat_dir"
     chmod 0700 "$whoisthat_dir"
+    if [ "$runtime_only" = 0 ]; then
+        if [ ! -f "$CGROUP_ROOT/cgroup.controllers" ]; then
+            warn "cgroup v2 not mounted at $CGROUP_ROOT; split tunnel is unavailable"
+            return 1
+        fi
+
+        cg="$CGROUP_ROOT/whoisthat-$uid"
+        mkdir -p "$cg" || { warn "cannot create $cg"; return 1; }
+        chown "$uid:$gid" "$cg"
+        chmod 0755 "$cg"
+        for f in cgroup.procs cgroup.threads; do
+            if [ -f "$cg/$f" ]; then
+                chown "$uid:$gid" "$cg/$f"
+            fi
+        done
+    fi
     return 0
 }
 

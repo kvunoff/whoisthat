@@ -46,6 +46,27 @@ Every time you run `go build`, Linux assigns a new filesystem **inode** to the o
 
 ---
 
+## Run the standalone core
+
+Download the `whoisthat-core-linux-<arch>.tar.gz` asset from a `core-v*`
+release and verify it against the release's `SHA256SUMS`. Extract it into a
+private directory. For proxy-only use, run `./whoisthat-core` as your ordinary
+user. To install system-wide, run `sudo ./install-core --user "$USER"`. Add
+`--tun` for TUN authorization, `--service` to register a service, and
+`--split` with `--tun` to set up split tunneling. A systemd user service
+prints the activation command for the target user. The installer supports
+OpenRC, Dinit and runit as well. To upgrade, stop the daemon and run the
+new archive's installer with the original options.
+
+Resolve the socket using [IPC & Wire Protocol](/reference/protocol) and
+request `get-application-state`. Wait for `xray_status.status` to be `ready`,
+using `xray-progress` or another state request if the runtime is downloading.
+Create a group with `add-group`, import a share link with `add-profiles`, then
+send `connect` with the returned group and profile IDs. Use `proxy_ports` when
+the core advertises `config-state`. For system-wide VPN, send `enable-tun`
+after connecting. To split an application, send `set-split-tunnel` and run
+`whoisthat-run -- <program> [args...]` as the same user.
+
 ## Unified build commands
 
 A root `Makefile` wraps the common workflows:
