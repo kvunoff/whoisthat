@@ -533,6 +533,8 @@ func (p *ProxyManager) SetTunMode(tunName string, enabled bool) error {
 
 	previousEnabled, previousName, previousCore := p.tunEnabled, p.tunName, p.core
 	p.tunEnabled = enabled
+	// The kill-switch pre-start hook needs the mode being applied.
+	p.tunActive.Store(enabled)
 	p.tunName = tunName
 	if p.status.Connection == "connected" && p.core != nil && p.core.IsRunning() {
 		if err := p.reloadCoreLocked(tunName); err != nil {
@@ -545,7 +547,6 @@ func (p *ProxyManager) SetTunMode(tunName string, enabled bool) error {
 			return err
 		}
 	}
-	p.tunActive.Store(enabled)
 	return nil
 }
 
