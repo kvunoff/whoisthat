@@ -10,6 +10,22 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// XrayAmbientCaps returns the network capabilities available to the daemon.
+func XrayAmbientCaps() []uintptr {
+	hdr := unix.CapUserHeader{Version: unix.LINUX_CAPABILITY_VERSION_3}
+	var data [2]unix.CapUserData
+	if unix.Capget(&hdr, &data[0]) != nil {
+		return nil
+	}
+	var caps []uintptr
+	for _, cap := range []uintptr{unix.CAP_NET_ADMIN, unix.CAP_NET_RAW} {
+		if data[cap/32].Effective&(1<<(cap%32)) != 0 {
+			caps = append(caps, cap)
+		}
+	}
+	return caps
+}
+
 func RaiseAmbientCaps() {
 	var hdr unix.CapUserHeader
 	hdr.Version = unix.LINUX_CAPABILITY_VERSION_3
@@ -20,7 +36,10 @@ func RaiseAmbientCaps() {
 		return
 	}
 
-	caps := []uintptr{unix.CAP_NET_ADMIN, unix.CAP_NET_RAW}
+	caps := XrayAmbientCaps()
+	if len(caps) == 0 {
+		return
+	}
 	for _, cap := range caps {
 		data[cap/32].Inheritable |= 1 << (cap % 32)
 	}

@@ -24,6 +24,9 @@ func (db *DB) Initialize() {
 	}
 	// Tighten directories created by older releases with a wider mode.
 	utils.EnsurePerms(db.Path, 0700)
+	if err := os.MkdirAll(db.GetGroupsDirPath(), 0700); err != nil {
+		logger.Warnf("failed to initialize groups directory: %v", err)
+	}
 	db.loadOrCreateKey()
 	db.ensureDBConfigExistance()
 	// Keep a daily copy before anything can rewrite the files. Never snapshot a

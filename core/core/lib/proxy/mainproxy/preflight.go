@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -20,8 +19,6 @@ import (
 	"whoisthat-core/lib/xraymgr"
 	"whoisthat-core/structs"
 	"whoisthat-core/utils"
-
-	"golang.org/x/sys/unix"
 )
 
 const (
@@ -117,7 +114,7 @@ func validateXrayConfig(cfg []byte, assetDir string) error {
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, bin, "run", "-test")
-	if caps := xrayTestAmbientCaps(); len(caps) > 0 {
+	if caps := utils.XrayAmbientCaps(); len(caps) > 0 {
 		cmd.SysProcAttr = &syscall.SysProcAttr{AmbientCaps: caps}
 	}
 
@@ -138,39 +135,6 @@ func validateXrayConfig(cfg []byte, assetDir string) error {
 		return fmt.Errorf("xray config test timed out after %s", xrayPreflightTimeout)
 	}
 	return fmt.Errorf("xray config test failed: %s", summarizeXrayTestOutput(out))
-}
-
-// xrayTestAmbientCaps returns the capabilities to propagate to `xray run -test`.
-// `-test` only parses the config, but keeping the same ambient caps as the real
-// runtime preserves validation fidelity. Caps are only propagated when the
-// caller already holds them, so unit tests / CI without capabilities can still
-// run the pre-flight.
-func xrayTestAmbientCaps() []uintptr {
-	if !hasEffectiveCapability(unix.CAP_NET_ADMIN) {
-		return nil
-	}
-	return []uintptr{unix.CAP_NET_ADMIN, unix.CAP_NET_RAW}
-}
-
-// hasEffectiveCapability reports whether the current process holds cap in its
-// effective set (Linux capabilities are bit-indexed in CapEff).
-func hasEffectiveCapability(cap uintptr) bool {
-	data, err := os.ReadFile("/proc/self/status")
-	if err != nil {
-		return false
-	}
-	for _, line := range strings.Split(string(data), "\n") {
-		if !strings.HasPrefix(line, "CapEff:") {
-			continue
-		}
-		raw := strings.TrimSpace(strings.TrimPrefix(line, "CapEff:"))
-		v, err := strconv.ParseUint(raw, 16, 64)
-		if err != nil {
-			return false
-		}
-		return v&(uint64(1)<<cap) != 0
-	}
-	return false
 }
 
 // summarizeXrayTestOutput keeps the actionable tail of xray's stderr and

@@ -67,7 +67,7 @@ func fakeXray(t *testing.T, body string) string {
 func useFakeBinary(t *testing.T, path string) {
 	t.Helper()
 	oldCaps, oldBin := ambientCaps, getXrayBin
-	ambientCaps = nil
+	ambientCaps = func() []uintptr { return nil }
 	getXrayBin = func() (string, error) { return path, nil }
 	t.Cleanup(func() {
 		ambientCaps = oldCaps
