@@ -272,7 +272,9 @@ func main() {
 			// is enabled it must survive a stopped daemon. It is removed only
 			// by an explicit kill-switch=false or the startup reconcile.
 			proxy_manager.Stop()
-			tun_manager.Stop()
+			if err := tun_manager.StopIfActive(); err != nil {
+				logger.Warn("shutdown TUN cleanup:", err)
+			}
 			os.Remove(appconfig.SocketPath())
 			server.Broadcast(lib.CreateJsonNotification("warn", structs.Warning{Key: "died", Content: reason}))
 			close(done)

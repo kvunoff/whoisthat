@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"whoisthat-core/lib/logger"
@@ -17,6 +18,8 @@ type LoadStatus struct {
 	Error string `json:"error,omitempty"`
 }
 
+var configMu sync.RWMutex
+
 var loadStatus = LoadStatus{State: "ok"}
 
 // loaded is set once LoadConfig has read the file. SaveConfig refuses to write
@@ -26,6 +29,8 @@ var loaded bool
 
 // Status returns how the current in-memory config was obtained.
 func Status() LoadStatus {
+	configMu.RLock()
+	defer configMu.RUnlock()
 	return loadStatus
 }
 
@@ -44,6 +49,8 @@ func BackupPath() string {
 // default file written without a loaded config. It is a no-op error when no
 // usable backup exists yet.
 func RestoreFromBackup() error {
+	configMu.Lock()
+	defer configMu.Unlock()
 	data, _, ok := readUsableBackup()
 	if !ok {
 		return fmt.Errorf("no settings backup available: %w", os.ErrNotExist)
@@ -51,7 +58,7 @@ func RestoreFromBackup() error {
 	if err := utils.AtomicWriteFile(configPath(), data, 0600); err != nil {
 		return fmt.Errorf("cannot write config.json: %w", err)
 	}
-	LoadConfig()
+	loadConfig()
 	if loadStatus.State == "corrupt" {
 		return fmt.Errorf("settings backup is unreadable")
 	}
@@ -98,6 +105,12 @@ func refreshBackup() {
 }
 
 func LoadConfig() {
+	configMu.Lock()
+	defer configMu.Unlock()
+	loadConfig()
+}
+
+func loadConfig() {
 	config, status := readConfig()
 	loaded = true
 	// A valid file without a device id cannot have been produced by a normal
@@ -134,7 +147,7 @@ func LoadConfig() {
 	}
 	application_configuration = config
 	if migratedUserAgent || status.State == "missing" {
-		SaveConfig()
+		saveCurrentConfig()
 	}
 	// Keep the last known good copy so a corrupted config.json can be restored
 	// with one click instead of re-entering every setting.
@@ -144,18 +157,28 @@ func LoadConfig() {
 }
 
 func SaveConfig() {
+	configMu.Lock()
+	defer configMu.Unlock()
+	saveCurrentConfig()
+}
+
+func saveCurrentConfig() {
+	if err := saveConfig(application_configuration); err != nil {
+		logger.Warn("save config:", err)
+	}
+}
+
+func saveConfig(config AppConfig) error {
 	// Writing a config that was never read is how a test process used to
 	// replace the real settings with defaults.
 	if !loaded {
-		logger.Warn("save config: refusing to write before LoadConfig ran")
-		return
+		return fmt.Errorf("refusing to write before LoadConfig ran")
 	}
 	dir_path := utils.ConfigDir()
 	config_path := filepath.Join(dir_path, "config.json")
 
 	if err := os.MkdirAll(dir_path, 0700); err != nil {
-		logger.Warn("save config: cannot create dir:", err)
-		return
+		return fmt.Errorf("create config directory: %w", err)
 	}
 	utils.EnsurePerms(dir_path, 0700)
 
@@ -168,18 +191,17 @@ func SaveConfig() {
 		}
 	}
 
-	jsonData, err := json.MarshalIndent(application_configuration, "", " ")
+	jsonData, err := json.MarshalIndent(config, "", " ")
 	if err != nil {
-		logger.Warn("save config: marshal failed:", err)
-		return
+		return fmt.Errorf("encode config: %w", err)
 	}
 
 	if err := utils.AtomicWriteFile(config_path, jsonData, 0600); err != nil {
-		logger.Warn("save config: write failed:", err)
-		return
+		return fmt.Errorf("write config: %w", err)
 	}
 	loadStatus = LoadStatus{State: "ok"}
 	logger.Debugf("config saved to %s", config_path)
+	return nil
 }
 
 func readConfig() (AppConfig, LoadStatus) {

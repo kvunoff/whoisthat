@@ -23,6 +23,7 @@ type TunModeManager struct {
 	sudoUid                int
 	StatusChanged          chan bool
 	IsEnabled              bool
+	cleanupPending         bool
 }
 
 func (t *TunModeManager) Init() {
@@ -39,13 +40,26 @@ func (t *TunModeManager) IsEnabledLocked() bool {
 	return t.IsEnabled
 }
 
-func (t *TunModeManager) Start(proxy_ipv4s []string, proxy_ipv6s []string, dns DnsHijack) error {
+func (t *TunModeManager) Start(proxyIPv4s, proxyIPv6s []string, dns DnsHijack) error {
+	return t.StartWith(proxyIPv4s, proxyIPv6s, dns, nil)
+}
+
+// StartWith activates the inbound before publishing the TUN state.
+func (t *TunModeManager) StartWith(proxy_ipv4s []string, proxy_ipv6s []string, dns DnsHijack, activate func() error) (err error) {
 	logger.Info("tun: starting...")
 
 	// Serialise with Stop/ReapplySplit/SetDnsHijack: refreshDnsHijackFor runs
 	// from a background subscription update and used to race these field writes.
 	t.mu.Lock()
 	defer t.mu.Unlock()
+
+	defer func() {
+		if err != nil && t.cleanupPending {
+			cleanupErr := t.clearNetworkRules()
+			t.cleanupPending = cleanupErr != nil
+			err = errors.Join(err, cleanupErr)
+		}
+	}()
 
 	// Tear down the previous session before replacing the fields its cleanup
 	// depends on (old TUN name, DNS routes, proxy IPs).
@@ -70,16 +84,15 @@ func (t *TunModeManager) Start(proxy_ipv4s []string, proxy_ipv6s []string, dns D
 	t.dnsHijack = sanitizeDnsHijack(dns)
 	t.sudoUid = utils.DedicatedUid()
 
+	t.cleanupPending = true
 	err = createTun(t.tun_name, t.tun_ip, t.tun_ipv6, appconfig.GetConfig().TunMTU)
 	if err != nil {
-		t.clearNetworkRules()
 		return fmt.Errorf("there was an error creating tun interface %w", err)
 	}
 	logger.Infof("tun: interface %s created (%s, %s)", t.tun_name, t.tun_ip, t.tun_ipv6)
 
 	err = setupProxyIpRoutes(t.proxy_ipv4s, t.proxy_ipv6s, t.default_interface_ip, t.default_interface_ipv6)
 	if err != nil {
-		t.clearNetworkRules()
 		return fmt.Errorf("there was an error setting up proxy ip routes %w", err)
 	}
 
@@ -92,33 +105,28 @@ func (t *TunModeManager) Start(proxy_ipv4s []string, proxy_ipv6s []string, dns D
 		_ = deleteDnsIpRoutes6(t.dnsHijack.Sink6, t.default_interface_ipv6)
 		err = setupDnsIpRoutes(t.dnsHijack.Sink4, t.dnsHijack.Sink6, t.default_interface_ip, t.default_interface_ipv6)
 		if err != nil {
-			t.clearNetworkRules()
 			return fmt.Errorf("there was an error setting up dns ip route %w", err)
 		}
 	}
 
 	err = loosenRpFilter(t.tun_name, t.default_interface)
 	if err != nil {
-		t.clearNetworkRules()
 		return fmt.Errorf("there was an error loosening rp filter %w", err)
 	}
 
 	err = addFwmarkRouting(1, interface_name, interface_ip)
 	if err != nil {
-		t.clearNetworkRules()
 		return fmt.Errorf("there was an error adding fwmark routing: %w", err)
 	}
 	if t.default_interface_ipv6 != "" {
 		err = addFwmarkRouting6(1, interface_name, t.default_interface_ipv6)
 		if err != nil {
-			t.clearNetworkRules()
 			return fmt.Errorf("there was an error adding ipv6 fwmark routing: %w", err)
 		}
 	}
 
 	err = setupConntrackRules(t.tun_name, t.default_interface)
 	if err != nil {
-		t.clearNetworkRules()
 		return fmt.Errorf("there was an error setting up conntrack bypass rules: %w", err)
 	}
 
@@ -138,7 +146,6 @@ func (t *TunModeManager) Start(proxy_ipv4s []string, proxy_ipv6s []string, dns D
 
 	err = setupDnsHijackRules(t.default_interface, t.dnsHijack)
 	if err != nil {
-		t.clearNetworkRules()
 		return fmt.Errorf("there was an error setting up dns hijack rules %w", err)
 	}
 	if t.dnsHijack.Enabled {
@@ -154,12 +161,10 @@ func (t *TunModeManager) Start(proxy_ipv4s []string, proxy_ipv6s []string, dns D
 	if splitMode != "include" {
 		err = setupTunIpRoute(t.tun_name, t.tun_ip)
 		if err != nil {
-			t.clearNetworkRules()
 			return fmt.Errorf("there was an error setting up tun ip route %w", err)
 		}
 		if t.tun_ipv6 != "" {
 			if err2 := setupTunIpRoute6(t.tun_name, t.tun_ipv6); err2 != nil {
-				t.clearNetworkRules()
 				return fmt.Errorf("there was an error setting up tun ipv6 route %w", err2)
 			}
 		}
@@ -168,10 +173,14 @@ func (t *TunModeManager) Start(proxy_ipv4s []string, proxy_ipv6s []string, dns D
 	}
 
 	if err := t.applySplitRules(); err != nil {
-		t.clearNetworkRules()
 		return fmt.Errorf("there was an error applying split tunnel rules %w", err)
 	}
 
+	if activate != nil {
+		if err := activate(); err != nil {
+			return fmt.Errorf("failed to reload proxy with TUN: %w", err)
+		}
+	}
 	t.IsEnabled = true
 	t.StatusChanged <- t.IsEnabled
 	logger.Info("tun: network rules enabled")
@@ -179,20 +188,37 @@ func (t *TunModeManager) Start(proxy_ipv4s []string, proxy_ipv6s []string, dns D
 	return nil
 }
 
-func (t *TunModeManager) Stop() {
+func (t *TunModeManager) Stop() error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if !t.IsEnabled {
-		// Still answer: callers (CLI --mode-proxy) wait for the notification and
-		// would otherwise time out when TUN was already off.
-		t.StatusChanged <- false
-		return
+	err := t.stopNetwork()
+	t.StatusChanged <- false
+	return err
+}
+
+func (t *TunModeManager) StopIfActive() error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if !t.IsEnabled && !t.cleanupPending {
+		return nil
+	}
+	err := t.stopNetwork()
+	t.StatusChanged <- false
+	return err
+}
+
+func (t *TunModeManager) stopNetwork() error {
+	if !t.IsEnabled && !t.cleanupPending {
+		return nil
 	}
 	logger.Info("tun: disabling...")
-	t.clearNetworkRules()
-	t.dnsHijack = DnsHijack{}
+	err := t.clearNetworkRules()
 	t.IsEnabled = false
-	t.StatusChanged <- t.IsEnabled
+	t.cleanupPending = err != nil
+	if err == nil {
+		t.dnsHijack = DnsHijack{}
+	}
+	return err
 }
 
 // ReapplyDnsHijack reconciles the port-53 hijack with the current split mode

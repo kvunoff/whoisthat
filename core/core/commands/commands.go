@@ -18,7 +18,8 @@ type Cmd struct {
 	TunManager *tunmode.TunModeManager
 	// RequestID is echoed on notifications produced by the current request.
 	// Empty for UDS/TUI traffic that does not opt into correlation.
-	RequestID string
+	RequestID      string
+	OperationReply func(structs.OperationResult)
 
 	// background tracks subscription refreshes started by AddGroup/UpdateGroup.
 	// It is a pointer because Cmd is copied per request; tests wait on it so a

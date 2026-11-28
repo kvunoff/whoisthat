@@ -18,29 +18,19 @@ pub async fn connect(
     let state = session.state().await?;
     let (group_id, profile_id, profile_name) = select_target(&state, &session.cfg, target, group)?;
 
-    let id = session
-        .send(
-            "connect",
-            &ConnectData {
-                profile: ProfileID {
-                    id: profile_id,
-                    group_id,
-                },
-            },
-        )
-        .await?;
-
-    let mut cfg = session.cfg.clone();
-    cfg.last_group_id = group_id;
-    cfg.last_profile_id = profile_id;
-    config::save_config(&cfg);
-    session.cfg = cfg;
+    let data = ConnectData {
+        profile: ProfileID {
+            id: profile_id,
+            group_id,
+        },
+    };
 
     if wait {
         session.set_timeout(g.timeout.unwrap_or(30));
-        let _: ProxyStatus = session
-            .wait(
-                &id,
+        session
+            .operation(
+                "connect",
+                &data,
                 Reply::Broadcast {
                     pred: Box::new(move |msg| {
                         if msg.msg != "status-changed" {
@@ -57,6 +47,7 @@ pub async fn connect(
                     }),
                     fatal_warns: &["connect-failed"],
                 },
+                supports_results(&state),
             )
             .await?;
         out.ok(
@@ -69,6 +60,7 @@ pub async fn connect(
             }),
         );
     } else {
+        session.send("connect", &data).await?;
         out.ok(
             format!("Connecting to '{profile_name}'..."),
             serde_json::json!({
@@ -79,6 +71,11 @@ pub async fn connect(
             }),
         );
     }
+    let mut cfg = session.cfg.clone();
+    cfg.last_group_id = group_id;
+    cfg.last_profile_id = profile_id;
+    config::save_config(&cfg);
+
     session.flush_warnings(&out);
     Ok(())
 }
@@ -87,17 +84,17 @@ pub async fn disconnect(g: &GlobalArgs, wait: bool) -> Result<(), CliError> {
     let out = Out::new(g);
     let mut session = Session::open_or_spawn(g).await?;
     let state = session.state().await?;
-    if state.connection_status.connection != "connected" {
+    if state.connection_status.connection != "connected" && !supports_results(&state) {
         out.ok("Disconnected.", serde_json::json!({"connected": false}));
         return Ok(());
     }
 
-    let id = session.send("disconnect", &DisconnectData {}).await?;
     if wait {
         session.set_timeout(g.timeout.unwrap_or(10));
-        let _: ProxyStatus = session
-            .wait(
-                &id,
+        session
+            .operation(
+                "disconnect",
+                &DisconnectData {},
                 Reply::Broadcast {
                     pred: Box::new(|msg| {
                         msg.msg == "status-changed"
@@ -107,8 +104,11 @@ pub async fn disconnect(g: &GlobalArgs, wait: bool) -> Result<(), CliError> {
                     }),
                     fatal_warns: &[],
                 },
+                supports_results(&state),
             )
             .await?;
+    } else {
+        session.send("disconnect", &DisconnectData {}).await?;
     }
     out.ok("Disconnected.", serde_json::json!({"connected": false}));
     session.flush_warnings(&out);
@@ -167,7 +167,7 @@ pub async fn mode(g: &GlobalArgs, cmd: ModeCmd) -> Result<(), CliError> {
         ModeCmd::Status => unreachable!(),
     };
 
-    if want == state.tun_status {
+    if want == state.tun_status && (want || !supports_results(&state)) {
         out.ok(
             if want {
                 "TUN mode is already enabled."
@@ -179,16 +179,11 @@ pub async fn mode(g: &GlobalArgs, cmd: ModeCmd) -> Result<(), CliError> {
         return Ok(());
     }
 
-    let id = session
-        .send(
+    session.set_timeout(g.timeout.unwrap_or(30));
+    session
+        .operation(
             if want { "enable-tun" } else { "disable-tun" },
             &serde_json::json!({}),
-        )
-        .await?;
-    session.set_timeout(g.timeout.unwrap_or(30));
-    let status: TunStatus = session
-        .wait(
-            &id,
             Reply::Broadcast {
                 pred: Box::new(move |msg| {
                     msg.msg == "tun-status-changed"
@@ -196,17 +191,18 @@ pub async fn mode(g: &GlobalArgs, cmd: ModeCmd) -> Result<(), CliError> {
                             .map(|s| s.is_enabled == want)
                             .unwrap_or(false)
                 }),
-                fatal_warns: &["enable-tun-failed"],
+                fatal_warns: &["enable-tun-failed", "disable-tun-failed"],
             },
+            supports_results(&state),
         )
         .await?;
     out.ok(
-        if status.is_enabled {
+        if want {
             "TUN mode enabled."
         } else {
             "Proxy mode enabled (TUN disabled)."
         },
-        serde_json::json!({"tun_enabled": status.is_enabled}),
+        serde_json::json!({"tun_enabled": want}),
     );
     session.flush_warnings(&out);
     Ok(())
@@ -300,4 +296,11 @@ fn select_target(
     Err(CliError::Usage(
         "no profiles available; import a subscription first".into(),
     ))
+}
+
+fn supports_results(state: &ApplicationState) -> bool {
+    state
+        .ipc_features
+        .iter()
+        .any(|feature| feature == "operation-result")
 }

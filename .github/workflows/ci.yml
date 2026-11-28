@@ -291,6 +291,18 @@ jobs:
       - name: Smoke test the IPC handshake
         run: make test-e2e
 
+  standalone-core-e2e:
+    name: E2E / standalone core
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: core/core/go.mod
+          cache-dependency-path: core/core/go.sum
+      - run: make core test-core-e2e
+
   integration:
     name: E2E / netns
     runs-on: ubuntu-24.04

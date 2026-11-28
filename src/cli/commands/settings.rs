@@ -68,8 +68,14 @@ async fn list(g: &GlobalArgs) -> Result<(), CliError> {
         Ok(mut session) => {
             let state = session.state().await?;
             for key in core_keys() {
-                if let Some(v) = core_value(&state, &cfg, key) {
-                    let source = if key == "autoconnect-profile" {
+                if let Some(v) = core_value(&state, &cfg, key, legacy_local(g, &cfg)) {
+                    let source = if key == "autoconnect-profile"
+                        && legacy_local(g, &cfg)
+                        && !state
+                            .ipc_features
+                            .iter()
+                            .any(|feature| feature == "config-state")
+                    {
                         "core-config"
                     } else {
                         "core"
@@ -78,7 +84,7 @@ async fn list(g: &GlobalArgs) -> Result<(), CliError> {
                 }
             }
             for key in READONLY_KEYS {
-                if let Some(v) = core_value(&state, &cfg, key) {
+                if let Some(v) = core_value(&state, &cfg, key, legacy_local(g, &cfg)) {
                     entries.push(((*key).to_string(), v, "core"));
                 }
             }
@@ -126,9 +132,15 @@ async fn get(g: &GlobalArgs, key: &str) -> Result<(), CliError> {
 
     let mut session = Session::open(g).await?;
     let state = session.state().await?;
-    let value = core_value(&state, &cfg, &key)
+    let value = core_value(&state, &cfg, &key, legacy_local(g, &cfg))
         .ok_or_else(|| CliError::Usage(format!("no value for '{key}'")))?;
-    let source = if key == "autoconnect-profile" {
+    let source = if key == "autoconnect-profile"
+        && legacy_local(g, &cfg)
+        && !state
+            .ipc_features
+            .iter()
+            .any(|feature| feature == "config-state")
+    {
         "core-config"
     } else {
         "core"
@@ -154,7 +166,7 @@ async fn toggle(g: &GlobalArgs, key: &str) -> Result<(), CliError> {
     } else {
         let mut session = Session::open(g).await?;
         let state = session.state().await?;
-        core_value(&state, &session.cfg, &key)
+        core_value(&state, &session.cfg, &key, legacy_local(g, &session.cfg))
             .and_then(|v| v.as_bool())
             .unwrap_or(false)
     };
@@ -209,7 +221,8 @@ async fn set_values(g: &GlobalArgs, assignments: &[String], force: bool) -> Resu
     if !core_jobs.is_empty() {
         let mut session = Session::open_or_spawn(g).await?;
         for (key, value) in core_jobs {
-            apply_core(&mut session, &out, key, value, force).await?;
+            let local = legacy_local(g, &session.cfg);
+            apply_core(&mut session, &out, key, value, force, local).await?;
         }
         session.flush_warnings(&out);
     }
@@ -244,6 +257,7 @@ async fn apply_core(
     key: &str,
     value: &str,
     force: bool,
+    local: bool,
 ) -> Result<(), CliError> {
     match key {
         "kill-switch" => {
@@ -309,7 +323,7 @@ async fn apply_core(
         "autoconnect" | "autoconnect-profile" | "autoconnect-mode" => {
             let state = session.state().await?;
             let (mut enabled, mut group_id, mut profile_id, mut mode) =
-                autoconnect_current(session, &state);
+                autoconnect_current(session, &state, local);
 
             match key {
                 "autoconnect" => enabled = parse_bool(value)?,
@@ -322,7 +336,7 @@ async fn apply_core(
                 _ => unreachable!(),
             }
 
-            if enabled && (group_id == 0 || profile_id == 0) {
+            if enabled && profile_id == 0 {
                 return Err(CliError::Usage(
                     "autoconnect needs a profile; set autoconnect-profile=<selector>".into(),
                 ));
@@ -339,7 +353,7 @@ async fn apply_core(
                     },
                     Reply::Id {
                         expect: &["autoconnect-updated"],
-                        fatal_warns: &[],
+                        fatal_warns: &["set-autoconnect-failed"],
                     },
                 )
                 .await?;
@@ -754,20 +768,20 @@ fn local_value(cfg: &config::AppConfig, key: &str) -> Option<Value> {
     })
 }
 
-fn core_value(state: &ApplicationState, cfg: &config::AppConfig, key: &str) -> Option<Value> {
-    let (ac_enabled, ac_group, ac_profile, ac_mode) = autoconnect_config_json();
+fn core_value(
+    state: &ApplicationState,
+    cfg: &config::AppConfig,
+    key: &str,
+    local: bool,
+) -> Option<Value> {
     Some(match key {
         "kill-switch" => json!(state.kill_switch),
         "kill-switch-armed" => json!(state.kill_switch_armed),
         "split-tunnel" => json!(state.split_tunnel),
         "autoconnect" => json!(state.autoconnect.enabled),
-        "autoconnect-profile" => {
-            if ac_group == 0 || ac_profile == 0 {
-                Value::Null
-            } else {
-                json!(format!("{ac_group}:{ac_profile}"))
-            }
-        }
+        "autoconnect-profile" => autoconnect_target(state, local)
+            .map(|target| json!(format!("{}:{}", target.group_id, target.id)))
+            .unwrap_or(Value::Null),
         "autoconnect-mode" => json!(state.autoconnect.mode),
         "tun-name" => json!(state.tun_name),
         "hwid-enabled" => json!(state.hwid_info.as_ref().map(|h| h.enabled).unwrap_or(false)),
@@ -834,34 +848,54 @@ fn core_value(state: &ApplicationState, cfg: &config::AppConfig, key: &str) -> O
             .map(|n| json!(n.dns_servers.join(",")))
             .unwrap_or_else(|| json!("unsupported")),
         _ => {
-            let _ = (cfg, ac_enabled, ac_mode);
+            let _ = cfg;
             return None;
         }
     })
 }
 
-fn autoconnect_current(session: &Session, state: &ApplicationState) -> (bool, i32, i32, String) {
-    let (_, group, profile, mode) = autoconnect_config_json();
-    let group = if group != 0 {
-        group
-    } else {
-        session.cfg.last_group_id
-    };
-    let profile = if profile != 0 {
-        profile
-    } else {
-        session.cfg.last_profile_id
-    };
-    let mode = if mode.is_empty() {
-        if state.autoconnect.mode.is_empty() {
-            "proxy".to_string()
-        } else {
-            state.autoconnect.mode.clone()
-        }
-    } else {
-        mode
-    };
-    (state.autoconnect.enabled, group, profile, mode)
+fn legacy_local(g: &GlobalArgs, cfg: &config::AppConfig) -> bool {
+    g.socket.is_none() && g.tcp.is_none() && !cfg.use_tcp && cfg.ipc_socket_path.is_empty()
+}
+
+fn autoconnect_target(state: &ApplicationState, local: bool) -> Option<ProfileID> {
+    if state
+        .ipc_features
+        .iter()
+        .any(|feature| feature == "config-state")
+        || !local
+    {
+        return state.autoconnect.target.clone();
+    }
+    let (_, group_id, id, _) = autoconnect_config_json();
+    (id != 0).then_some(ProfileID { id, group_id })
+}
+
+fn autoconnect_current(
+    session: &Session,
+    state: &ApplicationState,
+    local: bool,
+) -> (bool, i32, i32, String) {
+    let (group_id, id) = autoconnect_target(state, local)
+        .map(|target| (target.group_id, target.id))
+        .unwrap_or(
+            if local
+                && !state
+                    .ipc_features
+                    .iter()
+                    .any(|feature| feature == "config-state")
+            {
+                (session.cfg.last_group_id, session.cfg.last_profile_id)
+            } else {
+                (0, 0)
+            },
+        );
+    (
+        state.autoconnect.enabled,
+        group_id,
+        id,
+        state.autoconnect.mode.clone(),
+    )
 }
 
 fn autoconnect_config_json() -> (bool, i32, i32, String) {
