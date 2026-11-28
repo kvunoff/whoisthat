@@ -152,7 +152,7 @@ func main() {
 	// firewall/routing rules from a previous core that exited without cleaning
 	// up (hard quit, crash, power loss mid-TUN). Guarded on the IPC endpoint
 	// being free so we never nuke a live core's rules.
-	if !testMode() && !coreAlreadyRunning() {
+	if !testMode() && utils.HasNetAdmin() && !coreAlreadyRunning() {
 		if err := tunmode.ReconcileOrphanedRules(appconfig.GetConfig().TunName); err != nil {
 			logger.Warnf("startup reconcile: %v", err)
 		} else {

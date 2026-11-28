@@ -16,14 +16,12 @@ import (
 	"whoisthat-core/lib/logger"
 	"whoisthat-core/lib/xraymgr"
 	"whoisthat-core/utils"
-
-	"golang.org/x/sys/unix"
 )
 
 // Test seams: the real values need privileges (ambient caps) or a downloaded
 // binary, neither of which is available in unit tests.
 var (
-	ambientCaps = []uintptr{unix.CAP_NET_ADMIN, unix.CAP_NET_RAW}
+	ambientCaps = utils.XrayAmbientCaps
 	getXrayBin  = func() (string, error) { return xraymgr.GetManager().GetXrayBin() }
 )
 
@@ -124,7 +122,7 @@ func (x *XrayCore) Start(stdinPipe []byte, assetDir string) error {
 	}
 
 	cmd.SysProcAttr = &syscall.SysProcAttr{
-		AmbientCaps: ambientCaps,
+		AmbientCaps: ambientCaps(),
 	}
 
 	if uid := utils.DedicatedUid(); uid > 0 {
